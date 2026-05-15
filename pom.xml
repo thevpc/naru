@@ -1,0 +1,23 @@
+<!-- 22-Nov-2011 AYA : BDT 26587 update profile for the Jenkins build. -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>net.thevpc.xprojects.builders.naru</groupId>
+    <artifactId>naru-builder</artifactId>
+    <name>naru Builder</name>
+    <version>0.8.9.0</version>
+    <packaging>pom</packaging>
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+    </properties>
+    <modules>
+        <module>core/naru-api</module>
+        <module>core/narul-impl</module>
+        <module>app</module>
+    </modules>
+    <build>
+    </build>
+</project>

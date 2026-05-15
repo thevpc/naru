@@ -1,0 +1,51 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "ollama": {
+      "models": {
+        "qwen3.6:latest": {
+          "name": "qwen3.6:latest"
+        },
+        "llama3.3:70b": {
+          "name": "llama3.3:70b"
+        },
+        "mistral-small:latest": {
+          "name": "mistral-small:latest"
+        },
+        "deepseek-coder-v2:16b": {
+          "name": "deepseek-coder-v2:16b"
+        },
+        "qwen3-coder:30b": {
+          "name": "qwen3-coder:30b"
+        },
+        "qwen3-coder-32k": {
+          "name": "qwen3-coder-32k"
+        },
+        "qwen3-coder-64k": {
+          "name": "qwen3-coder-64k"
+        },
+        "qwen3-coder-30b-132k": {
+          "name": "qwen3-coder-30b-132k"
+        },
+        "qwen3-coder-30b-256k": {
+          "name": "qwen3-coder-30b-256k"
+        },
+
+        "qwen2.5:7b-instruct-q4_K_M": {
+          "name": "qwen2.5:7b-instruct-q4_K_M"
+        },
+        "gemma3:latest": {
+          "name": "gemma3:latest"
+        },
+        "qwen3:latest": {
+          "name": "qwen3:latest"
+        },
+      },
+      "name": "Ollama (local)",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://127.0.0.1:11434/v1"
+      }
+    }
+  }
+}

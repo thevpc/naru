@@ -1,0 +1,69 @@
+{
+  "$schema": "<https://charm.land/crush.json>",
+  "permissions": {
+    "allowed_tools": [
+      "view",
+      "ls",
+      "grep",
+      "edit"
+    ]
+  },
+  "providers": {
+    "ollama": {
+      "name": "Ollama",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": "ollama",
+      "type": "openai-compat",
+      "models": [
+        {
+          "id": "qwen3.6:latest",
+          "name": "qwen3.6:latest"
+        },
+        {
+          "id": "llama3.3:70b",
+          "name": "llama3.3:70b"
+        },
+        {
+          "id": "mistral-small:latest",
+          "name": "mistral-small:latest"
+        },
+        {
+          "id": "deepseek-coder-v2:16b",
+          "name": "deepseek-coder-v2:16b"
+        },
+        {
+          "id": "qwen3-coder:30b",
+          "name": "qwen3-coder:30b"
+        },
+        {
+          "id": "qwen3-coder-32k",
+          "name": "qwen3-coder-32k"
+        },
+        {
+          "id": "qwen3-coder-64k",
+          "name": "qwen3-coder-64k"
+        },
+        {
+          "id": "qwen3-coder-30b-132k",
+          "name": "qwen3-coder-30b-132k"
+        },
+        {
+          "id": "qwen3-coder-30b-256k",
+          "name": "qwen3-coder-30b-256k"
+        },
+        {
+          "id": "qwen2.5:7b-instruct-q4_K_M",
+          "name": "qwen2.5:7b-instruct-q4_K_M"
+        },
+        {
+          "id": "gemma3:latest",
+          "name": "gemma3:latest"
+        },
+        {
+          "id": "qwen3:latest",
+          "name": "qwen3:latest"
+        }
+      ]
+    }
+  }
+}
