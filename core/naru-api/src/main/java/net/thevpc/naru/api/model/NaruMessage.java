@@ -1,17 +1,21 @@
 package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.agent.NaruRole;
+import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.util.NCopiable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * A single message in a chat conversation.
  * Roles: "system", "user", "assistant", "tool"
  */
-public class NaruMessage implements NToElement {
+public class NaruMessage implements NToElement, NCopiable,Cloneable {
 
+    private NaruSource source=NaruSource.USER;
     private NaruRole role;
     private String content;
     /**
@@ -32,6 +36,37 @@ public class NaruMessage implements NToElement {
     private List<NaruToolCall> toolCalls;
 
     public NaruMessage() {
+    }
+
+    public NaruSource getSource() {
+        return source;
+    }
+
+    public NaruMessage setSource(NaruSource source) {
+        this.source = source;
+        return this;
+    }
+
+    @Override
+    public NaruMessage copy() {
+        return clone();
+    }
+
+    @Override
+    protected NaruMessage clone() {
+        NaruMessage e = null;
+        try {
+            e = (NaruMessage) super.clone();
+            if(e.images!=null){
+               e.images=new ArrayList<>(images);
+            }
+            if(e.toolCalls!=null){
+               e.toolCalls=toolCalls.stream().map(x->x.copy()).collect(Collectors.toList());
+            }
+        } catch (CloneNotSupportedException ex) {
+            throw new RuntimeException(ex);
+        }
+        return e;
     }
 
     public NaruMessage(NElement element) {

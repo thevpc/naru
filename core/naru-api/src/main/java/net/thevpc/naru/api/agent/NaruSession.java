@@ -144,4 +144,6 @@ public interface NaruSession {
     Object evalExpression(String condition);
 
     NaruSession pushStatementModelCall();
+
+    NaruSession prepareWorkdir();
 }

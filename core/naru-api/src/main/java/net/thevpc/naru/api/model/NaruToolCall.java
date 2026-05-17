@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.model;
 
 import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.util.NCopiable;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.HashMap;
@@ -10,7 +11,7 @@ import java.util.LinkedHashMap;
 /**
  * A tool call requested by the model inside an assistant message.
  */
-public class NaruToolCall implements NToElement {
+public class NaruToolCall implements NToElement, NCopiable, Cloneable {
 
     private String id;
     private String name;
@@ -21,17 +22,17 @@ public class NaruToolCall implements NToElement {
 
     public NaruToolCall(NElement other) {
         NObjectElement o = other.asObject().get();
-        id=o.getStringValue("id").orNull();
-        name=o.getStringValue("name").orNull();
+        id = o.getStringValue("id").orNull();
+        name = o.getStringValue("name").orNull();
         NElement ar = o.get("arguments").orNull();
-        if(ar!=null && ar.isAnyObject()){
-            arguments=new LinkedHashMap<>();
+        if (ar != null && ar.isAnyObject()) {
+            arguments = new LinkedHashMap<>();
             for (NElement child : ar.asObject().get().children()) {
-                if(child.isNamedPair()){
+                if (child.isNamedPair()) {
                     NPairElement p = child.asPair().get();
                     String k = p.key().asStringValue().orNull();
                     Object v = NElements.of().toSimple(p.value());
-                    arguments.put(k,v);
+                    arguments.put(k, v);
                 }
             }
         }
@@ -41,6 +42,24 @@ public class NaruToolCall implements NToElement {
         this.id = id;
         this.name = name;
         this.arguments = arguments != null ? arguments : new LinkedHashMap<>();
+    }
+
+    @Override
+    public NaruToolCall copy() {
+        return clone();
+    }
+
+    @Override
+    protected NaruToolCall clone() {
+        try {
+            NaruToolCall cloned = (NaruToolCall) super.clone();
+            if (cloned.arguments != null) {
+                cloned.arguments = new LinkedHashMap<>(arguments);
+            }
+            return cloned;
+        } catch (CloneNotSupportedException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
