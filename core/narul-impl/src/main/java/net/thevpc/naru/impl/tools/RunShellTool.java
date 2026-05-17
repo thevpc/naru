@@ -55,7 +55,7 @@ public class RunShellTool implements NaruTool {
         try {
             NExec nExec = NExec.ofSystem("/bin/sh", "-c", command)
                     .directory(cwd)
-                    .failFast();
+                    .failFast(true);
             String grabbedAllString = nExec
                     .getGrabbedAllString();
             int exitCode = nExec.exitCode();

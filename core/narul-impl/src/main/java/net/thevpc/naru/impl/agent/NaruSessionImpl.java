@@ -25,6 +25,7 @@ import net.thevpc.nuts.util.*;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 public class NaruSessionImpl implements NaruSession, NToElement {
     private final List<NaruMessage> systemHistory = new ArrayList<>();
@@ -342,11 +343,89 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     public List<NaruMessage> history(boolean includeSystem) {
         if (includeSystem) {
             List<NaruMessage> all = new ArrayList<>();
-            all.addAll(systemHistory);
-            all.addAll(history);
+            all.addAll(systemHistory.stream().map(x -> x.copy().setSource(NaruSource.SYSTEM)).collect(Collectors.toList()));
+            if (workingDir.startsWith(projectDir)) {
+                all.addAll(loadAgentFiles(projectDir));
+            } else {
+                List<NPath> dirs = new ArrayList<>();
+                NPath p = workingDir;
+                while ((p != null && (p.equals(projectDir) || p.startsWith(projectDir)))) {
+                    dirs.add(p);
+                    if (p.equals(projectDir)) break;
+                    p = p.getParent();
+                }
+                // reverse: projectDir first, workingDir last (specific wins)
+                Collections.reverse(dirs);
+                for (NPath dir : dirs) {
+                    all.addAll(loadAgentFiles(dir));
+                }
+            }
+            all.addAll(history.stream().map(x -> x.copy().setSource(NaruSource.USER)).collect(Collectors.toList()));
             return all;
         }
         return new ArrayList<>(history);
+    }
+
+    public List<NaruMessage> loadDirectives(NPath folder) {
+        if (folder == null || !folder.isDirectory()) {
+            return new ArrayList<>();
+        }
+        List<NaruMessage> all = new ArrayList<>();
+        NPath a = folder.resolve(".naru/directives.md");
+        boolean parentInherited = false;
+        for (NaruMessage naruMessage : loadDirectivesFile(a)) {
+            String c = naruMessage.getContent();
+            if (NStringUtils.trim(c).equals("/inherit")) {
+                if (!parentInherited) {
+                    parentInherited = true;
+                    all.add(naruMessage);
+                }
+            } else {
+                all.add(naruMessage);
+            }
+        }
+        a = folder.resolve(".naru/local/directives.md");
+        for (NaruMessage naruMessage : loadDirectivesFile(a)) {
+            String c = naruMessage.getContent();
+            if (NStringUtils.trim(c).equals("/inherit")) {
+                if (!parentInherited) {
+                    parentInherited = true;
+                    all.add(naruMessage);
+                }
+            } else {
+                all.add(naruMessage);
+            }
+        }
+        return all;
+    }
+
+    private List<NaruMessage> loadAgentFiles(NPath path) {
+        List<NaruMessage> all = new ArrayList<>();
+        if (path.isDirectory()) {
+            NPath a = path.resolve(".naru/agent.md");
+            if (a.isRegularFile()) {
+                log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading agent from %s", a));
+                all.add(NaruMessage.user(a.readString()).setSource(NaruSource.MD));
+            }
+            a = path.resolve(".naru/local/agent.md");
+            if (a.isRegularFile()) {
+                log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading agent from %s", a));
+                all.add(NaruMessage.user(a.readString()).setSource(NaruSource.MD));
+            }
+        }
+        return all;
+    }
+
+    private List<NaruMessage> loadDirectivesFile(NPath path) {
+        List<NaruMessage> a = new ArrayList<>();
+        if (path.isRegularFile()) {
+            log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading directives from %s", path));
+            for (String line : path.lines()) {
+                line = line.trim();
+                a.add(NaruMessage.user(line).setSource(NaruSource.MD));
+            }
+        }
+        return a;
     }
 
     @Override
@@ -387,8 +466,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public NaruSession setWorkingDir(NPath workingDir) {
-        this.workingDir = workingDir.toAbsolute(this.workingDir);
-        fireChanged();
+        NPath nf = workingDir.toAbsolute(this.workingDir);
+        if (!nf.equals(this.workingDir)) {
+            this.workingDir = nf;
+            fireChanged();
+            loadDirectives(workingDir);
+        }
         return this;
     }
 
@@ -539,6 +622,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
+    public NaruSession prepareWorkdir() {
+        loadDirectives(workingDir);
+        return this;
+    }
+
+    @Override
     public NaruSession pushStatement(NaruStatement any) {
         if (todo.isEmpty()) {
             todo.add(0, new RunContextImpl());
@@ -590,17 +679,17 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                     }
                 }).build();
         NOptional<NExprNode> n = ctx.parse(condition);
-        if(!n.isPresent()) {
+        if (!n.isPresent()) {
             throwError(NMsg.ofC("Error parsing expression '%s'", condition));
         }
         try {
             NOptional<Object> eval = n.get().eval(ctx);
-            if(eval.isPresent()) {
+            if (eval.isPresent()) {
                 throwError(NMsg.ofC("Error evaluating expression '%s'", condition));
                 return null;
             }
             return eval.get();
-        }catch (Exception e) {
+        } catch (Exception e) {
             throwError(NMsg.ofC("Error evaluating expression '%s'", condition));
             return null;
         }

@@ -53,7 +53,7 @@ public class MavenCompileTool implements NaruTool {
         NExec exec;
         try {
             exec = NExec.ofSystem(buildCmd(goals))
-                    .failFast()
+                    .failFast(true)
                     .maxLines(300)
                     .directory(projectDir);
             output.append(exec.getGrabbedAllString());

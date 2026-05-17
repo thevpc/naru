@@ -134,14 +134,11 @@ public class NaruModelProtocolOllamaNative implements NaruModelProtocol {
     public NaruResponse chat(List<NaruMessage> messages, List<NaruToolDefinition> tools) {
         Map<String, Object> body = buildRequestBody(model.model(), messages, tools);
         NWebRequest request = http.POST("api/chat")
-                .header("Content-Type", "application/json")
-                .connectTimeout(NDuration.ofMinutes(10))
-                .readTimeout(NDuration.ofMinutes(10))
                 .timeout(NDuration.ofMinutes(10))
                 .jsonRequestBody(body);
 
         try {
-            NWebResponse response = request.run().failFast();
+            NWebResponse response = request.run().ifErrorThrow();
             String responseString = response.getContentAsString();
             return parseResponse(responseString);
         } catch (Exception e) {

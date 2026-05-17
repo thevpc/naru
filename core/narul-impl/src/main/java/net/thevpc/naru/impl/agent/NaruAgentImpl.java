@@ -106,6 +106,7 @@ public class NaruAgentImpl implements NaruAgent {
                 NMsg.ofStyledSeparator("🤖"),
                 NMsg.ofStyledPrimary1(config.getModel())
         ));
+        sessionContext.prepareWorkdir();
         sessionContext.pushStatementReadlineForever();
         while (sessionContext.hasMoreStatements()) {
             invokeStep(sessionContext);

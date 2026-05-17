@@ -60,12 +60,10 @@ public class OllamaProviderNaru implements NaruModelProvider {
         body.put("model", model);
 
         NWebRequest request = http.POST("api/show")
-                .header("Content-Type", "application/json")
-                .connectTimeout(NDuration.ofSeconds(10))
-                .readTimeout(NDuration.ofSeconds(10))
+                .timeout(NDuration.ofSeconds(10))
                 .jsonRequestBody(body);
         try {
-            NWebResponse response = request.run().failFast();
+            NWebResponse response = request.run().ifErrorThrow();
             String json = response.getContentAsString();
             NElement root = nElementReader.read(json);
             NaruModelCapabilities naruModelCapabilities = parseCapabilities(root);
@@ -148,7 +146,7 @@ public class OllamaProviderNaru implements NaruModelProvider {
                 .connectTimeout(NDuration.ofSeconds(10))
                 .readTimeout(NDuration.ofSeconds(10));
         try {
-            NWebResponse response = request.run().failFast();
+            NWebResponse response = request.run().ifErrorThrow();
             String json = response.getContentAsString();
             NElement root = nElementReader.read(json);
             List<String> models = new ArrayList<>();
