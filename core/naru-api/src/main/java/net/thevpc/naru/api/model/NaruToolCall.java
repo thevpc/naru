@@ -1,18 +1,41 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.util.NOptional;
+
+import java.util.HashMap;
 import java.util.Map;
 import java.util.LinkedHashMap;
 
 /**
  * A tool call requested by the model inside an assistant message.
  */
-public class NaruToolCall {
+public class NaruToolCall implements NToElement {
 
     private String id;
     private String name;
     private Map<String, Object> arguments;
 
-    public NaruToolCall() {}
+    public NaruToolCall() {
+    }
+
+    public NaruToolCall(NElement other) {
+        NObjectElement o = other.asObject().get();
+        id=o.getStringValue("id").orNull();
+        name=o.getStringValue("name").orNull();
+        NElement ar = o.get("arguments").orNull();
+        if(ar!=null && ar.isAnyObject()){
+            arguments=new LinkedHashMap<>();
+            for (NElement child : ar.asObject().get().children()) {
+                if(child.isNamedPair()){
+                    NPairElement p = child.asPair().get();
+                    String k = p.key().asStringValue().orNull();
+                    Object v = NElements.of().toSimple(p.value());
+                    arguments.put(k,v);
+                }
+            }
+        }
+    }
 
     public NaruToolCall(String id, String name, Map<String, Object> arguments) {
         this.id = id;
@@ -20,27 +43,59 @@ public class NaruToolCall {
         this.arguments = arguments != null ? arguments : new LinkedHashMap<>();
     }
 
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
+    @Override
+    public NElement toElement() {
+        return NObjectElementBuilder.of()
+                .set("id", id)
+                .set("name", name)
+                .set("arguments", NElements.of().toElement(arguments == null ? new HashMap<>() : arguments))
+                .build();
+    }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+    public String getId() {
+        return id;
+    }
 
-    public Map<String, Object> getArguments() { return arguments; }
-    public void setArguments(Map<String, Object> arguments) { this.arguments = arguments; }
+    public void setId(String id) {
+        this.id = id;
+    }
 
-    /** Convenience: get a string argument value */
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public Map<String, Object> getArguments() {
+        return arguments;
+    }
+
+    public void setArguments(Map<String, Object> arguments) {
+        this.arguments = arguments;
+    }
+
+    /**
+     * Convenience: get a string argument value
+     */
     public String getString(String key) {
         Object v = arguments == null ? null : arguments.get(key);
         return v == null ? null : v.toString();
     }
 
-    /** Convenience: get an integer argument value */
+    /**
+     * Convenience: get an integer argument value
+     */
     public int getInt(String key, int defaultValue) {
         Object v = arguments == null ? null : arguments.get(key);
         if (v == null) return defaultValue;
         if (v instanceof Number) return ((Number) v).intValue();
-        try { return Integer.parseInt(v.toString()); } catch (Exception e) { return defaultValue; }
+        try {
+            return Integer.parseInt(v.toString());
+        } catch (Exception e) {
+            return defaultValue;
+        }
     }
 
     @Override

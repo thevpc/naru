@@ -1,5 +1,6 @@
 package net.thevpc.naru.api.tool;
 
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 
 /**
@@ -14,10 +15,10 @@ public interface NaruTool {
     String getName();
 
     /** Human-readable description sent to the model. */
-    String getDescription();
+    String getDescription(NaruSession session);
 
     /** Returns the full OpenAI-compatible JSON tool definition. */
-    NaruToolDefinition getDefinition();
+    NaruToolDefinition getDefinition(NaruSession session);
 
     /**
      * Execute the tool and return a string result that will be sent back

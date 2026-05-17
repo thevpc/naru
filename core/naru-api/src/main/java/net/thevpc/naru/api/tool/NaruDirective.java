@@ -10,6 +10,7 @@ public interface NaruDirective {
 
     /** Machine-readable name used in the tool schema (no spaces). */
     String getName();
+    String[] getAliases();
 
     /** Human-readable description sent to the model. */
     String getDescription();
@@ -22,4 +23,14 @@ public interface NaruDirective {
      * @return result string (text, JSON snippet, error message, …)
      */
     void execute(NaruDirectiveCallContext context);
+
+    /**
+     * Resolve autocomplete candidates for this directive.
+     */
+    default java.util.List<net.thevpc.nuts.cmdline.NArgCandidate> resolveCandidates(
+            net.thevpc.nuts.cmdline.NCmdLine cmdLine,
+            net.thevpc.nuts.cmdline.NCmdLineAutoCompleteResolver.Pos pos,
+            net.thevpc.naru.api.agent.NaruSession session) {
+        return java.util.Collections.emptyList();
+    }
 }

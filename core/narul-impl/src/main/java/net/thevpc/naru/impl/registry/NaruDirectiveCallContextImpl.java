@@ -1,14 +1,14 @@
 package net.thevpc.naru.impl.registry;
 
-import net.thevpc.naru.api.agent.NaruSessionContext;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
 
 public class NaruDirectiveCallContextImpl implements NaruDirectiveCallContext {
     private final String name;
     private final String argument;
-    private final NaruSessionContext session;
+    private final NaruSession session;
 
-    public NaruDirectiveCallContextImpl(String name, String argument, NaruSessionContext session) {
+    public NaruDirectiveCallContextImpl(String name, String argument, NaruSession session) {
         this.name = name;
         this.argument = argument;
         this.session = session;
@@ -25,7 +25,7 @@ public class NaruDirectiveCallContextImpl implements NaruDirectiveCallContext {
     }
 
     @Override
-    public NaruSessionContext session() {
+    public NaruSession session() {
         return session;
     }
 }

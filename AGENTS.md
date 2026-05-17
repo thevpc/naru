@@ -1,6 +1,6 @@
 # NARU — Nuts AI Reasoning Unit
 
-NARU is a multi-model, tool-based AI agent designed to work with local language models (via Ollama) for software engineering tasks. It's built on the Nuts framework and operates in a project directory, using available tools to understand, analyze, and modify code.
+NARU is a multi-model, tool-based AI agent designed to work with local language models (via Ollama) for software engineering tasks. It provides both single-task execution and interactive malleable scripting capabilities.
 
 ## Project Structure
 
@@ -9,9 +9,12 @@ core/
 ├── naru-api/              # API interfaces
 │   ├── src/main/java/net/thevpc/naru/api/
 │   │   ├── agent/
+│   │   │   ├── NaruAgent.java
 │   │   │   ├── NaruAgentConfig.java
 │   │   │   ├── NaruAgentContext.java
-│   │   │   ├── NaruAgentRunner.java
+│   │   │   ├── NaruAgentOp.java
+│   │   │   ├── NaruLogMode.java
+│   │   │   ├── NaruRole.java
 │   │   │   ├── NaruScript.java
 │   │   │   ├── NaruScriptManager.java
 │   │   │   └── NaruSessionContext.java
@@ -22,6 +25,8 @@ core/
 │   │   │   ├── NaruToolCall.java
 │   │   │   └── NaruToolDefinition.java
 │   │   └── tool/
+│   │       ├── NaruDirective.java
+│   │       ├── NaruDirectiveCallContext.java
 │   │       ├── NaruTool.java
 │   │       ├── NaruToolCallContext.java
 │   │       ├── NaruToolParameter.java
@@ -29,26 +34,47 @@ core/
 ├── narul-impl/            # Implementation
 │   ├── src/main/java/net/thevpc/naru/impl/
 │   │   ├── agent/
-│   │   │   ├── NaruAgentRunnerImpl.java
+│   │   │   ├── NaruAgentImpl.java
 │   │   │   ├── NaruAgentContextImpl.java
 │   │   │   ├── NaruSessionContextImpl.java
 │   │   │   └── script/
 │   │   │       ├── NaruScriptImpl.java
 │   │   │       └── NaruScriptManagerImpl.java
+│   │   ├── registry/
+│   │   │   ├── NaruToolCallContextImpl.java
+│   │   │   ├── directives/
+│   │   │   │   ├── AbstractDirective.java
+│   │   │   │   ├── CdDirective.java
+│   │   │   │   ├── ExitDirective.java
+│   │   │   │   ├── HelpDirective.java
+│   │   │   │   ├── HistoryDirective.java
+│   │   │   │   ├── ListDirective.java
+│   │   │   │   ├── LoadScriptDirective.java
+│   │   │   │   ├── ModelDirective.java
+│   │   │   │   ├── ModelsDirective.java
+│   │   │   │   ├── PwdDirective.java
+│   │   │   │   ├── RunDirective.java
+│   │   │   │   ├── ToolsDirective.java
+│   │   │   │   └── UnloadScriptDirective.java
+│   │   │   └── NaruToolRegistryImpl.java
 │   │   ├── tool/
-│   │   │   ├── NaruToolRegistryImpl.java
+│   │   │   ├── DelegateModelTool.java
+│   │   │   ├── DiffFilesTool.java
+│   │   │   ├── GetWorkingDirTool.java
 │   │   │   ├── ListFilesTool.java
-│   │   │   ├── ReadFileTool.java
-│   │   │   ├── WriteFileTool.java
-│   │   │   ├── RunShellTool.java
 │   │   │   ├── MavenCompileTool.java
 │   │   │   ├── MavenTestTool.java
+│   │   │   ├── ReadFileTool.java
 │   │   │   ├── RunScriptTool.java
+│   │   │   ├── RunShellTool.java
+│   │   │   ├── SearchWebScriptTool.java
+│   │   │   ├── SetWorkingDirTool.java
+│   │   │   ├── WriteFileTool.java
 │   │   │   └── WriteScriptLineTool.java
 │   │   ├── model/
 │   │   │   └── OllamaProviderNaru.java
-│   │   └── cmd/
-│   │       └── NaruCommand.java
+│   │   └── cmdline/
+│   │       └── NaruCmdLineProcessor.java
 └── app/
     ├── pom.xml
     └── src/main/java/net/thevpc/naru/NaruApp.java
@@ -57,8 +83,8 @@ core/
 ## Core Components
 
 ### 1. Agent Architecture
-- **NaruAgentRunner**: The core loop that orchestrates agent execution, manages conversation history, and handles tool calls
-- **NaruAgentConfig**: Configuration for agent behavior including model selection, maximum steps, and verbosity
+- **NaruAgent**: Main interface for agent operations including execution and script management
+- **NaruAgentConfig**: Configuration for agent behavior including model selection, maximum steps, and verbosity  
 - **NaruAgentContext**: Contains execution context including project directory, extra context, and script manager
 - **NaruModelProvider**: Interface for different AI model providers (currently only Ollama implemented)
 - **NaruToolRegistry**: Manages tool registration, definition, and execution
@@ -66,7 +92,11 @@ core/
 - **NaruSessionContext**: Handles the current state during session execution
 
 ### 2. Tool System
-NARU provides these built-in tools:
+NARU provides two types of tools:
+- **NaruTool**: Regular tools for file operations, shell commands, compilation, etc.
+- **NaruDirective**: Command-line style operations (starting with `/`) like `/load-script`, `/run`, `/list`
+
+Built-in tools include:
 - `read_file`: Read content from any file in the project directory
 - `write_file`: Create or replace a file with given content  
 - `list_files`: List files and directories in the project
@@ -77,15 +107,25 @@ NARU provides these built-in tools:
 - `write_script_line`: Add a line to the current script
 - `inspect_image`: Analyze images using vision model (if enabled)
 
+Built-in directives include:
+- `/load-script [name]` - Load a script context
+- `/unload-script` - Return to main context
+- `/list` - List current script lines
+- `/run` - Execute the current script
+- `/help` - Show help information
+- `/models` - List available models
+- `/pwd` - Show current working directory
+- `/cd [dir]` - Change directory
+
 ### 3. Model Providers
 - **OllamaProviderNaru**: Connects to local Ollama models at `http://localhost:11434`
 - Supports various Qwen and Llama models configured in `.crush.json` and `opencode.json`
 
 ## Enhanced Features: Malleable Scripting
 
-The refactored version now supports malleable scripting:
+The refactored version now supports malleable scripting with an interactive REPL mode:
 
-1. **Interactive Mode**: When no `--task` is provided, NARU enters REPL mode
+1. **Interactive Mode**: When no `--task` is provided, NARU enters REPL mode with rich command-line interface
 2. **Script Management**: 
    - `/load-script [name]` - Load a script context
    - `/unload-script` - Return to main context
@@ -136,29 +176,38 @@ naru --task "What files are in the project?" [options]
    - `/unload-script` - Return to main context
    - `/list` - List current script lines
    - `/run` - Execute the current script
+   - `/help` - Show help
 4. **Line-by-line execution**: Individual lines of scripts are executed using the AI model
 
 ## Key Design Patterns
 
-### 1. Tool-Based Architecture
-- Uses a tool registry pattern to dynamically add/remove capabilities
-- Tools are executed with a consistent interface (`dispatch(name, args, context)`)
+### 1. Component-Based Architecture
+- Clear separation between API interfaces (naru-api) and implementations (narul-impl)
+- Dependency injection through interfaces for easy testing and extension
+- Modular design with distinct responsibilities for each component
+
+### 2. Tool-Based Architecture
+- Uses tool registry pattern to dynamically add/remove capabilities
+- Tools are executed with a consistent interface
 - Tools operate within the project directory context
 
-### 2. Agent-Model Interaction
-- Uses the chat interface pattern where messages are exchanged in a history
-- Supports both text responses and tool calls from the model
-- Model response parsing handles both cases
-
-### 3. Configuration-Driven
-- Uses configuration objects (NaruAgentConfig) for easy parameterization
-- Model provider abstraction makes it easy to add new providers in the future
-- CLI argument parsing is kept simple and independent of complex frameworks
+### 3. Directive-Based Command System
+- Slash commands (directives) provide command-line interaction capabilities
+- Directives extend the agent's functionality beyond tool execution
+- Rich command system allows full script management and session control
 
 ### 4. Session Management
 - Session context maintains conversation state
 - Script manager enables persistent scripting across sessions
 - Supports both individual task execution and interactive script building
+
+🔹 NARU ROUTINES:
+- Routines are internal REPL buffers with numbered lines (10, 20, 30...).
+- Use routine_add_line, routine_list_lines, routine_load, routine_save to manage them.
+- NEVER treat routine content as shell commands, Python scripts, or external files.
+- For OS commands, use the shell_run tool explicitly.
+- Current routine: {{currentRoutineName}} (use empty routine_name to target this)
+
 
 ## Building and Running
 

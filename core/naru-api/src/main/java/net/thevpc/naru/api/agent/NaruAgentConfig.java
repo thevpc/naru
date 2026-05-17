@@ -6,7 +6,7 @@ package net.thevpc.naru.api.agent;
 public class NaruAgentConfig {
 
     /** Model name passed to the provider (e.g. "qwen2.5-coder:7b"). */
-    private String model = "qwen3-coder:30b";
+    private String model = "qwen3-coder-30b-256k:latest";
 
     /** Vision model used by the inspect_image tool. */
     private String visionModel = "qwen2.5vl:latest";

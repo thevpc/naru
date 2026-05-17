@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.agent.NaruRole;
+import net.thevpc.nuts.elem.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,7 +10,7 @@ import java.util.List;
  * A single message in a chat conversation.
  * Roles: "system", "user", "assistant", "tool"
  */
-public class NaruMessage {
+public class NaruMessage implements NToElement {
 
     private NaruRole role;
     private String content;
@@ -31,6 +32,48 @@ public class NaruMessage {
     private List<NaruToolCall> toolCalls;
 
     public NaruMessage() {
+    }
+
+    public NaruMessage(NElement element) {
+        NObjectElement o = element.asObject().get();
+        this.role = NaruRole.valueOf(o.getStringValue("role").get());
+        this.content = o.getStringValue("content").orNull();
+        this.toolCallId = o.getStringValue("toolCallId").orNull();
+        this.toolName = o.getStringValue("toolName").orNull();
+        NElement images1 = o.get("images").orNull();
+        if (images1 != null && images1.isAnyArray()) {
+            images = new ArrayList<>();
+            for (NElement nElement : images1.asArray().get()) {
+                images.add(nElement.asStringValue().orNull());
+            }
+        }
+        NElement toolCalls1 = o.get("toolCalls").orNull();
+        if (toolCalls1 != null && toolCalls1.isAnyArray()) {
+            toolCalls = new ArrayList<>();
+            for (NElement nElement : toolCalls1.asArray().get()) {
+                toolCalls.add(new NaruToolCall(nElement));
+            }
+        }
+    }
+
+    @Override
+    public NElement toElement() {
+        NObjectElementBuilder o = NObjectElementBuilder.of();
+        o.set("role", role.name());
+        o.set("content", content);
+        o.set("content", content);
+        o.set("toolName", toolName);
+        if (images != null) {
+            o.set("images", NElement.ofStringArray(images.toArray(new String[0])));
+        }
+        if (toolCalls != null) {
+            NArrayElementBuilder _toolCalls = NArrayElementBuilder.of();
+            for (NaruToolCall call : toolCalls) {
+                _toolCalls.add(call.toElement());
+            }
+            o.set("toolCalls", _toolCalls.build());
+        }
+        return o.build();
     }
 
     private NaruMessage(NaruRole role, String content) {

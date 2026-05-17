@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.registry;
 
-import net.thevpc.naru.api.agent.NaruSessionContext;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
@@ -9,9 +9,9 @@ import java.util.Map;
 
 public class NaruToolCallContextImpl implements NaruToolCallContext {
     private final Map<String, Object> arguments;
-    private final NaruSessionContext session;
+    private final NaruSession session;
 
-    public NaruToolCallContextImpl(Map<String, Object> arguments, NaruSessionContext session) {
+    public NaruToolCallContextImpl(Map<String, Object> arguments, NaruSession session) {
         this.arguments = arguments;
         this.session = session;
     }
@@ -22,7 +22,7 @@ public class NaruToolCallContextImpl implements NaruToolCallContext {
     }
 
     @Override
-    public NaruSessionContext session() {
+    public NaruSession session() {
         return session;
     }
 

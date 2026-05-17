@@ -10,6 +10,8 @@ public class NaruResponse {
     private String stopReason;
     /** Total tokens used (prompt + completion), -1 if not reported */
     private int totalTokens = -1;
+    private int promptTokens = -1;
+    private int evalTokens = -1;
 
     public NaruResponse() {}
 
@@ -32,5 +34,23 @@ public class NaruResponse {
 
     public boolean hasToolCalls() {
         return message != null && message.hasToolCalls();
+    }
+
+    public int getPromptTokens() {
+        return promptTokens;
+    }
+
+    public NaruResponse setPromptTokens(int promptTokens) {
+        this.promptTokens = promptTokens;
+        return this;
+    }
+
+    public int getEvalTokens() {
+        return evalTokens;
+    }
+
+    public NaruResponse setEvalTokens(int evalTokens) {
+        this.evalTokens = evalTokens;
+        return this;
     }
 }

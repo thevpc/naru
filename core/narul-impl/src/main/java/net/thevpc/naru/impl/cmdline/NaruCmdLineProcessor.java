@@ -3,12 +3,10 @@ package net.thevpc.naru.impl.cmdline;
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.impl.agent.NaruAgentImpl;
 import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.cmdline.NCmdLineHistory;
-import net.thevpc.nuts.io.NIO;
 import net.thevpc.nuts.io.NOut;
 import net.thevpc.nuts.io.NPath;
-import net.thevpc.nuts.io.NSystemTerminal;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NBlankable;
 
 /**
  * Parses CLI arguments and wires everything together for a single agent run.
@@ -53,13 +51,12 @@ public class NaruCmdLineProcessor {
                 .with("--model").matchEntry(a -> config.model(a.value()))
                 .with("--vision-model").matchEntry(a -> config.visionModel(a.value()))
                 .with("--provider").matchEntry(a -> config.providerUrl(a.value()))
-                .with("--project-dir").matchEntry(a -> projectDir=a.value())
+                .with("--project-dir").matchEntry(a -> projectDir = a.value())
                 .with("--max-steps").matchEntry(a -> config.maxSteps(a.intValue()))
                 .with("--quiet").matchFlag(a -> config.verbose(!a.booleanValue()))
-                .with("--help","-h").matchTrueFlag(a ->  help = a.booleanValue())
-                .withNonOption().matchAny(a->task = (task == null ? "" : task + " ") + a.image())
-                ;
-        while (args.hasNext()){
+                .with("--help", "-h").matchTrueFlag(a -> help = a.booleanValue())
+                .withNonOption().matchAny(a -> task = (task == null ? "" : task + " ") + a.image());
+        while (args.hasNext()) {
             matcher.requireDefaults();
         }
     }
@@ -73,7 +70,12 @@ public class NaruCmdLineProcessor {
             return;
         }
         NaruAgent runner = new NaruAgentImpl(config);
-        runner.run(task, NPath.of(projectDir));
+        runner.setProjectDirectory(NPath.of(projectDir));
+        if (NBlankable.isBlank(task)) {
+            runner.runInteractive();
+        } else {
+            runner.runTask(task);
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
