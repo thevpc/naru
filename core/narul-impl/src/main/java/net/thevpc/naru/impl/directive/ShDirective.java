@@ -18,18 +18,18 @@ public class ShDirective extends AbstractDirective {
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
+        NaruSession naruSession = context.session();
         try (NSession session = NSession.of().copy()) {
             session.setLogTermLevel(Level.OFF);
             session.runWith(() -> {
-                NExec e = NExec.of("nsh", "-c", context.argument()).directory(context.session().workingDir()).failFast(false);
+                NExec e = NExec.of("nsh","--progress=none", "-c", context.argument()).directory(naruSession.workingDir()).failFast(false);
                 String result = e
                         .getGrabbedAllString();
-                context.session().addHistory(NaruMessage.user(NMsg.ofC("call   : nsh -c %s", context.argument()).toString()));
-                context.session().addHistory(NaruMessage.user(NMsg.ofC("exit code %s", e.exitCode()).toString()));
-                context.session().addHistory(NaruMessage.user(NMsg.ofC("result : \n%s", NaruUtils.stripAnsi(result)).toString()));
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
+                naruSession.addHistory(NaruMessage.user(NMsg.ofC("call   : nsh -c %s", context.argument()).toString()));
+                naruSession.addHistory(NaruMessage.user(NMsg.ofC("exit code %s", e.exitCode()).toString()));
+                naruSession.addHistory(NaruMessage.user(NMsg.ofC("result : \n%s", NaruUtils.stripAnsi(result)).toString()));
+                naruSession.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
+                naruSession.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
             });
         }
     }

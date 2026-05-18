@@ -25,7 +25,7 @@ public class LsDirective extends AbstractDirective {
     public void execute(NaruDirectiveCallContext context) {
         NaruSession sessionContext = context.session();
         List<String> cmd = new ArrayList<>();
-        cmd.addAll(Arrays.asList("nsh", "-c", "ls"));
+        cmd.addAll(Arrays.asList("nsh","--progress=none", "-c", "ls"));
         if (!NBlankable.isBlank(context.argument())) {
             cmd.addAll(NCmdLine.parse(context.argument()).get().toStringList());
         }

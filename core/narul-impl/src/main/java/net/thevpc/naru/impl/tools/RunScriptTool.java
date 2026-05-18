@@ -36,7 +36,7 @@ public class RunScriptTool implements NaruTool {
         }
 
         String r= "running script " + scriptName;
-        context.session().runner().invokeScript(context.session(), scriptName);
+        context.session().runner().invokeRoutine(context.session(), scriptName);
         return r;
     }
 }

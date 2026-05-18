@@ -40,6 +40,17 @@ public class NaruToolCallContextImpl implements NaruToolCallContext {
     public NOptional<Number> numberArg(String name) {
         return arg(name).flatMap(x -> NLiteral.of(x).asNumber());
     }
+
+    @Override
+    public NOptional<Integer> intArg(String name) {
+        return numberArg(name).map(Number::intValue);
+    }
+
+    @Override
+    public NOptional<Long> longArg(String name) {
+        return numberArg(name).map(Number::longValue);
+    }
+
     @Override
     public NOptional<Boolean> booleanArg(String name) {
         return arg(name).flatMap(x -> NLiteral.of(x).asBoolean());

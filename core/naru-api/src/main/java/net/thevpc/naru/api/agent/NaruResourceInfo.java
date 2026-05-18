@@ -2,17 +2,27 @@ package net.thevpc.naru.api.agent;
 
 import java.time.Instant;
 
-public class NaruSessionInfo {
+public class NaruResourceInfo {
     private String uuid;
     private String name;
     private Instant creationDate;
     private Instant modificationDate;
+    private boolean publicSession;
+
+    public boolean isPublicSession() {
+        return publicSession;
+    }
+
+    public NaruResourceInfo setPublicSession(boolean publicSession) {
+        this.publicSession = publicSession;
+        return this;
+    }
 
     public String getUuid() {
         return uuid;
     }
 
-    public NaruSessionInfo setUuid(String uuid) {
+    public NaruResourceInfo setUuid(String uuid) {
         this.uuid = uuid;
         return this;
     }
@@ -21,7 +31,7 @@ public class NaruSessionInfo {
         return name;
     }
 
-    public NaruSessionInfo setName(String name) {
+    public NaruResourceInfo setName(String name) {
         this.name = name;
         return this;
     }
@@ -30,7 +40,7 @@ public class NaruSessionInfo {
         return creationDate;
     }
 
-    public NaruSessionInfo setCreationDate(Instant creationDate) {
+    public NaruResourceInfo setCreationDate(Instant creationDate) {
         this.creationDate = creationDate;
         return this;
     }
@@ -39,7 +49,7 @@ public class NaruSessionInfo {
         return modificationDate;
     }
 
-    public NaruSessionInfo setModificationDate(Instant modificationDate) {
+    public NaruResourceInfo setModificationDate(Instant modificationDate) {
         this.modificationDate = modificationDate;
         return this;
     }

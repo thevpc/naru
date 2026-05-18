@@ -15,7 +15,7 @@ public class NaruModelKey implements NToElement {
     public NaruModelKey(NElement element) {
         NObjectElement o = element.asObject().get();
         this.provider = o.getStringValue("provider").get();
-        this.model = o.getStringValue("name").get();
+        this.model = o.getStringValue("model").get();
     }
 
     public NaruModelKey(String provider, String model) {

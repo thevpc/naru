@@ -1,9 +1,6 @@
 package net.thevpc.naru.impl.model;
 
-import net.thevpc.naru.api.model.NaruModelCapabilities;
-import net.thevpc.naru.api.model.NaruModelKey;
-import net.thevpc.naru.api.model.NaruModelProtocol;
-import net.thevpc.naru.api.model.NaruModelProvider;
+import net.thevpc.naru.api.model.*;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.net.NWebCli;
 import net.thevpc.nuts.net.NWebRequest;
@@ -19,37 +16,46 @@ import java.util.*;
  * <p>Endpoint: POST {baseUrl}/api/chat
  * <p>Compatible with Ollama 0.2.8+ tool-calling format.
  */
-public class OllamaProviderNaru implements NaruModelProvider {
+public class OllamaProviderNaru extends AbstractNaruModelProvider {
 
-    private final String baseUrl;
-    private final NWebCli http;
+    private NWebCli http;
     private final Map<String, NaruModelProtocol> protocols = new HashMap<>();
     private final Map<String, NaruModelCapabilities> cachedCapabilities = new HashMap<>();
     private final NElementReader nElementReader;
 
     public OllamaProviderNaru(String baseUrl) {
-        this.baseUrl = baseUrl.replaceAll("/$", "");
-        this.http = NWebCli.of()
-                .connectTimeout(NDuration.ofSeconds(30))
-                .setPrefix(this.baseUrl)
-        ;
+        super("ollama");
+        setParam("url",baseUrl);
         nElementReader = NElementReader.ofJson();
+    }
+
+    @Override
+    protected void onParamChanged(String name, String value) {
+        switch (name){
+            case "url":{
+                value = value.replaceAll("/$", "");
+                // rest the param, wont be recursive because
+                // if not changed there will be no recall
+                setParam("url",value);
+                this.http = NWebCli.of()
+                        .connectTimeout(NDuration.ofSeconds(30))
+                        .setPrefix(value)
+                ;
+                break;
+            }
+        }
     }
 
     @Override
     public NOptional<NaruModelProtocol> getProtocol(String model) {
         NaruModelCapabilities capabilities = getCapabilities(model);
         if (capabilities.isVision()) {
-            return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOpenAICompat(new NaruModelKey(getName(), model), baseUrl, capabilities)));
+            return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOpenAICompat(new NaruModelKey(getName(), model), getParam("url").get(), capabilities)));
         }
-        return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOllamaNative(new NaruModelKey(getName(), model), baseUrl, capabilities)));
+        return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOllamaNative(new NaruModelKey(getName(), model), getParam("url").get(), capabilities)));
     }
 
 
-    @Override
-    public String getName() {
-        return "ollama";
-    }
 
     public NaruModelCapabilities getCapabilities(String model) {
         NaruModelCapabilities c = cachedCapabilities.get(model);

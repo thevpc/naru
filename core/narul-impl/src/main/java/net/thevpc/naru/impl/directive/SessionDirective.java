@@ -16,7 +16,7 @@ import java.util.*;
 
 public class SessionDirective extends AbstractDirective {
     public SessionDirective() {
-        super("session", "manage sessions");
+        super("session", "manage sessions","sessions");
     }
 
     @Override
@@ -34,6 +34,14 @@ public class SessionDirective extends AbstractDirective {
                 }
                 case "list": {
                     executeList(context, cmdLine);
+                    break;
+                }
+                case "public": {
+                    executeMakePublic(true, context, cmdLine);
+                    break;
+                }
+                case "private": {
+                    executeMakePublic(false, context, cmdLine);
                     break;
                 }
                 case "drop":
@@ -77,11 +85,15 @@ public class SessionDirective extends AbstractDirective {
     public void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
 
-        List<NaruSessionInfo> naruSessionInfos = sessionContext.sessionManager().list();
-        naruSessionInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
+        List<NaruResourceInfo> naruResourceInfos = sessionContext.sessionManager().list();
+        naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
         int index = 1;
-        for (NaruSessionInfo naruSessionInfo : naruSessionInfos) {
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s", index, NMsg.ofStyledPrimary1(naruSessionInfo.getUuid()), NMsg.ofStyledString(naruSessionInfo.getName())));
+        for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,
+                    NMsg.ofStyledKeyword(naruResourceInfo.isPublicSession() ? "public" : "private"),
+                    NMsg.ofStyledPrimary1(naruResourceInfo.getUuid()),
+                    NMsg.ofStyledString(naruResourceInfo.getName()))
+            );
             index++;
         }
     }
@@ -159,13 +171,13 @@ public class SessionDirective extends AbstractDirective {
     public void executeLoad(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
         NaruSessionManager sm = sessionContext.sessionManager();
-        String name = context.argument();
-        if (name.isEmpty()) {
+        String name = cmdLine.next().flatMap(x->x.asString()).orNull();
+        if (NBlankable.isBlank(name)) {
             name = "main";
         }
         String a = sm.findByUuidOrName(name);
         if (a == null) {
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("session not found %s", a));
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("session not found %s", name));
             return;
         }
         sm.load(a);
@@ -206,6 +218,21 @@ public class SessionDirective extends AbstractDirective {
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current session: %s (%s)", sessionContext.name(), sessionContext.uuid()));
     }
 
+    public void executeMakePublic(boolean makePublic, NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruSession sessionContext = context.session();
+        if(sessionContext.isPublicSession()==makePublic){
+
+        }else {
+            sessionContext.setPublicSession(makePublic);
+            sessionContext.save();
+            if (makePublic) {
+                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("make current session public: %s (%s)", sessionContext.name(), sessionContext.uuid()));
+            } else {
+                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("make current session private: %s (%s)", sessionContext.name(), sessionContext.uuid()));
+            }
+        }
+    }
+
     @Override
     public List<NArgCandidate> resolveCandidates(
             NCmdLine cmdLine,
@@ -215,13 +242,13 @@ public class SessionDirective extends AbstractDirective {
         String[] stringArray = cmdLine.toStringArray();
         int wordIndex = pos.wordIndex();
         String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
-        
+
         if (wordIndex == 1) {
             addCandidates(candidates, currentArg, "name", "list", "drop", "delete", "rm", "clear", "load", "save", "new", "copy", "help");
         } else if (wordIndex == 2) {
             String prevArg = stringArray[1];
             if (prevArg.equals("load") || prevArg.equals("drop") || prevArg.equals("delete") || prevArg.equals("rm")) {
-                for (net.thevpc.naru.api.agent.NaruSessionInfo info : session.sessionManager().list()) {
+                for (NaruResourceInfo info : session.sessionManager().list()) {
                     if (info.getName() != null && !info.getName().isEmpty()) {
                         addCandidates(candidates, currentArg, info.getName());
                     }

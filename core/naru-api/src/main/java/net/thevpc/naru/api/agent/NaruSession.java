@@ -21,6 +21,10 @@ import java.util.Map;
 public interface NaruSession {
     boolean isForever();
 
+    boolean isPublicSession();
+
+    NaruSession setPublicSession(boolean publicSession);
+
     NaruSession setForever(boolean forever);
 
     NaruAgent runner();
@@ -33,9 +37,10 @@ public interface NaruSession {
 
     NaruSession popContext();
 
-    NaruSession pushStatements(NaruStatement ...any);
+    NaruSession pushStatements(NaruStatement... any);
 
     NaruSession pushStatement(NaruStatement any);
+
     NaruSession pushStatementReadlineForever();
 
     int userQueriesCount();

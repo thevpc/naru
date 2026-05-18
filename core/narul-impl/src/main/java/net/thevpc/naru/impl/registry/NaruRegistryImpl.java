@@ -197,7 +197,10 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     public NaruRegistry registerDefaults() {
-        this.registerTool(new ReadFileTool());
+        this.registerTool(new FileReadTool());
+        this.registerTool(new FileReadLinesTool());
+        this.registerTool(new FileAppendTool());
+        this.registerTool(new FileEditLinesTool());
         this.registerTool(new WriteFileTool());
         this.registerTool(new ListFilesTool());
         this.registerTool(new RunShellTool());
@@ -210,8 +213,12 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerTool(new GetWorkingDirTool());
         this.registerTool(new SetWorkingDirTool());
         this.registerTool(new DelegateModelTool());
+        this.registerTool(new RoutineListLinesTool());
+        this.registerTool(new FolderFindTool());
+        this.registerTool(new FolderGrepTool());
+        this.registerTool(new FileGrepTool());
 
-        this.registerDirective(new ScriptDirective());
+        this.registerDirective(new RoutineDirective());
         this.registerDirective(new ExitDirective());
         this.registerDirective(new HelpDirective(this));
         this.registerDirective(new ToolsDirective(this));

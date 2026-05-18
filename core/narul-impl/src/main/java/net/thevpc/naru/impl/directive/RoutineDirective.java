@@ -15,9 +15,9 @@ import java.text.DecimalFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class ScriptDirective extends AbstractDirective {
-    public ScriptDirective() {
-        super("script", "create, update , list and run  scripts");
+public class RoutineDirective extends AbstractDirective {
+    public RoutineDirective() {
+        super("routine", "create, update , list and run  routines","routines");
     }
 
     @Override
@@ -25,12 +25,16 @@ public class ScriptDirective extends AbstractDirective {
         NaruSession sessionContext = context.session();
         NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
         if (cmdLine.isEmpty()) {
-            executeList(context, cmdLine);
+            executeShow(context, cmdLine);
         } else {
             NArg a = cmdLine.next().get();
             switch (a.image()) {
                 case "name": {
                     executeName(context, cmdLine);
+                    break;
+                }
+                case "show": {
+                    executeShow(context, cmdLine);
                     break;
                 }
                 case "list": {
@@ -70,6 +74,20 @@ public class ScriptDirective extends AbstractDirective {
     }
 
     public void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruSession sessionContext = context.session();
+        List<NaruResourceInfo> naruResourceInfos = sessionContext.routineManager().list();
+        naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
+        int index = 1;
+        for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,
+                    NMsg.ofStyledKeyword(naruResourceInfo.isPublicSession() ? "public" : "private"),
+                    NMsg.ofStyledPrimary1(naruResourceInfo.getUuid()),
+                    NMsg.ofStyledString(naruResourceInfo.getName()))
+            );
+            index++;
+        }
+    }
+    public void executeShow(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
 
         NaruRoutineManager sm = sessionContext.routineManager();
@@ -202,7 +220,7 @@ public class ScriptDirective extends AbstractDirective {
 
     public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
-        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("script"));
+        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("routine"));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list <n1>-<p1>,<n2>-<p2>", kk));
@@ -212,19 +230,19 @@ public class ScriptDirective extends AbstractDirective {
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop intervals"));
 
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s clear", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           clear script"));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           clear routine"));
 
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s load <name>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           load script (or default 'main')"));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           load routine (or default 'main')"));
 
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s unload", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           unload script (back to 'main')"));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           unload routine (back to 'main')"));
 
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s run", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           run script"));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           run routine"));
 
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s name", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show script name"));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show routine name"));
 
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
@@ -239,26 +257,26 @@ public class ScriptDirective extends AbstractDirective {
             name = "main";
         }
         sm.switchRoutine(name);
-        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded script context: %s", name));
+        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded routine context: %s", name));
     }
 
     public void executeUnload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
         NaruRoutineManager sm = sessionContext.routineManager();
         sm.switchRoutine("main");
-        context.session().log(NaruLogMode.PROGRESS, NMsg.ofC("Unloaded script context. Back to main."));
+        context.session().log(NaruLogMode.PROGRESS, NMsg.ofC("Unloaded routine context. Back to main."));
     }
 
     public void executeRun(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
         NaruRoutineManager sm = sessionContext.routineManager();
-        sessionContext.runner().invokeScript(sessionContext, sm.getCurrentRoutineName());
+        sessionContext.runner().invokeRoutine(sessionContext, sm.getCurrentRoutineName());
     }
 
     public void executeName(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
         NaruRoutineManager sm = sessionContext.routineManager();
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current script: %s", sm.getCurrentRoutineName()));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current routine: %s", sm.getCurrentRoutineName()));
     }
 
     @Override

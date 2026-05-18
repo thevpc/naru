@@ -7,11 +7,38 @@ import java.util.*;
 import java.util.function.IntPredicate;
 
 public class NaruRoutineImpl implements NaruRoutine {
-    private final String name;
+    private String uuid;
+    private String name;
+    private boolean publicRoutine;
     private final TreeMap<Integer, String> lines = new TreeMap<>();
 
     public NaruRoutineImpl(String name) {
         this.name = name;
+    }
+
+    @Override
+    public boolean isPublicRoutine() {
+        return publicRoutine;
+    }
+
+    @Override
+    public NaruRoutine setPublicRoutine(boolean publicRoutine) {
+        this.publicRoutine = publicRoutine;
+        return this;
+    }
+
+    public String uuid() {
+        return uuid;
+    }
+
+    public NaruRoutineImpl setUuid(String uuid) {
+        this.uuid = uuid;
+        return this;
+    }
+
+    public NaruRoutineImpl setName(String name) {
+        this.name = name;
+        return this;
     }
 
     @Override

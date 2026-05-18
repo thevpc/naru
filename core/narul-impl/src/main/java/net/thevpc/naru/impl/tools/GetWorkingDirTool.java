@@ -11,8 +11,6 @@ import net.thevpc.naru.api.tool.NaruRegistry;
  */
 public class GetWorkingDirTool implements NaruTool {
 
-    private static final int MAX_OUTPUT_CHARS = 8_000;
-
     public GetWorkingDirTool() {
     }
 

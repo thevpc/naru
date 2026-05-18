@@ -3,7 +3,7 @@ package net.thevpc.naru.api.agent;
 import java.util.List;
 
 public interface NaruSessionManager {
-    List<NaruSessionInfo> list();
+    List<NaruResourceInfo> list();
 
     int clear();
 

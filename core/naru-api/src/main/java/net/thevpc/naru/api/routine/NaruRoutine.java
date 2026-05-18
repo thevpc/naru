@@ -7,6 +7,12 @@ import java.util.TreeMap;
 import java.util.function.IntPredicate;
 
 public interface NaruRoutine {
+    String uuid();
+
+    boolean isPublicRoutine();
+
+    NaruRoutine setPublicRoutine(boolean publicRoutine);
+
     String getName();
 
     void putLine(int lineNumber, String text);

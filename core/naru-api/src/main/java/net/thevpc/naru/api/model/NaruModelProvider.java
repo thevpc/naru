@@ -1,8 +1,10 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Abstraction over any LLM backend (Ollama, OpenAI, Anthropic, …).
@@ -19,7 +21,16 @@ public interface NaruModelProvider {
 
     /**
      * Fetch the list of available models from this provider.
+     *
      * @return a list of model names
      */
     List<String> findModelIds();
+
+    void setParam(String name, String value);
+    NOptional<String> getParam(String name);
+    Set<String> getParamNames();
+
+    boolean isEnabled() ;
+
+    void setEnabled(boolean enabled) ;
 }

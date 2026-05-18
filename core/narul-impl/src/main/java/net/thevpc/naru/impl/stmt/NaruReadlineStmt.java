@@ -67,7 +67,7 @@ public class NaruReadlineStmt extends NaruStatement {
             if (session.isForever()) {
                 session.pushStatement(NaruStatementHelper.ofReadLine());
             }
-            session.runner().runDirective(line, session);
+            session.runner().invokeDirective(line, session);
             return;
         }
 

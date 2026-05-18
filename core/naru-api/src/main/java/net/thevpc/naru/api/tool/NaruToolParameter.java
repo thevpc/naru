@@ -30,6 +30,14 @@ public class NaruToolParameter {
         return new NaruToolParameter(name, s, required);
     }
 
+    public static NaruToolParameter string(String name, String description, boolean required,String defaultValue) {
+        Map<String, Object> s = new LinkedHashMap<>();
+        s.put("type", "string");
+        s.put("description", description);
+        s.put("defaultValue", defaultValue);
+        return new NaruToolParameter(name, s, required);
+    }
+
     public static NaruToolParameter integer(String name, String description, boolean required) {
         Map<String, Object> s = new LinkedHashMap<>();
         s.put("type", "integer");
@@ -37,10 +45,26 @@ public class NaruToolParameter {
         return new NaruToolParameter(name, s, required);
     }
 
+    public static NaruToolParameter integer(String name, String description, boolean required,int defaultValue) {
+        Map<String, Object> s = new LinkedHashMap<>();
+        s.put("type", "integer");
+        s.put("description", description);
+        s.put("defaultValue", defaultValue);
+        return new NaruToolParameter(name, s, required);
+    }
+
     public static NaruToolParameter bool(String name, String description, boolean required) {
         Map<String, Object> s = new LinkedHashMap<>();
         s.put("type", "boolean");
         s.put("description", description);
+        return new NaruToolParameter(name, s, required);
+    }
+
+    public static NaruToolParameter bool(String name, String description, boolean required, boolean defaultValue) {
+        Map<String, Object> s = new LinkedHashMap<>();
+        s.put("type", "boolean");
+        s.put("description", description);
+        s.put("defaultValue", defaultValue);
         return new NaruToolParameter(name, s, required);
     }
 

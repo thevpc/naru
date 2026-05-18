@@ -25,7 +25,8 @@ public class HelpDirective extends AbstractDirective {
         NaruSession sessionContext = context.session();
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Available directives: "));
         for (NaruDirective value : naruToolRegistry.directives().values()) {
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  %s : %s",
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  %s%s : %s",
+                    NMsg.ofStyledSeparator("/"),
                     NMsg.ofStyledPrimary1(value.getName()),
                     value.getDescription()
             ));

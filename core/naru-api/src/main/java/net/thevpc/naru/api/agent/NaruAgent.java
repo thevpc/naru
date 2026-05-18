@@ -15,13 +15,12 @@ public interface NaruAgent {
     NaruRegistry registry();
 
     void invokeStep(NaruSession sessionContext);
-
-    void invokeScript(NaruSession sessionContext, String scriptName);
+    void invokeRoutine(NaruSession sessionContext, String scriptName);
+    void invokeDirective(String line, NaruSession sessionContext);
 
     void runInteractive();
 
     void runTask(String task);
 
     void log(NaruLogMode mode, NMsg message);
-    void runDirective(String line, NaruSession sessionContext);
 }

@@ -11,5 +11,7 @@ public interface NaruToolCallContext {
     NOptional<Object> arg(String name);
     NOptional<String> stringArg(String name);
     NOptional<Number> numberArg(String name);
+    NOptional<Integer> intArg(String name);
+    NOptional<Long> longArg(String name);
     NOptional<Boolean> booleanArg(String name);
 }

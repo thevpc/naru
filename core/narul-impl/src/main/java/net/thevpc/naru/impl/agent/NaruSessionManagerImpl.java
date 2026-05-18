@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.agent;
 
-import net.thevpc.naru.api.agent.NaruSessionInfo;
+import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSessionManager;
 import net.thevpc.nuts.elem.NElementFormatterStyle;
 import net.thevpc.nuts.elem.NElementReader;
@@ -22,11 +22,23 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
     }
 
     @Override
-    public List<NaruSessionInfo> list() {
-        List<NaruSessionInfo> a = new ArrayList<>();
-        for (NPath p : sessionDir().list().stream().filter(x -> x.getName().endsWith(".tson")).collect(Collectors.toList())) {
-            a.add(NElementReader.ofTson().read(p, NaruSessionInfo.class));
+    public List<NaruResourceInfo> list() {
+        List<NaruResourceInfo> a = new ArrayList<>();
+        for (NPath p : sessionDir(false).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
+            NaruResourceInfo s = NElementReader.ofTson().read(p, NaruResourceInfo.class);
+            s.setPublicSession(false);
+            a.add(s);
         }
+        for (NPath p : sessionDir(true).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
+            if(p.name().endsWith("snapshot.tson")){
+                //just skip snapshot!
+                continue;
+            }
+            NaruResourceInfo s = NElementReader.ofTson().read(p, NaruResourceInfo.class);
+            s.setPublicSession(true);
+            a.add(s);
+        }
+        a.sort((o1, o2) -> o2.getModificationDate().compareTo(o1.getModificationDate()));
         return a;
     }
 
@@ -34,7 +46,11 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
     @Override
     public int clear() {
         int count = 0;
-        for (NPath p : sessionDir().list().stream().filter(x -> x.getName().endsWith(".tson")).collect(Collectors.toList())) {
+        for (NPath p : sessionDir(false).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
+            p.delete();
+            count++;
+        }
+        for (NPath p : sessionDir(true).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
             p.delete();
             count++;
         }
@@ -42,14 +58,30 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
         return count;
     }
 
-    private NPath sessionDir() {
-        return adapter.projectDir().resolve(".naru/sessions/");
+    public synchronized NaruSessionManager saveSnapshot() {
+        NPath snapshotFile = adapter.projectDir().resolve(".naru/sessions/snapshot.tson");
+        NElementWriter.ofTson().setNtf(false).setFormatter(NElementFormatterStyle.PRETTY)
+                .write(adapter.toElement(), snapshotFile.mkParentDirs());
+        return this;
+    }
+
+    private NPath sessionDir(boolean publicSession) {
+        if (publicSession) {
+            return adapter.projectDir().resolve(".naru/sessions/");
+        }
+        return adapter.projectDir().resolve(".naru/local/sessions/");
     }
 
     public NaruSessionManager load(String uuid) {
-        NPath s = sessionFile(uuid);
+        NPath s = sessionFile(uuid, true);
         if (s.isRegularFile()) {
             adapter.load(NElementReader.ofTson().read(s));
+            adapter.setPublicSession(true); return this;
+        }
+        s = sessionFile(uuid, false);
+        if (s.isRegularFile()) {
+            adapter.load(NElementReader.ofTson().read(s));
+            adapter.setPublicSession(false);
         }
         return this;
     }
@@ -60,9 +92,13 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
     }
 
     public NaruSessionManager saveCurrent() {
-        NPath path = sessionFile(adapter.uuid());
+        NPath pathOk = sessionFile(adapter.uuid(), adapter.isPublicSession());
+        NPath pathKo = sessionFile(adapter.uuid(), !adapter.isPublicSession());
         NElementWriter.ofTson().setNtf(false).setFormatter(NElementFormatterStyle.PRETTY)
-                .write(adapter.toElement(), path.mkParentDirs());
+                .write(adapter.toElement(), pathOk.mkParentDirs());
+        if (pathKo.isRegularFile()) {
+            pathKo.delete();
+        }
         return this;
     }
 
@@ -71,8 +107,8 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
     }
 
     public String findByUuidOrName(String uuidOrName) {
-        List<NaruSessionInfo> list = list();
-        for (NaruSessionInfo s : list) {
+        List<NaruResourceInfo> list = list();
+        for (NaruResourceInfo s : list) {
             if (Objects.equals(s.getUuid(), uuidOrName)) {
                 return s.getUuid();
             }
@@ -81,7 +117,7 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
             return adapter.uuid();
         }
 
-        for (NaruSessionInfo s : list) {
+        for (NaruResourceInfo s : list) {
             if (Objects.equals(NStringUtils.trim(s.getName()), NStringUtils.trim(uuidOrName))) {
                 return s.getUuid();
             }
@@ -99,8 +135,13 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
     }
 
     public boolean delete(String uuid) {
-        NPath a = sessionFile(uuid);
+        NPath a = sessionFile(uuid, true);
         boolean b = false;
+        if (a.isRegularFile()) {
+            a.delete();
+            b = true;
+        }
+        a = sessionFile(uuid, false);
         if (a.isRegularFile()) {
             a.delete();
             b = true;
@@ -112,8 +153,8 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
         return b;
     }
 
-    private NPath sessionFile(String uuid) {
-        return sessionDir().resolve(uuid + ".tson");
+    private NPath sessionFile(String uuid, boolean publicSession) {
+        return sessionDir(publicSession).resolve(uuid + ".tson");
     }
 
 }

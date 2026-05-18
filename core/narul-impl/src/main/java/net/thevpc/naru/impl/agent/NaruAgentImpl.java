@@ -232,7 +232,7 @@ public class NaruAgentImpl implements NaruAgent {
         }
     }
 
-    public void runDirective(String line, NaruSession sessionContext) {
+    public void invokeDirective(String line, NaruSession sessionContext) {
         if (line.startsWith("/")) {
             line = line.substring(1).trim();
         } else {
@@ -251,7 +251,7 @@ public class NaruAgentImpl implements NaruAgent {
     }
 
     @Override
-    public void invokeScript(NaruSession sessionContext, String scriptName) {
+    public void invokeRoutine(NaruSession sessionContext, String scriptName) {
         NaruRoutineManager sm = sessionContext.routineManager();
         String previousContext = sm.getCurrentRoutineName();
         sm.switchRoutine(scriptName);

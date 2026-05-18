@@ -37,6 +37,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private boolean forever;
     private final List<RunContextImpl> todo = new ArrayList<>();
     private final NaruAgent runner;
+    private boolean publicSession;
     private NPath workingDir;
     private NaruModelKey model;
     /**
@@ -48,7 +49,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * Optional: additional context the user wants to share with every tool.
      */
     private String extraContext;
-    private final NaruRoutineManager routineManager = new NaruRoutineManagerImpl();
+    private final NaruRoutineManager routineManager;
     private String uuid = UUID.randomUUID().toString();
     private String name = "NO_NAME";
     private Instant creationDate = Instant.now();
@@ -57,6 +58,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final NaruSessionManagerImpl sessionManager;
     // Add to NaruSessionImpl fields:
     private final Map<String, Object> globalState = new ConcurrentHashMap<>();
+
+    public boolean isPublicSession() {
+        return publicSession;
+    }
+
+    public NaruSessionImpl setPublicSession(boolean publicSession) {
+        this.publicSession = publicSession;
+        return this;
+    }
 
     // Accessors
     public void setGlobalState(String key, Object value) {
@@ -80,6 +90,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.model = model;
         this.meteringService = meteringService;
         this.sessionManager = new NaruSessionManagerImpl(this);
+        this.routineManager = new NaruRoutineManagerImpl(this);
     }
 
     @Override
@@ -90,8 +101,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     @Override
     public NaruSession setName(String name) {
         this.name = NStringUtils.firstNonBlankTrimmed(name, "NO_NAME");
+        this.fireChanged();
         return this;
     }
+
 
     @Override
     public Map<String, NaruModelKey> modelAliases() {
@@ -205,6 +218,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     protected void fireChanged() {
         this.modificationDate = Instant.now();
+        sessionManager.saveSnapshot();
     }
 
     @Override
@@ -235,19 +249,40 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             pushStatement(NaruStatementHelper.ofReadLine());
         }
         this.extraContext = null;
+        sessionManager.saveSnapshot();
         return this;
     }
 
 
     @Override
     public NaruSession save() {
-        save(projectDir.resolve(".naru/sessions/" + uuid() + ".tson"));
+        NPath publicFile = projectDir.resolve(".naru/sessions/" + uuid() + ".tson");
+        NPath privateFile = projectDir.resolve(".naru/local/sessions/" + uuid() + ".tson");
+        if (publicSession) {
+            save(publicFile);
+            if (privateFile.isRegularFile()) {
+                privateFile.delete();
+            }
+        } else {
+            save(privateFile);
+            if (privateFile.isRegularFile()) {
+                publicFile.delete();
+            }
+        }
         return this;
     }
 
     @Override
     public NaruSession load() {
-        load(projectDir.resolve(".naru/sessions/" + uuid() + ".tson"));
+        NPath publicFile = projectDir.resolve(".naru/sessions/" + uuid() + ".tson");
+        NPath privateFile = projectDir.resolve(".naru/local/sessions/" + uuid() + ".tson");
+        if (publicFile.isRegularFile()) {
+            load(publicFile);
+            setPublicSession(true);
+        } else {
+            load(privateFile);
+            setPublicSession(false);
+        }
         return this;
     }
 
@@ -309,6 +344,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 history.add(new NaruMessage(nElement));
             }
         }
+        sessionManager.saveSnapshot();
         return this;
     }
 
@@ -352,7 +388,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 while ((p != null && (p.equals(projectDir) || p.startsWith(projectDir)))) {
                     dirs.add(p);
                     if (p.equals(projectDir)) break;
-                    p = p.getParent();
+                    p = p.parent();
                 }
                 // reverse: projectDir first, workingDir last (specific wins)
                 Collections.reverse(dirs);
