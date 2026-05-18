@@ -27,7 +27,7 @@ public class NaruApp {
 
     @NAppRunner
     public void run() {
-        new NaruCmdLineProcessor(NApp.of().getCmdLine()).run();
+        new NaruCmdLineProcessor(NApp.of().cmdLine()).run();
     }
 }
 
