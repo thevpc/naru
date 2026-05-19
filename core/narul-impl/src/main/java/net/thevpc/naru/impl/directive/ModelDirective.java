@@ -41,6 +41,10 @@ public class ModelDirective extends AbstractDirective {
                     executeSet(context, cmdLine);
                     break;
                 }
+                case "set-global": {
+                    executeSetGlobal(context, cmdLine);
+                    break;
+                }
                 case "alias": {
                     if (cmdLine.isEmpty()) {
                         executeListAlias(context, cmdLine);
@@ -115,11 +119,13 @@ public class ModelDirective extends AbstractDirective {
 
             NMsg extra2 = null;
             if (mkey.equals(sessionContext.model())) {
-                extra2 = NMsg.ofC(" %s%s%s",
+                extra2 = NMsg.ofC("%s%s%s",
                         NMsg.ofStyledSeparator("("),
                         NMsg.ofStyledSuccess("*"),
                         NMsg.ofStyledSeparator(")")
                 );
+            } else {
+                extra2 = NMsg.ofC("   ");
             }
 
             NMsg extra3 = null;
@@ -131,11 +137,11 @@ public class ModelDirective extends AbstractDirective {
                         NMsg.ofStyledSeparator("]")
                 );
             }
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  [%s] %s%s%s%s",
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  %s[%s] %s%s%s",
+                    extra2,
                     NMsg.ofStyledNumber(zformat.format(index)),
                     model.toText(),
                     extra1 == null ? "" : extra1,
-                    extra2 == null ? "" : extra2,
                     extra3 == null ? "" : extra3
             ));
             index++;
@@ -155,10 +161,13 @@ public class ModelDirective extends AbstractDirective {
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s set <name>", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           switch current model"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s set-alias <name>=<value>", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s set-global <name>", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           switch current model and save it as global model"));
+
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s alias <name>=<value>", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           add an alias to a model"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s unset-alias <name>", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s unalias <name>", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           remove an alias from a model"));
 
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
@@ -175,9 +184,9 @@ public class ModelDirective extends AbstractDirective {
         String[] stringArray = cmdLine.toStringArray();
         int wordIndex = pos.wordIndex();
         String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
-        
+
         if (wordIndex == 1) {
-            addCandidates(candidates, currentArg, "name", "list", "help");
+            addCandidates(candidates, currentArg, "name", "list", "help", "alias", "unalias", "set", "get");
         }
         return candidates;
     }
@@ -202,6 +211,26 @@ public class ModelDirective extends AbstractDirective {
         }
         context.session().setModel(k);
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("switch to model : %s",
+                sessionContext.model().toMsg()));
+    }
+
+    public void executeSetGlobal(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruSession sessionContext = context.session();
+        NOptional<NArg> n = cmdLine.next();
+        if (!n.isPresent()) {
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to set.").asError());
+            return;
+        }
+        NArg a = n.get();
+        NaruModelKey k = sessionContext.findModel(a.image()).orNull();
+        if (k == null) {
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
+                    a.image()).asError());
+        }
+        context.session().setModel(k);
+        assert k != null;
+        context.session().setProjectEnv("model", k.toString());
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("switch global model : %s",
                 sessionContext.model().toMsg()));
     }
 

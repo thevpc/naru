@@ -50,7 +50,7 @@ public class SearchWebScriptTool implements NaruTool {
                 .parameter("q", query)
                 .header("User-Agent", "Mozilla/5.0")
                 .run();
-        String contentAsString = response.getContentAsString();
+        String contentAsString = response.contentAsString();
         String contentAsString2 = contentAsString.replaceAll("<[^>]*>", "").replace("&nbsp;", " ").replace("&amp;", "&")
                 .replace("&lt;", "<")
                 .replace("&gt;", ">")

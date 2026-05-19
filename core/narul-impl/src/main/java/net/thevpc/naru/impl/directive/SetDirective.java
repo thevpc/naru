@@ -1,21 +1,7 @@
 package net.thevpc.naru.impl.directive;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
-import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.routine.RunContext;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
-import net.thevpc.naru.impl.util.NaruUtils;
-import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.command.NExec;
-import net.thevpc.nuts.core.NSession;
-import net.thevpc.nuts.text.NMsg;
-import net.thevpc.nuts.util.NBlankable;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.logging.Level;
 
 public class SetDirective extends AbstractDirective {
     public SetDirective() {
@@ -46,7 +32,7 @@ public class SetDirective extends AbstractDirective {
             current.setState(key, value);
         } else {
             // Fallback to global if no context active
-            context.session().setGlobalState(key, value);
+            context.session().setSessionEnv(key, value);
         }
 
         context.session().advancePcOrEnd();

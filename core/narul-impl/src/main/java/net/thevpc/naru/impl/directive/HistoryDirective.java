@@ -26,12 +26,16 @@ public class HistoryDirective extends AbstractDirective {
         NaruSession sessionContext = context.session();
         NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
         if (cmdLine.isEmpty()) {
-            executeList(context, cmdLine);
+            executeList(context, false, cmdLine);
         } else {
             NArg a = cmdLine.next().get();
             switch (a.image()) {
                 case "list": {
-                    executeList(context, cmdLine);
+                    executeList(context, false, cmdLine);
+                    break;
+                }
+                case "all": {
+                    executeList(context, true, cmdLine);
                     break;
                 }
                 case "drop": {
@@ -58,11 +62,11 @@ public class HistoryDirective extends AbstractDirective {
         }
     }
 
-    public void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public void executeList(NaruDirectiveCallContext context, boolean includeAll, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
-        List<NaruMessage> all = context.session().history();
+        List<NaruMessage> all = context.session().history(includeAll);
         Set<Integer> toShow = new HashSet<>();
-        int historySize = sessionContext.history().size();
+        int historySize = all.size();
         while (!cmdLine.isEmpty()) {
             String a = cmdLine.next().get().image();
             for (String range : a.split(",;")) {
@@ -127,7 +131,7 @@ public class HistoryDirective extends AbstractDirective {
             }
         }
         List<NaruToolCall> toolCalls = a.getToolCalls();
-        if(toolCalls!=null){
+        if (toolCalls != null) {
             for (NaruToolCall toolCall : toolCalls) {
                 sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %-9s%s [require] %s",
                         NMsg.ofStyledNumber(zformat.format(rowIndex)),

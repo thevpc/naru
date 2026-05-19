@@ -1,7 +1,7 @@
 package net.thevpc.naru.api.agent;
 
 public enum NaruSource {
-    SYSTEM, MD, DOTMD, USER;
+    SYSTEM, PROJECT_FOLDER, DOTMD, USER, SKILL;
 
     public String id() {
         return name().toLowerCase();

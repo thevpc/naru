@@ -7,6 +7,8 @@ import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.routine.RunContext;
+import net.thevpc.naru.api.skills.NaruSkill;
+import net.thevpc.naru.api.skills.NaruSkillManager;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.nuts.elem.NElement;
@@ -75,6 +77,7 @@ public interface NaruSession {
     NPath projectDir();
 
     NaruRoutineManager routineManager();
+    NaruSkillManager skillManager();
 
     NaruSession terminate();
 
@@ -142,7 +145,8 @@ public interface NaruSession {
 
     RunContext getTopContext();
 
-    void setGlobalState(String key, Object value);
+    void setProjectEnv(String key, String value);
+    void setSessionEnv(String key, Object value);
 
     void throwError(NMsg nMsg);
 
@@ -151,4 +155,12 @@ public interface NaruSession {
     NaruSession pushStatementModelCall();
 
     NaruSession prepareWorkdir();
+
+    NaruSkill findSkill(String name);
+    boolean loadSkill(String name);
+
+    boolean unloadSkill(String name);
+
+    List<NaruResourceInfo> listSkills();
+
 }

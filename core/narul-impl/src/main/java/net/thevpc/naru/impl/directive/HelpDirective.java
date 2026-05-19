@@ -13,18 +13,16 @@ import net.thevpc.nuts.text.NMsg;
 import java.util.List;
 
 public class HelpDirective extends AbstractDirective {
-    private final NaruRegistryImpl naruToolRegistry;
 
-    public HelpDirective(NaruRegistryImpl naruToolRegistry) {
+    public HelpDirective() {
         super("help", "show help","?");
-        this.naruToolRegistry = naruToolRegistry;
     }
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
         NaruSession sessionContext = context.session();
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Available directives: "));
-        for (NaruDirective value : naruToolRegistry.directives().values()) {
+        for (NaruDirective value : context.session().registry().directives().values()) {
             sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  %s%s : %s",
                     NMsg.ofStyledSeparator("/"),
                     NMsg.ofStyledPrimary1(value.getName()),

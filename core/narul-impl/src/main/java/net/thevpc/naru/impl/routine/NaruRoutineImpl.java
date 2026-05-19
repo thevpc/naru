@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.routine;
 
+import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.agent.SubroutineDef;
 import net.thevpc.naru.api.routine.NaruRoutine;
 
@@ -9,23 +10,22 @@ import java.util.function.IntPredicate;
 public class NaruRoutineImpl implements NaruRoutine {
     private String uuid;
     private String name;
-    private boolean publicRoutine;
+    private NAruVisibility visibility;
     private final TreeMap<Integer, String> lines = new TreeMap<>();
 
     public NaruRoutineImpl(String name) {
         this.name = name;
     }
 
-    @Override
-    public boolean isPublicRoutine() {
-        return publicRoutine;
+    public NAruVisibility getVisibility() {
+        return visibility;
     }
 
-    @Override
-    public NaruRoutine setPublicRoutine(boolean publicRoutine) {
-        this.publicRoutine = publicRoutine;
+    public NaruRoutineImpl setVisibility(NAruVisibility visibility) {
+        this.visibility = visibility;
         return this;
     }
+
 
     public String uuid() {
         return uuid;

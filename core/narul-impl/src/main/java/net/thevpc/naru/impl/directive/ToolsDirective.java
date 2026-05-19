@@ -12,18 +12,16 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 public class ToolsDirective extends AbstractDirective {
-    private final NaruRegistryImpl naruToolRegistry;
 
-    public ToolsDirective(NaruRegistryImpl naruToolRegistry) {
+    public ToolsDirective() {
         super("tools", "show tools");
-        this.naruToolRegistry = naruToolRegistry;
     }
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
         NaruAgent r = context.session().runner();
         r.log(NaruLogMode.AGENT_RESPONSE,NMsg.ofC("Available tools:"));
-        for (Map.Entry<String, NaruTool> e : naruToolRegistry.tools().entrySet().stream().sorted(Comparator.comparing(a -> a.getKey())).collect(Collectors.toList())) {
+        for (Map.Entry<String, NaruTool> e : context.session().registry().tools().entrySet().stream().sorted(Comparator.comparing(a -> a.getKey())).collect(Collectors.toList())) {
             r.log(NaruLogMode.AGENT_RESPONSE,NMsg.ofC("  %s - %s",
                     NMsg.ofStyledPrimary1(e.getKey())
                     , e.getValue().getDescription(context.session())));

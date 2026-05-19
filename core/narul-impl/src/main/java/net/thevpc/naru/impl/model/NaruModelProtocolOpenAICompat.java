@@ -28,7 +28,7 @@ public class NaruModelProtocolOpenAICompat implements NaruModelProtocol {
         this.baseUrl = baseUrl.replaceAll("/$", "");
         this.http = NWebCli.of()
                 .connectTimeout(NDuration.ofSeconds(30))
-                .setPrefix(this.baseUrl)
+                .prefix(this.baseUrl)
         ;
         nElementReader = NElementReader.ofJson();
         nElementReader.mapperStore().setDeserializer(NaruResponse.class, new NElementDeserializer() {
@@ -139,7 +139,7 @@ public class NaruModelProtocolOpenAICompat implements NaruModelProtocol {
 
         try {
             NWebResponse response = request.run().ifErrorThrow();
-            String responseString = response.getContentAsString();
+            String responseString = response.contentAsString();
             return parseResponse(responseString);
         } catch (Exception e) {
             throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with Ollama at %s: %s", baseUrl, e.getMessage(), e));

@@ -6,11 +6,13 @@ import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.routine.RunContext;
 import net.thevpc.naru.api.stmt.NaruStatement;
-import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.impl.budget.NaruMeteringServiceImpl;
+import net.thevpc.naru.impl.cmd.NAruTerminalFormatter;
+import net.thevpc.naru.impl.cmd.NaruNCmdLineAutoCompleteResolver;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.naru.impl.stmt.NaruStatementHelper;
+import net.thevpc.naru.impl.util.StoredStringMap;
 import net.thevpc.nuts.artifact.NVersion;
 import net.thevpc.nuts.io.*;
 import net.thevpc.nuts.log.NLogger;
@@ -45,9 +47,9 @@ public class NaruAgentImpl implements NaruAgent {
      * Optional step listener for CLI progress printing.
      */
     private NLogger logger;
-    private boolean enableRichTermInvoked;
-    private final NaruModelKey currentModel;
     private NPath projectDirectory;
+    private StoredStringMap<NaruModelKey> modelAliases;
+    private StoredStringMap<String> projectEnv;
 
     public NaruAgentImpl(NaruAgentConfig config) {
         this(new NaruRegistryImpl(config)
@@ -58,7 +60,6 @@ public class NaruAgentImpl implements NaruAgent {
         this.registry = registry;
         this.config = config;
         this.logger = NLogger.STDOUT;
-        this.currentModel = registry.findModel(config.getModel()).get();
     }
 
     @Override
@@ -69,11 +70,28 @@ public class NaruAgentImpl implements NaruAgent {
     @Override
     public NaruAgent setProjectDirectory(NPath projectDirectory) {
         this.projectDirectory = projectDirectory;
+        modelAliases = new StoredStringMap<>(projectDirectory.resolve(".naru/config/model-aliases.tson"), NaruModelKey.class)
+                .setSerializer(x->x.toElement())
+                .setDeserializer(x->NaruModelKey.parse(x.toString()).get())
+        ;
+        projectEnv = new StoredStringMap<>(projectDirectory.resolve(".naru/config/env.tson"), String.class);
         return this;
     }
 
+    public StoredStringMap<String> getProjectEnv() {
+        return projectEnv;
+    }
+
+    public StoredStringMap<NaruModelKey> getModelAliases() {
+        return modelAliases;
+    }
+
     public NaruModelKey model() {
-        return currentModel;
+        NaruModelKey model = projectEnv.get("model").flatMap(x -> NaruModelKey.parse(x)).orNull();
+        if (model == null) {
+            model = registry.modelsKeys().stream().findFirst().orElse(null);
+        }
+        return model;
     }
 
     public NaruAgent logger(NLogger logger) {
@@ -98,10 +116,9 @@ public class NaruAgentImpl implements NaruAgent {
         sessionContext.addHistory(NaruMessage.system(buildSystemPrompt(sessionContext)));
         NOut.resetLine();
         log(NaruLogMode.RAW, NMsg.ofC(
-                ""+
                 "╭╮╷╭─╮╭─╮╷ ╷\n" +
-                "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
-                "╵ ╵╵ ╵╵╰╴╰─╯ v%s", NVersion.of("0.8.9")));
+                        "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
+                        "╵ ╵╵ ╵╵╰╴╰─╯ v%s", NVersion.of("0.8.9")));
         log(NaruLogMode.RAW, NMsg.ofC("%s Starting model: %s",
                 NMsg.ofStyledSeparator("🤖"),
                 NMsg.ofStyledPrimary1(config.getModel())
@@ -114,12 +131,10 @@ public class NaruAgentImpl implements NaruAgent {
     }
 
     private void enableRichTerm(NaruSession sessionContext) {
-        if (!enableRichTermInvoked) {
-            enableRichTermInvoked = true;
-            NSystemTerminal.enableRichTerm();
-        }
-        NIO.of().getSystemTerminal()
+        NSystemTerminal.enableRichTerm();
+        NIO.of().systemTerminal()
                 .setCommandAutoCompleteResolver(new NaruNCmdLineAutoCompleteResolver(sessionContext))
+                .setCommandHighlighter(new NAruTerminalFormatter(this))
         ;
     }
 
@@ -145,24 +160,7 @@ public class NaruAgentImpl implements NaruAgent {
 
     public void invokeStep(NaruSession sessionContext) {
         NaruStatement op = sessionContext.popStatement();
-        switch (op.type) {
-            case READLINE: {
-                op.exec(sessionContext);
-                break;
-            }
-            case MODEL_CALL: {
-                op.exec(sessionContext);
-                break;
-            }
-            case TOOL_CALL: {
-                op.exec(sessionContext);
-                break;
-            }
-            case EXEC_ROUTINE_LINE: {
-                op.exec(sessionContext);
-                break;
-            }
-        }
+        op.exec(sessionContext);
     }
 
     private void handleCallDirective(String raw, NaruSession ctx, NaruRoutine routine) {
@@ -188,7 +186,7 @@ public class NaruAgentImpl implements NaruAgent {
         Integer nextLine = routine.getLines().higherKey(ctx.pc());
 
         // Push new context frame with returnPc + params
-        ctx.pushContext(sub.startLine(),nextLine); // Adds new RunContext at index 0
+        ctx.pushContext(sub.startLine(), nextLine); // Adds new RunContext at index 0
 
         // Bind params to new frame
         for (int i = 0; i < sub.params().size(); i++) {
@@ -274,7 +272,7 @@ public class NaruAgentImpl implements NaruAgent {
         sessionContext.addHistory(NaruMessage.system(sysPrompt));
 
         Integer firstLine = script.getLines().firstKey();
-        sessionContext.pushContext(firstLine,null);
+        sessionContext.pushContext(firstLine, null);
         sessionContext.pushStatement(NaruStatementHelper.ofExecRoutineLine());
     }
 
@@ -313,7 +311,15 @@ public class NaruAgentImpl implements NaruAgent {
                 break;
             }
             case MODEL_RESPONSE: {
-                logLines(message, 1, "\u258C", 3);
+                for (NText line : NAruTerminalFormatter.formatOutputLines(message.toString(), NText.ofStyled("  \u258C", NTextStyle.primary3()))) {
+                    logger.log(NMsg.ofC("%s", line));
+                }
+                break;
+            }
+            case MODEL_THINKING: {
+                for (NText line : NAruTerminalFormatter.formatOutputLines(message.toString(), NText.ofStyled("  \u258C", NTextStyle.primary9()))) {
+                    logger.log(NMsg.ofC("%s", line));
+                }
                 break;
             }
             case AGENT_RESPONSE: {
@@ -334,10 +340,6 @@ public class NaruAgentImpl implements NaruAgent {
             }
             case DEBUG: {
                 logLines(message, 2, "\u258C", 8);
-                break;
-            }
-            case THINKING: {
-                logLines(message, 3, "\u258C", 9);
                 break;
             }
             default: {

@@ -1,4 +1,4 @@
-package net.thevpc.naru.impl.agent;
+package net.thevpc.naru.impl.cmd;
 
 import net.thevpc.naru.api.tool.NaruDirective;
 import net.thevpc.nuts.cmdline.DefaultNArgCandidate;

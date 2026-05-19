@@ -36,6 +36,7 @@ public interface NaruRegistry {
 
     String dispatch(NaruToolCall toolCall, NaruSession context);
 
+    NOptional<NaruDirective> findDirective(String name);
     void dispatchSlash(String name, String argument, NaruSession context);
 
     boolean isEmpty();

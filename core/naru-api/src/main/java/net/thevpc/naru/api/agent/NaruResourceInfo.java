@@ -5,18 +5,19 @@ import java.time.Instant;
 public class NaruResourceInfo {
     private String uuid;
     private String name;
+    private NAruVisibility mode;
     private Instant creationDate;
     private Instant modificationDate;
-    private boolean publicSession;
 
-    public boolean isPublicSession() {
-        return publicSession;
+    public NAruVisibility getMode() {
+        return mode;
     }
 
-    public NaruResourceInfo setPublicSession(boolean publicSession) {
-        this.publicSession = publicSession;
+    public NaruResourceInfo setMode(NAruVisibility mode) {
+        this.mode = mode;
         return this;
     }
+
 
     public String getUuid() {
         return uuid;

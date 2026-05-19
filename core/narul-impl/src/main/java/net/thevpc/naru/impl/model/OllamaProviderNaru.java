@@ -39,7 +39,7 @@ public class OllamaProviderNaru extends AbstractNaruModelProvider {
                 setParam("url",value);
                 this.http = NWebCli.of()
                         .connectTimeout(NDuration.ofSeconds(30))
-                        .setPrefix(value)
+                        .prefix(value)
                 ;
                 break;
             }
@@ -70,7 +70,7 @@ public class OllamaProviderNaru extends AbstractNaruModelProvider {
                 .jsonRequestBody(body);
         try {
             NWebResponse response = request.run().ifErrorThrow();
-            String json = response.getContentAsString();
+            String json = response.contentAsString();
             NElement root = nElementReader.read(json);
             NaruModelCapabilities naruModelCapabilities = parseCapabilities(root);
             cachedCapabilities.put(model,naruModelCapabilities);
@@ -153,7 +153,7 @@ public class OllamaProviderNaru extends AbstractNaruModelProvider {
                 .readTimeout(NDuration.ofSeconds(10));
         try {
             NWebResponse response = request.run().ifErrorThrow();
-            String json = response.getContentAsString();
+            String json = response.contentAsString();
             NElement root = nElementReader.read(json);
             List<String> models = new ArrayList<>();
             if (root.isAnyObject()) {

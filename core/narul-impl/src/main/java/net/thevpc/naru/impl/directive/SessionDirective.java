@@ -90,7 +90,7 @@ public class SessionDirective extends AbstractDirective {
         int index = 1;
         for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
             sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,
-                    NMsg.ofStyledKeyword(naruResourceInfo.isPublicSession() ? "public" : "private"),
+                    NMsg.ofStyledKeyword(naruResourceInfo.getMode().name().toLowerCase()),
                     NMsg.ofStyledPrimary1(naruResourceInfo.getUuid()),
                     NMsg.ofStyledString(naruResourceInfo.getName()))
             );

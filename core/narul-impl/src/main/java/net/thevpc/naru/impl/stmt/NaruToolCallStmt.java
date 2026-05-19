@@ -6,12 +6,13 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.util.NaruUtils;
-import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.elem.NObjectElement;
-import net.thevpc.nuts.elem.NObjectElementBuilder;
+import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
+
+import java.util.Map;
 
 public class NaruToolCallStmt extends NaruStatement {
     public NaruToolCall call;
@@ -53,9 +54,14 @@ public class NaruToolCallStmt extends NaruStatement {
 
     @Override
     public void exec(NaruSession session) {
-        session.log(NaruLogMode.PROGRESS, NMsg.ofC("%s Tool: %s(%s)",
+        NUpletElementBuilder t = NElement.ofUpletBuilder(call.getName());
+        for (Map.Entry<String, Object> e : call.getArguments().entrySet()) {
+            t.set(e.getKey(), NElements.of().toElement(e.getValue()));
+        }
+
+        session.log(NaruLogMode.PROGRESS, NMsg.ofC("%s Tool: %s",
                         NMsg.ofStyledPrimary9("🔧"),
-                        NMsg.ofStyledPrimary1(call.getName()), call.getArguments()
+                        NText.ofCode("tson", t.build().toString())
                 )
         );
         String result = session.registry().dispatch(call, session);

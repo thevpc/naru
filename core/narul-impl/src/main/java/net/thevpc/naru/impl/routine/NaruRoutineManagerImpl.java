@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.routine;
 
+import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
@@ -56,16 +57,16 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
     @Override
     public List<NaruResourceInfo> list() {
         List<NaruResourceInfo> a = new ArrayList<>();
-        for (NPath p : routinesDir(false).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
+        for (NPath p : routinesDir(NAruVisibility.PUBLIC).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
             NaruResourceInfo s = NElementReader.ofTson().read(p, NaruResourceInfo.class);
-            s.setPublicSession(false);
+            s.setMode(NAruVisibility.PUBLIC);
             s.setCreationDate(p.creationInstant());
             s.setModificationDate(p.lastModifiedInstant());
             a.add(s);
         }
-        for (NPath p : routinesDir(true).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
+        for (NPath p : routinesDir(NAruVisibility.PRIVATE).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
             NaruResourceInfo s = NElementReader.ofTson().read(p, NaruResourceInfo.class);
-            s.setPublicSession(true);
+            s.setMode(NAruVisibility.PRIVATE);
             s.setCreationDate(p.creationInstant());
             s.setModificationDate(p.lastModifiedInstant());
             a.add(s);
@@ -84,8 +85,8 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
     }
 
 
-    private NPath routinesDir(boolean publicSession) {
-        if (publicSession) {
+    private NPath routinesDir(NAruVisibility publicSession) {
+        if (publicSession==NAruVisibility.PUBLIC) {
             return session.projectDir().resolve(".naru/routines/");
         }
         return session.projectDir().resolve(".naru/local/routines/");
@@ -141,20 +142,20 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
     }
 
     private synchronized NaruRoutine load(String uuid) {
-        NPath path1 = routinesDir(false).resolve(uuid + ".md");
-        NPath path2 = routinesDir(true).resolve(uuid);
+        NPath path1 = routinesDir(NAruVisibility.PRIVATE).resolve(uuid + ".md");
+        NPath path2 = routinesDir(NAruVisibility.PUBLIC).resolve(uuid);
         NPath path;
-        boolean publicSession = false;
+        NAruVisibility visibility = NAruVisibility.PUBLIC;
         if (path1.isRegularFile()) {
-            publicSession = false;
+            visibility = NAruVisibility.PRIVATE;
             path = path1;
         } else if (path2.isRegularFile()) {
-            publicSession = true;
+            visibility = NAruVisibility.PUBLIC;
             path = path2;
         } else {
             return null;
         }
-        NaruRoutine r = new NaruRoutineImpl(path.name());
+        NaruRoutineImpl r = new NaruRoutineImpl(path.name());
         String text = path.readString();
         clearCurrent();
         boolean metadata = true;
@@ -169,7 +170,7 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
                         switch (n) {
                             case "name": {
                                 if (NBlankable.isBlank(content)) {
-                                    ((NaruRoutineImpl) r).setName(content);
+                                    r.setName(content);
                                 }
                                 break;
                             }
@@ -193,7 +194,7 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
                 }
             }
         }
-        r.setPublicRoutine(publicSession);
+        r.setVisibility(visibility);
         save(r);
         return r;
     }
@@ -206,9 +207,9 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
         if (NBlankable.isBlank(r.uuid())) {
             ((NaruRoutineImpl) r).setUuid(UUID.randomUUID().toString());
         }
-        NPath pub = routinesDir(true);
-        NPath priv = routinesDir(false);
-        if (r.isPublicRoutine()) {
+        NPath pub = routinesDir(NAruVisibility.PUBLIC);
+        NPath priv = routinesDir(NAruVisibility.PRIVATE);
+        if (r.getVisibility()==NAruVisibility.PUBLIC) {
             if (priv.isRegularFile()) {
                 priv.delete();
             }

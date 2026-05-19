@@ -156,18 +156,26 @@ public class NaruRegistryImpl implements NaruRegistry {
         }
     }
 
-    @Override
-    public void dispatchSlash(String name, String argument, NaruSession context) {
-        NaruDirective tool = stools.get(name);
-        if (tool == null) {
+    public NOptional<NaruDirective> findDirective(String name) {
+        NaruDirective d = stools.get(name);
+        if (d == null) {
             String s = stoolsAliases.get(name);
             if (s != null) {
-                tool = stools.get(s);
+                d = stools.get(s);
             }
-            if (tool == null) {
-                context.log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + stools.keySet()).asError());
-                return;
+            if (d == null) {
+                return NOptional.ofNamedEmpty(NMsg.ofC("directive '%s'", name));
             }
+        }
+        return NOptional.of(d);
+    }
+
+    @Override
+    public void dispatchSlash(String name, String argument, NaruSession context) {
+        NaruDirective tool = findDirective(name).orNull();
+        if (tool == null) {
+            context.log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + stools.keySet()).asError());
+            return;
         }
         try {
             tool.execute(new NaruDirectiveCallContextImpl(name, argument, context));
@@ -198,11 +206,10 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     public NaruRegistry registerDefaults() {
         this.registerTool(new FileReadTool());
-        this.registerTool(new FileReadLinesTool());
+        this.registerTool(new FileReadTool());
         this.registerTool(new FileAppendTool());
         this.registerTool(new FileEditLinesTool());
         this.registerTool(new WriteFileTool());
-        this.registerTool(new ListFilesTool());
         this.registerTool(new RunShellTool());
         this.registerTool(new MavenCompileTool());
         this.registerTool(new MavenTestTool());
@@ -214,14 +221,13 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerTool(new SetWorkingDirTool());
         this.registerTool(new DelegateModelTool());
         this.registerTool(new RoutineListLinesTool());
-        this.registerTool(new FolderFindTool());
-        this.registerTool(new FolderGrepTool());
+        this.registerTool(new FolderSearchTool());
         this.registerTool(new FileGrepTool());
 
         this.registerDirective(new RoutineDirective());
         this.registerDirective(new ExitDirective());
-        this.registerDirective(new HelpDirective(this));
-        this.registerDirective(new ToolsDirective(this));
+        this.registerDirective(new HelpDirective());
+        this.registerDirective(new ToolsDirective());
         this.registerDirective(new StatDirective());
         this.registerDirective(new ModelDirective());
         this.registerDirective(new PwdDirective());
@@ -231,6 +237,8 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerDirective(new ShDirective());
         this.registerDirective(new LsDirective());
         this.registerDirective(new SetDirective());
+        this.registerDirective(new SkillDirective());
+        this.registerDirective(new SystemDirective());
 
         registerModelProvider(new OllamaProviderNaru(config.getProviderUrl()));
         return this;

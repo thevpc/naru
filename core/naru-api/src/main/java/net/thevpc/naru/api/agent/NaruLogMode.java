@@ -8,5 +8,5 @@ public enum NaruLogMode {
     MODEL_RESPONSE,
     AGENT_RESPONSE,
     RAW,
-    THINKING,
+    MODEL_THINKING,
 }

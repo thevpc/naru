@@ -69,6 +69,15 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         return e;
     }
 
+    public static NaruMessage of(NElement element) {
+        if(element==null){
+            return null;
+        }
+        if(element.isNull()){
+            return null;
+        }
+        return new NaruMessage(element);
+    }
     public NaruMessage(NElement element) {
         NObjectElement o = element.asObject().get();
         this.role = NaruRole.valueOf(o.getStringValue("role").get());
