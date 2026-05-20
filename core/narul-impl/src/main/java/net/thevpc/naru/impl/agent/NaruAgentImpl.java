@@ -22,6 +22,7 @@ import net.thevpc.nuts.text.NTextStyle;
 import net.thevpc.nuts.util.*;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * The core agent loop.
@@ -110,7 +111,18 @@ public class NaruAgentImpl implements NaruAgent {
         if (pwd == null) {
             pwd = NPath.ofUserDirectory();
         }
-        NaruModelKey model = registry.findModel(config.getModel()).get();
+        NaruModelKey model = registry.findModel(config.getModel()).orNull();
+        if(model==null){
+            List<NaruModelInfo> any = registry.modelsInfos()
+                    .stream().filter(x->x.capabilities().isTools()).collect(Collectors.toList());
+            if(any.isEmpty()){
+                NOut.println(NMsg.ofC("model %s not found. actually no model (with tools capability) was found at all",config.getModel()).asError());
+                return;
+            }else{
+                model=any.get(0).key();
+                NOut.println(NMsg.ofC("model %s not found. auto select %s",config.getModel(),model.toMsg()).asWarning());
+            }
+        }
         NaruSession sessionContext = new NaruSessionImpl(this, model, pwd.toAbsolute(), meteringService);
         enableRichTerm(sessionContext);
         sessionContext.addHistory(NaruMessage.system(buildSystemPrompt(sessionContext)));
@@ -274,6 +286,7 @@ public class NaruAgentImpl implements NaruAgent {
         Integer firstLine = script.getLines().firstKey();
         sessionContext.pushContext(firstLine, null);
         sessionContext.pushStatement(NaruStatementHelper.ofExecRoutineLine());
+        sessionContext.runStep();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

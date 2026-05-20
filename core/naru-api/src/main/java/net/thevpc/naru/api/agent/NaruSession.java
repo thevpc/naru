@@ -163,4 +163,5 @@ public interface NaruSession {
 
     List<NaruResourceInfo> listSkills();
 
+    NaruSession runStep();
 }
