@@ -13,10 +13,10 @@ import net.thevpc.nuts.util.NStringUtils;
 
 import java.util.List;
 
-public class NAruTerminalFormatter implements NTerminalFormatter {
+public class NaruTerminalFormatter implements NTerminalFormatter {
     private final NaruAgentImpl naruAgent;
 
-    public NAruTerminalFormatter(NaruAgentImpl naruAgent) {
+    public NaruTerminalFormatter(NaruAgentImpl naruAgent) {
         this.naruAgent = naruAgent;
     }
 

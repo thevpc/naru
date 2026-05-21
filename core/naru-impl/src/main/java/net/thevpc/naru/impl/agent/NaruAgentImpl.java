@@ -5,10 +5,11 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.routine.RunContext;
+import net.thevpc.naru.api.routine.SubroutineDef;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.impl.budget.NaruMeteringServiceImpl;
-import net.thevpc.naru.impl.cmd.NAruTerminalFormatter;
+import net.thevpc.naru.impl.cmd.NaruTerminalFormatter;
 import net.thevpc.naru.impl.cmd.NaruNCmdLineAutoCompleteResolver;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.naru.impl.stmt.NaruStatementHelper;
@@ -146,7 +147,7 @@ public class NaruAgentImpl implements NaruAgent {
         NSystemTerminal.enableRichTerm();
         NIO.of().systemTerminal()
                 .commandAutoCompleteResolver(new NaruNCmdLineAutoCompleteResolver(sessionContext))
-                .commandHighlighter(new NAruTerminalFormatter(this))
+                .commandHighlighter(new NaruTerminalFormatter(this))
         ;
     }
 
@@ -324,13 +325,13 @@ public class NaruAgentImpl implements NaruAgent {
                 break;
             }
             case MODEL_RESPONSE: {
-                for (NText line : NAruTerminalFormatter.formatOutputLines(message.toString(), NText.ofStyled("  \u258C", NTextStyle.primary3()))) {
+                for (NText line : NaruTerminalFormatter.formatOutputLines(message.toString(), NText.ofStyled("  \u258C", NTextStyle.primary3()))) {
                     logger.log(NMsg.ofC("%s", line));
                 }
                 break;
             }
             case MODEL_THINKING: {
-                for (NText line : NAruTerminalFormatter.formatOutputLines(message.toString(), NText.ofStyled("  \u258C", NTextStyle.primary9()))) {
+                for (NText line : NaruTerminalFormatter.formatOutputLines(message.toString(), NText.ofStyled("  \u258C", NTextStyle.primary9()))) {
                     logger.log(NMsg.ofC("%s", line));
                 }
                 break;

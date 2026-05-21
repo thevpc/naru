@@ -15,7 +15,7 @@
     </properties>
     <modules>
         <module>core/naru-api</module>
-        <module>core/narul-impl</module>
+        <module>core/naru-impl</module>
         <module>app</module>
     </modules>
     <build>

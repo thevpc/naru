@@ -1,7 +1,6 @@
 package net.thevpc.naru.api.routine;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
-import net.thevpc.naru.api.agent.SubroutineDef;
 
 import java.util.Map;
 import java.util.TreeMap;

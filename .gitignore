@@ -25,4 +25,4 @@ replay_pid*
 /.crush/
 /app/target/
 /core/naru-api/target/
-/core/narul-impl/target/
+/core/naru-impl/target/

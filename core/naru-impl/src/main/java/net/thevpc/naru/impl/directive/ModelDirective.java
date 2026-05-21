@@ -262,13 +262,13 @@ public class ModelDirective extends AbstractDirective {
             return;
         }
         NArg a = n.get();
-        if (a.toLiteral().asString().orNull() == null) {
+        if (a.asLiteral().asString().orNull() == null) {
             sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to set.").asError());
         }
-        NaruModelKey k = sessionContext.findModel(a.toLiteral().asString().orNull()).orNull();
+        NaruModelKey k = sessionContext.findModel(a.asString().orNull()).orNull();
         if (k == null) {
             sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
-                    a.toLiteral().asString().orNull()).asError());
+                    a.asString().orNull()).asError());
             return;
         }
         NaruModelKey oldAliasTarget = context.session().findModelAlias(a.key()).orNull();

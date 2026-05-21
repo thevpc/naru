@@ -1,7 +1,8 @@
 package net.thevpc.naru.impl.routine;
 
 import java.util.List;
-import net.thevpc.naru.api.agent.*;
+
+import net.thevpc.naru.api.routine.SubroutineDef;
 
 public class SubroutineDefImpl implements SubroutineDef {
     private int startLine;

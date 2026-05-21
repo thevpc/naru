@@ -7,7 +7,7 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.skills.NaruSkill;
 import net.thevpc.naru.api.skills.NaruSkillManager;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
-import net.thevpc.naru.impl.cmd.NAruTerminalFormatter;
+import net.thevpc.naru.impl.cmd.NaruTerminalFormatter;
 import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NArgCandidate;
@@ -118,7 +118,7 @@ public class SkillDirective extends AbstractDirective {
         }
 
         String context2 = cs.getLines().stream().collect(Collectors.joining("\n"));
-        List<NText> linesOk = NAruTerminalFormatter.formatMarkdown(context2, null).splitLines();
+        List<NText> linesOk = NaruTerminalFormatter.formatMarkdown(context2, null).splitLines();
         Set<Integer> toShow = NaruUtils.parseLineIndicesToShow(linesOk.size(),cmdLine);
         NaruUtils.showItems(linesOk, toShow, sessionContext);
     }

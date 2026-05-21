@@ -18,7 +18,7 @@ import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-public class FolderSearchTool implements NaruTool {
+public class FolderFindTool implements NaruTool {
 
     private static final int MAX_TOTAL_MATCHES = 100;
     private static final int MAX_OUTPUT_CHARS = 10_000;

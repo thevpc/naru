@@ -219,9 +219,9 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerTool(new DiffFilesTool());
         this.registerTool(new GetWorkingDirTool());
         this.registerTool(new SetWorkingDirTool());
-        this.registerTool(new DelegateModelTool());
+        this.registerTool(new ModelDelegateTool());
         this.registerTool(new RoutineListLinesTool());
-        this.registerTool(new FolderSearchTool());
+        this.registerTool(new FolderFindTool());
         this.registerTool(new FileGrepTool());
 
         this.registerDirective(new RoutineDirective());

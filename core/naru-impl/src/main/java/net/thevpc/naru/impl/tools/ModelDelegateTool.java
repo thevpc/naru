@@ -13,9 +13,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class DelegateModelTool implements NaruTool {
+public class ModelDelegateTool implements NaruTool {
 
-    public DelegateModelTool() {
+    public ModelDelegateTool() {
     }
 
     @Override
