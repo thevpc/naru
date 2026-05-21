@@ -229,7 +229,7 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
         for (Map.Entry<Integer, String> e : r.getLines().entrySet()) {
             sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
         }
-        pub.writeString(sb.toString());
+        pub.mkParentDirs().writeString(sb.toString());
     }
 
     @Override

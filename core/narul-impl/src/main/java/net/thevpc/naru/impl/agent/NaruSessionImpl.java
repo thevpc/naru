@@ -956,4 +956,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     public List<NaruResourceInfo> listSkills() {
         return skills.stream().map(x->skillManager.findSkillInfo(x)).filter(x->x!=null).collect(Collectors.toList());
     }
+
+    @Override
+    public NaruSession runStep() {
+        runner.invokeStep(this);
+        return this;
+    }
 }
