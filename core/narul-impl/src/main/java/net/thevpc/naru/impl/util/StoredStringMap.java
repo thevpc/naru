@@ -56,7 +56,7 @@ public class StoredStringMap<T> {
         for (Map.Entry<String, T> e : map.entrySet()) {
             m2.set(e.getKey(), serializeValue(e.getValue()));
         }
-        NElementWriter.ofTson().setNtf(false).setFormatter(NElementFormatterStyle.PRETTY).write(map, file);
+        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY).write(map, file);
     }
 
     private T deserializeValue(NElement value) {

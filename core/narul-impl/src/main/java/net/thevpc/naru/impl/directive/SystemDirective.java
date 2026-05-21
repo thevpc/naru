@@ -32,7 +32,7 @@ public class SystemDirective extends AbstractDirective {
                 }
                 e.directory(naruSession.workingDir()).failFast(false);
                 String result = e
-                        .getGrabbedAllString();
+                        .grabbedAll();
                 naruSession.addHistory(NaruMessage.user(NMsg.ofC("call   : system %s", context.argument()).toString()));
                 naruSession.addHistory(NaruMessage.user(NMsg.ofC("exit code %s", e.exitCode()).toString()));
                 naruSession.addHistory(NaruMessage.user(NMsg.ofC("result : \n%s", NaruUtils.stripAnsi(result)).toString()));

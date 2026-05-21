@@ -61,7 +61,7 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
 
     public synchronized NaruSessionManager saveSnapshot() {
         NPath snapshotFile = adapter.projectDir().resolve(".naru/sessions/snapshot.tson");
-        NElementWriter.ofTson().setNtf(false).setFormatter(NElementFormatterStyle.PRETTY)
+        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
                 .write(adapter.toElement(), snapshotFile.mkParentDirs());
         return this;
     }
@@ -95,7 +95,7 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
     public NaruSessionManager saveCurrent() {
         NPath pathOk = sessionFile(adapter.uuid(), adapter.isPublicSession());
         NPath pathKo = sessionFile(adapter.uuid(), !adapter.isPublicSession());
-        NElementWriter.ofTson().setNtf(false).setFormatter(NElementFormatterStyle.PRETTY)
+        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
                 .write(adapter.toElement(), pathOk.mkParentDirs());
         if (pathKo.isRegularFile()) {
             pathKo.delete();

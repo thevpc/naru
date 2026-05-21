@@ -57,7 +57,7 @@ public class RunShellTool implements NaruTool {
                     .directory(cwd)
                     .failFast(true);
             String grabbedAllString = nExec
-                    .getGrabbedAllString();
+                    .grabbedAll();
             int exitCode = nExec.exitCode();
             return "EXIT_CODE=" + exitCode + "\n" + grabbedAllString;
 

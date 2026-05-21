@@ -229,7 +229,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSession save(NPath path) {
-        NElementWriter.ofTson().setNtf(false).setFormatter(NElementFormatterStyle.PRETTY)
+        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
                 .write(toElement(), path.mkParentDirs());
         return this;
     }

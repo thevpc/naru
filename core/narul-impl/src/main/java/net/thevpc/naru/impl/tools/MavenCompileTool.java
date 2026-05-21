@@ -56,7 +56,7 @@ public class MavenCompileTool implements NaruTool {
                     .failFast(true)
                     .maxLines(300)
                     .directory(projectDir);
-            output.append(exec.getGrabbedAllString());
+            output.append(exec.grabbedAll());
             return "EXIT_CODE=" + exec.exitCode() + "\n" + output;
         } catch (Exception e) {
             return "ERROR running maven: " + e.getMessage();

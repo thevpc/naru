@@ -133,8 +133,8 @@ public class NaruAgentImpl implements NaruAgent {
     private void enableRichTerm(NaruSession sessionContext) {
         NSystemTerminal.enableRichTerm();
         NIO.of().systemTerminal()
-                .setCommandAutoCompleteResolver(new NaruNCmdLineAutoCompleteResolver(sessionContext))
-                .setCommandHighlighter(new NAruTerminalFormatter(this))
+                .commandAutoCompleteResolver(new NaruNCmdLineAutoCompleteResolver(sessionContext))
+                .commandHighlighter(new NAruTerminalFormatter(this))
         ;
     }
 

@@ -24,7 +24,7 @@ public class ShDirective extends AbstractDirective {
             session.runWith(() -> {
                 NExec e = NExec.of("nsh","--progress=none", "-c", context.argument()).directory(naruSession.workingDir()).failFast(false);
                 String result = e
-                        .getGrabbedAllString();
+                        .grabbedAll();
                 naruSession.addHistory(NaruMessage.user(NMsg.ofC("call   : nsh -c %s", context.argument()).toString()));
                 naruSession.addHistory(NaruMessage.user(NMsg.ofC("exit code %s", e.exitCode()).toString()));
                 naruSession.addHistory(NaruMessage.user(NMsg.ofC("result : \n%s", NaruUtils.stripAnsi(result)).toString()));

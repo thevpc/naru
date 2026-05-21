@@ -34,7 +34,7 @@ public class LsDirective extends AbstractDirective {
             session.runWith(()->{
                 NExec e = NExec.of(cmd.toArray(new String[0])).directory(context.session().workingDir()).failFast(false);
                 String result = e
-                        .getGrabbedAllString();
+                        .grabbedAll();
                 context.session().addHistory(NaruMessage.user(NMsg.ofC("call   : %s", NCmdLine.of(cmd)).toString()));
                 context.session().addHistory(NaruMessage.user(NMsg.ofC("exit code %s", e.exitCode()).toString()));
                 context.session().addHistory(NaruMessage.user(NMsg.ofC("result : \n%s", NaruUtils.stripAnsi(result)).toString()));
