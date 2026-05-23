@@ -15,7 +15,7 @@ import java.util.List;
 
 public class CdDirective extends AbstractDirective {
     public CdDirective() {
-        super("cd", "change directory");
+        super("cd","general", "change directory");
     }
 
     @Override

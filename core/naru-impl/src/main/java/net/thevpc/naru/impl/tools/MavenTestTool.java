@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
@@ -32,7 +33,7 @@ public class MavenTestTool implements NaruTool {
 
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
-        return NaruRegistry.buildDefinition(
+        return new NaruToolDefinitionFunction(
                 getName(), getDescription(session),
                 NaruToolParameter.string("project_dir", "Path to the Maven project (defaults to agent project dir)", false),
                 NaruToolParameter.string("test_class", "Specific test class to run, e.g. 'com.example.MyTest' (optional)", false)

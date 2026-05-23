@@ -57,9 +57,9 @@ public class NaruExecRoutineLineStmt extends NaruStatement {
         if (lineText == null) {
             session.log(NaruLogMode.PROGRESS, NMsg.ofC("Script execution finished."));
             session.pc(-1);
-            if (session.isForever()) {
-                session.pushStatement(NaruStatementHelper.ofReadLine());
-            }
+//            if (session.isForever()) {
+//                session.pushStatement(NaruStatementHelper.ofReadLine());
+//            }
             return;
         }
 //        String trimmed = lineText.trim();
@@ -74,7 +74,6 @@ public class NaruExecRoutineLineStmt extends NaruStatement {
 
         String prompt = "Execute line " + session.pc() + ": " + lineText;
         session.log(NaruLogMode.SCRIPT, NMsg.ofC(prompt));
-        session.addHistory(NaruMessage.user(prompt));
-        session.pushStatement(NaruStatementHelper.ofModelCall());
+        session.pushStatement(NaruStatementHelper.ofModelCall(prompt));
     }
 }

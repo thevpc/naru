@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.tools;
 
+import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
@@ -26,7 +27,7 @@ public class RoutineAddLineTool implements NaruTool {
 
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
-        return NaruRegistry.buildDefinition(
+        return new NaruToolDefinitionFunction(
                 getName(),
                 getDescription(session),
                 NaruToolParameter.string("routine_name", "Name of the routine to modify. If empty, uses the currently active routine.", false),

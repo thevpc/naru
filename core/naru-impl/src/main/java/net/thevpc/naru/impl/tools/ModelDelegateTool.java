@@ -24,7 +24,7 @@ public class ModelDelegateTool implements NaruTool {
     }
 
     private String availableModelsDescription(NaruSession session) {
-        List<NaruModelInfo> models = session.registry().modelsInfos();
+        List<NaruModelInfo> models = session.registry().modelsInfos(session);
         if (models.isEmpty()) {
             return "Unknown (try any model name)";
         } else {
@@ -41,7 +41,7 @@ public class ModelDelegateTool implements NaruTool {
 
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
-        return NaruRegistry.buildDefinition(
+        return new NaruToolDefinitionFunction(
                 getName(),
                 getDescription(session),
                 NaruToolParameter.string("model_name", "The exact name of the model to use.", true),
@@ -72,7 +72,7 @@ public class ModelDelegateTool implements NaruTool {
         }
 
         messages.add(msg);
-        NaruModelKey model = context.session().findModel(modelName).orNull();
+        NaruModelConfig model = context.session().findModel(modelName).orNull();
         if (model == null) {
             return "Error: Model not found : " + modelName;
         }

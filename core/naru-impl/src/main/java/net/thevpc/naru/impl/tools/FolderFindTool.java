@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
@@ -9,6 +10,8 @@ import net.thevpc.naru.api.tool.NaruToolParameter;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.io.NPathPermission;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NBooleanRef;
+import net.thevpc.nuts.util.NIntRef;
 import net.thevpc.nuts.util.NIterator;
 
 import java.time.Instant;
@@ -31,7 +34,9 @@ public class FolderFindTool implements NaruTool {
     );
 
     @Override
-    public String getName() { return "folder_search"; }
+    public String getName() {
+        return "folder_find";
+    }
 
     @Override
     public String getDescription(NaruSession session) {
@@ -44,7 +49,7 @@ public class FolderFindTool implements NaruTool {
 
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
-        return NaruRegistry.buildDefinition(
+        return new NaruToolDefinitionFunction(
                 getName(), getDescription(session),
                 NaruToolParameter.string("path", "Directory to search", true),
                 NaruToolParameter.string("pattern", "Search text pattern inside file contents (optional)", false),
@@ -53,8 +58,8 @@ public class FolderFindTool implements NaruTool {
                 NaruToolParameter.integer("context_lines", "Lines of context before/after match", false, DEFAULT_CONTEXT),
                 NaruToolParameter.integer("max_matches", "Max matches per file", false, DEFAULT_MAX_MATCHES),
                 NaruToolParameter.integer("max_files", "Max files to scan", false, DEFAULT_MAX_FILES),
-                NaruToolParameter.string("include", "Glob patterns to include (comma-separated, e.g. '*.java,*.xml')", false),
-                NaruToolParameter.string("exclude", "Glob patterns to exclude (comma-separated)", false),
+                NaruToolParameter.string("include", "Glob patterns to include file by name (comma-separated, e.g. '*.java,*.xml')", false),
+                NaruToolParameter.string("exclude", "Glob patterns to exclude file by name (comma-separated, e.g. '*.java,*.xml')", false),
                 NaruToolParameter.bool("recursive", "Search subdirectories", false, true),
                 NaruToolParameter.string("modified_after", "ISO-8601 timestamp (e.g. 2026-05-01T00:00:00Z) or relative duration (e.g. -24h, -7d)", false),
                 NaruToolParameter.string("modified_before", "ISO-8601 timestamp or relative duration", false)
@@ -67,9 +72,9 @@ public class FolderFindTool implements NaruTool {
         String pattern = context.stringArg("pattern").onBlankEmpty().orNull();
         boolean regex = context.booleanArg("regex").orFalse();
         boolean caseSensitive = context.booleanArg("case_sensitive").orFalse();
-        int contextLines = (int) Math.max(0, context.intArg("context_lines").orElse(DEFAULT_CONTEXT));
-        int maxMatches = (int) Math.max(1, context.intArg("max_matches").orElse(DEFAULT_MAX_MATCHES));
-        int maxFiles = (int) Math.max(1, context.intArg("max_files").orElse(DEFAULT_MAX_FILES));
+        int contextLines = Math.max(0, context.intArg("context_lines").orElse(DEFAULT_CONTEXT));
+        int maxMatches = Math.max(1, context.intArg("max_matches").orElse(DEFAULT_MAX_MATCHES));
+        int maxFiles = Math.max(1, context.intArg("max_files").orElse(DEFAULT_MAX_FILES));
         boolean recursive = context.booleanArg("recursive").orTrue();
         String includeGlob = context.stringArg("include").orNull();
         String excludeGlob = context.stringArg("exclude").orNull();
@@ -85,6 +90,8 @@ public class FolderFindTool implements NaruTool {
         } catch (IllegalArgumentException e) {
             return "ERROR: " + e.getMessage();
         }
+        NBooleanRef truncated = NBooleanRef.of(false);
+        NIntRef totalMatches = NIntRef.of(0);
 
         NPath root = context.session().resolve(pathStr);
         if (!root.exists()) return "ERROR: Path not found: " + root;
@@ -106,57 +113,46 @@ public class FolderFindTool implements NaruTool {
 
         try {
             // Collect matching files applying names, globs, and historical time gates
-            List<NPath> files = collectFiles(root, recursive, includeMatcher, excludeMatcher, modifiedAfter, modifiedBefore, maxFiles);
-            if (files.isEmpty()) return "No files found matching specified filters in: " + root;
+
+            StringBuilder out = new StringBuilder();
+            List<NPath> files = collectFiles(root, recursive, includeMatcher, excludeMatcher, modifiedAfter, modifiedBefore, maxFiles, out,pattern,compiledPattern,root,truncated,totalMatches,contextLines,maxMatches);
+            if (files.isEmpty()) {
+                return "No files found matching specified filters in: " + root;
+            }
 
             // --- BRANCH A: Pure File Finder Operation ---
-            if (pattern == null) {
-                StringBuilder out = new StringBuilder();
-                for (NPath file : files) {
-                    out.append(root.relativize(file)).append("\n");
-                }
-                return String.format("Found %d file(s) in %s:\n%s", files.size(), root.name(), out.toString().trim());
+            if (truncated.get()){
+                out.append("\n[WARNING: Results limited. Refine search criteria.]\n");
             }
+            out.append(String.format("Found %d file(s) in %s:\n%s", files.size(), root.name(), out.toString().trim()));
 
-            // --- BRANCH B: Content Grepping Operation ---
-            StringBuilder out = new StringBuilder();
-            int totalMatches = 0;
-            boolean truncated = false;
-
-            for (NPath file : files) {
-                if (!file.exists() || !file.isRegularFile()) continue;
-                if (isBinary(file)) continue;
-                if (totalMatches >= MAX_TOTAL_MATCHES) {
-                    truncated = true;
-                    break;
-                }
-
-                String fileResult = searchFile(file, pattern, compiledPattern, caseSensitive, regex, contextLines, maxMatches, root);
-                if (fileResult != null) {
-                    totalMatches += countMatchesInResult(fileResult);
-                    out.append(fileResult).append("\n");
-                }
-
-                if (out.length() > MAX_OUTPUT_CHARS) {
-                    truncated = true;
-                    break;
-                }
-            }
-
-            if (totalMatches == 0) return "No content matches found for pattern '" + pattern + "' inside filtered files.";
-
-            String result = out.toString();
-            if (result.length() > MAX_OUTPUT_CHARS) {
-                result = result.substring(0, MAX_OUTPUT_CHARS) + "\n... [output truncated]";
-            }
-            if (truncated) result += "\n[WARNING: Results limited. Refine search criteria.]";
-
-            return String.format("Found %d match(es) across %d file(s) in %s:\n%s",
-                    totalMatches, files.size(), root.name(), result.trim());
-
+            return out.toString();
         } catch (Exception e) {
             return "ERROR searching directory: " + e.getMessage();
         }
+    }
+
+    private boolean fileContentMatches(String pattern, NPath file, Pattern compiledPattern, boolean caseSensitive, boolean regex, NBooleanRef truncated, NIntRef totalMatches,StringBuilder out,int contextLines,int maxMatches,NPath root) {
+        if (!file.exists() || !file.isRegularFile()) return false;
+        if (isBinary(file)) return false;
+        if (totalMatches.get() >= MAX_TOTAL_MATCHES) {
+            truncated.set(true);
+            return false;
+        }
+
+        String fileResult = searchFile(file, pattern, compiledPattern, caseSensitive, regex, contextLines, maxMatches, root);
+        if (fileResult != null) {
+            totalMatches.add(countMatchesInResult(fileResult));
+            out.append(fileResult).append("\n");
+            if (out.length() > MAX_OUTPUT_CHARS) {
+                truncated.set(true);
+                String u = out.substring(0, MAX_OUTPUT_CHARS) + "\n... [output truncated]";
+                out.delete(0, out.length());
+                out.append(u);
+            }
+            return true;
+        }
+        return false;
     }
 
     private String searchFile(NPath file, String pattern, Pattern compiled, boolean caseSensitive,
@@ -176,7 +172,8 @@ public class FolderFindTool implements NaruTool {
 
                 if (isMatch) {
                     if (fileMatches == 0) {
-                        sb.append("=== ").append(root.relativize(file)).append(" ===\n");
+                        sb.append("=== ").append(file).append(" ===\n");
+//                        sb.append("=== ").append(root.relativize(file)).append(" ===\n");
                     }
                     int bufferStart = lineNum - beforeBuffer.size();
                     for (String ctx : beforeBuffer) {
@@ -213,7 +210,14 @@ public class FolderFindTool implements NaruTool {
     }
 
     private List<NPath> collectFiles(NPath dir, boolean recursive, Predicate<NPath> include, Predicate<NPath> exclude,
-                                     Instant after, Instant before, int limit) {
+                                     Instant after, Instant before, int limit, StringBuilder out,String pattern,
+                                     Pattern compiledPattern,
+                                     NPath root,
+                                     NBooleanRef truncated,
+                                     NIntRef totalMatches,
+                                     int contextLines,
+                                     int maxMatches
+                                     ) {
         List<NPath> result = new ArrayList<>();
         Queue<NPath> queue = new ArrayDeque<>();
         queue.add(dir);
@@ -243,7 +247,19 @@ public class FolderFindTool implements NaruTool {
                 }
             } else {
                 if (matchesTimeBounds(current, after, before)) {
-                    result.add(current);
+                    if (pattern == null) {
+                        out.append(current).append("\n");
+//                        out.append(root.relativize(current).orElse(current.toString())).append("\n");
+                        result.add(current);
+                    }else{
+                        boolean matches = fileContentMatches(pattern, current, compiledPattern, true, true, truncated, totalMatches,out,contextLines, maxMatches, root);
+                        if (matches) {
+                            result.add(current);
+                            if(truncated.get()){
+                                return result;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -254,8 +270,7 @@ public class FolderFindTool implements NaruTool {
         try {
             Instant modTime = file.lastModifiedInstant();
             if (after != null && modTime.isBefore(after)) return false;
-            if (before != null && modTime.isAfter(before)) return false;
-            return true;
+            return before == null || !modTime.isAfter(before);
         } catch (Exception e) {
             // If we can't extract structural metadata, skip safely or exclude depending on strictness
             return false;
@@ -271,10 +286,14 @@ public class FolderFindTool implements NaruTool {
                 long magnitude = Long.parseLong(val.substring(1, val.length() - 1));
                 char unit = Character.toLowerCase(val.charAt(val.length() - 1));
                 switch (unit) {
-                    case 'h': return Instant.now().minusSeconds(magnitude * 3600);
-                    case 'd': return Instant.now().minusSeconds(magnitude * 86400);
-                    case 'm': return Instant.now().minusSeconds(magnitude * 60);
-                    default: throw new IllegalArgumentException("Unknown relative duration metric unit: " + unit);
+                    case 'h':
+                        return Instant.now().minusSeconds(magnitude * 3600);
+                    case 'd':
+                        return Instant.now().minusSeconds(magnitude * 86400);
+                    case 'm':
+                        return Instant.now().minusSeconds(magnitude * 60);
+                    default:
+                        throw new IllegalArgumentException("Unknown relative duration metric unit: " + unit);
                 }
             }
             return Instant.parse(val);
@@ -306,8 +325,11 @@ public class FolderFindTool implements NaruTool {
     }
 
     private List<NPath> safeList(NPath dir) {
-        try { return dir.list(); }
-        catch (Exception e) { return Collections.emptyList(); }
+        try {
+            return dir.list();
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
     }
 
     private int countMatchesInResult(String result) {

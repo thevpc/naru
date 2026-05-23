@@ -9,7 +9,8 @@ package net.thevpc.naru.api.tool;
 public interface NaruDirective {
 
     /** Machine-readable name used in the tool schema (no spaces). */
-    String getName();
+    String name();
+    String group();
     String[] getAliases();
 
     /** Human-readable description sent to the model. */

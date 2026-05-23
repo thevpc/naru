@@ -13,7 +13,7 @@ import java.util.logging.Level;
 
 public class ShDirective extends AbstractDirective {
     public ShDirective() {
-        super("sh", "run shell command");
+        super("sh","general", "run shell command");
     }
 
     @Override

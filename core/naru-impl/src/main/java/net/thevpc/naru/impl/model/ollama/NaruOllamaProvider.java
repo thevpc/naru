@@ -1,10 +1,17 @@
-package net.thevpc.naru.impl.model;
+package net.thevpc.naru.impl.model.ollama;
 
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.impl.model.NaruModelCapabilitiesImpl;
+import net.thevpc.naru.impl.model.openapi.NaruModelProtocolOpenAICompat;
+import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.log.NLog;
 import net.thevpc.nuts.net.NWebCli;
 import net.thevpc.nuts.net.NWebRequest;
 import net.thevpc.nuts.net.NWebResponse;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.time.NChronometer;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NOptional;
 
@@ -16,64 +23,80 @@ import java.util.*;
  * <p>Endpoint: POST {baseUrl}/api/chat
  * <p>Compatible with Ollama 0.2.8+ tool-calling format.
  */
-public class OllamaProviderNaru extends AbstractNaruModelProvider {
+public class NaruOllamaProvider extends AbstractNaruModelProvider {
 
-    private NWebCli http;
-    private final Map<String, NaruModelProtocol> protocols = new HashMap<>();
+    //    private NWebCli http;
+    private final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
     private final Map<String, NaruModelCapabilities> cachedCapabilities = new HashMap<>();
     private final NElementReader nElementReader;
 
-    public OllamaProviderNaru(String baseUrl) {
+    public NaruOllamaProvider() {
         super("ollama");
-        setParam("url",baseUrl);
         nElementReader = NElementReader.ofJson();
     }
 
-    @Override
-    protected void onParamChanged(String name, String value) {
-        switch (name){
-            case "url":{
-                value = value.replaceAll("/$", "");
-                // rest the param, wont be recursive because
-                // if not changed there will be no recall
-                setParam("url",value);
-                this.http = NWebCli.of()
-                        .connectTimeout(NDuration.ofSeconds(30))
-                        .prefix(value)
-                ;
-                break;
-            }
-        }
-    }
 
     @Override
-    public NOptional<NaruModelProtocol> getProtocol(String model) {
-        NaruModelCapabilities capabilities = getCapabilities(model);
+    public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        if (!model.provider().equals(getName())) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("protocol for %s", model));
+        }
+        NaruModelCapabilities capabilities = getCapabilities(model.model(), session);
         if (capabilities.isVision()) {
-            return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOpenAICompat(new NaruModelKey(getName(), model), getParam("url").get(), capabilities)));
+            return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOpenAICompat(model, getName(), capabilities)));
         }
-        return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOllamaNative(new NaruModelKey(getName(), model), getParam("url").get(), capabilities)));
+        return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOllamaNative(model, getName(), capabilities)));
     }
 
 
+    private String url(NaruSession session) {
+        String url = session.agent().env().get(getName() + ".url").flatMap(x -> x.asStringValue()).orElse("http://localhost:11434");
+        return url.replaceAll("/$", "");
+    }
 
-    public NaruModelCapabilities getCapabilities(String model) {
+    private NDuration connectTimeout(NaruSession session) {
+        return session.agent().env().get(getName() + ".connectTimeout").flatMap(x -> x.asStringValue())
+                .flatMap(x -> NDuration.parse(x))
+                .orElseGetOptionalFrom(
+                        () -> session.agent().env().get(getName() + ".timeout").flatMap(x -> x.asStringValue())
+                                .flatMap(x -> NDuration.parse(x))
+                )
+                .orElse(NDuration.ofSeconds(30));
+    }
+
+    private NDuration readTimeout(NaruSession session) {
+        return session.agent().env().get(getName() + ".readTimeout").flatMap(x -> x.asStringValue())
+                .flatMap(x -> NDuration.parse(x))
+                .orElseGetOptionalFrom(
+                        () -> session.agent().env().get(getName() + ".timeout").flatMap(x -> x.asStringValue())
+                                .flatMap(x -> NDuration.parse(x))
+                )
+                .orElse(NDuration.ofSeconds(30));
+    }
+
+    public NaruModelCapabilities getCapabilities(String model, NaruSession session) {
         NaruModelCapabilities c = cachedCapabilities.get(model);
-        if(c!=null){
+        if (c != null) {
             return c;
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
 
+        NWebCli http = NWebCli.of()
+                .connectTimeout(connectTimeout(session))
+                .prefix(url(session));
         NWebRequest request = http.POST("api/show")
-                .timeout(NDuration.ofSeconds(10))
+                .timeout(readTimeout(session))
                 .jsonRequestBody(body);
         try {
+            NChronometer chrono = NChronometer.of();
+            NaruUtils.logWebRequest(request,NMsg.ofC("checking capabilities of %s\n%s", model),body);
             NWebResponse response = request.run().ifErrorThrow();
             String json = response.contentAsString();
             NElement root = nElementReader.read(json);
             NaruModelCapabilities naruModelCapabilities = parseCapabilities(root);
-            cachedCapabilities.put(model,naruModelCapabilities);
+            cachedCapabilities.put(model, naruModelCapabilities);
+            NaruUtils.logWebResponse(request,NMsg.ofC("checking capabilities of %s\n%s", json),body,chrono);
             return naruModelCapabilities;
         } catch (Exception e) {
             // fallback — assume minimal capabilities
@@ -147,7 +170,10 @@ public class OllamaProviderNaru extends AbstractNaruModelProvider {
     }
 
     @Override
-    public List<String> findModelIds() {
+    public List<String> findModelIds(NaruSession session) {
+        NWebCli http = NWebCli.of()
+                .connectTimeout(NDuration.ofSeconds(30))
+                .prefix(url(session));
         NWebRequest request = http.GET("api/tags")
                 .connectTimeout(NDuration.ofSeconds(10))
                 .readTimeout(NDuration.ofSeconds(10));

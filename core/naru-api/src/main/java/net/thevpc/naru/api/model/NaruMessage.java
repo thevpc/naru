@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
  */
 public class NaruMessage implements NToElement, NCopiable,Cloneable {
 
+    private String sourceName;
     private NaruSource source=NaruSource.USER;
     private NaruRole role;
     private String content;
@@ -36,6 +37,15 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
     private List<NaruToolCall> toolCalls;
 
     public NaruMessage() {
+    }
+
+    public String getSourceName() {
+        return sourceName;
+    }
+
+    public NaruMessage setSourceName(String sourceName) {
+        this.sourceName = sourceName;
+        return this;
     }
 
     public NaruSource getSource() {

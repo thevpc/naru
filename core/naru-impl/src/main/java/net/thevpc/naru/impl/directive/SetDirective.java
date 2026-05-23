@@ -5,7 +5,7 @@ import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
 
 public class SetDirective extends AbstractDirective {
     public SetDirective() {
-        super("set", "set variable value");
+        super("set","routine", "set variable value");
     }
 
     @Override

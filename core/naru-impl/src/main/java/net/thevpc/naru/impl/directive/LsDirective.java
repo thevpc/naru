@@ -18,7 +18,7 @@ import java.util.logging.Level;
 
 public class LsDirective extends AbstractDirective {
     public LsDirective() {
-        super("ls", "list directory");
+        super("ls","general", "list directory");
     }
 
     @Override

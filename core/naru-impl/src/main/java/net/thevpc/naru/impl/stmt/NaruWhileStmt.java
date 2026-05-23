@@ -11,8 +11,9 @@ public class NaruWhileStmt extends NaruIncrementalStmt {
     public List<NaruStatement> branch;
     public boolean closed;
 
-    public NaruWhileStmt() {
+    public NaruWhileStmt(String condition) {
         super(Type.WHILE);
+        this.condition = condition;
     }
 
     public NaruWhileStmt(NElement element) {

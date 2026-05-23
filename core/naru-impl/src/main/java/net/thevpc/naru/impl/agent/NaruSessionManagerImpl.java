@@ -31,7 +31,7 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
             a.add(s);
         }
         for (NPath p : sessionDir(true).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
-            if(p.name().endsWith("snapshot.tson")){
+            if (p.name().endsWith("snapshot.tson")) {
                 //just skip snapshot!
                 continue;
             }
@@ -55,14 +55,23 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
             p.delete();
             count++;
         }
-        adapter.reset();
+        adapter.reset(false);
         return count;
     }
 
     public synchronized NaruSessionManager saveSnapshot() {
-        NPath snapshotFile = adapter.projectDir().resolve(".naru/sessions/snapshot.tson");
+        NPath snapshotFile = adapter.projectDir().resolve(".naru/local/sessions/snapshot.tson");
         NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
                 .write(adapter.toElement(), snapshotFile.mkParentDirs());
+        return this;
+    }
+
+    @Override
+    public NaruSessionManager restoreSnapshot() {
+        NPath snapshotFile = adapter.projectDir().resolve(".naru/local/sessions/snapshot.tson");
+        if (snapshotFile.isRegularFile()) {
+            adapter.load(NElementReader.ofTson().read(snapshotFile));
+        }
         return this;
     }
 
@@ -73,11 +82,18 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
         return adapter.projectDir().resolve(".naru/local/sessions/");
     }
 
+    @Override
+    public NaruSessionManager reload() {
+        load(adapter.uuid());
+        return this;
+    }
+
     public NaruSessionManager load(String uuid) {
         NPath s = sessionFile(uuid, true);
         if (s.isRegularFile()) {
             adapter.load(NElementReader.ofTson().read(s));
-            adapter.setPublicSession(true); return this;
+            adapter.setPublicSession(true);
+            return this;
         }
         s = sessionFile(uuid, false);
         if (s.isRegularFile()) {
@@ -148,7 +164,7 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
             b = true;
         }
         if (adapter.uuid().equals(uuid)) {
-            adapter.reset();
+            adapter.reset(false);
             b = true;
         }
         return b;

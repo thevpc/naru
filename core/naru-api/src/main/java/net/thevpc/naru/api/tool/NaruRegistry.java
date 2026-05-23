@@ -7,20 +7,7 @@ import net.thevpc.nuts.util.NOptional;
 import java.util.*;
 
 public interface NaruRegistry {
-    /**
-     * Build a {@link NaruToolDefinition} from a list of {@link NaruToolParameter}s.
-     * Intended to be used inside each tool's constructor.
-     */
-    static NaruToolDefinition buildDefinition(String name, String description,
-                                              NaruToolParameter... params) {
-        Map<String, Object> properties = new LinkedHashMap<>();
-        List<String> required = new ArrayList<>();
-        for (NaruToolParameter p : params) {
-            properties.put(p.getName(), p.getSchema());
-            if (p.isRequired()) required.add(p.getName());
-        }
-        return new NaruToolDefinition(name, description, properties, required);
-    }
+
 
     Map<String, NaruTool> tools();
 
@@ -37,6 +24,7 @@ public interface NaruRegistry {
     String dispatch(NaruToolCall toolCall, NaruSession context);
 
     NOptional<NaruDirective> findDirective(String name);
+
     void dispatchSlash(String name, String argument, NaruSession context);
 
     boolean isEmpty();
@@ -45,12 +33,13 @@ public interface NaruRegistry {
 
     Map<String, NaruModelProvider> modelProviders();
 
-    List<NaruModelInfo> modelsInfos();
-    List<NaruModelKey> modelsKeys();
+    List<NaruModelInfo> modelsInfos(NaruSession session);
 
-    NOptional<NaruModelKey> findModel(String keyOrName);
+    List<NaruModelKey> modelsKeys(NaruSession session);
+
+    NOptional<NaruModelKey> findModel(String keyOrName,NaruSession session);
 
     NOptional<NaruModelProvider> provider(String provider);
 
-    NOptional<NaruModelProtocol> protocol(NaruModelKey model);
+    NOptional<NaruModelProtocol> protocol(NaruModelConfig model,NaruSession session);
 }

@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
@@ -38,7 +39,7 @@ public class FileEditLinesTool implements NaruTool {
 
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
-        return NaruRegistry.buildDefinition(
+        return new NaruToolDefinitionFunction(
                 getName(), getDescription(session),
                 NaruToolParameter.string("path", "File path to edit", true),
                 NaruToolParameter.string("from", "Start line index (0-based inclusive, supports negatives)", true),

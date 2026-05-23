@@ -7,13 +7,20 @@ import java.util.List;
 
 public abstract class AbstractDirective implements NaruDirective {
     private String name;
+    private String group;
     private String description;
     private String[] aliases;
 
-    public AbstractDirective(String name, String description,String ...aliases) {
+    public AbstractDirective(String name, String group,String description,String ...aliases) {
         this.name = name;
+        this.group = group;
         this.description = description;
         this.aliases = aliases;
+    }
+
+    @Override
+    public String group() {
+        return group;
     }
 
     @Override
@@ -22,7 +29,7 @@ public abstract class AbstractDirective implements NaruDirective {
     }
 
     @Override
-    public String getName() {
+    public String name() {
         return name;
     }
 

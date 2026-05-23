@@ -8,6 +8,7 @@ import java.util.function.IntPredicate;
 public interface NaruSkill {
     NAruVisibility getVisibility();
     String getName();
+    String getSourceName();
 
     List<String> getLines();
 

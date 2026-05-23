@@ -24,6 +24,8 @@ public abstract class NaruStatement implements NToElement {
         END,
         WHILE,
         FOR,
+        DIRECTIVE_CALL,
+        DEF_ROUTINE_LINE,
     }
 
     public NaruStatement() {

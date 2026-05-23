@@ -7,7 +7,7 @@ import net.thevpc.nuts.text.NMsg;
 
 public class ExitDirective extends AbstractDirective {
     public ExitDirective() {
-        super("exit", "exit the agent");
+        super("exit","general", "exit the agent");
     }
 
     @Override

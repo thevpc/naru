@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 
 public class HistoryDirective extends AbstractDirective {
     public HistoryDirective() {
-        super("history", "print or manipulate history");
+        super("history","context", "print or manipulate history");
     }
 
     @Override
@@ -56,7 +56,7 @@ public class HistoryDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command %s", a.image()));
+                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
@@ -241,9 +241,11 @@ public class HistoryDirective extends AbstractDirective {
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s clear", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           clear history"));
 
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s all", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show all history (including agents, skills, tool calls and results)"));
+
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
-
     }
 
     public void executeTrim(NaruDirectiveCallContext context, NCmdLine cmdLine) {

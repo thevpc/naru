@@ -4,7 +4,7 @@ import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
 
 public class EndDirective extends AbstractDirective {
     public EndDirective() {
-        super("end", "end statement");
+        super("end","routine", "end statement");
     }
 
     @Override

@@ -41,7 +41,7 @@ public class StoredStringMap<T> {
 
     public NOptional<T> get(String k) {
         load();
-        return NOptional.ofNullable(map.get(k));
+        return NOptional.of(map.get(k));
     }
 
     public StoredStringMap<T> put(String k, T v) {

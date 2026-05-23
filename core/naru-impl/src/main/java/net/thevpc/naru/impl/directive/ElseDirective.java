@@ -4,7 +4,7 @@ import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
 
 public class ElseDirective extends AbstractDirective {
     public ElseDirective() {
-        super("else", "else statement");
+        super("else","routine", "else statement");
     }
 
     @Override

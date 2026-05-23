@@ -8,15 +8,15 @@ import net.thevpc.nuts.text.NMsg;
 
 public class ElseIfDirective extends AbstractDirective {
     public ElseIfDirective() {
-        super("elseif", "else statement");
+        super("elseif","routine", "elseif statement");
     }
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
         String raw = context.argument();
-        String assignment = raw.trim();
+        String condition = raw.trim();
 
-        NaruElseIfStmt stmt = new NaruElseIfStmt(assignment);
+        NaruElseIfStmt stmt = new NaruElseIfStmt(condition);
         context.session().pushStatement(stmt);
     }
 }

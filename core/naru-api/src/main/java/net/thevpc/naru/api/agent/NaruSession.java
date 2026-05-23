@@ -1,10 +1,7 @@
 package net.thevpc.naru.api.agent;
 
 import net.thevpc.naru.api.budget.NaruMeteringService;
-import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.model.NaruModelKey;
-import net.thevpc.naru.api.model.NaruResponse;
-import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.routine.RunContext;
 import net.thevpc.naru.api.skills.NaruSkill;
@@ -29,7 +26,7 @@ public interface NaruSession {
 
     NaruSession setForever(boolean forever);
 
-    NaruAgent runner();
+    NaruAgent agent();
 
     NaruStatement popStatement();
 
@@ -43,7 +40,7 @@ public interface NaruSession {
 
     NaruSession pushStatement(NaruStatement any);
 
-    NaruSession pushStatementReadlineForever();
+//    NaruSession pushStatementReadlineForever();
 
     int userQueriesCount();
 
@@ -61,12 +58,13 @@ public interface NaruSession {
 
     boolean hasMoreStatements();
 
-
     boolean removeHistoryAt(int index);
 
     List<NaruMessage> history();
 
     List<NaruMessage> history(boolean includeSystem);
+
+    List<NaruMessage> context(NaruSource... sources);
 
     int pc();
 
@@ -77,6 +75,7 @@ public interface NaruSession {
     NPath projectDir();
 
     NaruRoutineManager routineManager();
+
     NaruSkillManager skillManager();
 
     NaruSession terminate();
@@ -93,9 +92,9 @@ public interface NaruSession {
 
     int trimHistory(int count);
 
-    NaruModelKey model();
+    NaruModelConfig model();
 
-    NaruSession setModel(NaruModelKey model);
+    NaruSession setModel(NaruModelConfig model);
 
     NaruSession load(NElement element);
 
@@ -113,13 +112,13 @@ public interface NaruSession {
 
     NaruSession copy();
 
-    NaruSession reset();
+    NaruSession reset(boolean preserveIdentity);
 
     void removeModelAlias(String alias);
 
-    void addModelAlias(String alias, NaruModelKey model);
+    void addModelAlias(String alias, NaruModelConfig model);
 
-    NOptional<NaruModelKey> findModelAlias(String alias);
+    NOptional<NaruModelConfig> findModelAlias(String alias);
 
     Instant creationDate();
 
@@ -133,35 +132,43 @@ public interface NaruSession {
 
     NaruRegistry registry();
 
-    NOptional<NaruModelKey> findModel(String modelNameOrId);
+    NOptional<NaruModelConfig> findModel(String modelNameOrId);
 
-    Map<String, NaruModelKey> modelAliases();
+    Map<String, NaruModelConfig> modelAliases();
 
-    Map<NaruModelKey, List<String>> reversedModelAliases();
+    Map<NaruModelConfig, List<String>> reversedModelAliases();
 
-    NaruResponse chat(NaruModelKey modelKey, List<NaruMessage> messages, List<NaruToolDefinition> tools);
+    NaruResponse chat(NaruModelConfig modelKey, List<NaruMessage> messages, List<NaruToolDefinition> tools);
 
     NaruMeteringService meteringService();
 
     RunContext getTopContext();
 
-    void setProjectEnv(String key, String value);
+    NOptional<NElement> getProjectEnv(String key);
+
+    void setProjectEnv(String key, NElement value, NAruVisibility visibility);
+
     void setSessionEnv(String key, Object value);
 
     void throwError(NMsg nMsg);
 
     Object evalExpression(String condition);
 
-    NaruSession pushStatementModelCall();
+    NaruSession pushStatementModelCall(String prompt);
 
-    NaruSession prepareWorkdir();
+    NaruSession prepareProject();
 
     NaruSkill findSkill(String name);
+
     boolean loadSkill(String name);
 
     boolean unloadSkill(String name);
 
     List<NaruResourceInfo> listSkills();
+
+    NaruSession run();
+
+    NaruSession runOrReadline();
 
     NaruSession runStep();
 }

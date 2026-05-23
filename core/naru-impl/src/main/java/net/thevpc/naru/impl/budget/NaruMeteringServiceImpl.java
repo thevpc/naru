@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.budget.NaruModelStats;
 import net.thevpc.naru.api.budget.NaruTokenTransaction;
+import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.nuts.time.NDuration;
@@ -41,10 +42,10 @@ public class NaruMeteringServiceImpl implements NaruMeteringService {
 
     @Override
     public void trackTransaction(NaruTokenTransaction t, NaruSession session) {
-        NaruModelStatsAccumulator a = statsFor(t.getModel(), t.getUserId(), session);
+        NaruModelStatsAccumulator a = statsFor(t.getModel().key(), t.getUserId(), session);
         accumulate(t, a);
         if (!NBlankable.isBlank(t.getUserId())) {
-            NaruModelStatsAccumulator b = statsFor(t.getModel(), null, session);
+            NaruModelStatsAccumulator b = statsFor(t.getModel().key(), null, session);
             accumulate(t, b);
         }
     }
@@ -64,7 +65,7 @@ public class NaruMeteringServiceImpl implements NaruMeteringService {
             if (a.getUserId() != null) {
                 a.setContextSize(statsByAndUser.remove(new NaruModelKeyAndUser(a.getModel(), null)).getContextSize());
             } else {
-                NaruModelProtocol p = session.registry().protocol(a.getModel()).orNull();
+                NaruModelProtocol p = session.registry().protocol(new NaruModelConfig(a.getModel()), session).orNull();
                 if (p != null) {
                     a.setContextSize(p.getCapabilities().contextLength());
                 }

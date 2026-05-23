@@ -100,7 +100,7 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
 
     @Override
     public NElement toElement() {
-        return NElement.ofObjectBuilder("Capabilities")
+        return NElement.ofUpletBuilder("Capabilities")
                 .set("vision", vision)
                 .set("tools", tools)
                 .set("thinking", thinking)

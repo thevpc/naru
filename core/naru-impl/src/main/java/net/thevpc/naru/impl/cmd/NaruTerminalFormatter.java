@@ -217,6 +217,11 @@ public class NaruTerminalFormatter implements NTerminalFormatter {
             }
             if (i > start) {
                 tb.append(b.substring(start, i), extraStyles);
+            } else {
+                // No pattern matched and plain-char loop broke immediately:
+                // consume the character as-is to guarantee progress
+                tb.append(String.valueOf(b.charAt(i)), extraStyles);
+                i++;
             }
         }
         return tb.build();

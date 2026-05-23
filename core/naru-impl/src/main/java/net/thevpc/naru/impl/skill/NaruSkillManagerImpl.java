@@ -200,13 +200,16 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
             return null;
         }
         List<String> lines = new ArrayList<>();
+        Set<String> validNames=new HashSet<>();
         if (sf.publicSkill != null) {
+            validNames.add(sf.publicSkill.toString());
             lines.addAll(sf.publicSkill.lines().collect(Collectors.toList()));
         }
         if (sf.privateSkill != null) {
+            validNames.add(sf.privateSkill.toString());
             lines.addAll(sf.privateSkill.lines().collect(Collectors.toList()));
         }
-        return new NaruSkillImpl(sf.name, sf.mode, lines);
+        return new NaruSkillImpl(sf.name, sf.mode, lines,validNames.size()==1?validNames.stream().findFirst().get():validNames.toString());
     }
 
     private enum ConflictResolution {

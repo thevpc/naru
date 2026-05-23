@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
@@ -34,7 +35,7 @@ public class RunShellTool implements NaruTool {
 
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
-        return NaruRegistry.buildDefinition(
+        return new NaruToolDefinitionFunction(
                 getName(), getDescription(session),
                 NaruToolParameter.string("command", "Shell command to execute", true),
                 NaruToolParameter.string("working_dir", "Directory to run the command in (defaults to project dir)", false),

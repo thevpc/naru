@@ -1,5 +1,7 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.naru.api.agent.NaruSession;
+
 import java.util.List;
 
 public interface NaruModelProtocol {
@@ -10,7 +12,7 @@ public interface NaruModelProtocol {
      * @param tools    tool definitions available to the model (may be empty)
      * @return the model's response
      */
-    NaruResponse chat(List<NaruMessage> messages, List<NaruToolDefinition> tools);
+    NaruResponse chat(List<NaruMessage> messages, List<NaruToolDefinition> tools, NaruSession session);
 
     NaruModelCapabilities getCapabilities();
 }

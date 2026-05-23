@@ -1,5 +1,6 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 
@@ -12,7 +13,7 @@ import java.util.Set;
  */
 public interface NaruModelProvider {
 
-    NOptional<NaruModelProtocol> getProtocol(String model);
+    NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session);
 
     /**
      * Provider name for display purposes.
@@ -24,7 +25,7 @@ public interface NaruModelProvider {
      *
      * @return a list of model names
      */
-    List<String> findModelIds();
+    List<String> findModelIds(NaruSession session);
 
     void setParam(String name, String value);
     NOptional<String> getParam(String name);

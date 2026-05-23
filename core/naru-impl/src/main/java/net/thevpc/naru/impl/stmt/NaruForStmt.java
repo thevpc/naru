@@ -11,8 +11,9 @@ public class NaruForStmt extends NaruIncrementalStmt {
     private List<NaruStatement> branch;
     private boolean closed;
 
-    public NaruForStmt() {
+    public NaruForStmt(String condition) {
         super(NaruStatement.Type.FOR);
+        this.condition=condition;
     }
 
     public NaruForStmt(NElement element) {

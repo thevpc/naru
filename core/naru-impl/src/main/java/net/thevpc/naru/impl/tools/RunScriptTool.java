@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
@@ -21,7 +22,7 @@ public class RunScriptTool implements NaruTool {
 
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
-        return NaruRegistry.buildDefinition(
+        return new NaruToolDefinitionFunction(
                 getName(),
                 getDescription(session),
                 NaruToolParameter.string("script_name", "Name of the script to run.", true)
@@ -36,7 +37,7 @@ public class RunScriptTool implements NaruTool {
         }
 
         String r= "running script " + scriptName;
-        context.session().runner().invokeRoutine(context.session(), scriptName);
+        context.session().agent().invokeRoutine(context.session(), scriptName);
         return r;
     }
 }

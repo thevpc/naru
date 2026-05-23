@@ -34,7 +34,6 @@ import net.thevpc.nuts.util.NBlankable;
 public class NaruCmdLineProcessor {
 
     private String task;
-    private final NaruAgentConfig config = new NaruAgentConfig();
     private String projectDir = ".";
     private boolean help = false;
 
@@ -48,12 +47,7 @@ public class NaruCmdLineProcessor {
         NCmdLine.Matcher matcher = args
                 .matcher()
                 .with("--task").matchEntry(a -> task = a.value())
-                .with("--model").matchEntry(a -> config.model(a.value()))
-                .with("--vision-model").matchEntry(a -> config.visionModel(a.value()))
-                .with("--provider").matchEntry(a -> config.providerUrl(a.value()))
                 .with("--project-dir").matchEntry(a -> projectDir = a.value())
-                .with("--max-steps").matchEntry(a -> config.maxSteps(a.intValue()))
-                .with("--quiet").matchFlag(a -> config.verbose(!a.booleanValue()))
                 .with("--help", "-h").matchTrueFlag(a -> help = a.booleanValue())
                 .withNonOption().matchAny(a -> task = (task == null ? "" : task + " ") + a.image());
         while (args.hasNext()) {
@@ -69,7 +63,7 @@ public class NaruCmdLineProcessor {
             printHelp();
             return;
         }
-        NaruAgent runner = new NaruAgentImpl(config);
+        NaruAgent runner = new NaruAgentImpl();
         runner.setProjectDirectory(NPath.of(projectDir));
         if (NBlankable.isBlank(task)) {
             runner.runInteractive();

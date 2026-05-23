@@ -15,12 +15,13 @@ import java.util.logging.Level;
 
 public class SystemDirective extends AbstractDirective {
     public SystemDirective() {
-        super("system", "run system command");
+        super("system","general", "run system command","sys");
     }
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
         NaruSession naruSession = context.session();
+        boolean grab=false;
         try (NSession session = NSession.of().copy()) {
             session.setLogTermLevel(Level.OFF);
             session.runWith(() -> {
@@ -31,13 +32,19 @@ public class SystemDirective extends AbstractDirective {
                     e = NExec.of("sh", "-c", context.argument());
                 }
                 e.directory(naruSession.workingDir()).failFast(false);
-                String result = e
-                        .grabbedAll();
+                String result =null;
+                if(grab) {
+                    result = e
+                            .grabbedAll();
+                }else {
+                    e.run();
+                }
                 naruSession.addHistory(NaruMessage.user(NMsg.ofC("call   : system %s", context.argument()).toString()));
                 naruSession.addHistory(NaruMessage.user(NMsg.ofC("exit code %s", e.exitCode()).toString()));
-                naruSession.addHistory(NaruMessage.user(NMsg.ofC("result : \n%s", NaruUtils.stripAnsi(result)).toString()));
-                naruSession.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
-                naruSession.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
+                if(grab) {
+                    naruSession.addHistory(NaruMessage.user(NMsg.ofC("result : \n%s", NaruUtils.stripAnsi(result)).toString()));
+                    naruSession.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
+                }
             });
         }
     }

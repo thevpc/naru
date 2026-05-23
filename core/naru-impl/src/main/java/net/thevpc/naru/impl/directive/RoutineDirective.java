@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 
 public class RoutineDirective extends AbstractDirective {
     public RoutineDirective() {
-        super("routine", "create, update , list and run  routines","routines");
+        super("routine","routine", "create, update , list and run  routines","routines");
     }
 
     @Override
@@ -67,7 +67,7 @@ public class RoutineDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command %s", a.image()));
+                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
@@ -270,7 +270,7 @@ public class RoutineDirective extends AbstractDirective {
     public void executeRun(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
         NaruRoutineManager sm = sessionContext.routineManager();
-        sessionContext.runner().invokeRoutine(sessionContext, sm.getCurrentRoutineName());
+        sessionContext.agent().invokeRoutine(sessionContext, sm.getCurrentRoutineName());
     }
 
     public void executeName(NaruDirectiveCallContext context, NCmdLine cmdLine) {

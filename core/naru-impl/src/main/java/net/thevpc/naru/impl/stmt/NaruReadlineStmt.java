@@ -1,7 +1,6 @@
 package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
@@ -49,39 +48,23 @@ public class NaruReadlineStmt extends NaruStatement {
     public void exec(NaruSession session) {
         String line = null;
         try {
-            line = NTerminal.of().readLine(NMsg.ofC("%s%s ", NMsg.ofStyledPrimary1("naru"), NMsg.ofStyledSeparator(">")));
+            line = NTerminal.of().readLine(NMsg.ofC("%s%s ", NMsg.ofStyledPrimary1("なる"), NMsg.ofStyledSeparator(">")));
         } catch (NCancelException e) {
             // CTRL-C ?
-            session.pushStatement(NaruStatementHelper.ofReadLine());
+//            if (session.isForever()) {
+//                session.pushStatement(NaruStatementHelper.ofReadLine());
+//            }
+            return;
         }
         if (line == null) {
             return;
         }
-        line = line.trim();
-        if (line.isEmpty()) {
-            session.pushStatement(NaruStatementHelper.ofReadLine());
-            return;
-        }
-
-        if (line.startsWith("/")) {
-            if (session.isForever()) {
-                session.pushStatement(NaruStatementHelper.ofReadLine());
-            }
-            session.runner().invokeDirective(line, session);
-            return;
-        }
-
-        NaruRoutineManager sm = session.routineManager();
-        if (sm.tryParseLine(line)) {
-            // Line successfully added to script
-            session.pushStatement(NaruStatementHelper.ofReadLine());
-            return;
-        }
-
-        if (session.addHistory(line)) {
-            session.pushStatement(NaruStatementHelper.ofModelCall());
-        } else {
-            session.pushStatement(NaruStatementHelper.ofReadLine());
+//        if (session.isForever()) {
+//            session.pushStatement(NaruStatementHelper.ofReadLine());
+//        }
+        NaruStatement stmt = session.agent().parseStatement(line).orNull();
+        if(stmt!=null){
+            session.pushStatement(stmt);
         }
     }
 }

@@ -8,15 +8,21 @@ import java.util.function.IntPredicate;
 
 public class NaruSkillImpl implements NaruSkill {
     private final String name;
+    private final String sourceName;
     private NAruVisibility visibility;
     private final List<String> lines = new ArrayList<>();
 
-    public NaruSkillImpl(String name, NAruVisibility visibility, List<String> lines) {
+    public NaruSkillImpl(String name, NAruVisibility visibility, List<String> lines,String sourceName) {
         this.name = name;
+        this.sourceName = sourceName;
         this.visibility = visibility;
         this.lines.addAll(lines);
     }
 
+    @Override
+    public String getSourceName() {
+        return sourceName;
+    }
 
     public NAruVisibility getVisibility() {
         return visibility;

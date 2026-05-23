@@ -12,6 +12,8 @@ import net.thevpc.naru.impl.budget.NaruMeteringServiceImpl;
 import net.thevpc.naru.impl.cmd.NaruTerminalFormatter;
 import net.thevpc.naru.impl.cmd.NaruNCmdLineAutoCompleteResolver;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
+import net.thevpc.naru.impl.stmt.NaruDefRoutineLineStmt;
+import net.thevpc.naru.impl.stmt.NaruDirectiveCallStmt;
 import net.thevpc.naru.impl.stmt.NaruStatementHelper;
 import net.thevpc.naru.impl.util.StoredStringMap;
 import net.thevpc.nuts.artifact.NVersion;
@@ -23,7 +25,8 @@ import net.thevpc.nuts.text.NTextStyle;
 import net.thevpc.nuts.util.*;
 
 import java.util.*;
-import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The core agent loop.
@@ -43,24 +46,22 @@ import java.util.stream.Collectors;
 public class NaruAgentImpl implements NaruAgent {
 
     private final NaruRegistry registry;
-    private final NaruAgentConfig config;
     private final NaruMeteringServiceImpl meteringService = new NaruMeteringServiceImpl();
     /**
      * Optional step listener for CLI progress printing.
      */
     private NLogger logger;
     private NPath projectDirectory;
-    private StoredStringMap<NaruModelKey> modelAliases;
-    private StoredStringMap<String> projectEnv;
+    private StoredStringMap<NaruModelConfig> modelAliases;
+    private NaruProjectEnv projectEnv;
 
-    public NaruAgentImpl(NaruAgentConfig config) {
-        this(new NaruRegistryImpl(config)
-                .registerDefaults(), config);
+    public NaruAgentImpl() {
+        this(new NaruRegistryImpl()
+                .registerDefaults());
     }
 
-    public NaruAgentImpl(NaruRegistry registry, NaruAgentConfig config) {
+    public NaruAgentImpl(NaruRegistry registry) {
         this.registry = registry;
-        this.config = config;
         this.logger = NLogger.STDOUT;
     }
 
@@ -72,28 +73,23 @@ public class NaruAgentImpl implements NaruAgent {
     @Override
     public NaruAgent setProjectDirectory(NPath projectDirectory) {
         this.projectDirectory = projectDirectory;
-        modelAliases = new StoredStringMap<>(projectDirectory.resolve(".naru/config/model-aliases.tson"), NaruModelKey.class)
-                .setSerializer(x->x.toElement())
-                .setDeserializer(x->NaruModelKey.parse(x.toString()).get())
+        modelAliases = new StoredStringMap<>(projectDirectory.resolve(".naru/config/model-aliases.tson"), NaruModelConfig.class)
+                .setSerializer(x -> x.toElement())
+                .setDeserializer(x -> NaruModelConfig.of(x).get())
         ;
-        projectEnv = new StoredStringMap<>(projectDirectory.resolve(".naru/config/env.tson"), String.class);
+        projectEnv = new NaruProjectEnv(
+                projectDirectory.resolve(".naru/config/env.tson"),
+                projectDirectory.resolve(".naru/local/config/env.tson")
+                );
         return this;
     }
 
-    public StoredStringMap<String> getProjectEnv() {
+    public NaruProjectEnv env() {
         return projectEnv;
     }
 
-    public StoredStringMap<NaruModelKey> getModelAliases() {
+    public StoredStringMap<NaruModelConfig> getModelAliases() {
         return modelAliases;
-    }
-
-    public NaruModelKey model() {
-        NaruModelKey model = projectEnv.get("model").flatMap(x -> NaruModelKey.parse(x)).orNull();
-        if (model == null) {
-            model = registry.modelsKeys().stream().findFirst().orElse(null);
-        }
-        return model;
     }
 
     public NaruAgent logger(NLogger logger) {
@@ -112,35 +108,25 @@ public class NaruAgentImpl implements NaruAgent {
         if (pwd == null) {
             pwd = NPath.ofUserDirectory();
         }
-        NaruModelKey model = registry.findModel(config.getModel()).orNull();
-        if(model==null){
-            List<NaruModelInfo> any = registry.modelsInfos()
-                    .stream().filter(x->x.capabilities().isTools()).collect(Collectors.toList());
-            if(any.isEmpty()){
-                NOut.println(NMsg.ofC("model %s not found. actually no model (with tools capability) was found at all",config.getModel()).asError());
-                return;
-            }else{
-                model=any.get(0).key();
-                NOut.println(NMsg.ofC("model %s not found. auto select %s",config.getModel(),model.toMsg()).asWarning());
-            }
-        }
-        NaruSession sessionContext = new NaruSessionImpl(this, model, pwd.toAbsolute(), meteringService);
+        NaruSession sessionContext = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService);
         enableRichTerm(sessionContext);
+        // 1. foundation — static, immutable
         sessionContext.addHistory(NaruMessage.system(buildSystemPrompt(sessionContext)));
         NOut.resetLine();
         log(NaruLogMode.RAW, NMsg.ofC(
                 "╭╮╷╭─╮╭─╮╷ ╷\n" +
                         "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
                         "╵ ╵╵ ╵╵╰╴╰─╯ v%s", NVersion.of("0.8.9")));
-        log(NaruLogMode.RAW, NMsg.ofC("%s Starting model: %s",
-                NMsg.ofStyledSeparator("🤖"),
-                NMsg.ofStyledPrimary1(config.getModel())
-        ));
-        sessionContext.prepareWorkdir();
-        sessionContext.pushStatementReadlineForever();
-        while (sessionContext.hasMoreStatements()) {
-            invokeStep(sessionContext);
-        }
+
+        // 2. imperative init — mutates session state on top of foundation
+        sessionContext.prepareProject();
+
+        // 3. runtime
+        sessionContext.runOrReadline();
+//        run is equivalent to, if you need to run step by step
+//        while (sessionContext.hasMoreStatements()) {
+//            invokeStep(sessionContext);
+//        }
     }
 
     private void enableRichTerm(NaruSession sessionContext) {
@@ -158,22 +144,37 @@ public class NaruAgentImpl implements NaruAgent {
         if (pwd == null) {
             pwd = NPath.ofUserDirectory();
         }
-        NaruModelKey model = registry.findModel(config.getModel()).get();
-        NaruSession sessionContext = new NaruSessionImpl(this, model, pwd.toAbsolute(), meteringService);
+        NaruSession sessionContext = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService);
         sessionContext.addHistory(NaruMessage.system(buildSystemPrompt(sessionContext)));
         log(NaruLogMode.TRACE, NMsg.ofC("📋 Task: %s", NMsg.ofStyledPrimary1(task)));
         sessionContext.addHistory(NaruMessage.user(task));
         sessionContext.setForever(false);
-        sessionContext.pushStatementModelCall();
-        while (sessionContext.hasMoreStatements()) {
-            invokeStep(sessionContext);
-        }
+        sessionContext.pushStatementModelCall(null);
+        sessionContext.run();
     }
 
 
     public void invokeStep(NaruSession sessionContext) {
         NaruStatement op = sessionContext.popStatement();
         op.exec(sessionContext);
+    }
+
+    public NOptional<NaruStatement> parseStatement(String line) {
+        if (NBlankable.isBlank(line)) {
+            return NOptional.ofNamedEmpty("statement");
+        }
+        line = line.trim();
+        if (line.startsWith("/")) {
+            return NOptional.of(new NaruDirectiveCallStmt(line));
+        }
+        Pattern LINE_PATTERN = Pattern.compile("^(\\d+)(?:\\s+(.*))?$");
+        Matcher m = LINE_PATTERN.matcher(line);
+        if (m.matches()) {
+            int num = Integer.parseInt(m.group(1));
+            String content = m.group(2) != null ? m.group(2).trim() : "";
+            return NOptional.of(new NaruDefRoutineLineStmt(num, content));
+        }
+        return NOptional.of(NaruStatementHelper.ofModelCall(line));
     }
 
     private void handleCallDirective(String raw, NaruSession ctx, NaruRoutine routine) {
@@ -218,9 +219,9 @@ public class NaruAgentImpl implements NaruAgent {
         } else {
             log(NaruLogMode.PROGRESS, NMsg.ofC("Routine execution finished."));
             ctx.pc(-1);
-            if (ctx.isForever()) {
-                ctx.pushStatement(NaruStatementHelper.ofReadLine());
-            }
+//            if (ctx.isForever()) {
+//                ctx.pushStatement(NaruStatementHelper.ofReadLine());
+//            }
         }
     }
 
@@ -237,9 +238,9 @@ public class NaruAgentImpl implements NaruAgent {
         } else {
             // No return point → end of routine
             log(NaruLogMode.PROGRESS, NMsg.ofC("Subroutine returned to end of routine."));
-            if (ctx.isForever()) {
-                ctx.pushStatement(NaruStatementHelper.ofReadLine());
-            }
+//            if (ctx.isForever()) {
+//                ctx.pushStatement(NaruStatementHelper.ofReadLine());
+//            }
         }
     }
 
@@ -271,9 +272,9 @@ public class NaruAgentImpl implements NaruAgent {
         if (script.isEmpty()) {
             log(NaruLogMode.TRACE, NMsg.ofC("Script '%s' is empty. Nothing to execute.", NMsg.ofStyledPrimary1(scriptName)));
             sm.switchRoutine(previousContext);
-            if (sessionContext.isForever()) {
-                sessionContext.pushStatement(NaruStatementHelper.ofReadLine());
-            }
+//            if (sessionContext.isForever()) {
+//                sessionContext.pushStatement(NaruStatementHelper.ofReadLine());
+//            }
             return;
         }
 

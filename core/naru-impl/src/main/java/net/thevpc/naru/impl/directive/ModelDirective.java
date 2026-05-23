@@ -1,10 +1,13 @@
 package net.thevpc.naru.impl.directive;
 
+import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelInfo;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
+import net.thevpc.naru.impl.agent.NaruAgentImpl;
 import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NArgCandidate;
@@ -12,16 +15,16 @@ import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.cmdline.NCmdLineAutoCompleteResolver;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NTextBuilder;
-import net.thevpc.nuts.util.NOptional;
-import net.thevpc.nuts.util.NStringUtils;
+import net.thevpc.nuts.util.*;
 
 import java.text.DecimalFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class ModelDirective extends AbstractDirective {
+
     public ModelDirective() {
-        super("model", "manage models");
+        super("model", "config", "manage models");
     }
 
     @Override
@@ -53,6 +56,10 @@ public class ModelDirective extends AbstractDirective {
                     }
                     break;
                 }
+                case "update": {
+                    executeUpdateAlias(context, cmdLine);
+                    break;
+                }
                 case "unalias": {
                     executeUnsetAlias(context, cmdLine);
                     break;
@@ -61,64 +68,61 @@ public class ModelDirective extends AbstractDirective {
                     executeList(context, cmdLine);
                     break;
                 }
-//                case "drop": {
-//                    executeDrop(context, cmdLine);
-//                    break;
-//                }
-//                case "clear": {
-//                    executeClear(context, cmdLine);
-//                    break;
-//                }
-//                case "load": {
-//                    executeLoad(context, cmdLine);
-//                    break;
-//                }
-//                case "unload": {
-//                    executeUnload(context, cmdLine);
-//                    break;
-//                }
-//                case "run": {
-//                    executeRun(context, cmdLine);
-//                    break;
-//                }
                 case "--help":
                 case "help": {
                     executeHelp(context, cmdLine);
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command %s", a.image()));
+                    NOptional<Integer> b = NLiteral.of(a.image()).asInt();
+                    if (b.isPresent()) {
+                        executeSetByNumber(context, b.get());
+                        return;
+                    }
+                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
     }
 
     public void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Available models:"));
+        NaruSession session = context.session();
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Available models:"));
         int index = 1;
-        List<NaruModelInfo> models = context.session().registry().modelsInfos();
+        List<NaruModelInfo> models = context.session().registry().modelsInfos(session);
         if (models.isEmpty()) {
             return;
         }
         int zeros = (int) Math.ceil(Math.log10(models.size()));
         DecimalFormat zformat = new DecimalFormat(NStringUtils.repeat("0", zeros));
-        Map<NaruModelKey, List<String>> naruModelKeyListMap = sessionContext.reversedModelAliases();
+        NaruModelConfig selectedModel = session.model();
         for (NaruModelInfo model : models) {
 
             NaruModelKey mkey = model.key();
 
             NTextBuilder extra1 = null;
-            List<String> currAliases = naruModelKeyListMap.get(mkey);
-            if (currAliases != null && !currAliases.isEmpty()) {
+            List<String> currAliases = session.modelAliases().values().stream().filter(x -> x.key().equals(model.key())).map(x -> x.name())
+                    .sorted()
+                    .collect(Collectors.toList());
+            if (!currAliases.isEmpty()) {
                 extra1 = NTextBuilder.of();
                 extra1.append(NMsg.ofStyledSeparator(" ("));
-                extra1.appendAll(currAliases);
+                for (int i = 0; i < currAliases.size(); i++) {
+                    if (i > 0) {
+                        extra1.append(NMsg.ofStyledSeparator(", "));
+                    }
+                    String c = currAliases.get(i);
+                    if(Objects.equals(c,selectedModel.name())) {
+                        extra1.append(NMsg.ofStyledPrimary3(c));
+                    }else{
+                        extra1.append(NMsg.ofStyledPrimary1(c));
+                    }
+                }
                 extra1.append(NMsg.ofStyledSeparator(")"));
             }
 
             NMsg extra2 = null;
-            if (mkey.equals(sessionContext.model())) {
+            if (mkey.equals(selectedModel.key())) {
                 extra2 = NMsg.ofC("%s%s%s",
                         NMsg.ofStyledSeparator("("),
                         NMsg.ofStyledSuccess("*"),
@@ -137,7 +141,7 @@ public class ModelDirective extends AbstractDirective {
                         NMsg.ofStyledSeparator("]")
                 );
             }
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  %s[%s] %s%s%s",
+            session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  %s[%s] %s%s%s",
                     extra2,
                     NMsg.ofStyledNumber(zformat.format(index)),
                     model.toText(),
@@ -167,6 +171,9 @@ public class ModelDirective extends AbstractDirective {
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s alias <name>=<value>", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           add an alias to a model"));
 
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s update <alias-name>", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           update an alias"));
+
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s unalias <name>", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           remove an alias from a model"));
 
@@ -193,7 +200,7 @@ public class ModelDirective extends AbstractDirective {
 
     public void executeGet(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", sessionContext.model().toMsg()));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", sessionContext.model().toText()));
     }
 
     public void executeSet(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -204,14 +211,26 @@ public class ModelDirective extends AbstractDirective {
             return;
         }
         NArg a = n.get();
-        NaruModelKey k = sessionContext.findModel(a.image()).orNull();
+        NaruModelConfig k = sessionContext.findModel(a.image()).orNull();
         if (k == null) {
             sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
                     a.image()).asError());
         }
         context.session().setModel(k);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("switch to model : %s",
-                sessionContext.model().toMsg()));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s",
+                sessionContext.model().toText()));
+    }
+
+    public void executeSetByNumber(NaruDirectiveCallContext context, int nbr) {
+        NaruSession sessionContext = context.session();
+        NaruModelConfig k = sessionContext.findModel(String.valueOf(nbr)).orNull();
+        if (k == null) {
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
+                    nbr).asError());
+        }
+        context.session().setModel(k);
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s",
+                sessionContext.model().toText()));
     }
 
     public void executeSetGlobal(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -222,21 +241,21 @@ public class ModelDirective extends AbstractDirective {
             return;
         }
         NArg a = n.get();
-        NaruModelKey k = sessionContext.findModel(a.image()).orNull();
+        NaruModelConfig k = sessionContext.findModel(a.image()).orNull();
         if (k == null) {
             sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
                     a.image()).asError());
         }
         context.session().setModel(k);
-        assert k != null;
-        context.session().setProjectEnv("model", k.toString());
+        NAssert.requireNamedNonNull(k, "key");
+        context.session().setProjectEnv("model", k.toElement(), NAruVisibility.PRIVATE);
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("switch global model : %s",
-                sessionContext.model().toMsg()));
+                sessionContext.model().toText()));
     }
 
     public void executeListAlias(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
-        Map<String, NaruModelKey> aliases = sessionContext.modelAliases();
+        Map<String, NaruModelConfig> aliases = sessionContext.modelAliases();
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Aliases: %s", aliases.size()));
         int index = 1;
 
@@ -245,44 +264,181 @@ public class ModelDirective extends AbstractDirective {
         }
         int zeros = (int) Math.ceil(Math.log10(aliases.size()));
         DecimalFormat zformat = new DecimalFormat(NStringUtils.repeat("0", zeros));
-        for (Map.Entry<String, NaruModelKey> e : aliases.entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).collect(Collectors.toList())) {
+        for (Map.Entry<String, NaruModelConfig> e : aliases.entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).collect(Collectors.toList())) {
             sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s=%s",
                     NMsg.ofStyledNumber(zformat.format(index)),
                     NMsg.ofStyledPrimary1(e.getKey()),
-                    e.getValue().toMsg()));
+                    e.getValue().toText()));
             index++;
         }
     }
 
     public void executeSetAlias(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
-        NOptional<NArg> n = cmdLine.next();
-        if (!n.isPresent()) {
+        NRef<String> aliasName = NRef.of();
+        NRef<String> modelName = NRef.of();
+        NRef<Long> contextLength = NRef.of();
+        NRef<Float> temperature = NRef.of();
+        NRef<Float> nucleusThreshold = NRef.of();
+        NRef<Integer> candidateCount = NRef.of();
+        NRef<Integer> maxTokens = NRef.of();
+        List<String> stop = new ArrayList<>();
+
+        cmdLine.matcher()
+                .withNonOption()
+                .matchAny(a -> {
+                    if (a.getStringValue().isPresent()) {
+                        if (aliasName.isNull() && modelName.isNull()) {
+                            aliasName.set(a.key());
+                            modelName.set(a.value());
+                        } else if (modelName.isNull()) {
+                            modelName.set(a.asString().orNull());
+                        } else {
+                            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: invalid argument %s", a.toString()).asError());
+                        }
+                    } else {
+                        if (aliasName.isNull()) {
+                            aliasName.set(a.asString().orNull());
+                        } else if (modelName.isNull()) {
+                            modelName.set(a.asString().orNull());
+                        } else {
+                            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: invalid argument %s", a.toString()).asError());
+                        }
+                    }
+                })
+                .with("--alias").matchEntry(a -> aliasName.set(a.asString().orNull()))
+                .with("--model").matchEntry(a -> modelName.set(a.asString().orNull()))
+                .with("--contextLength").matchEntry(a -> contextLength.set(a.asLong().orNull()))
+                .with("--temperature").matchEntry(a -> temperature.set(a.asFloat().orNull()))
+                .with("--nucleusThreshold").matchEntry(a -> nucleusThreshold.set(a.asFloat().orNull()))
+                .with("--candidateCount").matchEntry(a -> candidateCount.set(a.asInt().orNull()))
+                .with("--maxTokens").matchEntry(a -> maxTokens.set(a.asInt().orNull()))
+                .with("--stop").matchEntry(a -> stop.add(a.asString().orNull()))
+                .requireAll();
+        if (NBlankable.isBlank(aliasName.get())) {
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing alias name to set.").asError());
+            return;
+        }
+        if (NBlankable.isBlank(modelName.get())) {
             sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to set.").asError());
             return;
         }
-        NArg a = n.get();
-        if (a.asLiteral().asString().orNull() == null) {
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to set.").asError());
-        }
-        NaruModelKey k = sessionContext.findModel(a.asString().orNull()).orNull();
+
+        NaruModelConfig k = sessionContext.findModel(modelName.get()).orNull();
         if (k == null) {
             sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
-                    a.asString().orNull()).asError());
+                    modelName.get()).asError());
             return;
         }
-        NaruModelKey oldAliasTarget = context.session().findModelAlias(a.key()).orNull();
+
+        NaruModelConfig oldAliasTarget = context.session().findModelAlias(aliasName.get()).orNull();
         if (oldAliasTarget != null) {
-            if (Objects.equals(oldAliasTarget, k)) {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("alias %s already bound to %s", a.key(), oldAliasTarget.toMsg()).asError());
-            } else {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: alias %s already bound to %s", a.key(), oldAliasTarget.toMsg()).asError());
-            }
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("alias %s already bound to %s", aliasName.get(), oldAliasTarget.toText()).asError());
             return;
         }
-        context.session().addModelAlias(a.key(), k);
+        context.session().addModelAlias(aliasName.get(), new NaruModelConfig(
+                aliasName.get(),
+                k.provider(),
+                k.model(),
+                contextLength.orElse(k.contextLength()),
+                temperature.orElse(k.temperature()),
+                nucleusThreshold.orElse(k.nucleusThreshold()),
+                candidateCount.orElse(k.candidateCount()),
+                maxTokens.orElse(k.maxTokens()),
+                stop
+        ));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("set-alias %s=%s",
-                NMsg.ofStyledPrimary1(a.key()), k.toMsg()
+                NMsg.ofStyledPrimary1(aliasName.get()), k.toText()
+        ));
+    }
+
+    public void executeUpdateAlias(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruSession sessionContext = context.session();
+        NRef<String> aliasName = NRef.of();
+        NRef<String> modelName = NRef.of();
+        NRef<Long> contextLength = NRef.of();
+        NRef<Float> temperature = NRef.of();
+        NRef<Float> nucleusThreshold = NRef.of();
+        NRef<Integer> candidateCount = NRef.of();
+        NRef<Integer> maxTokens = NRef.of();
+        List<String> stop = new ArrayList<>();
+
+        cmdLine.matcher()
+                .withNonOption()
+                .matchAny(a -> {
+                    if (a.getStringValue().isPresent()) {
+                        if (aliasName.isNull() && modelName.isNull()) {
+                            aliasName.set(a.key());
+                            modelName.set(a.value());
+                        } else if (modelName.isNull()) {
+                            modelName.set(a.asString().orNull());
+                        } else {
+                            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: invalid argument %s", a.toString()).asError());
+                        }
+                    } else {
+                        if (aliasName.isNull()) {
+                            aliasName.set(a.asString().orNull());
+                        } else if (modelName.isNull()) {
+                            modelName.set(a.asString().orNull());
+                        } else {
+                            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: invalid argument %s", a.toString()).asError());
+                        }
+                    }
+                })
+                .with("--alias").matchEntry(a -> aliasName.set(a.asString().orNull()))
+                .with("--model").matchEntry(a -> modelName.set(a.asString().orNull()))
+                .with("--contextLength").matchEntry(a -> contextLength.set(a.asLong().orNull()))
+                .with("--temperature").matchEntry(a -> temperature.set(a.asFloat().orNull()))
+                .with("--nucleusThreshold").matchEntry(a -> nucleusThreshold.set(a.asFloat().orNull()))
+                .with("--candidateCount").matchEntry(a -> candidateCount.set(a.asInt().orNull()))
+                .with("--maxTokens").matchEntry(a -> maxTokens.set(a.asInt().orNull()))
+                .with("--stop").matchEntry(a -> stop.add(a.asString().orNull()))
+                .requireAll();
+        if (NBlankable.isBlank(aliasName.get())) {
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing alias name to set.").asError());
+            return;
+        }
+        if (NBlankable.isBlank(modelName.get())) {
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to set.").asError());
+            return;
+        }
+        NaruModelConfig naruModelConfig = ((NaruAgentImpl) sessionContext.agent()).getModelAliases().get(aliasName.get()).orNull();
+        if (naruModelConfig == null) {
+            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing alias %s", aliasName.get()).asError());
+            return;
+        }
+        if (!modelName.isNull()) {
+            NaruModelConfig k = sessionContext.findModel(modelName.get()).orNull();
+            if (k == null) {
+                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
+                        modelName.get()).asError());
+                return;
+            }
+            naruModelConfig = naruModelConfig.withModel(k.toString());
+        }
+        if (contextLength.isSet()) {
+            naruModelConfig = naruModelConfig.withContextLength(contextLength.get());
+        }
+        if (temperature.isSet()) {
+            naruModelConfig = naruModelConfig.withTemperature(temperature.get());
+        }
+        if (nucleusThreshold.isSet()) {
+            naruModelConfig = naruModelConfig.withNucleusThreshold(nucleusThreshold.get());
+        }
+        if (candidateCount.isSet()) {
+            naruModelConfig = naruModelConfig.withCandidateCount(candidateCount.get());
+        }
+        if (maxTokens.isSet()) {
+            naruModelConfig = naruModelConfig.withMaxTokens(maxTokens.get());
+        }
+
+        if (!stop.isEmpty()) {
+            naruModelConfig = naruModelConfig.withStop(stop);
+        }
+        ((NaruAgentImpl) sessionContext.agent()).getModelAliases().put(aliasName.get(), naruModelConfig);
+
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("update-alias %s",
+                NMsg.ofStyledPrimary1(aliasName.get())
         ));
     }
 
@@ -294,13 +450,13 @@ public class ModelDirective extends AbstractDirective {
             return;
         }
         NArg a = n.get();
-        NaruModelKey oldAliasTarget = context.session().findModelAlias(a.image()).orNull();
+        NaruModelConfig oldAliasTarget = context.session().findModelAlias(a.image()).orNull();
         if (oldAliasTarget == null) {
             sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: alias %s not found", a.image()).asError());
         }
         context.session().removeModelAlias(a.key());
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("switch to model : %s",
-                sessionContext.model().toMsg()));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s",
+                sessionContext.model().toText()));
     }
 
 

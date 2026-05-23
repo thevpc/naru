@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 
 public class StatDirective extends AbstractDirective {
     public StatDirective() {
-        super("stat", "show and manage stats");
+        super("stat","general", "show and manage stats");
     }
 
     @Override

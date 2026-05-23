@@ -5,7 +5,7 @@ import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
 
 public class IfDirective extends AbstractDirective {
     public IfDirective() {
-        super("if", "start and if condition statement");
+        super("if","routine", "start and if condition statement");
     }
 
     @Override

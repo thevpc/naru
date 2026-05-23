@@ -2,7 +2,7 @@ package net.thevpc.naru.impl.directive;
 
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.model.NaruModelKey;
+import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
 import net.thevpc.nuts.cmdline.NArg;
@@ -16,7 +16,7 @@ import java.util.*;
 
 public class SessionDirective extends AbstractDirective {
     public SessionDirective() {
-        super("session", "manage sessions","sessions");
+        super("session","session", "manage sessions","sessions");
     }
 
     @Override
@@ -58,12 +58,24 @@ public class SessionDirective extends AbstractDirective {
                     executeLoad(context, cmdLine);
                     break;
                 }
+                case "reload": {
+                    executeReload(context, cmdLine);
+                    break;
+                }
+                case "restore": {
+                    executeRestore(context, cmdLine);
+                    break;
+                }
                 case "save": {
                     executeSave(context, cmdLine);
                     break;
                 }
                 case "new": {
                     executeNew(context, cmdLine);
+                    break;
+                }
+                case "reset": {
+                    executeReset(context, cmdLine);
                     break;
                 }
                 case "copy": {
@@ -76,7 +88,7 @@ public class SessionDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command %s", a.image()));
+                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
@@ -138,34 +150,54 @@ public class SessionDirective extends AbstractDirective {
         NaruSession sessionContext = context.session();
         NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("session"));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list <n1>-<p1>,<n2>-<p2>", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list intervals"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s drop <n1>-<p1>,<n2>-<p2>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop intervals"));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s name", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           display session name"));
+
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s public", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           make current session public"));
+
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s private", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           make current session private"));
+
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s drop name", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop session by name"));
 
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s clear", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           clear sessions"));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop  all sessions"));
 
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s load <name>", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           load session (or default 'main')"));
 
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s reload", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           reload from last saved"));
+
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s restore", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           resume from last snapshot"));
+
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s save", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           save session (or default 'main')"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s unload", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           unload session (back to 'main')"));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s new", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           start a new session"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s run", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           run session"));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s copy", kk));
+        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           copy to a new session"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s name", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show session name"));
 
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
         sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
 
+    }
+
+    public void executeReload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruSession sessionContext = context.session();
+        sessionContext.sessionManager().reload();
+        context.session().log(NaruLogMode.PROGRESS, NMsg.ofC("Reloaded session."));
     }
 
     public void executeLoad(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -184,12 +216,19 @@ public class SessionDirective extends AbstractDirective {
         context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded session: %s", sessionContext.name()));
     }
 
+    public void executeRestore(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruSession sessionContext = context.session();
+        NaruSessionManager sm = sessionContext.sessionManager();
+        sm.restoreSnapshot();
+        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", sessionContext.name()));
+    }
+
     public void executeSave(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
         if (NBlankable.isBlank(sessionContext.name()) || sessionContext.name().equals("NO_NAME")) {
             List<NaruMessage> history = context.session().history(true);
             history.add(NaruMessage.user("can you suggest a name for this session? dont be verbose in your response, only return the suggested name please."));
-            NaruModelKey model = context.session().model();
+            NaruModelConfig model = context.session().model();
             NaruResponse chat = context.session().chat(model,
                     history, Collections.emptyList()
             );
@@ -203,7 +242,13 @@ public class SessionDirective extends AbstractDirective {
 
     public void executeNew(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession sessionContext = context.session();
-        sessionContext.reset();
+        sessionContext.reset(false);
+        context.session().log(NaruLogMode.PROGRESS, NMsg.ofC("reset session."));
+    }
+
+    public void executeReset(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruSession sessionContext = context.session();
+        sessionContext.reset(true);
         context.session().log(NaruLogMode.PROGRESS, NMsg.ofC("new session."));
     }
 

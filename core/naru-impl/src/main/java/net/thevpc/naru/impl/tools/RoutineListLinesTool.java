@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.tools;
 
+import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
@@ -29,20 +30,20 @@ public class RoutineListLinesTool implements NaruTool {
 
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
-        return NaruRegistry.buildDefinition(
+        return new NaruToolDefinitionFunction(
                 getName(),
                 getDescription(session),
                 // ✅ Optional: target a specific routine by name
                 NaruToolParameter.string("routine_name",
                         "Name of the routine to list. If empty, uses the currently active routine.",
-                        true),
+                        false),
                 // ✅ Optional: filter by line range (useful for long routines)
                 NaruToolParameter.integer("line_start",
                         "Optional: start line number for range filter (inclusive).",
-                        true),
+                        false),
                 NaruToolParameter.integer("line_end",
                         "Optional: end line number for range filter (inclusive).",
-                        true)
+                        false)
         );
     }
 

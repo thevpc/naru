@@ -3,29 +3,32 @@ package net.thevpc.naru.impl.agent;
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.budget.NaruTokenTransaction;
-import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.model.NaruModelKey;
-import net.thevpc.naru.api.model.NaruResponse;
-import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.routine.RunContext;
 import net.thevpc.naru.api.skills.NaruSkill;
 import net.thevpc.naru.api.skills.NaruSkillManager;
-import net.thevpc.naru.impl.skill.NaruSkillManagerImpl;
-import net.thevpc.naru.impl.stmt.NaruIncrementalStmt;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.impl.routine.NaruRoutineManagerImpl;
+import net.thevpc.naru.impl.skill.NaruSkillManagerImpl;
+import net.thevpc.naru.impl.stmt.NaruIncrementalStmt;
 import net.thevpc.naru.impl.stmt.NaruStatementHelper;
 import net.thevpc.naru.impl.util.StoredStringMap;
+import net.thevpc.nuts.artifact.NId;
+import net.thevpc.nuts.core.NStoreKey;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.expr.*;
+import net.thevpc.nuts.io.NIOUtils;
+import net.thevpc.nuts.io.NOut;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.time.NChronometer;
 import net.thevpc.nuts.util.*;
 
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,10 +42,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private boolean requireUserInput;
     private boolean forever;
     private final List<RunContextImpl> todo = new ArrayList<>();
-    private final NaruAgent runner;
+    private final NaruAgent agent;
     private boolean publicSession;
     private NPath workingDir;
-    private NaruModelKey model;
+    private NaruModelConfig model;
     /**
      * Root directory of the project being worked on.
      */
@@ -57,12 +60,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private String extraContext;
     private final NaruRoutineManager routineManager;
     private final NaruSkillManager skillManager;
+    private final NaruMeteringService meteringService;
+    private final NaruSessionManagerImpl sessionManager;
+
     private String uuid = UUID.randomUUID().toString();
     private String name = "NO_NAME";
     private Instant creationDate = Instant.now();
     private Instant modificationDate = creationDate;
-    private final NaruMeteringService meteringService;
-    private final NaruSessionManagerImpl sessionManager;
     // Add to NaruSessionImpl fields:
     private final Map<String, Object> globalState = new ConcurrentHashMap<>();
 
@@ -82,13 +86,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public void setProjectEnv(String key, String value) {
-        StoredStringMap<String> a = ((NaruAgentImpl) runner).getProjectEnv();
-        if (value == null) {
-            a.remove(key);
-        } else {
-            a.put(key, value);
-        }
+    public NOptional<NElement> getProjectEnv(String key) {
+        NaruEnv a = agent.env();
+        return a.get(key);
+    }
+
+    @Override
+    public void setProjectEnv(String key, NElement value, NAruVisibility visibility) {
+        NaruEnv a = agent.env();
+        a.put(key, value, visibility);
     }
 
     public Object getGlobalState(String key) {
@@ -100,15 +106,39 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
 
-    public NaruSessionImpl(NaruAgent runner, NaruModelKey model, NPath projectDir, NaruMeteringService meteringService) {
-        this.runner = runner;
+    public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruMeteringService meteringService) {
+        this.agent = agent;
         this.projectDir = projectDir;
         this.workingDir = projectDir;
-        this.model = model;
         this.meteringService = meteringService;
         this.sessionManager = new NaruSessionManagerImpl(this);
         this.routineManager = new NaruRoutineManagerImpl(this);
         this.skillManager = new NaruSkillManagerImpl(this);
+
+        NaruModelConfig model0 = null;
+        NaruModelConfig model = model0;
+        NaruRegistry registry = agent.registry();
+        if (model == null) {
+            model = getProjectEnv("model").flatMap(x -> findModel(new NaruModelConfig(x))).orNull();
+        } else {
+            model = findModel(model0).orNull();
+        }
+        if (model == null) {
+            List<NaruModelInfo> any = registry.modelsInfos(this)
+                    .stream().filter(x -> x.capabilities().isTools()).collect(Collectors.toList());
+            if (any.isEmpty()) {
+                NOut.println(NMsg.ofC("model %s not found. actually no model (with tools capability) was found at all", model0).asError());
+                return;
+            } else {
+                model = findModel(any.get(0).key().toString()).orNull();
+                if (model == null) {
+                    NOut.println(NMsg.ofC("model %s not found.", model0).asWarning());
+                } else {
+                    NOut.println(NMsg.ofC("model %s not found. auto select %s", model0, model.toText()).asWarning());
+                }
+            }
+        }
+        this.model = model;
     }
 
     @Override
@@ -125,15 +155,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
 
     @Override
-    public Map<String, NaruModelKey> modelAliases() {
-        return ((NaruAgentImpl) runner).getModelAliases().toMap();
+    public Map<String, NaruModelConfig> modelAliases() {
+        return ((NaruAgentImpl) agent).getModelAliases().toMap();
     }
 
     @Override
-    public NaruResponse chat(NaruModelKey modelKey, List<NaruMessage> messages, List<NaruToolDefinition> tools) {
+    public NaruResponse chat(NaruModelConfig modelKey, List<NaruMessage> messages, List<NaruToolDefinition> tools) {
         Instant now = Instant.now();
         NChronometer chronometer = NChronometer.of();
-        NaruResponse r = registry().protocol(modelKey).get().chat(messages, tools);
+        NaruResponse r = registry().protocol(modelKey, this).get().chat(messages, tools, this);
         meteringService.trackTransaction(new NaruTokenTransaction(
                 uuid(),
                 null,
@@ -147,33 +177,54 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public Map<NaruModelKey, List<String>> reversedModelAliases() {
-        HashMap<NaruModelKey, List<String>> m = new HashMap<>();
-        for (Map.Entry<String, NaruModelKey> e : modelAliases().entrySet()) {
-            NaruModelKey k = e.getValue();
+    public Map<NaruModelConfig, List<String>> reversedModelAliases() {
+        HashMap<NaruModelConfig, List<String>> m = new HashMap<>();
+        for (Map.Entry<String, NaruModelConfig> e : modelAliases().entrySet()) {
+            NaruModelConfig k = e.getValue();
             List<String> v = m.computeIfAbsent(k, k1 -> new ArrayList<>());
             v.add(e.getKey());
         }
         return m;
     }
 
-    public NOptional<NaruModelKey> findModel(String keyOrName) {
-        List<NaruModelKey> models = registry().modelsKeys();
-        NaruModelKey a = findModelAlias(keyOrName).orNull();
+    public NOptional<NaruModelConfig> findModel(NaruModelConfig keyOrName) {
+        if (keyOrName == null) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("model"));
+        }
+        if (!NBlankable.isBlank(keyOrName.name())) {
+            NOptional<NaruModelConfig> u = findModel(keyOrName.name());
+            if (u.isPresent()) {
+                return u;
+            }
+        }
+        String p = keyOrName.provider();
+        String n = keyOrName.name();
+        if (NBlankable.isBlank(p)) {
+            return findModel(n);
+        } else if (NBlankable.isBlank(n)) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("model"));
+        } else {
+            return findModel(p + "/" + n);
+        }
+    }
+
+    public NOptional<NaruModelConfig> findModel(String keyOrName) {
+        List<NaruModelConfig> models = registry().modelsKeys(this).stream().map(NaruModelConfig::new).collect(Collectors.toList());
+        NaruModelConfig a = findModelAlias(keyOrName).orNull();
         if (a != null) {
             if (models.contains(a)) {
                 return NOptional.of(a);
             }
         }
         if (keyOrName.contains("/")) {
-            NOptional<NaruModelKey> r = NaruModelKey.parse(keyOrName);
+            NOptional<NaruModelConfig> r = NaruModelKey.parse(keyOrName).map(NaruModelConfig::new);
             if (r.isPresent()) {
                 if (models.contains(r.get())) {
                     return NOptional.of(r.get());
                 }
             }
         } else {
-            for (NaruModelKey m : models) {
+            for (NaruModelConfig m : models) {
                 if (m.model().equals(keyOrName)) {
                     return NOptional.of(m);
                 }
@@ -192,24 +243,24 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     @Override
     public void removeModelAlias(String alias) {
         alias = NStringUtils.trimToNull(alias);
-        ((NaruAgentImpl) runner).getModelAliases().remove(alias);
+        ((NaruAgentImpl) agent).getModelAliases().remove(alias);
         fireChanged();
     }
 
     @Override
-    public void addModelAlias(String alias, NaruModelKey model) {
+    public void addModelAlias(String alias, NaruModelConfig model) {
         alias = NStringUtils.trimToNull(alias);
         if (!NBlankable.isBlank(alias)) {
             if (model != null) {
-                ((NaruAgentImpl) runner).getModelAliases().put(alias, model);
+                ((NaruAgentImpl) agent).getModelAliases().put(alias, model);
                 fireChanged();
             }
         }
     }
 
     @Override
-    public NOptional<NaruModelKey> findModelAlias(String alias) {
-        return ((NaruAgentImpl) runner).getModelAliases().get(alias);
+    public NOptional<NaruModelConfig> findModelAlias(String alias) {
+        return ((NaruAgentImpl) agent).getModelAliases().get(alias);
     }
 
     @Override
@@ -252,20 +303,20 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NaruSession reset() {
-        this.uuid = UUID.randomUUID().toString();
-        this.name = "NO_NAME";
-        this.creationDate = Instant.now();
-        this.modificationDate = creationDate;
-
-
+    public NaruSession reset(boolean preserveIdentity) {
+        if (!preserveIdentity) {
+            this.uuid = UUID.randomUUID().toString();
+            this.name = "NO_NAME";
+            this.creationDate = Instant.now();
+            this.modificationDate = creationDate;
+        }
         clearHistory();
         userQueries = 0;
         lastResult = null;
         todo.clear();
-        if (forever) {
-            pushStatement(NaruStatementHelper.ofReadLine());
-        }
+//        if (forever) {
+//            pushStatement(NaruStatementHelper.ofReadLine());
+//        }
         this.extraContext = null;
         sessionManager.saveSnapshot();
         return this;
@@ -340,7 +391,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.creationDate = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
         this.modificationDate = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationDate);
         NElement mv = o.get("model").orElse(null);
-        this.model = mv == null ? null : new NaruModelKey(mv);
+        this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
         this.extraContext = o.getStringValue("extraContext").orElse(null);
         this.forever = o.getBooleanValue("forever").orElse(false);
         this.userQueries = o.getIntValue("userQueries").orElse(0);
@@ -362,7 +413,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 history.add(new NaruMessage(nElement));
             }
         }
-        sessionManager.saveSnapshot();
         return this;
     }
 
@@ -385,7 +435,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public void log(NaruLogMode mode, NMsg s) {
-        runner.log(mode, s);
+        agent.log(mode, s);
     }
 
     @Override
@@ -396,12 +446,40 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     @Override
     public List<NaruMessage> history(boolean includeSystem) {
         if (includeSystem) {
-            List<NaruMessage> all = new ArrayList<>();
-            all.addAll(systemHistory.stream().map(x -> x.copy().setSource(NaruSource.SYSTEM)).collect(Collectors.toList()));
+            return context(NaruSource.values());
+        } else {
+            return context(NaruSource.USER);
+        }
+    }
 
-            // add project/folder level agent files
-            if (workingDir.startsWith(projectDir)) {
-                all.addAll(loadAgentFiles(projectDir));
+    @Override
+    public List<NaruMessage> context(NaruSource... sources) {
+        Set<NaruSource> sourcesOk = new HashSet<>();
+        if (sources != null) {
+            for (NaruSource s : sources) {
+                if (s != null) {
+                    sourcesOk.add(s);
+                }
+            }
+        }
+        List<NaruMessage> all = new ArrayList<>();
+        if (sourcesOk.contains(NaruSource.SYSTEM)) {
+            all.addAll(systemHistory.stream().map(x -> x.copy().setSource(NaruSource.SYSTEM).setSourceName("system")).collect(Collectors.toList()));
+        }
+
+        String[] agentFileNames = resolveAgentFileNames();
+        if (sourcesOk.contains(NaruSource.CLASSPATH)) {
+            all.addAll(loadAgentClassPath(agentFileNames));
+        }
+        if (sourcesOk.contains(NaruSource.USER_HOME)) {
+            all.addAll(loadAgentUserHome(agentFileNames));
+        }
+        // add project/folder level agent files
+        if (sourcesOk.contains(NaruSource.PROJECT) || sourcesOk.contains(NaruSource.FOLDER)) {
+            if (!workingDir.startsWith(projectDir)) {
+                if (sourcesOk.contains(NaruSource.PROJECT)) {
+                    all.addAll(loadAgentFolder(projectDir, agentFileNames, NaruSource.PROJECT));
+                }
             } else {
                 List<NPath> dirs = new ArrayList<>();
                 NPath p = workingDir;
@@ -413,109 +491,162 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 // reverse: projectDir first, workingDir last (specific wins)
                 Collections.reverse(dirs);
                 for (NPath dir : dirs) {
-                    all.addAll(loadAgentFiles(dir));
+                    if (dir.equals(projectDir)) {
+                        if (sourcesOk.contains(NaruSource.PROJECT)) {
+                            all.addAll(loadAgentFolder(dir, agentFileNames, NaruSource.PROJECT));
+                        }
+                    } else {
+                        if (sourcesOk.contains(NaruSource.FOLDER)) {
+                            all.addAll(loadAgentFolder(dir, agentFileNames, NaruSource.FOLDER));
+                        }
+                    }
                 }
             }
+        }
 
+        if (sourcesOk.contains(NaruSource.SKILL)) {
             // add skills
             for (String skill : skills) {
                 NaruSkill s = skillManager.findSkill(skill);
-                if(s!=null){
+                if (s != null) {
                     String collected = s.getLines().stream().collect(Collectors.joining("\n"));
                     all.add(NaruMessage.user(
-                            "## ACTIVE SKILL DIRECTIVE: " + s.getName().toUpperCase() + "\n" +collected
-                    ).setSource(NaruSource.SKILL));
+                            "## ACTIVE SKILL DIRECTIVE: " + s.getName().toUpperCase() + "\n" + collected
+                    ).setSource(NaruSource.SKILL).setSourceName(s.getSourceName()));
                 }
             }
+        }
+        if (sourcesOk.contains(NaruSource.USER)) {
             all.addAll(history.stream().map(x -> x.copy().setSource(NaruSource.USER)).collect(Collectors.toList()));
-            return all;
-        }
-        return new ArrayList<>(history);
-    }
-
-    public List<NaruMessage> loadDirectives(NPath folder) {
-        if (folder == null || !folder.isDirectory()) {
-            return new ArrayList<>();
-        }
-        List<NaruMessage> all = new ArrayList<>();
-        NPath a = folder.resolve(".naru/directives.md");
-        boolean parentInherited = false;
-        for (NaruMessage naruMessage : loadDirectivesFile(a)) {
-            String c = naruMessage.getContent();
-            if (NStringUtils.trim(c).equals("/inherit")) {
-                if (!parentInherited) {
-                    parentInherited = true;
-                    all.add(naruMessage);
-                }
-            } else {
-                all.add(naruMessage);
-            }
-        }
-        a = folder.resolve(".naru/local/directives.md");
-        for (NaruMessage naruMessage : loadDirectivesFile(a)) {
-            String c = naruMessage.getContent();
-            if (NStringUtils.trim(c).equals("/inherit")) {
-                if (!parentInherited) {
-                    parentInherited = true;
-                    all.add(naruMessage);
-                }
-            } else {
-                all.add(naruMessage);
-            }
         }
         return all;
     }
 
-    private List<NaruMessage> loadAgentFiles(NPath path) {
-        List<NaruMessage> all = new ArrayList<>();
-        if (path.isDirectory()) {
-            NPath a = path.resolve(".naru/agent.md");
-            StringBuilder sb=new StringBuilder();
-            if (a.isRegularFile()) {
-                if (alreadyLoadedMdFiles.add(a)) {
-                    log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading agent from %s", a));
-                }
-                String content = a.readString().trim();
-                if(!NBlankable.isBlank(content)){
-                    sb.append(content);
+    private List<NaruMessage> loadAgentClassPath(String[] agentFileNames) {
+        Set<ClassLoader> classLoaders = new LinkedHashSet<>(Arrays.asList(
+                getClass().getClassLoader(),
+                Thread.currentThread().getContextClassLoader()
+        ));
+        StringBuilder sb = new StringBuilder();
+        Set<String> validNames = new TreeSet<>();
+        for (String agentFileName : agentFileNames) {
+            String r = "META-INF/naru/agents/" + agentFileName;
+            for (ClassLoader classLoader : classLoaders) {
+                URL u = classLoader.getResource(r);
+                if (u != null) {
+                    byte[] b = NIOUtils.readBytes(u);
+                    if (b.length > 0) {
+                        if (alreadyLoadedMdFiles.add(NPath.of(u))) {
+                            log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading agent from %s", NPath.of(u)));
+                        }
+                        String content = new String(b, StandardCharsets.UTF_8).trim();
+                        if (!NBlankable.isBlank(content)) {
+                            if (sb.length() > 0 && sb.charAt(sb.length() - 1) != '\n') {
+                                sb.append("\n");
+                            }
+                            validNames.add(u.toString());
+                            sb.append(content);
+                        }
+                    }
                 }
             }
-            a = path.resolve(".naru/local/agent.md");
-            if (a.isRegularFile()) {
-                if (alreadyLoadedMdFiles.add(a)) {
-                    log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading agent from %s", a));
-                }
-                String content = a.readString().trim();
-                if(!NBlankable.isBlank(content)){
-                    if(sb.length()>0){
-                        sb.append("\n");
-                    }
-                    sb.append(content);
-                }
+        }
+        if (sb.toString().trim().length() > 0) {
+            return Collections.singletonList(NaruMessage.user(
+                    "### AGENT CLASSPATH:\n" + sb
+            ).setSource(NaruSource.CLASSPATH).setSourceName(validNames.size() == 1 ? validNames.stream().findFirst().get() : validNames.toString()));
+        }
+        return new ArrayList<>();
+    }
+
+    private List<NaruMessage> loadAgentUserHome(String[] agentFileNames) {
+        StringBuilder sb = new StringBuilder();
+        // this will resolve (for the default nuts workspace, and linux) to
+        // ~/.config/nuts/ws/default-workspace/id/net/thevpc/naru/naru/SHARED/agents
+        NPath agents = NPath.of(NStoreKey.ofShared(NId.of("net.thevpc.naru:naru"))).resolve("agents");
+        Set<String> validNames = new TreeSet<>();
+        for (String agentFileName : agentFileNames) {
+            tryLoadAgentFile(agents.resolve(agentFileName), sb, validNames);
+        }
+        String u = sb.toString().trim();
+        if (!u.isEmpty()) {
+            return Collections.singletonList(NaruMessage.user(
+                    "### USER CONTEXT:\n" + u
+            ).setSource(NaruSource.USER_HOME).setSourceName(validNames.size() == 1 ? validNames.stream().findFirst().get() : validNames.toString()));
+        }
+        return new ArrayList<>();
+    }
+
+    private String[] resolveAgentFileNames() {
+        List<String> a = new ArrayList<>();
+        a.add("default.md");
+        String m = model.model();
+        String modelBase;
+        String modelTag;
+        if (m.indexOf(':') > 0) {
+            modelBase = m.substring(0, m.indexOf(':'));
+            modelTag = m.substring(m.indexOf(':') + 1);
+        } else {
+            modelBase = m;
+            modelTag = "";
+        }
+        a.add(modelBase + ".md");
+        if (!modelTag.isEmpty()) {
+            a.add(modelBase + "@" + modelTag + ".md");
+        }
+        return a.toArray(new String[0]);
+    }
+
+    private List<NaruMessage> loadAgentFolder(NPath folder, String[] agentFileNames, NaruSource source) {
+        List<NaruMessage> all = new ArrayList<>();
+        if (folder.isDirectory()) {
+            StringBuilder sb = new StringBuilder();
+            Set<String> validNames = new TreeSet<>();
+            for (String agentFileName : agentFileNames) {
+                tryLoadAgentFile(folder.resolve(".naru/agents/" + agentFileName), sb, validNames);
+                tryLoadAgentFile(folder.resolve(".naru/local/agents/" + agentFileName), sb, validNames);
             }
             String u = sb.toString().trim();
-            String folderName = path.name();
+            String folderName = folder.name();
             if (NBlankable.isBlank(folderName)) {
                 folderName = "Root Workspace";
             }
-            if(!u.isEmpty()){
+            if (!u.isEmpty()) {
                 all.add(NaruMessage.user(
                         "### WORKSPACE CONTEXT OVERRIDE (" + folderName + "):\n" + u
-                ).setSource(NaruSource.PROJECT_FOLDER));
+                ).setSource(source).setSourceName(validNames.size() == 1 ? validNames.stream().findFirst().get() : validNames.toString()));
             }
         }
         return all;
     }
 
-    private List<NaruMessage> loadDirectivesFile(NPath path) {
-        List<NaruMessage> a = new ArrayList<>();
+    private void tryLoadAgentFile(NPath a, StringBuilder sb, Set<String> validNames) {
+        if (a.isRegularFile()) {
+            if (alreadyLoadedMdFiles.add(a)) {
+                log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading agent from %s", a));
+            }
+            String content = a.readString().trim();
+            if (!NBlankable.isBlank(content)) {
+                if (sb.length() > 0 && sb.charAt(sb.length() - 1) != '\n') {
+                    sb.append("\n");
+                }
+                validNames.add(a.toString());
+                sb.append(content);
+            }
+        }
+    }
+
+    private List<NaruStatement> loadDirectivesFile(NPath path) {
+        List<NaruStatement> a = new ArrayList<>();
         if (path.isRegularFile()) {
             if (alreadyLoadedDirectiveFiles.add(path)) {
-                log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading directives from %s", path));
+                log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded directives from %s", path));
             }
             for (String line : path.lines()) {
                 line = line.trim();
-                a.add(NaruMessage.user(line).setSource(NaruSource.PROJECT_FOLDER));
+                if (!line.startsWith("#") && !line.isEmpty()) {
+                    a.add(agent.parseStatement(line).get());
+                }
             }
         }
         return a;
@@ -562,8 +693,18 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         NPath nf = workingDir.toAbsolute(this.workingDir);
         if (!nf.equals(this.workingDir)) {
             this.workingDir = nf;
+            List<NaruStatement> all = new ArrayList<>();
+            for (NPath path : workingDir.resolve(".naru/directives/").list().stream().filter(x -> x.name().endsWith(".md")).sorted(Comparator.comparing(x -> x.name())).collect(Collectors.toList())) {
+                all.addAll(loadDirectivesFile(path));
+            }
+            for (NPath path : workingDir.resolve(".naru/local/directives/").list().stream().filter(x -> x.name().endsWith(".md")).sorted(Comparator.comparing(x -> x.name())).collect(Collectors.toList())) {
+                all.addAll(loadDirectivesFile(path));
+            }
+            if (!all.isEmpty()) {
+                pushStatements(all.toArray(new NaruStatement[0]));
+                this.run();
+            }
             fireChanged();
-            loadDirectives(workingDir);
         }
         return this;
     }
@@ -579,14 +720,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NaruModelKey model() {
+    public NaruModelConfig model() {
         if (model != null) {
             return model;
         }
-        return runner.model();
+        NaruModelConfig model = agent.env().get("model").map(x -> x == null || x.isNull() ? null : new NaruModelConfig(x)).orNull();
+        if (model != null) {
+            return model;
+        }
+        model = registry().modelsKeys(this).stream().findFirst().map(NaruModelConfig::new).orElse(null);
+        return model;
     }
 
-    public NaruSession setModel(NaruModelKey model) {
+    public NaruSession setModel(NaruModelConfig model) {
         this.model = model;
         fireChanged();
         return this;
@@ -646,8 +792,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NaruAgent runner() {
-        return runner;
+    public NaruAgent agent() {
+        return agent;
     }
 
     @Override
@@ -706,22 +852,33 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         fireChanged();
     }
 
+//    @Override
+//    public NaruSession pushStatementReadlineForever() {
+//        pushStatement(NaruStatementHelper.ofReadLine());
+//        setForever(true);
+//        return this;
+//    }
+
     @Override
-    public NaruSession pushStatementReadlineForever() {
-        pushStatement(NaruStatementHelper.ofReadLine());
-        setForever(true);
+    public NaruSession pushStatementModelCall(String prompt) {
+        pushStatement(NaruStatementHelper.ofModelCall(prompt));
         return this;
     }
 
     @Override
-    public NaruSession pushStatementModelCall() {
-        pushStatement(NaruStatementHelper.ofModelCall());
-        return this;
-    }
-
-    @Override
-    public NaruSession prepareWorkdir() {
-        loadDirectives(workingDir);
+    public NaruSession prepareProject() {
+        List<NaruStatement> all = new ArrayList<>();
+        all.addAll(loadDirectivesFile(NPath.of(NStoreKey.ofShared(NId.of("net.thevpc.naru:naru"))).resolve("directives")));
+        for (NPath path : projectDir.resolve(".naru/directives/").list().stream().filter(x -> x.name().endsWith(".md")).sorted(Comparator.comparing(x -> x.name())).collect(Collectors.toList())) {
+            all.addAll(loadDirectivesFile(path));
+        }
+        for (NPath path : projectDir.resolve(".naru/local/directives/").list().stream().filter(x -> x.name().endsWith(".md")).sorted(Comparator.comparing(x -> x.name())).collect(Collectors.toList())) {
+            all.addAll(loadDirectivesFile(path));
+        }
+        if (!all.isEmpty()) {
+            pushStatements(all.toArray(new NaruStatement[0]));
+            this.run();
+        }
         return this;
     }
 
@@ -808,9 +965,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             } else {
                 log(NaruLogMode.PROGRESS, NMsg.ofC("Routine execution finished."));
                 pc(-1);
-                if (isForever()) {
-                    pushStatement(NaruStatementHelper.ofReadLine());
-                }
+//                if (isForever()) {
+//                    pushStatement(NaruStatementHelper.ofReadLine());
+//                }
             }
         } else {
 
@@ -869,7 +1026,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruRegistry registry() {
-        return runner.registry();
+        return agent.registry();
     }
 
     public NaruMeteringService meteringService() {
@@ -925,14 +1082,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public boolean loadSkill(String name) {
-        if(NBlankable.isBlank(name)){
+        if (NBlankable.isBlank(name)) {
             return false;
         }
-        if(skills.contains(name)){
+        if (skills.contains(name)) {
             return false;
         }
         NaruSkill s = skillManager.findSkill(name);
-        if(s==null){
+        if (s == null) {
             return false;
         }
         skills.add(name);
@@ -941,11 +1098,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public boolean unloadSkill(String name) {
-        if(NBlankable.isBlank(name)){
+        if (NBlankable.isBlank(name)) {
             return false;
         }
         name = NNameFormat.LOWER_KEBAB_CASE.format(name.trim());
-        if(skills.contains(name)){
+        if (skills.contains(name)) {
             skills.remove(name);
             return true;
         }
@@ -954,12 +1111,39 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public List<NaruResourceInfo> listSkills() {
-        return skills.stream().map(x->skillManager.findSkillInfo(x)).filter(x->x!=null).collect(Collectors.toList());
+        return skills.stream().map(x -> skillManager.findSkillInfo(x)).filter(x -> x != null).collect(Collectors.toList());
+    }
+
+    @Override
+    public NaruSession run() {
+        while (hasMoreStatements()) {
+            this.runStep();
+        }
+        return this;
+    }
+
+    @Override
+    public NaruSession runOrReadline() {
+        boolean doExit = false;
+        while (!doExit) {
+            try {
+                if (hasMoreStatements()) {
+                    while (hasMoreStatements()) {
+                        this.runStep();
+                    }
+                } else {
+                    pushStatements(NaruStatementHelper.ofReadLine());
+                }
+            } catch (NCancelException e) {
+                break;
+            }
+        }
+        return this;
     }
 
     @Override
     public NaruSession runStep() {
-        runner.invokeStep(this);
+        agent.invokeStep(this);
         return this;
     }
 }

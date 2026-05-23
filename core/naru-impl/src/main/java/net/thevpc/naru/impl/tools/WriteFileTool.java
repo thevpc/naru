@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
@@ -18,7 +19,7 @@ public class WriteFileTool implements NaruTool {
     @Override public String getName() { return "write_file"; }
     @Override public String getDescription(NaruSession session) { return "Write content to a file, creating it (and any parent directories) if necessary. Overwrites existing content."; }
     @Override public NaruToolDefinition getDefinition(NaruSession session) { return
-            NaruRegistry.buildDefinition(
+            new NaruToolDefinitionFunction(
                     getName(), getDescription(session),
                     NaruToolParameter.string("path", "Destination file path (absolute or relative to project dir)", true),
                     NaruToolParameter.string("content", "Full text content to write", true)

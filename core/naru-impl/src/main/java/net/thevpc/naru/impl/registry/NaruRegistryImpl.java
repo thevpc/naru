@@ -1,6 +1,5 @@
 package net.thevpc.naru.impl.registry;
 
-import net.thevpc.naru.api.agent.NaruAgentConfig;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
@@ -8,7 +7,8 @@ import net.thevpc.naru.api.tool.NaruDirective;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.impl.directive.*;
-import net.thevpc.naru.impl.model.OllamaProviderNaru;
+import net.thevpc.naru.impl.model.gemini.NaruGeminiProvider;
+import net.thevpc.naru.impl.model.ollama.NaruOllamaProvider;
 import net.thevpc.naru.impl.tools.*;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NLiteral;
@@ -29,10 +29,8 @@ public class NaruRegistryImpl implements NaruRegistry {
     private final Map<String, NaruDirective> stools = new LinkedHashMap<>();
     private final Map<String, String> stoolsAliases = new LinkedHashMap<>();
     private final Map<String, NaruModelProvider> modelProviders = new HashMap<>();
-    private final NaruAgentConfig config;
 
-    public NaruRegistryImpl(NaruAgentConfig config) {
-        this.config = config;
+    public NaruRegistryImpl() {
     }
 
     /**
@@ -54,13 +52,13 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public NaruRegistry registerDirective(NaruDirective tool) {
-        stools.put(tool.getName(), tool);
+        stools.put(tool.name(), tool);
         for (String alias : tool.getAliases()) {
             String old = stoolsAliases.get(alias);
-            if (old != null && !old.equals(tool.getName())) {
+            if (old != null && !old.equals(tool.name())) {
                 throw new IllegalArgumentException("alias " + alias + " is already used by " + old);
             }
-            stoolsAliases.put(alias, tool.getName());
+            stoolsAliases.put(alias, tool.name());
         }
         return this;
     }
@@ -76,11 +74,14 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     @Override
-    public List<NaruModelInfo> modelsInfos() {
+    public List<NaruModelInfo> modelsInfos(NaruSession session) {
         ArrayList<NaruModelInfo> a = new ArrayList<>();
         for (NaruModelProvider p : modelProviders.values()) {
-            for (String m : p.findModelIds()) {
-                NaruModelCapabilities c = p.getProtocol(m).get().getCapabilities();
+            for (String m : p.findModelIds(session)) {
+                NaruModelCapabilities c = p.getProtocol(new NaruModelConfig(
+                        p.getName(),
+                        m
+                ),session).get().getCapabilities();
                 a.add(new NaruModelInfo(p.getName(), m, c));
             }
         }
@@ -89,10 +90,10 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     @Override
-    public List<NaruModelKey> modelsKeys() {
+    public List<NaruModelKey> modelsKeys(NaruSession session) {
         ArrayList<NaruModelKey> a = new ArrayList<>();
         for (NaruModelProvider p : modelProviders.values()) {
-            for (String m : p.findModelIds()) {
+            for (String m : p.findModelIds(session)) {
                 a.add(new NaruModelKey(p.getName(), m));
             }
         }
@@ -106,14 +107,14 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     @Override
-    public NOptional<NaruModelProtocol> protocol(NaruModelKey model) {
+    public NOptional<NaruModelProtocol> protocol(NaruModelConfig model,NaruSession session) {
         return provider(model.provider())
-                .flatMap(p -> p.getProtocol(model.model()));
+                .flatMap(p -> p.getProtocol(model,session));
     }
 
     @Override
-    public NOptional<NaruModelKey> findModel(String keyOrName) {
-        List<NaruModelKey> models = modelsKeys();
+    public NOptional<NaruModelKey> findModel(String keyOrName,NaruSession session) {
+        List<NaruModelKey> models = modelsKeys(session);
         if (keyOrName.contains("/")) {
             NOptional<NaruModelKey> r = NaruModelKey.parse(keyOrName);
             if (r.isPresent()) {
@@ -231,6 +232,7 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerDirective(new StatDirective());
         this.registerDirective(new ModelDirective());
         this.registerDirective(new PwdDirective());
+        this.registerDirective(new PsDirective());
         this.registerDirective(new CdDirective());
         this.registerDirective(new HistoryDirective());
         this.registerDirective(new SessionDirective());
@@ -239,8 +241,22 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerDirective(new SetDirective());
         this.registerDirective(new SkillDirective());
         this.registerDirective(new SystemDirective());
+        this.registerDirective(new WhileDirective());
+        this.registerDirective(new ForDirective());
+        this.registerDirective(new IfDirective());
+        this.registerDirective(new ElseDirective());
+        this.registerDirective(new ElseIfDirective());
+        this.registerDirective(new EndDirective());
+        this.registerDirective(new ReloadDirective());
+        this.registerDirective(new NewDirective());
+        this.registerDirective(new RestoreDirective());
+        this.registerDirective(new SaveDirective());
+        this.registerDirective(new ResetDirective());
+        this.registerDirective(new ContextDirective());
+        this.registerDirective(new GoDirective());
 
-        registerModelProvider(new OllamaProviderNaru(config.getProviderUrl()));
+        registerModelProvider(new NaruOllamaProvider());
+        registerModelProvider(new NaruGeminiProvider());
         return this;
     }
 

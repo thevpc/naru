@@ -11,6 +11,9 @@ public interface NaruSessionManager {
 
     boolean delete(String uuidOrName);
 
+    NaruSessionManager restoreSnapshot();
+
+    NaruSessionManager reload();
     NaruSessionManager load(String uuid);
 
     NaruSessionManager copyCurrent();

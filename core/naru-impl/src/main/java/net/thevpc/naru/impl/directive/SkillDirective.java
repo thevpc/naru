@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 
 public class SkillDirective extends AbstractDirective {
     public SkillDirective() {
-        super("skill", "list, available, show, load and unload skills", "skills");
+        super("skills","context", "manage skills", "skill");
     }
 
     @Override
@@ -59,7 +59,7 @@ public class SkillDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command %s", a.image()));
+                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
@@ -118,9 +118,8 @@ public class SkillDirective extends AbstractDirective {
         }
 
         String context2 = cs.getLines().stream().collect(Collectors.joining("\n"));
-        List<NText> linesOk = NaruTerminalFormatter.formatMarkdown(context2, null).splitLines();
-        Set<Integer> toShow = NaruUtils.parseLineIndicesToShow(linesOk.size(),cmdLine);
-        NaruUtils.showItems(linesOk, toShow, sessionContext);
+        List<NaruUtils.LineRange> lineRanges = NaruUtils.parseRanges(cmdLine);
+        NaruUtils.showItemsWithFormat(context2,"markdown",lineRanges, sessionContext);
     }
 
 

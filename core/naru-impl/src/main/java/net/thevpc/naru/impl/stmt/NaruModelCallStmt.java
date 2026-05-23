@@ -22,9 +22,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class NaruModelCallStmt extends NaruStatement {
-
-    public NaruModelCallStmt() {
+    private String prompt;
+    public NaruModelCallStmt(String prompt) {
         super(Type.MODEL_CALL);
+        this.prompt = prompt;
     }
 
     public NaruModelCallStmt(NElement element) {
@@ -40,6 +41,7 @@ public class NaruModelCallStmt extends NaruStatement {
         }
         switch (NNameFormat.CONST_NAME.format(name)) {
             case "MODEL_CALL": {
+                this.prompt = element.asObject().get().get("prompt").flatMap(NElement::asStringValue).orNull();
                 break;
             }
             default: {
@@ -51,6 +53,9 @@ public class NaruModelCallStmt extends NaruStatement {
     @Override
     public NElement toElement() {
         NObjectElementBuilder a = NElement.ofObjectBuilder(type.name());
+        if(!NBlankable.isBlank(prompt)){
+            a.set("prompt", NElement.ofString(prompt));
+        }
         return a.build();
     }
 
@@ -58,8 +63,11 @@ public class NaruModelCallStmt extends NaruStatement {
     public void exec(NaruSession session) {
         session.log(NaruLogMode.PROGRESS, NMsg.ofC("%s Model: %s…",
                 NMsg.ofStyledPrimary8("\uD83E\uDDE0"),
-                NMsg.ofStyledPrimary1(session.model().toMsg())
+                session.model().toText()
         ));
+        if(!NBlankable.isBlank(prompt)){
+            session.addHistory(NaruMessage.user(prompt));
+        }
         NaruResponse response;
         List<NaruToolDefinition> defs = new ArrayList<>();
         for (NaruTool t : session.registry().tools().values()) {
@@ -71,28 +79,28 @@ public class NaruModelCallStmt extends NaruStatement {
         } catch (Exception e) {
             String err = "ERROR calling model: " + e.getMessage();
             session.log(NaruLogMode.PROGRESS, NMsg.ofC("%s", err).asError());
-            if (session.isForever()) {
-                session.pushStatement(NaruStatementHelper.ofReadLine());
-            }
+//            if (session.isForever()) {
+//                session.pushStatement(NaruStatementHelper.ofReadLine());
+//            }
             return;
         }
 
         NaruMessage assistantMsg = response.getMessage();
         if (assistantMsg == null) {
             session.log(NaruLogMode.DEBUG, NMsg.ofC("Model returned empty response."));
-            if (session.isForever()) {
-                session.pushStatement(NaruStatementHelper.ofReadLine());
-            }
+//            if (session.isForever()) {
+//                session.pushStatement(NaruStatementHelper.ofReadLine());
+//            }
             return;
         }
         session.addHistory(assistantMsg);
         // ── Case 1: model wants to call tools ─────────────────────────────
         if (assistantMsg.hasToolCalls()) {
             List<NaruToolCall> toolCalls = assistantMsg.getToolCalls();
-            if (session.isForever()) {
-                session.pushStatement(NaruStatementHelper.ofReadLine());
-            }
-            session.pushStatement(NaruStatementHelper.ofModelCall());
+//            if (session.isForever()) {
+//                session.pushStatement(NaruStatementHelper.ofReadLine());
+//            }
+            session.pushStatement(NaruStatementHelper.ofModelCall(null));
             for (int i = toolCalls.size() - 1; i >= 0; i--) {
                 session.pushStatement(NaruStatementHelper.ofToolCall(toolCalls.get(i)));
             }
@@ -116,12 +124,13 @@ public class NaruModelCallStmt extends NaruStatement {
                         NMsg.ofStyledSuccess("✅")
                 ));
                 session.pc(-1);
-                if (session.isForever()) {
-                    session.pushStatement(NaruStatementHelper.ofReadLine());
-                }
+//                if (session.isForever()) {
+//                    session.pushStatement(NaruStatementHelper.ofReadLine());
+//                }
             }
-        } else if (session.isForever()) {
-            session.pushStatement(NaruStatementHelper.ofReadLine());
         }
+//        else if (session.isForever()) {
+//            session.pushStatement(NaruStatementHelper.ofReadLine());
+//        }
     }
 }

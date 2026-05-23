@@ -7,8 +7,10 @@ import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
+import net.thevpc.nuts.util.NOptional;
 
 public class NaruStatementHelper {
+
     public static NaruStatement of(NElement element) {
         String name;
         if (element.isName()) {
@@ -41,6 +43,10 @@ public class NaruStatementHelper {
                 return new NaruWhileStmt(element);
             case "FOR":
                 return new NaruForStmt(element);
+            case "DEF_ROUTINE_LINE":
+                return new NaruDefRoutineLineStmt(element);
+            case "DIRECTIVE_CALL":
+                return new NaruDirectiveCallStmt(element);
         }
         throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
     }
@@ -57,8 +63,8 @@ public class NaruStatementHelper {
         return new NaruToolCallStmt(call);
     }
 
-    public static NaruStatement ofModelCall() {
-        return new NaruModelCallStmt();
+    public static NaruStatement ofModelCall(String prompt) {
+        return new NaruModelCallStmt(prompt);
     }
 
 }

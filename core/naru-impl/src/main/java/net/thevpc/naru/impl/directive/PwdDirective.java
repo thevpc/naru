@@ -8,7 +8,7 @@ import net.thevpc.nuts.text.NMsg;
 
 public class PwdDirective extends AbstractDirective {
     public PwdDirective() {
-        super("pwd", "print working directory");
+        super("pwd","general", "print working directory");
     }
 
     @Override
