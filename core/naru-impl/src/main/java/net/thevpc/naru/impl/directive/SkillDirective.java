@@ -21,12 +21,12 @@ import java.util.stream.Collectors;
 
 public class SkillDirective extends AbstractDirective {
     public SkillDirective() {
-        super("skills","context", "manage skills", "skill");
+        super("skills", "context", "manage skills", "skill");
     }
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
         if (cmdLine.isEmpty()) {
             executeList(context, cmdLine);
@@ -59,25 +59,25 @@ public class SkillDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
+                    session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
     }
 
     public void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        List<NaruResourceInfo> naruResourceInfos = sessionContext.listSkills();
+        NaruSession session = context.session();
+        List<NaruResourceInfo> naruResourceInfos = session.listSkills();
         naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
         int index = 1;
         if (naruResourceInfos.isEmpty()) {
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("No skills loaded (%s available)", sessionContext.skillManager().available().size()));
+            session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("No skills loaded (%s available)", session.skillManager().available().size()));
             return;
         }
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s skills loaded (%s available)", naruResourceInfos.size(),
-                sessionContext.skillManager().available().size()));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s skills loaded (%s available)", naruResourceInfos.size(),
+                session.skillManager().available().size()));
         for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,
+            session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,
                     NMsg.ofStyledKeyword(naruResourceInfo.getMode().name().toLowerCase()),
                     NMsg.ofStyledPrimary1(naruResourceInfo.getUuid()),
                     NMsg.ofStyledString(naruResourceInfo.getName()))
@@ -87,13 +87,13 @@ public class SkillDirective extends AbstractDirective {
     }
 
     public void executeAvailable(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        List<NaruResourceInfo> naruResourceInfos = sessionContext.skillManager().available();
+        NaruSession session = context.session();
+        List<NaruResourceInfo> naruResourceInfos = session.skillManager().available();
         naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
         int index = 1;
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s skills available", naruResourceInfos.size()));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s skills available", naruResourceInfos.size()));
         for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,
+            session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,
                     NMsg.ofStyledKeyword(naruResourceInfo.getMode().name().toLowerCase()),
                     NMsg.ofStyledPrimary1(naruResourceInfo.getUuid()),
                     NMsg.ofStyledString(naruResourceInfo.getName()))
@@ -103,14 +103,14 @@ public class SkillDirective extends AbstractDirective {
     }
 
     public void executeShow(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
 
-        String name = cmdLine.next().map(x->x.image()).orElse("");
+        String name = cmdLine.next().map(x -> x.image()).orElse("");
         if (name.isEmpty()) {
             context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("missing skill name : %s", name));
             return;
         }
-        NaruSkillManager sm = sessionContext.skillManager();
+        NaruSkillManager sm = session.skillManager();
         NaruSkill cs = sm.findSkill(name);
         if (cs == null) {
             context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("skill not found : %s", name).asError());
@@ -119,68 +119,66 @@ public class SkillDirective extends AbstractDirective {
 
         String context2 = cs.getLines().stream().collect(Collectors.joining("\n"));
         List<NaruUtils.LineRange> lineRanges = NaruUtils.parseRanges(cmdLine);
-        NaruUtils.showItemsWithFormat(context2,"markdown",lineRanges, sessionContext);
+        NaruUtils.showItemsWithFormat(context2, "markdown", lineRanges, session);
     }
 
 
-
-
     public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("skill"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list loaded skills"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s available", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list available skills"));
+        NaruSession session = context.session();
+        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary5(name()));
+        session.log(NaruLogMode.AGENT_RESPONSE, kk);
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("list")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list loaded skills"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("available")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list available skills"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s show <n1>-<p1>,<n2>-<p2>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show intervals"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <n1>-<p1>,<n2>-<p2>", kk, NMsg.ofStyledPrimary4("show")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show intervals"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s load <name>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           load skill (or default 'main')"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <name>", kk, NMsg.ofStyledPrimary4("load")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           load skill (or default 'main')"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s unload <name>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           unload skill"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <name>", kk, NMsg.ofStyledPrimary4("unload")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           unload skill"));
 
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
 
     }
 
     public void executeLoad(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        String name = cmdLine.next().map(x->x.image()).orElse("");
+        NaruSession session = context.session();
+        String name = cmdLine.next().map(x -> x.image()).orElse("");
         if (name.isEmpty()) {
             context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("missing skill name : %s", name));
             return;
         }
-        if (sessionContext.loadSkill(name)) {
+        if (session.loadSkill(name)) {
             context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded skill : %s", name));
-            sessionContext.addHistory(NaruMessage.user(NMsg.ofC("Loaded skill : %s", name).toString()));
+            session.addHistory(NaruMessage.user(NMsg.ofC("Loaded skill : %s", name).toString()));
         } else {
-            if (sessionContext.findSkill(name) == null) {
+            if (session.findSkill(name) == null) {
                 context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("skill not found : %s", name).asError());
-                sessionContext.addHistory(NaruMessage.user(NMsg.ofC("Error : skill not found : %s", name).toString()));
+                session.addHistory(NaruMessage.user(NMsg.ofC("Error : skill not found : %s", name).toString()));
             }
         }
     }
 
     public void executeUnload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        String name = cmdLine.next().map(x->x.image()).orElse("");
+        NaruSession session = context.session();
+        String name = cmdLine.next().map(x -> x.image()).orElse("");
         if (name.isEmpty()) {
             context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("missing skill name : %s", name));
             return;
         }
-        if (sessionContext.unloadSkill(name)) {
+        if (session.unloadSkill(name)) {
             context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Unloaded skill : %s", name));
-            sessionContext.addHistory(NaruMessage.user(NMsg.ofC("Unloaded skill : %s", name).toString()));
+            session.addHistory(NaruMessage.user(NMsg.ofC("Unloaded skill : %s", name).toString()));
         } else {
-            if (sessionContext.findSkill(name) == null) {
+            if (session.findSkill(name) == null) {
                 context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("skill not found : %s", name).asError());
-                sessionContext.addHistory(NaruMessage.user(NMsg.ofC("Error : skill not found : %s", name).toString()));
+                session.addHistory(NaruMessage.user(NMsg.ofC("Error : skill not found : %s", name).toString()));
             }
         }
 
@@ -194,13 +192,13 @@ public class SkillDirective extends AbstractDirective {
             NCmdLine cmdLine,
             NCmdLineAutoCompleteResolver.Pos pos,
             NaruSession session) {
-            List<NArgCandidate> candidates = new ArrayList<>();
+        List<NArgCandidate> candidates = new ArrayList<>();
         String[] stringArray = cmdLine.toStringArray();
         int wordIndex = pos.wordIndex();
         String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
 
         if (wordIndex == 1) {
-            addCandidates(candidates, currentArg, "available", "list", "load", "unload","show", "help");
+            addCandidates(candidates, currentArg, "available", "list", "load", "unload", "show", "help");
         }
         return candidates;
     }

@@ -8,7 +8,6 @@ import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.impl.model.NaruModelCapabilitiesImpl;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
-import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.*;
@@ -35,17 +34,17 @@ public class NaruGeminiProvider extends AbstractNaruModelProvider {
 
     @Override
     public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
-        if (!model.provider().equals(getName())) {
+        if (!model.provider().equals(name())) {
             return NOptional.ofNamedEmpty(NMsg.ofC("protocol for %s", model));
         }
 
         NaruModelCapabilities capabilities = getStaticCapabilities(model.model());
         return NOptional.of(protocols.computeIfAbsent(model,
-                k -> new NaruModelProtocolGemini(model, getName(), capabilities)
+                k -> new NaruModelProtocolGemini(model, name(), capabilities)
         ));
     }
     private String apiKeyConfigKey(){
-        return getName() + ".apiKey";
+        return name() + ".apiKey";
     }
 
     @Override

@@ -77,8 +77,8 @@ public class NaruMeteringServiceImpl implements NaruMeteringService {
     private void accumulate(NaruTokenTransaction part, NaruModelStatsAccumulator into) {
         into.setPromptTokens(part.getPromptTokens());
         into.setCompletionTokens(part.getCompletionTokens());
-        into.setTotalTokens(into.getTotalTokens() + part.getCompletionTokens() + part.getPromptTokens());
-        into.setContextUsage(into.getCompletionTokens() + part.getCompletionTokens());
+        into.setContextUsage(into.getCompletionTokens() + part.getPromptTokens());
+        into.setTotalTokens(into.getTotalTokens() + into.getContextUsage());
         long old = into.getPeakContextUsage();
         into.setPeakContextUsage(Math.max(old, into.getContextUsage()));
         into.setCalls(into.getCalls() + 1);

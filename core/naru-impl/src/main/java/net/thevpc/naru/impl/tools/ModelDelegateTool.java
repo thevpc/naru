@@ -77,7 +77,9 @@ public class ModelDelegateTool implements NaruTool {
             return "Error: Model not found : " + modelName;
         }
         try {
-            NaruResponse response = context.session().chat(model, messages, Collections.emptyList());
+            NaruResponse response = context.session().chat(model,
+                    new NaruModelRequest(messages)
+            );
             if (response.getMessage() != null) {
                 return response.getMessage().getContent();
             }

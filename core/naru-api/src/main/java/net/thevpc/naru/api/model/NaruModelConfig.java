@@ -252,7 +252,7 @@ public class NaruModelConfig implements NToElement {
     public NText toText() {
         NTextBuilder b = NTextBuilder.of();
         if (!NBlankable.isBlank(name)) {
-            b.append(name);
+            b.append(name, NTextStyle.primary1());
             b.append(" as ");
         }
         b.append(provider, NTextStyle.primary9())

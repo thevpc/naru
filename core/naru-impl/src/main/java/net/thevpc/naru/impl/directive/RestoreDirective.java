@@ -20,7 +20,7 @@ public class RestoreDirective extends AbstractDirective {
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
         if (cmdLine.isEmpty()) {
             executeRestore(context, cmdLine);
@@ -33,7 +33,7 @@ public class RestoreDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
+                    session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
@@ -42,24 +42,24 @@ public class RestoreDirective extends AbstractDirective {
 
 
     public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1(name()));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           restore session"));
+        session.log(NaruLogMode.AGENT_RESPONSE, kk);
+        session.log(NaruLogMode.AGENT_RESPONSE, kk);
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", kk));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           restore session"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
 
     }
 
 
     public void executeRestore(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NaruSessionManager sm = sessionContext.sessionManager();
+        NaruSession session = context.session();
+        NaruSessionManager sm = session.sessionManager();
         sm.restoreSnapshot();
-        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", sessionContext.name()));
+        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", session.name()));
     }
 
     @Override

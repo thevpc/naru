@@ -17,12 +17,12 @@ import java.util.stream.Collectors;
 
 public class RoutineDirective extends AbstractDirective {
     public RoutineDirective() {
-        super("routine","routine", "create, update , list and run  routines","routines");
+        super("routine", "routine", "create, update , list and run  routines", "routines");
     }
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
         if (cmdLine.isEmpty()) {
             executeShow(context, cmdLine);
@@ -67,19 +67,19 @@ public class RoutineDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
+                    session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
     }
 
     public void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        List<NaruResourceInfo> naruResourceInfos = sessionContext.routineManager().list();
+        NaruSession session = context.session();
+        List<NaruResourceInfo> naruResourceInfos = session.routineManager().list();
         naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
         int index = 1;
         for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,
+            session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,
                     NMsg.ofStyledKeyword(naruResourceInfo.getMode().name().toLowerCase()),
                     NMsg.ofStyledPrimary1(naruResourceInfo.getUuid()),
                     NMsg.ofStyledString(naruResourceInfo.getName()))
@@ -87,14 +87,15 @@ public class RoutineDirective extends AbstractDirective {
             index++;
         }
     }
-    public void executeShow(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
 
-        NaruRoutineManager sm = sessionContext.routineManager();
+    public void executeShow(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruSession session = context.session();
+
+        NaruRoutineManager sm = session.routineManager();
         NaruRoutine cs = sm.getCurrentRoutine();
 
         Set<Integer> toShow = new HashSet<>();
-        int historySize = sessionContext.history().size();
+        int historySize = session.history().size();
         while (!cmdLine.isEmpty()) {
             String a = cmdLine.next().get().image();
             for (String range : a.split(",;")) {
@@ -116,7 +117,7 @@ public class RoutineDirective extends AbstractDirective {
                             toShow.add(i);
                         }
                     } else {
-                        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid position to drop", range).asError());
+                        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid position to drop", range).asError());
                         return;
                     }
                 }
@@ -128,7 +129,7 @@ public class RoutineDirective extends AbstractDirective {
         if (toShow.isEmpty()) {
             if (!cs.getLines().isEmpty()) {
                 for (Map.Entry<Integer, String> e : cs.getLines().entrySet()) {
-                    logRow(e.getKey(), lastKey, e.getValue(), sessionContext);
+                    logRow(e.getKey(), lastKey, e.getValue(), session);
                 }
             }
         } else {
@@ -137,13 +138,13 @@ public class RoutineDirective extends AbstractDirective {
                 int i = bb.get(k);
                 String s = cs.getLines().get(i);
                 if (s != null) {
-                    logRow(i, lastKey, s, sessionContext);
+                    logRow(i, lastKey, s, session);
                 }
             }
         }
     }
 
-    private void logRow(int rowIndex, int max, String a, NaruSession sessionContext) {
+    private void logRow(int rowIndex, int max, String a, NaruSession session) {
         int zeros = (int) Math.ceil(Math.log10(max));
         if (zeros <= 0) {
             zeros = 1;
@@ -154,33 +155,33 @@ public class RoutineDirective extends AbstractDirective {
         for (int j = 0; j < lines.size(); j++) {
             String line = lines.get(j);
             if (j == 0) {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
                         NMsg.ofStyledNumber(zformat.format(rowIndex)),
                         line));
             } else {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("        %s", line));
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("        %s", line));
             }
         }
     }
 
     public void executeClear(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NaruRoutineManager sm = sessionContext.routineManager();
+        NaruSession session = context.session();
+        NaruRoutineManager sm = session.routineManager();
         NaruRoutine cs = sm.getCurrentRoutine();
         int count = cs.clear();
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s lines", count));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s lines", count));
     }
 
     public void executeDrop(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         if (cmdLine.isEmpty()) {
             return;
         }
-        NaruSession sessionContext = context.session();
-        NaruRoutineManager sm = sessionContext.routineManager();
+        NaruSession session = context.session();
+        NaruRoutineManager sm = session.routineManager();
         NaruRoutine cs = sm.getCurrentRoutine();
 
         Set<Integer> toRemove = new HashSet<>();
-        int historySize = sessionContext.history().size();
+        int historySize = session.history().size();
         while (!cmdLine.isEmpty()) {
             String a = cmdLine.next().get().image();
             for (String range : a.split(",;")) {
@@ -202,7 +203,7 @@ public class RoutineDirective extends AbstractDirective {
                             toRemove.add(i);
                         }
                     } else {
-                        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid position to drop", range).asError());
+                        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid position to drop", range).asError());
                         return;
                     }
                 }
@@ -215,43 +216,43 @@ public class RoutineDirective extends AbstractDirective {
                 b.add(a.get(i));
             }
         }
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s lines", b.size()));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s lines", b.size()));
     }
 
     public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("routine"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list <n1>-<p1>,<n2>-<p2>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list intervals"));
+        NaruSession session = context.session();
+        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary5(name()));
+        session.log(NaruLogMode.AGENT_RESPONSE, kk);
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("list")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <n1>-<p1>,<n2>-<p2>", kk, NMsg.ofStyledPrimary4("list")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list intervals"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s drop <n1>-<p1>,<n2>-<p2>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop intervals"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <n1>-<p1>,<n2>-<p2>", kk, NMsg.ofStyledPrimary4("drop")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop intervals"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s clear", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           clear routine"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("clear")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           clear routine"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s load <name>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           load routine (or default 'main')"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <name>", kk, NMsg.ofStyledPrimary4("load")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           load routine (or default 'main')"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s unload", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           unload routine (back to 'main')"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("unload")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           unload routine (back to 'main')"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s run", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           run routine"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("run")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           run routine"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s name", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show routine name"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("name")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show routine name"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
 
     }
 
     public void executeLoad(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NaruRoutineManager sm = sessionContext.routineManager();
+        NaruSession session = context.session();
+        NaruRoutineManager sm = session.routineManager();
         String name = context.argument();
         if (name.isEmpty()) {
             name = "main";
@@ -261,22 +262,22 @@ public class RoutineDirective extends AbstractDirective {
     }
 
     public void executeUnload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NaruRoutineManager sm = sessionContext.routineManager();
+        NaruSession session = context.session();
+        NaruRoutineManager sm = session.routineManager();
         sm.switchRoutine("main");
         context.session().log(NaruLogMode.PROGRESS, NMsg.ofC("Unloaded routine context. Back to main."));
     }
 
     public void executeRun(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NaruRoutineManager sm = sessionContext.routineManager();
-        sessionContext.agent().invokeRoutine(sessionContext, sm.getCurrentRoutineName());
+        NaruSession session = context.session();
+        NaruRoutineManager sm = session.routineManager();
+        session.agent().invokeRoutine(session, sm.getCurrentRoutineName());
     }
 
     public void executeName(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NaruRoutineManager sm = sessionContext.routineManager();
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current routine: %s", sm.getCurrentRoutineName()));
+        NaruSession session = context.session();
+        NaruRoutineManager sm = session.routineManager();
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current routine: %s", sm.getCurrentRoutineName()));
     }
 
     @Override
@@ -288,7 +289,7 @@ public class RoutineDirective extends AbstractDirective {
         String[] stringArray = cmdLine.toStringArray();
         int wordIndex = pos.wordIndex();
         String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
-        
+
         if (wordIndex == 1) {
             addCandidates(candidates, currentArg, "list", "drop", "clear", "load", "unload", "run", "name", "help");
         }

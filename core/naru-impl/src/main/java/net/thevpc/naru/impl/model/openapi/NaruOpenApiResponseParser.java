@@ -3,7 +3,9 @@ package net.thevpc.naru.impl.model.openapi;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruToolCall;
+import net.thevpc.naru.impl.model.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.*;
@@ -60,7 +62,6 @@ public class NaruOpenApiResponseParser implements NElementDeserializer<NaruRespo
             // 2. Locate the first entry in the choices array
             NArrayElement choicesArr = root.getArray("choices").orNull();
             if (choicesArr == null || choicesArr.isEmpty()) {
-                // Defensive fallback if choices array is missing
                 response.setDone(true);
                 response.setMessage(NaruMessage.assistant(""));
                 return response;
@@ -68,10 +69,9 @@ public class NaruOpenApiResponseParser implements NElementDeserializer<NaruRespo
 
             NObjectElement firstChoice = choicesArr.get(0).get().asObject().get();
 
-            // Extract the finish reason to determine completion state
+            // FIXES BUG #1: The turn generation is complete if it hits "stop" OR "tool_calls"
             String finishReason = firstChoice.getStringValue("finish_reason").orElse("");
-            // "stop" means it completed cleanly; "tool_calls" means it's awaiting execution
-            response.setDone("stop".equals(finishReason));
+            response.setDone("stop".equals(finishReason) || "tool_calls".equals(finishReason));
 
             // Extract the standard nested "message" object
             NObjectElement msg = firstChoice.getObject("message").orNull();
@@ -100,12 +100,22 @@ public class NaruOpenApiResponseParser implements NElementDeserializer<NaruRespo
                     if (fn.get("arguments").isPresent()) {
                         NElement argsEl = fn.get("arguments").get();
                         if (argsEl.isAnyObject()) {
-                            args = context.toObject(argsEl, Map.class);
+                            // Safe fallback mapping loop over NObjectElement entries instead of abstract Map.class unmarshalling
+                            for (NPairElement entry : argsEl.asObject().get().namedPairs()) {
+                                String k = entry.key().asStringValue().orNull();
+                                if(!NBlankable.isBlank(k)) {
+                                    args.put(k, NElements.of().toSimple(entry.value()));
+                                }
+                            }
                         } else if (argsEl.isPrimitive()) {
-                            // Handles stringified JSON arguments safely (Gemini default style)
+                            // Safely handle raw escaped JSON argument string blocks
                             String argsStr = argsEl.asStringValue().get();
                             try {
-                                args = NElementReader.ofJson().read(argsStr, Map.class);
+                                // Direct string-to-map conversion using plain json engine
+                                Map<?, ?> readMap = NElementReader.ofJson().read(argsStr, Map.class);
+                                for (Map.Entry<?, ?> entry : readMap.entrySet()) {
+                                    args.put(String.valueOf(entry.getKey()), entry.getValue());
+                                }
                             } catch (Exception ignored) {
                                 args.put("raw", argsStr);
                             }
@@ -118,7 +128,7 @@ public class NaruOpenApiResponseParser implements NElementDeserializer<NaruRespo
             } else {
                 // 4. Content Text Fallback processing (e.g., XML-like tool formats if applicable)
                 if (content.startsWith("<function=")) {
-                    NaruToolCall a = NaruModelProtocolOpenApiBase.parseXmlLikeToolCall(content);
+                    NaruToolCall a = NaruModelProtocolBase.parseXmlLikeToolCall(content);
                     if (a != null) {
                         List<NaruToolCall> calls = new ArrayList<>();
                         calls.add(a);

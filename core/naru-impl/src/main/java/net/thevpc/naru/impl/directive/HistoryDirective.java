@@ -18,12 +18,12 @@ import java.util.stream.Collectors;
 
 public class HistoryDirective extends AbstractDirective {
     public HistoryDirective() {
-        super("history","context", "print or manipulate history");
+        super("history", "context", "print or manipulate history");
     }
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
         if (cmdLine.isEmpty()) {
             executeList(context, false, cmdLine);
@@ -56,14 +56,14 @@ public class HistoryDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
+                    session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
     }
 
     public void executeList(NaruDirectiveCallContext context, boolean includeAll, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         List<NaruMessage> all = context.session().history(includeAll);
         Set<Integer> toShow = new HashSet<>();
         int historySize = all.size();
@@ -88,7 +88,7 @@ public class HistoryDirective extends AbstractDirective {
                             toShow.add(i);
                         }
                     } else {
-                        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid position to drop", range).asError());
+                        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid position to drop", range).asError());
                         return;
                     }
                 }
@@ -97,19 +97,19 @@ public class HistoryDirective extends AbstractDirective {
         if (toShow.isEmpty()) {
             for (int i = 0; i < all.size(); i++) {
                 NaruMessage a = all.get(i);
-                logRow(i + 1, all.size(), a, sessionContext);
+                logRow(i + 1, all.size(), a, session);
             }
         } else {
             List<Integer> bb = toShow.stream().sorted().collect(Collectors.toList());
             for (int k = 0; k < bb.size(); k++) {
                 int i = bb.get(k);
                 NaruMessage a = all.get(i);
-                logRow(i + 1, all.size(), a, sessionContext);
+                logRow(i + 1, all.size(), a, session);
             }
         }
     }
 
-    private void logRow(int rowIndex, int max, NaruMessage a, NaruSession sessionContext) {
+    private void logRow(int rowIndex, int max, NaruMessage a, NaruSession session) {
         int zeros = (int) Math.ceil(Math.log10(max));
         if (zeros <= 0) {
             zeros = 1;
@@ -120,20 +120,20 @@ public class HistoryDirective extends AbstractDirective {
         for (int j = 0; j < lines.size(); j++) {
             String line = lines.get(j);
             if (j == 0) {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %-9s%s %s",
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %-9s%s %s",
                         NMsg.ofStyledNumber(zformat.format(rowIndex)),
                         NMsg.ofStyled(agentIcon(a.getRole()), agentStyle(a.getRole())),
                         NMsg.ofStyled(a.getRole().name(), agentStyle(a.getRole())),
                         NMsg.ofStyled(">", agentStyle(a.getRole()))
                         , line));
             } else {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("        %s", line));
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("        %s", line));
             }
         }
         List<NaruToolCall> toolCalls = a.getToolCalls();
         if (toolCalls != null) {
             for (NaruToolCall toolCall : toolCalls) {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %-9s%s [require] %s",
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %-9s%s [require] %s",
                         NMsg.ofStyledNumber(zformat.format(rowIndex)),
                         NMsg.ofStyled(agentIcon(a.getRole()), agentStyle(a.getRole())),
                         NMsg.ofStyled(a.getRole().name(), agentStyle(a.getRole())),
@@ -172,18 +172,18 @@ public class HistoryDirective extends AbstractDirective {
     }
 
     public void executeClear(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        int count = sessionContext.clearHistory();
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s history messages", count));
+        NaruSession session = context.session();
+        int count = session.clearHistory();
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s history messages", count));
     }
 
     public void executeDrop(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         if (cmdLine.isEmpty()) {
             return;
         }
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         Set<Integer> toRemove = new HashSet<>();
-        int historySize = sessionContext.history().size();
+        int historySize = session.history().size();
         while (!cmdLine.isEmpty()) {
             String a = cmdLine.next().get().image();
             for (String range : a.split(",;")) {
@@ -205,7 +205,7 @@ public class HistoryDirective extends AbstractDirective {
                             toRemove.add(i);
                         }
                     } else {
-                        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid position to drop", range).asError());
+                        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid position to drop", range).asError());
                         return;
                     }
                 }
@@ -218,7 +218,7 @@ public class HistoryDirective extends AbstractDirective {
                 b.add(a.get(i));
             }
         }
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s history messages", b.size()));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s history messages", b.size()));
 
         // TODO: history drop is not pair-aware — dropping a tool_call or tool_result
         // message individually will produce a malformed conversation history.
@@ -226,42 +226,42 @@ public class HistoryDirective extends AbstractDirective {
     }
 
     public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("history"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list <n1>-<p1>,<n2>-<p2>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list intervals"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s trim", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           remove empty items intervals"));
+        NaruSession session = context.session();
+        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary5(name()));
+        session.log(NaruLogMode.AGENT_RESPONSE, kk);
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("list")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <n1>-<p1>,<n2>-<p2>", kk, NMsg.ofStyledPrimary4("list")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list intervals"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("trim")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           remove empty items intervals"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s drop <n1>-<p1>,<n2>-<p2>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop intervals"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <n1>-<p1>,<n2>-<p2>", kk, NMsg.ofStyledPrimary4("drop")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop intervals"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s clear", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           clear history"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("clear")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           clear history"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s all", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show all history (including agents, skills, tool calls and results)"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("all")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show all history (including agents, skills, tool calls and results)"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
     }
 
     public void executeTrim(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         while (!cmdLine.isEmpty()) {
             String a = cmdLine.next().get().image();
             if (a.matches("[0-9]+")) {
-                int deleted = sessionContext.trimHistory(Integer.parseInt(a));
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s history messages", deleted));
+                int deleted = session.trimHistory(Integer.parseInt(a));
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s history messages", deleted));
                 return;
             } else {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid trim").asError());
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid trim").asError());
                 return;
             }
         }
-        int deleted = sessionContext.trimHistory(1024); // default trim
-        sessionContext.log(NaruLogMode.RAW, NMsg.ofC("removed %s history messages", deleted));
+        int deleted = session.trimHistory(1024); // default trim
+        session.log(NaruLogMode.RAW, NMsg.ofC("removed %s history messages", deleted));
     }
 }

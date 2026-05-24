@@ -108,10 +108,10 @@ public class NaruAgentImpl implements NaruAgent {
         if (pwd == null) {
             pwd = NPath.ofUserDirectory();
         }
-        NaruSession sessionContext = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService);
-        enableRichTerm(sessionContext);
+        NaruSession session = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService);
+        enableRichTerm(session);
         // 1. foundation — static, immutable
-        sessionContext.addHistory(NaruMessage.system(buildSystemPrompt(sessionContext)));
+        session.addHistory(NaruMessage.system(buildSystemPrompt(session)));
         NOut.resetLine();
         log(NaruLogMode.RAW, NMsg.ofC(
                 "╭╮╷╭─╮╭─╮╷ ╷\n" +
@@ -119,20 +119,20 @@ public class NaruAgentImpl implements NaruAgent {
                         "╵ ╵╵ ╵╵╰╴╰─╯ v%s", NVersion.of("0.8.9")));
 
         // 2. imperative init — mutates session state on top of foundation
-        sessionContext.prepareProject();
+        session.prepareProject();
 
         // 3. runtime
-        sessionContext.runOrReadline();
+        session.runOrReadline();
 //        run is equivalent to, if you need to run step by step
-//        while (sessionContext.hasMoreStatements()) {
-//            invokeStep(sessionContext);
+//        while (session.hasMoreStatements()) {
+//            invokeStep(session);
 //        }
     }
 
-    private void enableRichTerm(NaruSession sessionContext) {
+    private void enableRichTerm(NaruSession session) {
         NSystemTerminal.enableRichTerm();
         NIO.of().systemTerminal()
-                .commandAutoCompleteResolver(new NaruNCmdLineAutoCompleteResolver(sessionContext))
+                .commandAutoCompleteResolver(new NaruNCmdLineAutoCompleteResolver(session))
                 .commandHighlighter(new NaruTerminalFormatter(this))
         ;
     }
@@ -144,19 +144,18 @@ public class NaruAgentImpl implements NaruAgent {
         if (pwd == null) {
             pwd = NPath.ofUserDirectory();
         }
-        NaruSession sessionContext = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService);
-        sessionContext.addHistory(NaruMessage.system(buildSystemPrompt(sessionContext)));
+        NaruSession session = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService);
+        session.addHistory(NaruMessage.system(buildSystemPrompt(session)));
         log(NaruLogMode.TRACE, NMsg.ofC("📋 Task: %s", NMsg.ofStyledPrimary1(task)));
-        sessionContext.addHistory(NaruMessage.user(task));
-        sessionContext.setForever(false);
-        sessionContext.pushStatementModelCall(null);
-        sessionContext.run();
+        session.addHistory(NaruMessage.user(task));
+        session.pushStatementModelCall(null);
+        session.run();
     }
 
 
-    public void invokeStep(NaruSession sessionContext) {
-        NaruStatement op = sessionContext.popStatement();
-        op.exec(sessionContext);
+    public void invokeStep(NaruSession session) {
+        NaruStatement op = session.popStatement();
+        op.exec(session);
     }
 
     public NOptional<NaruStatement> parseStatement(String line) {
@@ -244,7 +243,7 @@ public class NaruAgentImpl implements NaruAgent {
         }
     }
 
-    public void invokeDirective(String line, NaruSession sessionContext) {
+    public void invokeDirective(String line, NaruSession session) {
         if (line.startsWith("/")) {
             line = line.substring(1).trim();
         } else {
@@ -259,12 +258,12 @@ public class NaruAgentImpl implements NaruAgent {
         } else {
             line = "";
         }
-        registry.dispatchSlash(cmd, line, sessionContext);
+        registry.dispatchSlash(cmd, line, session);
     }
 
     @Override
-    public void invokeRoutine(NaruSession sessionContext, String scriptName) {
-        NaruRoutineManager sm = sessionContext.routineManager();
+    public void invokeRoutine(NaruSession session, String scriptName) {
+        NaruRoutineManager sm = session.routineManager();
         String previousContext = sm.getCurrentRoutineName();
         sm.switchRoutine(scriptName);
         NaruRoutine script = sm.getRoutine(scriptName);
@@ -272,8 +271,8 @@ public class NaruAgentImpl implements NaruAgent {
         if (script.isEmpty()) {
             log(NaruLogMode.TRACE, NMsg.ofC("Script '%s' is empty. Nothing to execute.", NMsg.ofStyledPrimary1(scriptName)));
             sm.switchRoutine(previousContext);
-//            if (sessionContext.isForever()) {
-//                sessionContext.pushStatement(NaruStatementHelper.ofReadLine());
+//            if (session.isForever()) {
+//                session.pushStatement(NaruStatementHelper.ofReadLine());
 //            }
             return;
         }
@@ -283,12 +282,12 @@ public class NaruAgentImpl implements NaruAgent {
                 script.getFormattedText() + "\n" +
                 "I will instruct you to execute one line at a time.";
 
-        sessionContext.addHistory(NaruMessage.system(sysPrompt));
+        session.addHistory(NaruMessage.system(sysPrompt));
 
         Integer firstLine = script.getLines().firstKey();
-        sessionContext.pushContext(firstLine, null);
-        sessionContext.pushStatement(NaruStatementHelper.ofExecRoutineLine());
-        sessionContext.runStep();
+        session.pushContext(firstLine, null);
+        session.pushStatement(NaruStatementHelper.ofExecRoutineLine());
+        session.runStep();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

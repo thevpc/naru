@@ -3,8 +3,10 @@ package net.thevpc.naru.impl.directive;
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelConfig;
+import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
+import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NArgCandidate;
 import net.thevpc.nuts.cmdline.NCmdLine;
@@ -16,12 +18,12 @@ import java.util.*;
 
 public class SessionDirective extends AbstractDirective {
     public SessionDirective() {
-        super("session","session", "manage sessions","sessions");
+        super("session", "session", "manage sessions", "sessions");
     }
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
         if (cmdLine.isEmpty()) {
             executeList(context, cmdLine);
@@ -88,22 +90,24 @@ public class SessionDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
+                    session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
     }
 
     public void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
 
-        List<NaruResourceInfo> naruResourceInfos = sessionContext.sessionManager().list();
-        naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
+        List<NaruResourceInfo> naruResourceInfos = session.sessionManager().list();
         int index = 1;
         for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,
+            session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s (%s) %s %s %s", index,
+                    naruResourceInfo.getCreationDate(),
+                    naruResourceInfo.getModificationDate(),
+                    NaruUtils.timeAgo(naruResourceInfo.getModificationDate()),
                     NMsg.ofStyledKeyword(naruResourceInfo.getMode().name().toLowerCase()),
-                    NMsg.ofStyledPrimary1(naruResourceInfo.getUuid()),
+                    NMsg.ofStyledPrimary3(naruResourceInfo.getUuid()),
                     NMsg.ofStyledString(naruResourceInfo.getName()))
             );
             index++;
@@ -112,18 +116,18 @@ public class SessionDirective extends AbstractDirective {
 
 
     public void executeClear(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        int count = sessionContext.sessionManager().clear();
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s sessions", count));
+        NaruSession session = context.session();
+        int count = session.sessionManager().clear();
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s sessions", count));
     }
 
     public void executeDelete(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         if (cmdLine.isEmpty()) {
             return;
         }
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
 
-        NaruSessionManager sm = sessionContext.sessionManager();
+        NaruSessionManager sm = session.sessionManager();
         int trials = 0;
         int count = 0;
         while (!cmdLine.isEmpty()) {
@@ -131,7 +135,7 @@ public class SessionDirective extends AbstractDirective {
             String uuid = sm.findByUuidOrName(a);
             trials++;
             if (uuid == null) {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("session not found %s", a));
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("session not found %s", a));
             } else {
                 if (sm.delete(uuid)) {
                     count++;
@@ -139,141 +143,141 @@ public class SessionDirective extends AbstractDirective {
             }
         }
         if (trials == 0) {
-            if (sm.delete(sessionContext.uuid())) {
+            if (sm.delete(session.uuid())) {
                 count++;
             }
         }
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s sessions", count));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s sessions", count));
     }
 
     public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("session"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s list <n1>-<p1>,<n2>-<p2>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list intervals"));
+        NaruSession session = context.session();
+        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary5("session"));
+        session.log(NaruLogMode.AGENT_RESPONSE, kk);
+        session.log(NaruLogMode.AGENT_RESPONSE, kk);
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("list")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <n1>-<p1>,<n2>-<p2>", kk, NMsg.ofStyledPrimary4("list")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list intervals"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s name", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           display session name"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("name")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           display session name"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s public", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           make current session public"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("public")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           make current session public"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s private", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           make current session private"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("private")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           make current session private"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s drop name", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop session by name"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <name>", kk, NMsg.ofStyledPrimary4("drop")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop session by name"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s clear", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop  all sessions"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("clear")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop  all sessions"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s load <name>", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           load session (or default 'main')"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <name>", kk, NMsg.ofStyledPrimary4("load")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           load session (or default 'main')"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s reload", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           reload from last saved"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("reload")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           reload from last saved"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s restore", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           resume from last snapshot"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("restore")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           resume from last snapshot"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s save", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           save session (or default 'main')"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("save")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           save session (or default 'main')"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s new", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           start a new session"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("new")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           start a new session"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s copy", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           copy to a new session"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("copy")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           copy to a new session"));
 
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
 
     }
 
     public void executeReload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        sessionContext.sessionManager().reload();
+        NaruSession session = context.session();
+        session.sessionManager().reload();
         context.session().log(NaruLogMode.PROGRESS, NMsg.ofC("Reloaded session."));
     }
 
     public void executeLoad(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NaruSessionManager sm = sessionContext.sessionManager();
-        String name = cmdLine.next().flatMap(x->x.asString()).orNull();
+        NaruSession session = context.session();
+        NaruSessionManager sm = session.sessionManager();
+        String name = cmdLine.next().flatMap(x -> x.asString()).orNull();
         if (NBlankable.isBlank(name)) {
             name = "main";
         }
         String a = sm.findByUuidOrName(name);
         if (a == null) {
-            sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("session not found %s", name));
+            session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("session not found %s", name));
             return;
         }
         sm.load(a);
-        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded session: %s", sessionContext.name()));
+        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded session: %s", session.name()));
     }
 
     public void executeRestore(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NaruSessionManager sm = sessionContext.sessionManager();
+        NaruSession session = context.session();
+        NaruSessionManager sm = session.sessionManager();
         sm.restoreSnapshot();
-        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", sessionContext.name()));
+        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", session.name()));
     }
 
     public void executeSave(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        if (NBlankable.isBlank(sessionContext.name()) || sessionContext.name().equals("NO_NAME")) {
+        NaruSession session = context.session();
+        if (NBlankable.isBlank(session.name()) || session.name().equals("NO_NAME")) {
             List<NaruMessage> history = context.session().history(true);
             history.add(NaruMessage.user("can you suggest a name for this session? dont be verbose in your response, only return the suggested name please."));
             NaruModelConfig model = context.session().model();
             NaruResponse chat = context.session().chat(model,
-                    history, Collections.emptyList()
+                    new NaruModelRequest(history)
             );
             if (chat.getMessage() != null) {
-                sessionContext.setName(chat.getMessage().getContent());
+                session.setName(chat.getMessage().getContent());
             }
         }
-        sessionContext.save();
-        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved session: %s", NMsg.ofStyledString(sessionContext.name())));
+        session.save();
+        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved session: %s", NMsg.ofStyledString(session.name())));
     }
 
     public void executeNew(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        sessionContext.reset(false);
+        NaruSession session = context.session();
+        session.reset(false);
         context.session().log(NaruLogMode.PROGRESS, NMsg.ofC("reset session."));
     }
 
     public void executeReset(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        sessionContext.reset(true);
+        NaruSession session = context.session();
+        session.reset(true);
         context.session().log(NaruLogMode.PROGRESS, NMsg.ofC("new session."));
     }
 
     public void executeCopy(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        sessionContext.sessionManager().copyCurrent();
-        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded session copy : %s", sessionContext.name()));
+        NaruSession session = context.session();
+        session.sessionManager().copyCurrent();
+        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded session copy : %s", session.name()));
     }
 
     public void executeName(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current session: %s (%s)", sessionContext.name(), sessionContext.uuid()));
+        NaruSession session = context.session();
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current session: %s (%s)", session.name(), session.uuid()));
     }
 
     public void executeMakePublic(boolean makePublic, NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        if(sessionContext.isPublicSession()==makePublic){
+        NaruSession session = context.session();
+        if (session.isPublicSession() == makePublic) {
 
-        }else {
-            sessionContext.setPublicSession(makePublic);
-            sessionContext.save();
+        } else {
+            session.publicSession(makePublic);
+            session.save();
             if (makePublic) {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("make current session public: %s (%s)", sessionContext.name(), sessionContext.uuid()));
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("make current session public: %s (%s)", session.name(), session.uuid()));
             } else {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("make current session private: %s (%s)", sessionContext.name(), sessionContext.uuid()));
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("make current session private: %s (%s)", session.name(), session.uuid()));
             }
         }
     }

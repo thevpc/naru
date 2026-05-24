@@ -16,16 +16,16 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Level;
 
-public class LsDirective extends AbstractDirective {
-    public LsDirective() {
-        super("ls","general", "list directory");
+public class CatDirective extends AbstractDirective {
+    public CatDirective() {
+        super("cat","general", "show file content");
     }
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
         NaruSession session = context.session();
         List<String> cmd = new ArrayList<>();
-        cmd.addAll(Arrays.asList("nsh","--progress=none", "-c", "ls"));
+        cmd.addAll(Arrays.asList("nsh","--progress=none", "-c", "cat"));
         if (!NBlankable.isBlank(context.argument())) {
             cmd.addAll(NCmdLine.parse(context.argument()).get().toStringList());
         }

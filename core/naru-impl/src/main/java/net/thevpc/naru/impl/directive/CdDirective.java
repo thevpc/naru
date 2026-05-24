@@ -20,10 +20,10 @@ public class CdDirective extends AbstractDirective {
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
-        sessionContext.setWorkingDir(NBlankable.isBlank(context.argument()) ? context.session().projectDir() : NPath.of(context.argument()));
-        context.session().addHistory(NaruMessage.user(NMsg.ofC("change working directory to %s", sessionContext.workingDir()).toString()));
-        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("change directory to : %s", sessionContext.workingDir()));
+        NaruSession session = context.session();
+        session.setWorkingDir(NBlankable.isBlank(context.argument()) ? context.session().projectDir() : NPath.of(context.argument()));
+        context.session().addHistory(NaruMessage.user(NMsg.ofC("change working directory to %s", session.workingDir()).toString()));
+        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("change directory to : %s", session.workingDir()));
     }
 
     @Override

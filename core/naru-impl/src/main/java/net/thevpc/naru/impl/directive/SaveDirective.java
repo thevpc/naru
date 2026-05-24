@@ -4,10 +4,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionManager;
-import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.model.NaruModelConfig;
-import net.thevpc.naru.api.model.NaruModelKey;
-import net.thevpc.naru.api.model.NaruResponse;
+import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NArgCandidate;
@@ -28,7 +25,7 @@ public class SaveDirective extends AbstractDirective {
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
         if (cmdLine.isEmpty()) {
             executeSave(context, cmdLine);
@@ -41,7 +38,7 @@ public class SaveDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
+                    session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
@@ -49,34 +46,35 @@ public class SaveDirective extends AbstractDirective {
 
 
     public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1(name()));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           save current session"));
+        session.log(NaruLogMode.AGENT_RESPONSE, kk);
+        session.log(NaruLogMode.AGENT_RESPONSE, kk);
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", kk));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           save current session"));
 
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
 
     }
 
 
     public void executeSave(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        if (NBlankable.isBlank(sessionContext.name()) || sessionContext.name().equals("NO_NAME")) {
+        NaruSession session = context.session();
+        if (NBlankable.isBlank(session.name()) || session.name().equals("NO_NAME")) {
             List<NaruMessage> history = context.session().history(true);
             history.add(NaruMessage.user("can you suggest a name for this session? dont be verbose in your response, only return the suggested name please."));
             NaruModelConfig model = context.session().model();
-            NaruResponse chat = context.session().chat(model,
-                    history, Collections.emptyList()
+            NaruResponse chat = context.session().chat(
+                    model,
+                    new NaruModelRequest(history)
             );
             if (chat.getMessage() != null) {
-                sessionContext.setName(chat.getMessage().getContent());
+                session.setName(chat.getMessage().getContent());
             }
         }
-        sessionContext.save();
-        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved session: %s", NMsg.ofStyledString(sessionContext.name())));
+        session.save();
+        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved session: %s", NMsg.ofStyledString(session.name())));
     }
 
     @Override

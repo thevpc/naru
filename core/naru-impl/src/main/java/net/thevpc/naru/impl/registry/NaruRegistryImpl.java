@@ -11,11 +11,13 @@ import net.thevpc.naru.impl.model.gemini.NaruGeminiProvider;
 import net.thevpc.naru.impl.model.ollama.NaruOllamaProvider;
 import net.thevpc.naru.impl.tools.*;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NCancelException;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.util.*;
+import java.util.concurrent.CancellationException;
 
 /**
  * Registry of all tools available to the agent.
@@ -65,7 +67,7 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public NaruRegistry registerModelProvider(NaruModelProvider provider) {
-        modelProviders.put(NStringUtils.trim(provider.getName()).toLowerCase(), provider);
+        modelProviders.put(NStringUtils.trim(provider.name()).toLowerCase(), provider);
         return this;
     }
 
@@ -79,10 +81,10 @@ public class NaruRegistryImpl implements NaruRegistry {
         for (NaruModelProvider p : modelProviders.values()) {
             for (String m : p.findModelIds(session)) {
                 NaruModelCapabilities c = p.getProtocol(new NaruModelConfig(
-                        p.getName(),
+                        p.name(),
                         m
                 ),session).get().getCapabilities();
-                a.add(new NaruModelInfo(p.getName(), m, c));
+                a.add(new NaruModelInfo(p.name(), m, c));
             }
         }
         a.sort(Comparator.comparing(NaruModelInfo::provider).thenComparing(NaruModelInfo::model));
@@ -94,7 +96,7 @@ public class NaruRegistryImpl implements NaruRegistry {
         ArrayList<NaruModelKey> a = new ArrayList<>();
         for (NaruModelProvider p : modelProviders.values()) {
             for (String m : p.findModelIds(session)) {
-                a.add(new NaruModelKey(p.getName(), m));
+                a.add(new NaruModelKey(p.name(), m));
             }
         }
         a.sort(Comparator.comparing(NaruModelKey::provider).thenComparing(NaruModelKey::model));
@@ -180,6 +182,8 @@ public class NaruRegistryImpl implements NaruRegistry {
         }
         try {
             tool.execute(new NaruDirectiveCallContextImpl(name, argument, context));
+        } catch (NCancelException e) {
+            throw e;
         } catch (Exception e) {
             context.log(NaruLogMode.TRACE, NMsg.ofC("ERROR executing tool '" + name + "': " + e.getMessage()).asError());
         }
@@ -232,8 +236,9 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerDirective(new StatDirective());
         this.registerDirective(new ModelDirective());
         this.registerDirective(new PwdDirective());
-        this.registerDirective(new PsDirective());
         this.registerDirective(new CdDirective());
+        this.registerDirective(new CatDirective());
+        this.registerDirective(new BufferDirective());
         this.registerDirective(new HistoryDirective());
         this.registerDirective(new SessionDirective());
         this.registerDirective(new ShDirective());

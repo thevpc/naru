@@ -2,10 +2,7 @@ package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.model.NaruResponse;
-import net.thevpc.naru.api.model.NaruToolCall;
-import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.stmt.NaruStatement;
@@ -19,10 +16,12 @@ import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class NaruModelCallStmt extends NaruStatement {
-    private String prompt;
+    private final String prompt;
+
     public NaruModelCallStmt(String prompt) {
         super(Type.MODEL_CALL);
         this.prompt = prompt;
@@ -53,7 +52,7 @@ public class NaruModelCallStmt extends NaruStatement {
     @Override
     public NElement toElement() {
         NObjectElementBuilder a = NElement.ofObjectBuilder(type.name());
-        if(!NBlankable.isBlank(prompt)){
+        if (!NBlankable.isBlank(prompt)) {
             a.set("prompt", NElement.ofString(prompt));
         }
         return a.build();
@@ -61,11 +60,16 @@ public class NaruModelCallStmt extends NaruStatement {
 
     @Override
     public void exec(NaruSession session) {
+        if (session.model() == null) {
+            throw new NIllegalArgumentException(NMsg.ofC("no model selected. use '%s' to select one."
+                    , NMsg.ofCode("bash", "/model")
+            ));
+        }
         session.log(NaruLogMode.PROGRESS, NMsg.ofC("%s Model: %s…",
                 NMsg.ofStyledPrimary8("\uD83E\uDDE0"),
                 session.model().toText()
         ));
-        if(!NBlankable.isBlank(prompt)){
+        if (!NBlankable.isBlank(prompt)) {
             session.addHistory(NaruMessage.user(prompt));
         }
         NaruResponse response;
@@ -74,8 +78,9 @@ public class NaruModelCallStmt extends NaruStatement {
             defs.add(t.getDefinition(session));
         }
         try {
-            response = session.chat(session.model(), session.history(true),
-                    defs);
+            response = session.chat(session.model(),
+                    new NaruModelRequest(session.history(true), defs)
+                    );
         } catch (Exception e) {
             String err = "ERROR calling model: " + e.getMessage();
             session.log(NaruLogMode.PROGRESS, NMsg.ofC("%s", err).asError());

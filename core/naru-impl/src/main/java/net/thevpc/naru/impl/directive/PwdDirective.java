@@ -13,8 +13,8 @@ public class PwdDirective extends AbstractDirective {
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
-        context.session().addHistory(NaruMessage.user(NMsg.ofC("current working directory is %s", sessionContext.workingDir()).toString()));
-        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", sessionContext.workingDir()));
+        NaruSession session = context.session();
+        context.session().addHistory(NaruMessage.user(NMsg.ofC("current working directory is %s", session.workingDir()).toString()));
+        context.session().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", session.workingDir()));
     }
 }

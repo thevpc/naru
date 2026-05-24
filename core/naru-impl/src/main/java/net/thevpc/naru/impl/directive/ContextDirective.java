@@ -20,10 +20,10 @@ public class ContextDirective extends AbstractDirective {
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
+        NaruSession session = context.session();
         NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
         if (cmdLine.isEmpty()) {
-            executeShow(NaruSource.values(),context, cmdLine);
+            executeShow(NaruSource.values(), context, cmdLine);
         } else {
             NArg a = cmdLine.next().get();
             switch (a.image()) {
@@ -63,7 +63,7 @@ public class ContextDirective extends AbstractDirective {
                     break;
                 }
                 case "all": {
-                    executeShow(NaruSource.values(),context, cmdLine);
+                    executeShow(NaruSource.values(), context, cmdLine);
                     break;
                 }
                 case "--help":
@@ -72,24 +72,24 @@ public class ContextDirective extends AbstractDirective {
                     break;
                 }
                 default: {
-                    sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
+                    session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
             }
         }
     }
 
-    public void executeShow(NaruSource[] sources,NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
+    public void executeShow(NaruSource[] sources, NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruSession session = context.session();
         List<NaruUtils.LineRange> lineRanges = NaruUtils.parseRanges(cmdLine);
-        sessionContext.context(sources).stream().forEach(a -> {
-            if(a.getSource()==NaruSource.SYSTEM){
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %-9s %s",
+        session.context(sources).stream().forEach(a -> {
+            if (a.getSource() == NaruSource.SYSTEM) {
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %-9s %s",
                         NMsg.ofStyled(agentIcon(a.getRole()), agentStyle(a.getRole())),
                         NMsg.ofStyled(a.getRole().name(), agentStyle(a.getRole())),
                         NMsg.ofStyled(":", agentStyle(a.getRole()))
                 ));
-            }else {
-                sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %-9s  [%s] %s %s",
+            } else {
+                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %-9s  [%s] %s %s",
                         NMsg.ofStyled(agentIcon(a.getRole()), agentStyle(a.getRole())),
                         NMsg.ofStyled(a.getRole().name(), agentStyle(a.getRole())),
                         NMsg.ofStyled(a.getSource().id(), agentStyle(a.getRole())),
@@ -98,7 +98,7 @@ public class ContextDirective extends AbstractDirective {
                 ));
             }
             String content = a.getContent();
-            NaruUtils.showItemsWithFormat(content,"markdown",lineRanges, sessionContext);
+            NaruUtils.showItemsWithFormat(content, "markdown", lineRanges, session);
         });
     }
 
@@ -132,25 +132,25 @@ public class ContextDirective extends AbstractDirective {
 
 
     public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruSession sessionContext = context.session();
-        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1(name()));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, kk);
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s classpath", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           classpath agents"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s user", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           user home agents"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s project", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           project dir agents"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s folder", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           agent files from working directory up to project root (excluded), (empty when working directory equals project root)"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s all", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           all of the above combined"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s system", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show system prompt"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s skills", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           active loaded skills content"));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
-        sessionContext.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
+        NaruSession session = context.session();
+        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary5(name()));
+        session.log(NaruLogMode.AGENT_RESPONSE, kk);
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("classpath")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           classpath agents"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("user")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           user home agents"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("project")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           project dir agents"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("folder")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           agent files from working directory up to project root (excluded), (empty when working directory equals project root)"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("all")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           all of the above combined"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("system")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show system prompt"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("skills")));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           active loaded skills content"));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
     }
 
 

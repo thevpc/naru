@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NCancelException;
 
 public class ExitDirective extends AbstractDirective {
     public ExitDirective() {
@@ -12,9 +13,7 @@ public class ExitDirective extends AbstractDirective {
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        NaruSession sessionContext = context.session();
         context.session().log(NaruLogMode.TRACE,NMsg.ofC("Exiting agent."));
-        sessionContext.setForever(false);
-        sessionContext.terminate();
+        throw new NCancelException();
     }
 }

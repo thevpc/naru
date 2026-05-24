@@ -42,8 +42,8 @@ public class FileEditLinesTool implements NaruTool {
         return new NaruToolDefinitionFunction(
                 getName(), getDescription(session),
                 NaruToolParameter.string("path", "File path to edit", true),
-                NaruToolParameter.string("from", "Start line index (0-based inclusive, supports negatives)", true),
-                NaruToolParameter.string("to", "End line index (0-based exclusive). Omit or equal to 'from' to insert.", false),
+                NaruToolParameter.integer("from", "Start line index (0-based inclusive, supports negatives)", true),
+                NaruToolParameter.integer("to", "End line index (0-based exclusive). Omit or equal to 'from' to insert.", false),
                 NaruToolParameter.string("content", "New lines (\\n separated). Leave empty to delete.", false),
                 NaruToolParameter.bool("dry", "If true, preview changes without modifying the file", false)
         );

@@ -18,13 +18,13 @@ import java.util.List;
 import java.util.Map;
 
 public interface NaruSession {
-    boolean isForever();
-
     boolean isPublicSession();
+    String inputBuffer();
+    NaruSession inputBuffer(String buffer);
+    NAruInputMode inputMode();
+    NaruSession inputMode(NAruInputMode newMode);
 
-    NaruSession setPublicSession(boolean publicSession);
-
-    NaruSession setForever(boolean forever);
+    NaruSession publicSession(boolean publicSession);
 
     NaruAgent agent();
 
@@ -39,8 +39,6 @@ public interface NaruSession {
     NaruSession pushStatements(NaruStatement... any);
 
     NaruSession pushStatement(NaruStatement any);
-
-//    NaruSession pushStatementReadlineForever();
 
     int userQueriesCount();
 
@@ -138,7 +136,7 @@ public interface NaruSession {
 
     Map<NaruModelConfig, List<String>> reversedModelAliases();
 
-    NaruResponse chat(NaruModelConfig modelKey, List<NaruMessage> messages, List<NaruToolDefinition> tools);
+    NaruResponse chat(NaruModelConfig modelKey, NaruModelRequest request);
 
     NaruMeteringService meteringService();
 

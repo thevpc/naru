@@ -19,11 +19,11 @@ public interface NaruAgent {
 
     NOptional<NaruStatement> parseStatement(String line);
 
-    void invokeStep(NaruSession sessionContext);
+    void invokeStep(NaruSession session);
 
-    void invokeRoutine(NaruSession sessionContext, String scriptName);
+    void invokeRoutine(NaruSession session, String scriptName);
 
-    void invokeDirective(String line, NaruSession sessionContext);
+    void invokeDirective(String line, NaruSession session);
 
     void runInteractive();
 

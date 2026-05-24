@@ -11,6 +11,7 @@ import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -26,6 +27,10 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
     public List<NaruResourceInfo> list() {
         List<NaruResourceInfo> a = new ArrayList<>();
         for (NPath p : sessionDir(false).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
+            if (p.name().endsWith("snapshot.tson")) {
+                //just skip snapshot!
+                continue;
+            }
             NaruResourceInfo s = NElementReader.ofTson().read(p, NaruResourceInfo.class);
             s.setMode(NAruVisibility.PRIVATE);
             a.add(s);
@@ -92,13 +97,13 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
         NPath s = sessionFile(uuid, true);
         if (s.isRegularFile()) {
             adapter.load(NElementReader.ofTson().read(s));
-            adapter.setPublicSession(true);
+            adapter.publicSession(true);
             return this;
         }
         s = sessionFile(uuid, false);
         if (s.isRegularFile()) {
             adapter.load(NElementReader.ofTson().read(s));
-            adapter.setPublicSession(false);
+            adapter.publicSession(false);
         }
         return this;
     }

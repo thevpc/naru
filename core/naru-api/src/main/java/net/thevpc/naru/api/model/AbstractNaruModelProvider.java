@@ -15,7 +15,7 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
     }
 
     @Override
-    public String getName() {
+    public String name() {
         return name;
     }
 

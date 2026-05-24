@@ -15,7 +15,6 @@ import net.thevpc.naru.impl.routine.NaruRoutineManagerImpl;
 import net.thevpc.naru.impl.skill.NaruSkillManagerImpl;
 import net.thevpc.naru.impl.stmt.NaruIncrementalStmt;
 import net.thevpc.naru.impl.stmt.NaruStatementHelper;
-import net.thevpc.naru.impl.util.StoredStringMap;
 import net.thevpc.nuts.artifact.NId;
 import net.thevpc.nuts.core.NStoreKey;
 import net.thevpc.nuts.elem.*;
@@ -38,14 +37,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final List<NaruMessage> systemHistory = new ArrayList<>();
     private final List<NaruMessage> history = new ArrayList<>();
     private int userQueries;
+    private String inputBuffer = "";
     private NaruMessage lastResult;
     private boolean requireUserInput;
-    private boolean forever;
     private final List<RunContextImpl> todo = new ArrayList<>();
     private final NaruAgent agent;
     private boolean publicSession;
     private NPath workingDir;
     private NaruModelConfig model;
+    private NAruInputMode inputMode = NAruInputMode.LINE;
     /**
      * Root directory of the project being worked on.
      */
@@ -70,11 +70,25 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     // Add to NaruSessionImpl fields:
     private final Map<String, Object> globalState = new ConcurrentHashMap<>();
 
+    public NAruInputMode inputMode() {
+        return inputMode;
+    }
+
+    public NaruSessionImpl inputMode(NAruInputMode inputMode) {
+        if (inputMode != null) {
+            if (inputMode != this.inputMode) {
+                this.inputMode = inputMode;
+                fireChanged();
+            }
+        }
+        return this;
+    }
+
     public boolean isPublicSession() {
         return publicSession;
     }
 
-    public NaruSessionImpl setPublicSession(boolean publicSession) {
+    public NaruSessionImpl publicSession(boolean publicSession) {
         this.publicSession = publicSession;
         return this;
     }
@@ -160,14 +174,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NaruResponse chat(NaruModelConfig modelKey, List<NaruMessage> messages, List<NaruToolDefinition> tools) {
+    public NaruResponse chat(NaruModelConfig modelKey, NaruModelRequest request) {
         Instant now = Instant.now();
         NChronometer chronometer = NChronometer.of();
-        NaruResponse r = registry().protocol(modelKey, this).get().chat(messages, tools, this);
+        NaruResponse r = registry().protocol(modelKey, this).get().chat(request, this);
         meteringService.trackTransaction(new NaruTokenTransaction(
                 uuid(),
                 null,
-                model,
+                model(),
                 r.getPromptTokens(),
                 r.getEvalTokens(),
                 now,
@@ -212,15 +226,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         List<NaruModelConfig> models = registry().modelsKeys(this).stream().map(NaruModelConfig::new).collect(Collectors.toList());
         NaruModelConfig a = findModelAlias(keyOrName).orNull();
         if (a != null) {
-            if (models.contains(a)) {
-                return NOptional.of(a);
+            for (NaruModelConfig m : models) {
+                if(Objects.equals(m.key(),a.key())){
+                    return NOptional.of(a);
+                }
             }
         }
         if (keyOrName.contains("/")) {
             NOptional<NaruModelConfig> r = NaruModelKey.parse(keyOrName).map(NaruModelConfig::new);
             if (r.isPresent()) {
-                if (models.contains(r.get())) {
-                    return NOptional.of(r.get());
+                for (NaruModelConfig m : models) {
+                    if(Objects.equals(m.key(),r.get().key())){
+                        return NOptional.of(r.get());
+                    }
                 }
             }
         } else {
@@ -347,10 +365,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         NPath privateFile = projectDir.resolve(".naru/local/sessions/" + uuid() + ".tson");
         if (publicFile.isRegularFile()) {
             load(publicFile);
-            setPublicSession(true);
+            publicSession(true);
         } else {
             load(privateFile);
-            setPublicSession(false);
+            publicSession(false);
         }
         return this;
     }
@@ -364,12 +382,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         o.set("modificationDate", NElement.ofInstant(modificationDate));
         o.set("model", model == null ? null : model.toElement());
         o.set("extraContext", extraContext);
-        o.set("forever", forever);
         o.set("requireUserInput", requireUserInput);
         o.set("projectDir", NElement.ofString(projectDir.toString()));
         o.set("workingDir", workingDir == null ? null : NElement.ofString(workingDir.toString()));
         o.set("userQueries", userQueries);
         o.set("lastResult", lastResult == null ? null : lastResult.toElement());
+        o.set("inputMode", inputMode.name());
+        o.set("inputBuffer", inputBuffer);
         NArrayElementBuilder _todos = NArrayElementBuilder.of();
         for (RunContextImpl a : todo) {
             _todos.add(a.toElement());
@@ -393,12 +412,17 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         NElement mv = o.get("model").orElse(null);
         this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
         this.extraContext = o.getStringValue("extraContext").orElse(null);
-        this.forever = o.getBooleanValue("forever").orElse(false);
         this.userQueries = o.getIntValue("userQueries").orElse(0);
         this.requireUserInput = o.getBooleanValue("requireUserInput").orElse(false);
         this.projectDir = o.getStringValue("projectDir").map(x -> NPath.of(x)).orElse(projectDir);
         this.workingDir = o.getStringValue("workingDir").map(x -> NPath.of(x)).orElse(workingDir);
         this.lastResult = o.get("lastResult").map(x -> NaruMessage.of(x)).orNull();
+        this.inputMode = o.get("inputMode").map(x -> NAruInputMode.parse(x).orElse(NAruInputMode.LINE)).orNull();
+        this.inputBuffer = "";
+        NOptional<NElement> ibe = o.get("inputBuffer");
+        if (ibe.isPresent() && ibe.get().isAnyStringOrName()) {
+            this.inputBuffer = ibe.get().asStringValue().get();
+        }
         NArrayElement todo1 = o.get("todo").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
         todo.clear();
         if (todo1 != null) {
@@ -580,7 +604,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private String[] resolveAgentFileNames() {
         List<String> a = new ArrayList<>();
         a.add("default.md");
-        String m = model.model();
+        NaruModelConfig mm = model();
+        if(mm==null){
+            return new String[0];
+        }
+        String m = mm.model();
         String modelBase;
         String modelTag;
         if (m.indexOf(':') > 0) {
@@ -779,17 +807,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return !todo.isEmpty();
     }
 
-    @Override
-    public boolean isForever() {
-        return forever;
-    }
-
-    @Override
-    public NaruSession setForever(boolean forever) {
-        this.forever = forever;
-        fireChanged();
-        return this;
-    }
 
     @Override
     public NaruAgent agent() {
@@ -915,6 +932,21 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     @Override
     public void throwError(NMsg nMsg) {
         log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error : %s", nMsg));
+    }
+
+    @Override
+    public String inputBuffer() {
+        return inputBuffer;
+    }
+
+    @Override
+    public NaruSession inputBuffer(String buffer) {
+        String n = buffer == null ? "" : buffer;
+        if(!Objects.equals(n, this.inputBuffer)) {
+            this.inputBuffer = n;
+            fireChanged();
+        }
+        return this;
     }
 
     @Override
@@ -1136,6 +1168,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 }
             } catch (NCancelException e) {
                 break;
+            } catch (Exception e) {
+                log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error running step: %s", e));
+                if(!hasMoreStatements()){
+                    pushStatements(NaruStatementHelper.ofReadLine());
+                }
             }
         }
         return this;

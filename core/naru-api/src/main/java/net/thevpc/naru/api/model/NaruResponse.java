@@ -20,6 +20,15 @@ public class NaruResponse {
         this.done = done;
     }
 
+    public NaruResponse(NaruMessage message, boolean done, String stopReason, int totalTokens, int promptTokens, int evalTokens) {
+        this.message = message;
+        this.done = done;
+        this.stopReason = stopReason;
+        this.totalTokens = totalTokens;
+        this.promptTokens = promptTokens;
+        this.evalTokens = evalTokens;
+    }
+
     public NaruMessage getMessage() { return message; }
     public void setMessage(NaruMessage message) { this.message = message; }
 

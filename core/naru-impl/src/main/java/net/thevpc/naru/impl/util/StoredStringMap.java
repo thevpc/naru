@@ -18,7 +18,6 @@ public class StoredStringMap<T> {
     public StoredStringMap(NPath file, Class<T> type) {
         this.file = file;
         this.type = type;
-        load();
     }
 
     public Function<T, NElement> getSerializer() {
