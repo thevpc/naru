@@ -476,6 +476,91 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
     }
 
+    public Map<String,NElement> modelConfig(NaruSource... sources) {
+        HashMap<String, NElement> conf = new HashMap<>();
+        for (HeaderAndText h : loadLoadAgentInfos(sources)) {
+            if(h.header!=null){
+                if (alreadyLoadedMdFiles.add(h.source)) {
+                    log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading agent from %s", h.source));
+                }
+                conf.putAll(h.header);
+            }
+        }
+        return conf;
+    }
+
+    private List<HeaderAndText> loadLoadAgentInfos(NaruSource... sources) {
+        String[] agentFileNames = resolveAgentFileNames();
+        HashSet<NaruSource> sourcesOk=new HashSet<>();
+        if(sources!=null){
+            for (NaruSource s : sources) {
+                if(s!=null){
+                    sourcesOk.add(s);
+                }
+            }
+        }
+        List<HeaderAndText> toLoad=new ArrayList<>();
+        for (String fileName : agentFileNames) {
+            if(sourcesOk.contains(NaruSource.CLASSPATH)){
+                Set<ClassLoader> classLoaders = new LinkedHashSet<>(Arrays.asList(
+                        getClass().getClassLoader(),
+                        Thread.currentThread().getContextClassLoader()
+                ));
+                String r = "META-INF/naru/agents/" + fileName;
+                for (ClassLoader classLoader : classLoaders) {
+                    URL u = classLoader.getResource(r);
+                    if (u != null) {
+                        byte[] b = NIOUtils.readBytes(u);
+                        if (b.length > 0) {
+                            String content = new String(b, StandardCharsets.UTF_8).trim();
+                            if (!NBlankable.isBlank(content)) {
+                                toLoad.add(new HeaderAndText(NPath.of(u),NaruSource.CLASSPATH, content));
+                            }
+                        }
+                    }
+                }
+            }
+            if(sourcesOk.contains(NaruSource.USER_HOME)){
+                NPath agents = NPath.of(NStoreKey.ofShared(NId.of("net.thevpc.naru:naru"))).resolve("agents");
+                NPath u = agents.resolve(fileName);
+                if (u.isRegularFile()) {
+                    toLoad.add(new HeaderAndText(u,NaruSource.USER_HOME, u.readString().trim()));
+                }
+            }
+            if (sourcesOk.contains(NaruSource.PROJECT) || sourcesOk.contains(NaruSource.FOLDER)) {
+                if (!workingDir.startsWith(projectDir)) {
+                    if (sourcesOk.contains(NaruSource.PROJECT)) {
+                        NPath u = projectDir.resolve(fileName);
+                        if (u.isRegularFile()) {
+                            toLoad.add(new HeaderAndText(u,NaruSource.PROJECT, u.readString().trim()));
+                        }
+                    }
+                } else {
+                    List<NPath> dirs = new ArrayList<>();
+                    NPath p = workingDir;
+                    while ((p != null && (p.equals(projectDir) || p.startsWith(projectDir)))) {
+                        dirs.add(p);
+                        if (p.equals(projectDir)) break;
+                        p = p.parent();
+                    }
+                    // reverse: projectDir first, workingDir last (specific wins)
+                    Collections.reverse(dirs);
+                    for (NPath dir : dirs) {
+                        NPath u = dir.resolve(fileName);
+                        if (u.isRegularFile()) {
+                            if (dir.equals(projectDir)) {
+                                toLoad.add(new HeaderAndText(u,NaruSource.PROJECT, u.readString().trim()));
+                            }else{
+                                toLoad.add(new HeaderAndText(u,NaruSource.FOLDER, u.readString().trim()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return toLoad;
+    }
+
     @Override
     public List<NaruMessage> context(NaruSource... sources) {
         Set<NaruSource> sourcesOk = new HashSet<>();
@@ -490,14 +575,40 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (sourcesOk.contains(NaruSource.SYSTEM)) {
             all.addAll(systemHistory.stream().map(x -> x.copy().setSource(NaruSource.SYSTEM).setSourceName("system")).collect(Collectors.toList()));
         }
+        for (HeaderAndText h : loadLoadAgentInfos(sources)) {
+            if(h.body!=null && !NBlankable.isBlank(h.body)){
+                if (alreadyLoadedMdFiles.add(h.source)) {
+                    log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading agent from %s", h.source));
+                }
+                switch (h.sourceType){
+                    case CLASSPATH:{
+                        all.add(
+                                NaruMessage.user(
+                                        "### AGENT CLASSPATH:\n" + h.body
+                                ).setSource(NaruSource.CLASSPATH).setSourceName(h.source.toString())
+                        );
+                        break;
+                    }
+                    case USER_HOME:{
 
-        String[] agentFileNames = resolveAgentFileNames();
-        if (sourcesOk.contains(NaruSource.CLASSPATH)) {
-            all.addAll(loadAgentClassPath(agentFileNames));
+                        all.add(
+                                NaruMessage.user(
+                                        "### USER CONTEXT:\n" + h.body
+                                ).setSource(NaruSource.CLASSPATH).setSourceName(h.source.toString())
+                        );
+                        break;
+                    }
+                }
+            }
         }
-        if (sourcesOk.contains(NaruSource.USER_HOME)) {
-            all.addAll(loadAgentUserHome(agentFileNames));
-        }
+
+//        String[] agentFileNames = resolveAgentFileNames();
+//        if (sourcesOk.contains(NaruSource.CLASSPATH)) {
+//            all.addAll(loadAgentClassPath(agentFileNames));
+//        }
+//        if (sourcesOk.contains(NaruSource.USER_HOME)) {
+//            all.addAll(loadAgentUserHome(agentFileNames));
+//        }
         // add project/folder level agent files
         if (sourcesOk.contains(NaruSource.PROJECT) || sourcesOk.contains(NaruSource.FOLDER)) {
             if (!workingDir.startsWith(projectDir)) {
@@ -583,23 +694,23 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return new ArrayList<>();
     }
 
-    private List<NaruMessage> loadAgentUserHome(String[] agentFileNames) {
-        StringBuilder sb = new StringBuilder();
-        // this will resolve (for the default nuts workspace, and linux) to
-        // ~/.config/nuts/ws/default-workspace/id/net/thevpc/naru/naru/SHARED/agents
-        NPath agents = NPath.of(NStoreKey.ofShared(NId.of("net.thevpc.naru:naru"))).resolve("agents");
-        Set<String> validNames = new TreeSet<>();
-        for (String agentFileName : agentFileNames) {
-            tryLoadAgentFile(agents.resolve(agentFileName), sb, validNames);
-        }
-        String u = sb.toString().trim();
-        if (!u.isEmpty()) {
-            return Collections.singletonList(NaruMessage.user(
-                    "### USER CONTEXT:\n" + u
-            ).setSource(NaruSource.USER_HOME).setSourceName(validNames.size() == 1 ? validNames.stream().findFirst().get() : validNames.toString()));
-        }
-        return new ArrayList<>();
-    }
+//    private List<NaruMessage> loadAgentUserHome(String[] agentFileNames) {
+//        StringBuilder sb = new StringBuilder();
+//        // this will resolve (for the default nuts workspace, and linux) to
+//        // ~/.config/nuts/ws/default-workspace/id/net/thevpc/naru/naru/SHARED/agents
+//        NPath agents = NPath.of(NStoreKey.ofShared(NId.of("net.thevpc.naru:naru"))).resolve("agents");
+//        Set<String> validNames = new TreeSet<>();
+//        for (String agentFileName : agentFileNames) {
+//            tryLoadAgentFile(agents.resolve(agentFileName), sb, validNames);
+//        }
+//        String u = sb.toString().trim();
+//        if (!u.isEmpty()) {
+//            return Collections.singletonList(NaruMessage.user(
+//                    "### USER CONTEXT:\n" + u
+//            ).setSource(NaruSource.USER_HOME).setSourceName(validNames.size() == 1 ? validNames.stream().findFirst().get() : validNames.toString()));
+//        }
+//        return new ArrayList<>();
+//    }
 
     private String[] resolveAgentFileNames() {
         List<String> a = new ArrayList<>();
@@ -646,6 +757,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             }
         }
         return all;
+    }
+    private static class HeaderAndText{
+        NPath source;
+        NaruSource sourceType;
+        Map<String,NElement> header;
+        String body;
+
+        public HeaderAndText(NPath source,NaruSource sourceType,String all) {
+            this.source = source;
+            this.sourceType = sourceType;
+            this.header = null;
+            this.body = all;
+        }
     }
 
     private void tryLoadAgentFile(NPath a, StringBuilder sb, Set<String> validNames) {
