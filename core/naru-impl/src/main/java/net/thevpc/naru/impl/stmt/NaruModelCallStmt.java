@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
@@ -16,7 +17,6 @@ import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class NaruModelCallStmt extends NaruStatement {
@@ -79,8 +79,8 @@ public class NaruModelCallStmt extends NaruStatement {
         }
         try {
             response = session.chat(session.model(),
-                    new NaruModelRequest(session.history(true), defs)
-                    );
+                    session.context(NaruSource.values())
+            );
         } catch (Exception e) {
             String err = "ERROR calling model: " + e.getMessage();
             session.log(NaruLogMode.PROGRESS, NMsg.ofC("%s", err).asError());

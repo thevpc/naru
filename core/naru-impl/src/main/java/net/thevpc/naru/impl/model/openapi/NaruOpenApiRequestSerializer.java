@@ -22,15 +22,15 @@ public class NaruOpenApiRequestSerializer implements NaruModelRequestSerializer 
 
         // Process Messages
         NArrayElementBuilder msgList = NElement.ofArrayBuilder();
-        if (request.getMessages() != null) {
-            for (NaruMessage m : request.getMessages()) {
+        if (request.messages() != null) {
+            for (NaruMessage m : request.messages()) {
                 msgList.add(messageToElement(m));
             }
         }
         body.set("messages", msgList.build());
 
         // Process Tools (OpenAI wrapped schema format)
-        List<NaruToolDefinition> tools = request.getTools();
+        List<NaruToolDefinition> tools = request.tools();
         if (tools != null && !tools.isEmpty()) {
             NArrayElementBuilder toolList = NElement.ofArrayBuilder();
             for (NaruToolDefinition t : tools) {

@@ -3,6 +3,7 @@ package net.thevpc.naru.impl.directive;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
@@ -64,7 +65,7 @@ public class HistoryDirective extends AbstractDirective {
 
     public void executeList(NaruDirectiveCallContext context, boolean includeAll, NCmdLine cmdLine) {
         NaruSession session = context.session();
-        List<NaruMessage> all = context.session().history(includeAll);
+        List<NaruMessage> all = context.session().context(includeAll ? NaruSource.values() : new NaruSource[]{NaruSource.USER}).messages();
         Set<Integer> toShow = new HashSet<>();
         int historySize = all.size();
         while (!cmdLine.isEmpty()) {
@@ -183,7 +184,7 @@ public class HistoryDirective extends AbstractDirective {
         }
         NaruSession session = context.session();
         Set<Integer> toRemove = new HashSet<>();
-        int historySize = session.history().size();
+        int historySize = session.context(NaruSource.USER).messages().size();
         while (!cmdLine.isEmpty()) {
             String a = cmdLine.next().get().image();
             for (String range : a.split(",;")) {

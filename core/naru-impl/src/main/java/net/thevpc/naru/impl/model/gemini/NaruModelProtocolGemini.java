@@ -22,7 +22,7 @@ public class NaruModelProtocolGemini extends NaruModelProtocolOpenAICompat {
     }
 
     @Override
-    public String url(NaruSession session) {
+    public String url(NaruSession session, Map<String,NElement> env) {
         // Gemini's OpenAI-compatible base endpoint
         String url = session.agent().env().get(configPrefix + ".url")
                 .flatMap(x -> x.asStringValue())
@@ -45,15 +45,15 @@ public class NaruModelProtocolGemini extends NaruModelProtocolOpenAICompat {
 
         // Use the inherited robust OpenAI-compatible payload builder
         NElement body = serializer.serialize(naruModelRequest,model, session);
-
+        Map<String, NElement> env = naruModelRequest.env();
         NWebCli http = NWebCli.of()
-                .connectTimeout(connectTimeout(session))
-                .baseUri(url(session));
+                .connectTimeout(connectTimeout(session,env))
+                .baseUri(url(session,env));
 
         // OpenAI compatibility router maps this to the standard /chat/completions route
         NWebRequest request = http.POST(chatPath)
                 .header("Authorization", "Bearer " + apiKey)
-                .timeout(readTimeout(session))
+                .timeout(readTimeout(session,env))
                 .jsonRequestBody(body);
 
         String responseString = null;

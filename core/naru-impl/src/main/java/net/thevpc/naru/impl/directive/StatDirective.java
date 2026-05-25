@@ -2,12 +2,12 @@ package net.thevpc.naru.impl.directive;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.budget.NaruModelStats;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
-import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.text.NMsg;
@@ -81,41 +81,97 @@ public class StatDirective extends AbstractDirective {
 
         }
         PromptStats promptStats = estimateTokens(session);
-        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  tokens : %s | tools : %s | messages : %s",
-                        promptStats.tokens,
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  tools : %s | messages : %s",
                         promptStats.tools,
                         promptStats.messages
                 )
         );
+        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  tokens : %s | system : %s | user : %s | tools : %s | assistant : %s | agent : %s",
+                promptStats.tokens,
+                NMsg.ofStyledNumber(percent(promptStats.systemTokens, promptStats.tokens)),
+                NMsg.ofStyledNumber(percent(promptStats.userTokens, promptStats.tokens)),
+                NMsg.ofStyledNumber(percent(promptStats.toolsTokens, promptStats.tokens)),
+                NMsg.ofStyledNumber(percent(promptStats.assistantTokens, promptStats.tokens)),
+                NMsg.ofStyledNumber(percent(promptStats.agentTokens, promptStats.tokens))
+                )
+        );
+    }
+
+    private String percent(long q, long max) {
+        if (q == 0 || max == 0) {
+            return "0.00%";
+        }
+        return new DecimalFormat("#.###").format(100.0 * q / (double) max);
     }
 
     private static class PromptStats {
-        int tokens;
-        int tools;
-        int messages;
+        long toolsTokens;
+        long systemTokens;
+        long assistantTokens;
+        long userTokens;
+        long agentTokens;
+        long tokens;
+        long tools;
+        long messages;
     }
 
     private PromptStats estimateTokens(NaruSession session) {
         PromptStats s = new PromptStats();
-        List<NaruToolDefinition> defs = new ArrayList<>();
-        s.tools = session.registry().tools().size();
-        for (NaruTool t : session.registry().tools().values()) {
-            defs.add(t.getDefinition(session));
-        }
-        NaruModelRequest estimatedMessage = new NaruModelRequest(session.history(true), defs);
-        int chars = 0;
-        s.messages = estimatedMessage.getMessages().size();
-        for (NaruMessage msg : estimatedMessage.getMessages()) {
+        NaruModelRequest r = session.context(NaruSource.values());
+        s.tools = r.tools().size();
+        NaruModelRequest estimatedMessage = new NaruModelRequest(
+                r.messages(),
+                r.tools(), new LinkedHashMap<>());
+        s.messages = estimatedMessage.messages().size();
+        for (NaruMessage msg : estimatedMessage.messages()) {
             if (msg.getContent() != null) {
-                chars += msg.getContent().length();
+                int c = msg.getContent().length();
+                s.tokens += c;
+                switch (msg.getRole()) {
+                    case tool: {
+                        s.toolsTokens += c;
+                        break;
+                    }
+                    case system: {
+                        s.systemTokens += c;
+                        break;
+                    }
+                    case assistant: {
+                        s.assistantTokens += c;
+                        break;
+                    }
+                    case user: {
+                        switch (msg.getSource()) {
+                            case USER: {
+                                s.userTokens += c;
+                                break;
+                            }
+                            default: {
+                                s.agentTokens += c;
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
             }
         }
-        for (NaruTool t : session.registry().tools().values()) {
-            NaruToolDefinition tool = t.getDefinition(session);
-            if (tool.getName() != null) chars += tool.getName().length();
-            if (tool.getDescription() != null) chars += tool.getDescription().length();
+        for (NaruToolDefinition tool : r.tools()) {
+            if (tool.getName() != null) {
+                s.toolsTokens += tool.getName().length();
+                s.tokens += tool.getName().length();
+            }
+            if (tool.getDescription() != null) {
+                s.toolsTokens += tool.getDescription().length();
+                s.tokens += tool.getDescription().length();
+            }
         }
-        s.tokens = chars / 4;
+        s.tokens = s.tokens / 4;
+        s.systemTokens = s.systemTokens / 4;
+        s.toolsTokens = s.toolsTokens / 4;
+        s.userTokens = s.userTokens / 4;
+        s.assistantTokens = s.assistantTokens / 4;
+        s.agentTokens = s.agentTokens / 4;
         return s;
     }
 

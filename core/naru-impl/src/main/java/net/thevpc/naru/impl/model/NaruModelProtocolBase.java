@@ -1,6 +1,5 @@
 package net.thevpc.naru.impl.model;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.impl.util.NaruUtils;
@@ -14,7 +13,7 @@ import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 
-import java.util.*;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -76,7 +75,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return c;
     }
 
-    protected String url(NaruSession session) {
+    protected String url(NaruSession session,Map<String, NElement> env) {
         String url = session.agent().env().get(configPrefix + ".url").flatMap(x -> x.asStringValue()).orElse("http://localhost:11434");
         while (url.endsWith("/")) {
             url = url.substring(0, url.length() - 1);
@@ -84,17 +83,19 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return url;
     }
 
-    protected NDuration connectTimeout(NaruSession session) {
+    protected NDuration connectTimeout(NaruSession session, Map<String, NElement> env) {
         return session.agent().env().get(configPrefix + ".connectTimeout").flatMap(x -> x.asStringValue())
                 .flatMap(x -> NDuration.parse(x))
                 .orElseGetOptionalFrom(
                         () -> session.agent().env().get(configPrefix + ".timeout").flatMap(x -> x.asStringValue())
                                 .flatMap(x -> NDuration.parse(x))
                 )
-                .orElse(NDuration.ofSeconds(120));
+                .orElseGet(()->{
+                    return NDuration.ofSeconds(120);
+                });
     }
 
-    protected NDuration readTimeout(NaruSession session) {
+    protected NDuration readTimeout(NaruSession session,Map<String, NElement> env) {
         return session.agent().env().get(configPrefix + ".readTimeout").flatMap(x -> x.asStringValue())
                 .flatMap(x -> NDuration.parse(x))
                 .orElseGetOptionalFrom(
@@ -106,17 +107,18 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
 
     @Override
     public NaruResponse chat(NaruModelRequest mrequest, NaruSession session) {
+        Map<String, NElement> env = mrequest.env();
         boolean toolsWrapped = false;
-        if (!capabilities.isTools() && !mrequest.getTools().isEmpty()) {
+        if (!capabilities.isTools() && !mrequest.tools().isEmpty()) {
             mrequest=NoTollWrapHelper.wrapRequest(mrequest,NoTollWrapHelper.TOOL_CALL_SEP, session);
             toolsWrapped = true;
         }
         NElement body = serializer.serialize(mrequest, model, session);
         NWebCli http = NWebCli.of()
-                .connectTimeout(connectTimeout(session))
-                .baseUri(url(session));
+                .connectTimeout(connectTimeout(session, env))
+                .baseUri(url(session,env));
         NWebRequest request = http.POST(chatPath)
-                .timeout(readTimeout(session))
+                .timeout(readTimeout(session,env))
                 .jsonRequestBody(body);
 
         try {

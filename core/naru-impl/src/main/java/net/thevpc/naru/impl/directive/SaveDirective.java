@@ -1,9 +1,6 @@
 package net.thevpc.naru.impl.directive;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
-import net.thevpc.naru.api.agent.NaruResourceInfo;
-import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.agent.NaruSessionManager;
+import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
 import net.thevpc.nuts.cmdline.NArg;
@@ -14,8 +11,6 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 public class SaveDirective extends AbstractDirective {
@@ -62,7 +57,7 @@ public class SaveDirective extends AbstractDirective {
     public void executeSave(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession session = context.session();
         if (NBlankable.isBlank(session.name()) || session.name().equals("NO_NAME")) {
-            List<NaruMessage> history = context.session().history(true);
+            List<NaruMessage> history = context.session().context(NaruSource.values()).messages();
             history.add(NaruMessage.user("can you suggest a name for this session? dont be verbose in your response, only return the suggested name please."));
             NaruModelConfig model = context.session().model();
             NaruResponse chat = context.session().chat(

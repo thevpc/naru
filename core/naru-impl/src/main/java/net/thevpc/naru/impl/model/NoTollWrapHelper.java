@@ -16,15 +16,15 @@ public class NoTollWrapHelper {
 
 
     public static NaruModelRequest wrapRequest(NaruModelRequest mrequest, Separators openClose, NaruSession session) {
-        ArrayList<NaruMessage> newMessages = new ArrayList<>(mrequest.getMessages());
+        ArrayList<NaruMessage> newMessages = new ArrayList<>(mrequest.messages());
         newMessages.add(createToolsAvailableMessage(mrequest, openClose, session));
-        return new NaruModelRequest(newMessages, Collections.emptyList());
+        return new NaruModelRequest(newMessages, Collections.emptyList(),new LinkedHashMap<>());
     }
 
     public static NaruMessage createToolsAvailableMessage(NaruModelRequest mrequest, Separators openClose, NaruSession session) {
         StringBuilder toolsPrompt = new StringBuilder();
-        if (!mrequest.getTools().isEmpty()) {
-            for (NaruToolDefinition tool : mrequest.getTools()) {
+        if (!mrequest.tools().isEmpty()) {
+            for (NaruToolDefinition tool : mrequest.tools()) {
                 toolsPrompt.append("You have access to the following tools:\n\n");
                 toolsPrompt.append("### ").append(tool.getName()).append("\n");
                 toolsPrompt.append(tool.getDescription()).append("\n");

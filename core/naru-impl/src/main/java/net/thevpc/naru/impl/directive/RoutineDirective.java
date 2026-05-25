@@ -95,7 +95,7 @@ public class RoutineDirective extends AbstractDirective {
         NaruRoutine cs = sm.getCurrentRoutine();
 
         Set<Integer> toShow = new HashSet<>();
-        int historySize = session.history().size();
+        int historySize = session.context(NaruSource.USER).messages().size();
         while (!cmdLine.isEmpty()) {
             String a = cmdLine.next().get().image();
             for (String range : a.split(",;")) {
@@ -181,7 +181,7 @@ public class RoutineDirective extends AbstractDirective {
         NaruRoutine cs = sm.getCurrentRoutine();
 
         Set<Integer> toRemove = new HashSet<>();
-        int historySize = session.history().size();
+        int historySize = session.context(NaruSource.USER).messages().size();
         while (!cmdLine.isEmpty()) {
             String a = cmdLine.next().get().image();
             for (String range : a.split(",;")) {

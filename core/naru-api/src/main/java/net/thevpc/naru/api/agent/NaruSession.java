@@ -58,11 +58,7 @@ public interface NaruSession {
 
     boolean removeHistoryAt(int index);
 
-    List<NaruMessage> history();
-
-    List<NaruMessage> history(boolean includeSystem);
-
-    List<NaruMessage> context(NaruSource... sources);
+    NaruModelRequest context(NaruSource... sources);
 
     int pc();
 

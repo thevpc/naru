@@ -8,7 +8,10 @@ import net.thevpc.nuts.artifact.NId;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.core.NSession;
 import net.thevpc.nuts.core.NStoreKey;
+import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.elem.NElementWriter;
+import net.thevpc.nuts.elem.NPairElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.io.NPathOption;
 import net.thevpc.nuts.log.NLog;
@@ -17,15 +20,13 @@ import net.thevpc.nuts.platform.NStoreScope;
 import net.thevpc.nuts.platform.NStoreType;
 import net.thevpc.nuts.text.*;
 import net.thevpc.nuts.time.NChronometer;
+import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.text.DecimalFormat;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class NaruUtils {
@@ -34,14 +35,42 @@ public class NaruUtils {
         return text.replaceAll("\u001B(\\[[;\\d]*[A-Za-z]|[^\\[\\]])", "");
     }
 
-    private static void log(NMsg msg){
+    public static Map<String, NElement> parseEnv(String msg) {
+        if (NBlankable.isBlank(msg)) {
+            return Collections.emptyMap();
+        }
+        NElement aa = NElementReader.ofTson().read(msg);
+        return parseEnv(aa);
+    }
+
+    public static Map<String, NElement> parseEnv(NElement aa) {
+        if (aa == null) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, NElement> env = new HashMap<>();
+        if (aa.isNamedPair()) {
+            NPairElement p = aa.asPair().get();
+            env.put(p.key().asStringValue().orNull(), p.value());
+        } else if (aa.isListContainer()) {
+            for (NPairElement p : aa.asListContainer().get().namedPairs()) {
+                env.put(p.key().asStringValue().orNull(), p.value());
+            }
+        } else if (aa.isFragment()) {
+            for (NPairElement p : aa.asFragment().get().namedPairs()) {
+                env.put(p.key().asStringValue().orNull(), p.value());
+            }
+        }
+        return env;
+    }
+
+    private static void log(NMsg msg) {
         NPath path = NPath.of(NStoreKey.of(
                 NStoreScope.WORKSPACE,
                 NStoreType.LOG,
                 NId.of("net.thevpc.naru:naru").sharedId(),
                 "naru.log"
         ));
-        path.mkParentDirs().writeString(msg.toFullString()+"\n", NPathOption.APPEND,NPathOption.CREATE);
+        path.mkParentDirs().writeString(msg.toFullString() + "\n", NPathOption.APPEND, NPathOption.CREATE);
     }
 
     public static String abbreviate(String s, int max) {
@@ -248,27 +277,27 @@ public class NaruUtils {
     }
 
     public static String timeAgo(Instant instant) {
-        if(instant == null) return null;
+        if (instant == null) return null;
         long seconds = Duration.between(instant, Instant.now()).getSeconds();
 
-        if (seconds < 0)        return "in the future";
-        if (seconds < 5)        return "just now";
-        if (seconds < 60)       return seconds + " seconds ago";
+        if (seconds < 0) return "in the future";
+        if (seconds < 5) return "just now";
+        if (seconds < 60) return seconds + " seconds ago";
 
         long minutes = seconds / 60;
-        if (minutes < 60)       return minutes + (minutes == 1 ? " minute ago" : " minutes ago");
+        if (minutes < 60) return minutes + (minutes == 1 ? " minute ago" : " minutes ago");
 
         long hours = minutes / 60;
-        if (hours < 24)         return hours + (hours == 1 ? " hour ago" : " hours ago");
+        if (hours < 24) return hours + (hours == 1 ? " hour ago" : " hours ago");
 
         long days = hours / 24;
-        if (days < 7)           return days + (days == 1 ? " day ago" : " days ago");
+        if (days < 7) return days + (days == 1 ? " day ago" : " days ago");
 
         long weeks = days / 7;
-        if (weeks < 4)          return weeks + (weeks == 1 ? " week ago" : " weeks ago");
+        if (weeks < 4) return weeks + (weeks == 1 ? " week ago" : " weeks ago");
 
         long months = days / 30;
-        if (months < 12)        return months + (months == 1 ? " month ago" : " months ago");
+        if (months < 12) return months + (months == 1 ? " month ago" : " months ago");
 
         long years = days / 365;
         return years + (years == 1 ? " year ago" : " years ago");

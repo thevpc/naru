@@ -81,7 +81,7 @@ public class ContextDirective extends AbstractDirective {
     public void executeShow(NaruSource[] sources, NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession session = context.session();
         List<NaruUtils.LineRange> lineRanges = NaruUtils.parseRanges(cmdLine);
-        session.context(sources).stream().forEach(a -> {
+        session.context(sources).messages().stream().forEach(a -> {
             if (a.getSource() == NaruSource.SYSTEM) {
                 session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %-9s %s",
                         NMsg.ofStyled(agentIcon(a.getRole()), agentStyle(a.getRole())),

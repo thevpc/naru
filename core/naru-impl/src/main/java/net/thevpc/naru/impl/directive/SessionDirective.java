@@ -230,7 +230,7 @@ public class SessionDirective extends AbstractDirective {
     public void executeSave(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession session = context.session();
         if (NBlankable.isBlank(session.name()) || session.name().equals("NO_NAME")) {
-            List<NaruMessage> history = context.session().history(true);
+            List<NaruMessage> history = context.session().context(NaruSource.values()).messages();
             history.add(NaruMessage.user("can you suggest a name for this session? dont be verbose in your response, only return the suggested name please."));
             NaruModelConfig model = context.session().model();
             NaruResponse chat = context.session().chat(model,
