@@ -78,7 +78,7 @@ nuts -y naru
 Pass a task directly as an argument to execute it non-interactively:
 
 ```bash
-naru -c "Review the current directory as a senior architect"
+nuts -y naru -c "Review the current directory as a senior architect"
 ```
 
 ### File Task Mode
@@ -86,7 +86,7 @@ naru -c "Review the current directory as a senior architect"
 Pass a task directly as an argument to execute it non-interactively:
 
 ```bash
-naru -f my-task-script.naru
+nuts -y naru -f my-task-script.naru
 ```
 
 
@@ -95,7 +95,7 @@ naru -f my-task-script.naru
 Launch without arguments to enter the REPL:
 
 ```bash
-naru
+nuts -y naru
 ```
 
 In REPL mode, you can type natural language tasks, run directives (prefixed with `/`), or build and execute routines. Any line that is not a directive is forwarded to the active model as a prompt.
@@ -116,10 +116,10 @@ NARU supports any model available through Ollama. Use the `/model` directive to 
 # Set a persistent default model
 /model set-global qwen3-coder:30b
 
-# Pull a new model from Ollama
+# Pull a new model from Ollama (will take a while)
 /model install deepseek-2.5
 
-# Check which models are currently loaded
+# Check which models are currently loaded on the GPU
 /model ps
 ```
 
