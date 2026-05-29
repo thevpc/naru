@@ -7,6 +7,7 @@ import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
+import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.text.NMsg;
@@ -39,7 +40,10 @@ public class HistoryDirective extends AbstractDirective {
                     executeList(context, true, cmdLine);
                     break;
                 }
-                case "drop": {
+                case "drop":
+                case "delete":
+                case "del":
+                {
                     executeDrop(context, cmdLine);
                     break;
                 }
@@ -183,35 +187,11 @@ public class HistoryDirective extends AbstractDirective {
             return;
         }
         NaruSession session = context.session();
-        Set<Integer> toRemove = new HashSet<>();
-        int historySize = session.context(NaruSource.USER).messages().size();
-        while (!cmdLine.isEmpty()) {
-            String a = cmdLine.next().get().image();
-            for (String range : a.split(",;")) {
-                range = range.trim();
-                if (!range.isEmpty()) {
-                    if (range.matches("[0-9]+")) {
-                        toRemove.add(Integer.parseInt(range) - 1);
-                    } else if (range.matches("[0-9]+[-][0-9]+")) {
-                        String[] ss = range.split("-");
-                        int x = Integer.parseInt(ss[0]) - 1;
-                        int y = Integer.parseInt(ss[1]);
-                        if (x < 0) {
-                            x = historySize + x;
-                        }
-                        if (y < 0) {
-                            y = historySize + y + 1;
-                        }
-                        for (int i = x; i <= y; i++) {
-                            toRemove.add(i);
-                        }
-                    } else {
-                        session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid position to drop", range).asError());
-                        return;
-                    }
-                }
-            }
-        }
+        List<NaruUtils.LineRange> ranges = NaruUtils.parseRanges(cmdLine);
+        List<NaruMessage> messages = session.context(NaruSource.USER).messages();
+        int historySize = messages.size();
+        Set<Integer> toRemove = NaruUtils.resolveIndexes(ranges.toArray(new NaruUtils.LineRange[0]), historySize);
+
         List<Integer> a = toRemove.stream().sorted(Comparator.<Integer>naturalOrder().reversed()).collect(Collectors.toList());
         List<Integer> b = new ArrayList<>();
         for (int i = 0; i < a.size(); i++) {

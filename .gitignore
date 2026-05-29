@@ -26,3 +26,6 @@ replay_pid*
 /app/target/
 /core/naru-api/target/
 /core/naru-impl/target/
+documentation/term-cast/nuts.jar
+documentation/term-cast/naru-install-demo.gif
+documentation/.naru

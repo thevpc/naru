@@ -14,7 +14,7 @@ public class GoDirective extends AbstractDirective {
         NaruSession session = context.session();
         String prompt = session.inputBuffer();
         session.inputBuffer("");
-        session.pushStatement(NaruStatementHelper.ofModelCall(prompt));
+        session.addStatement(NaruStatementHelper.ofModelCall(prompt));
         session.runStep();
     }
 }

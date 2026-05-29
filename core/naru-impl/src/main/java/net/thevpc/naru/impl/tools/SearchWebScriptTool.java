@@ -6,7 +6,6 @@ import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.nuts.net.NWebCli;
 import net.thevpc.nuts.net.NWebResponse;
 import net.thevpc.nuts.time.NDuration;
@@ -18,7 +17,7 @@ import java.util.stream.Collectors;
 public class SearchWebScriptTool implements NaruTool {
 
     @Override
-    public String getName() {
+    public String name() {
         return "search_web";
     }
 
@@ -30,7 +29,7 @@ public class SearchWebScriptTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(),
+                name(),
                 getDescription(session),
                 NaruToolParameter.string("query", "query to look for", true)
         );

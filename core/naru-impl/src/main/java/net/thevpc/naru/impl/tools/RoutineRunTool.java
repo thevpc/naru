@@ -1,18 +1,19 @@
 package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
-import net.thevpc.naru.api.tool.NaruRegistry;
 
-public class RunScriptTool implements NaruTool {
+public class RoutineRunTool implements NaruTool {
 
     @Override
-    public String getName() {
-        return "run_script";
+    public String name() {
+        return "routine_run";
     }
 
     @Override
@@ -23,9 +24,9 @@ public class RunScriptTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(),
+                name(),
                 getDescription(session),
-                NaruToolParameter.string("script_name", "Name of the script to run.", true)
+                NaruToolParameter.string("routine_name", "Name of the routine to run.", true)
         );
     }
 
@@ -33,11 +34,22 @@ public class RunScriptTool implements NaruTool {
     public String execute(NaruToolCallContext context) {
         String scriptName = context.stringArg("script_name").onBlankEmpty().orNull();
         if (scriptName == null) {
-            return "Error: script_name is required";
+            return "Error: routine_name is required";
         }
 
-        String r= "running script " + scriptName;
+        String r= "running routine " + scriptName;
         context.session().agent().invokeRoutine(context.session(), scriptName);
         return r;
+    }
+
+    public boolean acceptMode(NaruMode mode) {
+        NaruStandardMode m = mode.asStandardMode().orNull();
+        if (m != null) {
+            switch (m) {
+                case IMPLEMENT:
+                    return true;
+            }
+        }
+        return false;
     }
 }

@@ -17,6 +17,7 @@ class RunContextImpl implements NToElement, RunContext {
     private final Map<String, Object> params = new HashMap<>(); // NEW: local param frame
     private final Map<String, Object> state = new HashMap<>(); // Local mutable state
     private String routine; // Local mutable state
+    private String runningRoutine; // Local mutable state
 
     public RunContextImpl() {
     }
@@ -36,6 +37,16 @@ class RunContextImpl implements NToElement, RunContext {
         }
     }
 
+    @Override
+    public String getRunningRoutine() {
+        return runningRoutine;
+    }
+
+    public RunContextImpl setRunningRoutine(String runningRoutine) {
+        this.runningRoutine = runningRoutine;
+        return this;
+    }
+
     public String getRoutine() {
         return routine;
     }
@@ -49,7 +60,7 @@ class RunContextImpl implements NToElement, RunContext {
         return pc;
     }
 
-    public RunContextImpl setPc(int pc) {
+    public RunContext pc(int pc) {
         this.pc = pc;
         return this;
     }

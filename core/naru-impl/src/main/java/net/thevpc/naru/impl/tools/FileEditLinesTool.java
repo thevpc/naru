@@ -1,9 +1,10 @@
 package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
@@ -26,7 +27,7 @@ public class FileEditLinesTool implements NaruTool {
     }
 
     @Override
-    public String getName() {
+    public String name() {
         return "file_edit_lines";
     }
 
@@ -40,7 +41,7 @@ public class FileEditLinesTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(), getDescription(session),
+                name(), getDescription(session),
                 NaruToolParameter.string("path", "File path to edit", true),
                 NaruToolParameter.integer("from", "Start line index (0-based inclusive, supports negatives)", true),
                 NaruToolParameter.integer("to", "End line index (0-based exclusive). Omit or equal to 'from' to insert.", false),
@@ -118,6 +119,17 @@ public class FileEditLinesTool implements NaruTool {
         if (idx == null) return 0;
         if (idx < 0) return (int) Math.max(0, total + idx); // -1 → total-1, -2 → total-2
         return (int) Math.min(idx, total);                  // clamp large positives to total
+    }
+
+    public boolean acceptMode(NaruMode mode) {
+        NaruStandardMode m = mode.asStandardMode().orNull();
+        if (m != null) {
+            switch (m) {
+                case IMPLEMENT:
+                    return true;
+            }
+        }
+        return false;
     }
 
 }

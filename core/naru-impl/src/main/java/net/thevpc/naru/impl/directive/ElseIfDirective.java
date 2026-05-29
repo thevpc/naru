@@ -1,10 +1,7 @@
 package net.thevpc.naru.impl.directive;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
 import net.thevpc.naru.impl.stmt.NaruElseIfStmt;
-import net.thevpc.naru.impl.stmt.NaruIfStmt;
-import net.thevpc.nuts.text.NMsg;
 
 public class ElseIfDirective extends AbstractDirective {
     public ElseIfDirective() {
@@ -17,6 +14,6 @@ public class ElseIfDirective extends AbstractDirective {
         String condition = raw.trim();
 
         NaruElseIfStmt stmt = new NaruElseIfStmt(condition);
-        context.session().pushStatement(stmt);
+        context.session().addStatement(stmt);
     }
 }

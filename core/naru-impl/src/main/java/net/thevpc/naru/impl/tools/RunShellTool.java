@@ -1,12 +1,13 @@
 package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.nuts.command.NExec;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NBlankable;
@@ -24,7 +25,7 @@ public class RunShellTool implements NaruTool {
     }
 
     @Override
-    public String getName() {
+    public String name() {
         return "run_shell";
     }
 
@@ -36,7 +37,7 @@ public class RunShellTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(), getDescription(session),
+                name(), getDescription(session),
                 NaruToolParameter.string("command", "Shell command to execute", true),
                 NaruToolParameter.string("working_dir", "Directory to run the command in (defaults to project dir)", false),
                 NaruToolParameter.integer("timeout_seconds", "Max seconds to wait (default: 60)", false)
@@ -47,7 +48,7 @@ public class RunShellTool implements NaruTool {
     public String execute(NaruToolCallContext context) {
         String command = context.stringArg("command").orNull();
         String workDir = context.stringArg("working_dir").orNull();
-        int timeout = context.numberArg( "timeout_seconds").map(Number::intValue).orElse(60);
+        int timeout = context.numberArg("timeout_seconds").map(Number::intValue).orElse(60);
 
         if (NBlankable.isBlank(command)) return "ERROR: 'command' is required.";
 
@@ -67,4 +68,14 @@ public class RunShellTool implements NaruTool {
         }
     }
 
+    public boolean acceptMode(NaruMode mode) {
+        NaruStandardMode m = mode.asStandardMode().orNull();
+        if (m != null) {
+            switch (m) {
+                case IMPLEMENT:
+                    return true;
+            }
+        }
+        return false;
+    }
 }

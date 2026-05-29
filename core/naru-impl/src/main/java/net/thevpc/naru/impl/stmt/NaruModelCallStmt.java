@@ -4,9 +4,6 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.routine.NaruRoutine;
-import net.thevpc.naru.api.routine.NaruRoutineManager;
-import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
@@ -19,7 +16,7 @@ import net.thevpc.nuts.util.NNameFormat;
 import java.util.ArrayList;
 import java.util.List;
 
-public class NaruModelCallStmt extends NaruStatement {
+public class NaruModelCallStmt extends NaruSimpleStatement {
     private final String prompt;
 
     public NaruModelCallStmt(String prompt) {
@@ -105,10 +102,12 @@ public class NaruModelCallStmt extends NaruStatement {
 //            if (session.isForever()) {
 //                session.pushStatement(NaruStatementHelper.ofReadLine());
 //            }
-            session.pushStatement(NaruStatementHelper.ofModelCall(null));
-            for (int i = toolCalls.size() - 1; i >= 0; i--) {
-                session.pushStatement(NaruStatementHelper.ofToolCall(toolCalls.get(i)));
+            session.pushContext();
+            for (NaruToolCall c : toolCalls) {
+                session.addStatement(NaruStatementHelper.ofToolCall(c));
             }
+            session.addStatement(NaruStatementHelper.ofModelCall(null));
+            session.addStatement(NaruStatementHelper.ofReturn());
             if (!NBlankable.isBlank(assistantMsg.getContent())) {
                 session.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
             }
@@ -117,23 +116,23 @@ public class NaruModelCallStmt extends NaruStatement {
         session.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
         session.setLastResult(assistantMsg);
 
-        if (session.pc() != -1) {
-            NaruRoutineManager sm = session.routineManager();
-            NaruRoutine currentScript = sm.getRoutine(sm.getCurrentRoutineName());
-            Integer nextPc = currentScript.getLines().higherKey(session.pc());
-            if (nextPc != null) {
-                session.pc(nextPc);
-                session.pushStatement(NaruStatementHelper.ofExecRoutineLine());
-            } else {
-                session.log(NaruLogMode.PROGRESS, NMsg.ofC("%s Script execution finished.",
-                        NMsg.ofStyledSuccess("✅")
-                ));
-                session.pc(-1);
-//                if (session.isForever()) {
-//                    session.pushStatement(NaruStatementHelper.ofReadLine());
-//                }
-            }
-        }
+//        if (session.pc() != -1) {
+//            NaruRoutineManager sm = session.routineManager();
+//            NaruRoutine currentScript = sm.getRoutine(sm.getCurrentRoutineName());
+//            int nextPc = currentScript.nextLineIndex(session.pc());
+//            if (nextPc >= 0) {
+//                session.pc(nextPc);
+//                session.pushStatement(NaruStatementHelper.ofExecRoutineLine());
+//            } else {
+//                session.log(NaruLogMode.PROGRESS, NMsg.ofC("%s Script execution finished.",
+//                        NMsg.ofStyledSuccess("✅")
+//                ));
+//                session.pc(-1);
+////                if (session.isForever()) {
+////                    session.pushStatement(NaruStatementHelper.ofReadLine());
+////                }
+//            }
+//        }
 //        else if (session.isForever()) {
 //            session.pushStatement(NaruStatementHelper.ofReadLine());
 //        }

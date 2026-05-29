@@ -11,10 +11,10 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
-public class NaruReadlineStmt extends NaruStatement {
+public class NaruReadlineStmt extends NaruSimpleStatement {
 
     public static final String DEFAULT_BLOCK_SEPARATOR = "≫";
-    public static final String DEFAULT_LINE_SEPARATOR = ">";
+    public static final String DEFAULT_LINE_SEPARATOR = "›";
     public static final String DEFAULT_PROMPT = "なる";
 
     public NaruReadlineStmt() {
@@ -71,7 +71,7 @@ public class NaruReadlineStmt extends NaruStatement {
                 session.inputBuffer("");
                 NaruStatement stmt = session.agent().parseStatement(sb.toString()).orNull();
                 if (stmt != null) {
-                    session.pushStatement(stmt);
+                    session.addStatement(stmt);
                 }
                 break;
             }
@@ -83,7 +83,7 @@ public class NaruReadlineStmt extends NaruStatement {
                     session.inputBuffer("");
                     NaruStatement stmt = session.agent().parseStatement(b).orNull();
                     if (stmt != null) {
-                        session.pushStatement(stmt);
+                        session.addStatement(stmt);
                     }
                 }else {
                     StringBuilder sb = new StringBuilder();

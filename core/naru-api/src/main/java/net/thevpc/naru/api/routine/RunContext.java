@@ -19,4 +19,8 @@ public interface RunContext {
     Map<String, Object> params();
 
     Integer returnPc();
+
+    RunContext pc(int pc);
+    String getRoutine();
+    String getRunningRoutine();
 }

@@ -31,7 +31,7 @@ public class NaruForStmt extends NaruIncrementalStmt {
     }
 
     @Override
-    public void exec(NaruSession session) {
+    public void execAndAdvance(NaruSession session) {
 
     }
 }

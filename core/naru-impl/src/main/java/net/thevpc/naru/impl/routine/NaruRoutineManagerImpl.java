@@ -78,6 +78,7 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
                             .setName(defaultMain.getName())
                             .setCreationDate(now)
                             .setModificationDate(now)
+                            .setMode(NAruVisibility.PUBLIC)
             );
         }
         a.sort((o1, o2) -> o2.getModificationDate().compareTo(o1.getModificationDate()));
@@ -207,18 +208,18 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
         if (NBlankable.isBlank(r.uuid())) {
             ((NaruRoutineImpl) r).setUuid(UUID.randomUUID().toString());
         }
-        NPath pub = routinesDir(NAruVisibility.PUBLIC);
-        NPath priv = routinesDir(NAruVisibility.PRIVATE);
+        NPath pub = routinesDir(NAruVisibility.PUBLIC).resolve(r.getName());
+        NPath priv = routinesDir(NAruVisibility.PRIVATE).resolve(r.getName());
         if (r.getVisibility()==NAruVisibility.PUBLIC) {
             if (priv.isRegularFile()) {
                 priv.delete();
             }
-            _write(pub, r);
+            _write(pub.mkParentDirs(), r);
         } else {
             if (pub.isRegularFile()) {
                 pub.delete();
             }
-            _write(priv, r);
+            _write(priv.mkParentDirs(), r);
         }
     }
 
@@ -226,7 +227,7 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
         StringBuilder sb = new StringBuilder();
         sb.append("name : ").append(NStringUtils.firstNonBlankTrimmed(r.getName(), "NO_NAME")).append("\n");
         sb.append("\n");
-        for (Map.Entry<Integer, String> e : r.getLines().entrySet()) {
+        for (Map.Entry<Integer, String> e : r.getLinesSet().entrySet()) {
             sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
         }
         pub.mkParentDirs().writeString(sb.toString());

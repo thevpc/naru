@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.model;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.nuts.elem.*;
@@ -13,17 +14,53 @@ import java.util.regex.Pattern;
 public class NoTollWrapHelper {
     //    public static final Separators TOOL_CALL = new Separators("<tool_call>", "</tool_call>");
     public static final Separators TOOL_CALL_SEP = new Separators("<|tool_call|>", "<|end_tool_call|>");
+    public static final Separators TOOL_RESULT_SEP = new Separators("<|tool_result|>", "<|end_tool_result|>");
 
 
-    public static NaruModelRequest wrapRequest(NaruModelRequest mrequest, Separators openClose, NaruSession session) {
-        ArrayList<NaruMessage> newMessages = new ArrayList<>(mrequest.messages());
-        newMessages.add(createToolsAvailableMessage(mrequest, openClose, session));
-        return new NaruModelRequest(newMessages, Collections.emptyList(),new LinkedHashMap<>());
-    }
+    public static NaruModelRequest wrapRequest(NaruModelRequest mrequest, Separators callSep, Separators resultSep, NaruSession session) {
+        List<NaruMessage> messages = new ArrayList<>(mrequest.messages());
+        for (int i = 0; i < messages.size(); i++) {
+            NaruMessage message = messages.get(i);
+            if(message.getRole()== NaruRole.assistant) {
+                message = message.copy();
+                if(message.getToolCalls()!=null && !message.getToolCalls().isEmpty()) {
+                    StringBuilder sb = new StringBuilder();
+                    if(message.getContent()!=null){
+                        sb.append(message.getContent());
+                        sb.append("\n");
+                    }
+                    for (NaruToolCall toolCall : message.getToolCalls()) {
+                        sb.append(callSep.open+"\n");
+                        Map<String, Object> t = new HashMap<>();
+                        t.put("tool", toolCall.getName());
+                        t.put("args", new HashMap<>(toolCall.getArguments()));
+                        sb.append(
+                                NElementWriter.ofJson().formatPlain(NElements.of().toElement(t))
+                        ).append("\n");
+                        sb.append(callSep.close+"\n");
+                    }
+                    message.setContent(sb.toString());
+                    message.setToolCalls(null);
+                    messages.set(i,message);
+                }
+            }
+            if(message.getRole()== NaruRole.tool) {
+                message = message.copy();
+                message.setRole(NaruRole.user);
+                message.setContent(
+                        resultSep.open+"\n"+
+                                "tool: " + message.getToolName()+"\n"+
+                                message.getContent()+"\n"+
+                                resultSep.close+"\n"
+                );
+                message.setToolCallId(null);
+                message.setToolName(null);
+                messages.set(i,message);
+            }
+        }
+        if(!mrequest.tools().isEmpty()) {
+            StringBuilder toolsPrompt = new StringBuilder();
 
-    public static NaruMessage createToolsAvailableMessage(NaruModelRequest mrequest, Separators openClose, NaruSession session) {
-        StringBuilder toolsPrompt = new StringBuilder();
-        if (!mrequest.tools().isEmpty()) {
             for (NaruToolDefinition tool : mrequest.tools()) {
                 toolsPrompt.append("You have access to the following tools:\n\n");
                 toolsPrompt.append("### ").append(tool.getName()).append("\n");
@@ -38,15 +75,15 @@ public class NoTollWrapHelper {
             }
             toolsPrompt.append("When you need to use a tool, output ONLY a JSON block like this:\n" +
                     "\n" +
-                    openClose.open + "\n" +
+                    callSep.open + "\n" +
                     "{\"tool\": \"file_read\", \"args\": {\"path\": \"/some/file.java\"}}\n" +
-                    openClose.close + "\n" +
+                    callSep.close + "\n" +
                     "\n" +
-                    "Wait. The result will be provided as <tool_result>...</tool_result>.\n" +
+                    "Wait. The result will be provided as " + resultSep.open + "..." + resultSep.close + ".\n" +
                     "Then continue your reasoning.");
-            return NaruMessage.system(toolsPrompt.toString());
+            messages.add(NaruMessage.system(toolsPrompt.toString()));
         }
-        return null;
+        return new NaruModelRequest(messages, Collections.emptyList(),mrequest.env());
     }
 
     public static class Separators {

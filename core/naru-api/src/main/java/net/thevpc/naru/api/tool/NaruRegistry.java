@@ -1,6 +1,8 @@
 package net.thevpc.naru.api.tool;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.nuts.util.NOptional;
 
@@ -37,9 +39,20 @@ public interface NaruRegistry {
 
     List<NaruModelKey> modelsKeys(NaruSession session);
 
-    NOptional<NaruModelKey> findModel(String keyOrName,NaruSession session);
+    NOptional<NaruModelKey> findModel(String keyOrName, NaruSession session);
 
     NOptional<NaruModelProvider> provider(String provider);
 
-    NOptional<NaruModelProtocol> protocol(NaruModelConfig model,NaruSession session);
+    NOptional<NaruModelProtocol> protocol(NaruModelConfig model, NaruSession session);
+
+    List<NaruMode> modes();
+
+    List<String> modeNames();
+    List<String> modeNamesAndAliases();
+
+    void declareMode(NaruMode mode);
+
+    NOptional<NaruMode> mode(NaruStandardMode mode);
+
+    NOptional<NaruMode> mode(String mode);
 }

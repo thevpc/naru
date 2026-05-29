@@ -3,7 +3,6 @@ package net.thevpc.naru.impl.tools;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
@@ -25,7 +24,7 @@ public class FileGrepTool implements NaruTool {
     private static final int DEFAULT_MAX_MATCHES = 50;
 
     @Override
-    public String getName() { return "file_grep"; }
+    public String name() { return "file_grep"; }
 
     @Override
     public String getDescription(NaruSession session) {
@@ -35,9 +34,9 @@ public class FileGrepTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(), getDescription(session),
+                name(), getDescription(session),
                 NaruToolParameter.string("path", "File to search", true),
-                NaruToolParameter.string("pattern", "Search pattern", true),
+                NaruToolParameter.string("content_pattern", "Search pattern", true),
                 NaruToolParameter.bool("regex", "Treat pattern as regex", false, false),
                 NaruToolParameter.bool("case_sensitive", "Case-sensitive match", false, false),
                 NaruToolParameter.integer("context_lines", "Lines of context before/after match", false, DEFAULT_CONTEXT),

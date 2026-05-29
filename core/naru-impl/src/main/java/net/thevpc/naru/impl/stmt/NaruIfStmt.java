@@ -65,22 +65,22 @@ public class NaruIfStmt extends NaruIncrementalStmt {
         return this;
     }
 
-    public void exec(NaruSession session) {
+    public void execAndAdvance(NaruSession session) {
         if(isPending()){
             session.throwError(NMsg.ofC("error statement : incomplete if statement"));
         }
         Object object=session.evalExpression(condition);
         if(NLiteral.of(object).asBoolean().orElse(false)){
-            session.pushStatements(trueBranch.toArray(new NaruStatement[0]));
+            session.addStatements(trueBranch.toArray(new NaruStatement[0]));
         }else{
             for (ElseIfBranch ifBranch : elseIfBranch) {
                 object=session.evalExpression(ifBranch.condition);
                 if(NLiteral.of(object).asBoolean().orElse(false)){
-                    session.pushStatements(trueBranch.toArray(new NaruStatement[0]));
+                    session.addStatements(trueBranch.toArray(new NaruStatement[0]));
                     return;
                 }
             }
-            session.pushStatements(falseBranch.toArray(new NaruStatement[0]));
+            session.addStatements(falseBranch.toArray(new NaruStatement[0]));
         }
     }
 

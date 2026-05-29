@@ -6,7 +6,6 @@ import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.nuts.command.NExec;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NBlankable;
@@ -22,7 +21,7 @@ public class MavenCompileTool implements NaruTool {
     }
 
     @Override
-    public String getName() {
+    public String name() {
         return "maven_compile";
     }
 
@@ -34,7 +33,7 @@ public class MavenCompileTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(), getDescription(session),
+                name(), getDescription(session),
                 NaruToolParameter.string("project_dir", "Path to the Maven project (defaults to agent project dir)", false)
         );
     }

@@ -1,17 +1,19 @@
 package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.impl.util.ImageUtil;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NBlankable;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 public class ModelDelegateTool implements NaruTool {
 
@@ -19,7 +21,7 @@ public class ModelDelegateTool implements NaruTool {
     }
 
     @Override
-    public String getName() {
+    public String name() {
         return "delegate_to_model";
     }
 
@@ -42,7 +44,7 @@ public class ModelDelegateTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(),
+                name(),
                 getDescription(session),
                 NaruToolParameter.string("model_name", "The exact name of the model to use.", true),
                 NaruToolParameter.string("prompt", "The task description or question for the model.", true),
@@ -71,14 +73,20 @@ public class ModelDelegateTool implements NaruTool {
             }
         }
 
+
         messages.add(msg);
         NaruModelConfig model = context.session().findModel(modelName).orNull();
         if (model == null) {
             return "Error: Model not found : " + modelName;
         }
+        NaruModelConfig oldModel = context.session().model();
+        context.session().setModel(model);
+        Map<String, NElement> env = context.session().context(NaruSource.values()).env();
         try {
             NaruResponse response = context.session().chat(model,
-                    new NaruModelRequest(messages)
+                    new NaruModelRequest(messages,
+                            env
+                    )
             );
             if (response.getMessage() != null) {
                 return response.getMessage().getContent();
@@ -86,6 +94,8 @@ public class ModelDelegateTool implements NaruTool {
             return "Error: Model returned empty response.";
         } catch (Exception e) {
             return "Error calling model " + modelName + ": " + e.getMessage();
+        } finally {
+            context.session().setModel(oldModel);
         }
     }
 }

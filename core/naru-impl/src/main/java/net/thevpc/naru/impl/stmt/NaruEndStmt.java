@@ -1,7 +1,6 @@
 package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
@@ -9,7 +8,7 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
-public class NaruEndStmt extends NaruStatement {
+public class NaruEndStmt extends NaruFlowStatement {
 
     public NaruEndStmt(String condition) {
         super(Type.END);
@@ -43,7 +42,7 @@ public class NaruEndStmt extends NaruStatement {
     }
 
     @Override
-    public void exec(NaruSession session) {
+    public void execAndAdvance(NaruSession session) {
 
     }
 }

@@ -4,7 +4,6 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolCall;
-import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
@@ -14,7 +13,7 @@ import net.thevpc.nuts.util.NNameFormat;
 
 import java.util.Map;
 
-public class NaruToolCallStmt extends NaruStatement {
+public class NaruToolCallStmt extends NaruSimpleStatement {
     public NaruToolCall call;
 
     public NaruToolCallStmt(NaruToolCall call) {

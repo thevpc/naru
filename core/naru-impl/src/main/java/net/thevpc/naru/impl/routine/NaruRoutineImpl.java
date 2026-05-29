@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.routine;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.routine.IndexedLine;
 import net.thevpc.naru.api.routine.SubroutineDef;
 import net.thevpc.naru.api.routine.NaruRoutine;
 
@@ -65,16 +66,50 @@ public class NaruRoutineImpl implements NaruRoutine {
     }
 
     @Override
-    public TreeMap<Integer, String> getLines() {
+    public TreeMap<Integer, String> getLinesSet() {
         return lines;
     }
 
     @Override
-    public TreeMap<Integer, String> getLines(IntPredicate lineFilter) {
-        TreeMap<Integer, String>  newOne=new TreeMap<>();
+    public List<IndexedLine> getIndexedLines() {
+        ArrayList<IndexedLine> all = new ArrayList<>();
+        for (Map.Entry<Integer, String> e : lines.entrySet()) {
+            all.add(new IndexedLine(e.getKey(), e.getValue()));
+        }
+        return all;
+    }
+
+    @Override
+    public int firstIndex() {
+        for (Integer i : lines.keySet()) {
+            return i;
+        }
+        return -1;
+    }
+
+    @Override
+    public int nextLineIndex(int currentLineIndex) {
+        List<IndexedLine> lines = getIndexedLines();
+        int currentIt = -1;
+
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).index() == currentLineIndex) {
+                currentIt = i;
+                break;
+            }
+        }
+        if (currentIt >= 0 && currentIt + 1 < lines.size()) {
+            return lines.get(currentIt + 1).index();
+        }
+        return -1;
+    }
+
+    @Override
+    public TreeMap<Integer, String> getLinesSet(IntPredicate lineFilter) {
+        TreeMap<Integer, String> newOne = new TreeMap<>();
         for (Map.Entry<Integer, String> e : lines.entrySet()) {
             Integer k = e.getKey();
-            if(lineFilter==null || lineFilter.test(k)){
+            if (lineFilter == null || lineFilter.test(k)) {
                 newOne.put(k, e.getValue());
             }
         }
@@ -99,9 +134,14 @@ public class NaruRoutineImpl implements NaruRoutine {
     }
 
     @Override
+    public String getLine(int n) {
+        return lines.get(n);
+    }
+
+    @Override
     public Map<String, SubroutineDef> getSubroutines() {
         Map<String, SubroutineDef> subs = new HashMap<>();
-        NavigableMap<Integer, String> lines = getLines();
+        NavigableMap<Integer, String> lines = getLinesSet();
 
         Integer subStart = null;
         String subName = null;
@@ -117,10 +157,11 @@ public class NaruRoutineImpl implements NaruRoutine {
                 subName = parts[0];
                 subParams = Arrays.asList(Arrays.copyOfRange(parts, 1, parts.length));
                 subStart = lineNum;
-            }
-            else if (raw.equals("/endsub") && subStart != null) {
+            } else if (raw.equals("/endsub") && subStart != null) {
                 subs.put(subName, new SubroutineDefImpl(subStart, lineNum, subParams));
-                subStart = null; subName = null; subParams = null;
+                subStart = null;
+                subName = null;
+                subParams = null;
             }
         }
         return subs;

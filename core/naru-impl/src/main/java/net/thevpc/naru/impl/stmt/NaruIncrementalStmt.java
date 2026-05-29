@@ -3,7 +3,7 @@ package net.thevpc.naru.impl.stmt;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.stmt.NaruStatement;
 
-public abstract class NaruIncrementalStmt extends NaruStatement {
+public abstract class NaruIncrementalStmt extends NaruFlowStatement {
 
     public NaruIncrementalStmt(Type type) {
         super(type);

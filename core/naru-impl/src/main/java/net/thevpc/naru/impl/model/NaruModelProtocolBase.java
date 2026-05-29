@@ -26,7 +26,6 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     protected final NaruModelRequestSerializer serializer;
 
 
-
     public NaruModelProtocolBase(NaruModelConfig model, String configPrefix,
                                  String chatPath,
                                  NaruModelCapabilities capabilities,
@@ -75,7 +74,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return c;
     }
 
-    protected String url(NaruSession session,Map<String, NElement> env) {
+    protected String url(NaruSession session, Map<String, NElement> env) {
         String url = session.agent().env().get(configPrefix + ".url").flatMap(x -> x.asStringValue()).orElse("http://localhost:11434");
         while (url.endsWith("/")) {
             url = url.substring(0, url.length() - 1);
@@ -90,12 +89,12 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                         () -> session.agent().env().get(configPrefix + ".timeout").flatMap(x -> x.asStringValue())
                                 .flatMap(x -> NDuration.parse(x))
                 )
-                .orElseGet(()->{
+                .orElseGet(() -> {
                     return NDuration.ofSeconds(120);
                 });
     }
 
-    protected NDuration readTimeout(NaruSession session,Map<String, NElement> env) {
+    protected NDuration readTimeout(NaruSession session, Map<String, NElement> env) {
         return session.agent().env().get(configPrefix + ".readTimeout").flatMap(x -> x.asStringValue())
                 .flatMap(x -> NDuration.parse(x))
                 .orElseGetOptionalFrom(
@@ -109,16 +108,20 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     public NaruResponse chat(NaruModelRequest mrequest, NaruSession session) {
         Map<String, NElement> env = mrequest.env();
         boolean toolsWrapped = false;
-        if (!capabilities.isTools() && !mrequest.tools().isEmpty()) {
-            mrequest=NoTollWrapHelper.wrapRequest(mrequest,NoTollWrapHelper.TOOL_CALL_SEP, session);
+        boolean emulate_tool_calls = false;
+        if (mrequest.env().get("emulate_tool_calls") != null && mrequest.env().get("emulate_tool_calls").isBoolean()) {
+            emulate_tool_calls = mrequest.env().get("emulate_tool_calls").asBooleanValue().get();
+        }
+        if (!capabilities.isTools() && !mrequest.tools().isEmpty() || emulate_tool_calls) {
+            mrequest = NoTollWrapHelper.wrapRequest(mrequest, NoTollWrapHelper.TOOL_CALL_SEP, NoTollWrapHelper.TOOL_RESULT_SEP, session);
             toolsWrapped = true;
         }
         NElement body = serializer.serialize(mrequest, model, session);
         NWebCli http = NWebCli.of()
                 .connectTimeout(connectTimeout(session, env))
-                .baseUri(url(session,env));
+                .baseUri(url(session, env));
         NWebRequest request = http.POST(chatPath)
-                .timeout(readTimeout(session,env))
+                .timeout(readTimeout(session, env))
                 .jsonRequestBody(body);
 
         try {
@@ -129,9 +132,9 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
             NElement responseElement = NElementReader.ofJson().read(responseString);
             NaruUtils.logWebResponse(request, NMsg.ofC("chat with %s", model), body, responseElement, chrono);
             NaruResponse naruResponse = parseResponse(responseString);
-//            if (toolsWrapped) {
-                naruResponse=NoTollWrapHelper.unwrapResponse(naruResponse,NoTollWrapHelper.TOOL_CALL_SEP, session);
-//            }
+            if (toolsWrapped || emulate_tool_calls) {
+                naruResponse = NoTollWrapHelper.unwrapResponse(naruResponse, NoTollWrapHelper.TOOL_CALL_SEP, session);
+            }
             return naruResponse;
         } catch (Exception e) {
             throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with Ollama at %s: %s", request.effectiveUri(), e.getMessage(), e));

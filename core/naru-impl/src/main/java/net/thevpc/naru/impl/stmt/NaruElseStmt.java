@@ -43,7 +43,7 @@ public class NaruElseStmt extends NaruStatement {
     }
 
     @Override
-    public void exec(NaruSession session) {
+    public void execAndAdvance(NaruSession session) {
         session.throwError(NMsg.ofC("invalid else statement"));
     }
 }

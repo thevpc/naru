@@ -3,7 +3,6 @@ package net.thevpc.naru.impl.tools;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
@@ -24,7 +23,7 @@ public class FileReadTool implements NaruTool {
     }
 
     @Override
-    public String getName() {
+    public String name() {
         return "file_read";
     }
 
@@ -38,7 +37,7 @@ public class FileReadTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(), getDescription(session),
+                name(), getDescription(session),
                 NaruToolParameter.string("path", "File path to read", true),
                 NaruToolParameter.integer("line_start", "First line to read (1-based, optional, defaults to 1)", false, 1),
                 NaruToolParameter.integer("line_end", "Last line to read (inclusive, optional, defaults to start + " + DEFAULT_MAX_LINES + ")", false)        );

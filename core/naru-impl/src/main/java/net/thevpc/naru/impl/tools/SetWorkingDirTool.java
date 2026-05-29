@@ -6,7 +6,6 @@ import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NBlankable;
 
@@ -21,8 +20,8 @@ public class SetWorkingDirTool implements NaruTool {
     }
 
     @Override
-    public String getName() {
-        return "set_working_directory";
+    public String name() {
+        return "cd";
     }
 
     @Override
@@ -33,7 +32,7 @@ public class SetWorkingDirTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(), getDescription(session),
+                name(), getDescription(session),
                 NaruToolParameter.string("work_dir", "Path to the change to, can be relative (to session workdir) or absolute. when empty, return to project dir", false)
         );
     }

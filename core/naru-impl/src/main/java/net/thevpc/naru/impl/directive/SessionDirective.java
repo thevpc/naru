@@ -152,7 +152,7 @@ public class SessionDirective extends AbstractDirective {
 
     public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruSession session = context.session();
-        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary5("session"));
+        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary5(name()));
         session.log(NaruLogMode.AGENT_RESPONSE, kk);
         session.log(NaruLogMode.AGENT_RESPONSE, kk);
         session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("list")));
@@ -234,7 +234,9 @@ public class SessionDirective extends AbstractDirective {
             history.add(NaruMessage.user("can you suggest a name for this session? dont be verbose in your response, only return the suggested name please."));
             NaruModelConfig model = context.session().model();
             NaruResponse chat = context.session().chat(model,
-                    new NaruModelRequest(history)
+                    new NaruModelRequest(history,
+                            context.session().context(NaruSource.values()).env()
+                    )
             );
             if (chat.getMessage() != null) {
                 session.setName(chat.getMessage().getContent());

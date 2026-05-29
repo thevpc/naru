@@ -6,7 +6,6 @@ import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.nuts.util.NBlankable;
 
 import java.util.ArrayList;
@@ -17,8 +16,8 @@ import java.util.List;
  */
 public class DiffFilesTool implements NaruTool {
     @Override
-    public String getName() {
-        return "diff_files";
+    public String name() {
+        return "diff";
     }
 
     @Override
@@ -30,7 +29,7 @@ public class DiffFilesTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(),
+                name(),
                 getDescription(session),
                 NaruToolParameter.string("file1", "Path to the first file (original).", true),
                 NaruToolParameter.string("file2", "Path to the second file (modified).", true),

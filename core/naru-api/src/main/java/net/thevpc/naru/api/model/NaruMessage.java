@@ -3,6 +3,7 @@ package net.thevpc.naru.api.model;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NCopiable;
 
 import java.util.ArrayList;
@@ -152,6 +153,10 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         return new NaruMessage(NaruRole.system, content);
     }
 
+    public static NaruMessage user(NMsg content) {
+        return new NaruMessage(NaruRole.user, content.toString());
+    }
+
     public static NaruMessage user(String content) {
         return new NaruMessage(NaruRole.user, content);
     }
@@ -163,17 +168,17 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
     }
 
     public static NaruMessage assistant(String content) {
-        return new NaruMessage(NaruRole.assistant, content);
+        return new NaruMessage(NaruRole.assistant, content).setSource(NaruSource.ASSISTANT);
     }
 
     public static NaruMessage assistantWithToolCalls(String content, List<NaruToolCall> calls) {
-        NaruMessage m = new NaruMessage(NaruRole.assistant, content);
+        NaruMessage m = new NaruMessage(NaruRole.assistant, content).setSource(NaruSource.ASSISTANT);
         m.toolCalls = new ArrayList<>(calls);
         return m;
     }
 
     public static NaruMessage tool(String toolName, String callId, String result) {
-        NaruMessage m = new NaruMessage(NaruRole.tool, result);
+        NaruMessage m = new NaruMessage(NaruRole.tool, result).setSource(NaruSource.AGENT);
         m.toolName = toolName;
         m.toolCallId = callId;
         return m;

@@ -3,7 +3,6 @@ package net.thevpc.naru.impl.tools;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
@@ -34,7 +33,7 @@ public class FolderFindTool implements NaruTool {
     );
 
     @Override
-    public String getName() {
+    public String name() {
         return "folder_find";
     }
 
@@ -50,16 +49,16 @@ public class FolderFindTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(), getDescription(session),
+                name(), getDescription(session),
                 NaruToolParameter.string("path", "Directory to search", true),
-                NaruToolParameter.string("pattern", "Search text pattern inside file contents (optional)", false),
+                NaruToolParameter.string("content_pattern", "Search text pattern inside file contents (optional)", false),
                 NaruToolParameter.bool("regex", "Treat pattern as regex", false, false),
                 NaruToolParameter.bool("case_sensitive", "Case-sensitive match", false, false),
                 NaruToolParameter.integer("context_lines", "Lines of context before/after match", false, DEFAULT_CONTEXT),
                 NaruToolParameter.integer("max_matches", "Max matches per file", false, DEFAULT_MAX_MATCHES),
                 NaruToolParameter.integer("max_files", "Max files to scan", false, DEFAULT_MAX_FILES),
-                NaruToolParameter.string("include", "Glob patterns to include file by name (comma-separated, e.g. '*.java,*.xml')", false),
-                NaruToolParameter.string("exclude", "Glob patterns to exclude file by name (comma-separated, e.g. '*.java,*.xml')", false),
+                NaruToolParameter.string("include_filename", "Glob patterns to include file by name (comma-separated, e.g. '*.java,*.xml')", false),
+                NaruToolParameter.string("exclude_filename", "Glob patterns to exclude file by name (comma-separated, e.g. '*.java,*.xml')", false),
                 NaruToolParameter.bool("recursive", "Search subdirectories", false, true),
                 NaruToolParameter.string("modified_after", "ISO-8601 timestamp (e.g. 2026-05-01T00:00:00Z) or relative duration (e.g. -24h, -7d)", false),
                 NaruToolParameter.string("modified_before", "ISO-8601 timestamp or relative duration", false)

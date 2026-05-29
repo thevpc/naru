@@ -124,11 +124,11 @@ public class RoutineDirective extends AbstractDirective {
             }
         }
         Map.Entry<Integer, String> last = null;
-        for (Map.Entry<Integer, String> e : cs.getLines().entrySet()) last = e;
+        for (Map.Entry<Integer, String> e : cs.getLinesSet().entrySet()) last = e;
         Integer lastKey = last == null ? 0 : last.getKey();
         if (toShow.isEmpty()) {
-            if (!cs.getLines().isEmpty()) {
-                for (Map.Entry<Integer, String> e : cs.getLines().entrySet()) {
+            if (!cs.getLinesSet().isEmpty()) {
+                for (Map.Entry<Integer, String> e : cs.getLinesSet().entrySet()) {
                     logRow(e.getKey(), lastKey, e.getValue(), session);
                 }
             }
@@ -136,7 +136,7 @@ public class RoutineDirective extends AbstractDirective {
             List<Integer> bb = toShow.stream().sorted().collect(Collectors.toList());
             for (int k = 0; k < bb.size(); k++) {
                 int i = bb.get(k);
-                String s = cs.getLines().get(i);
+                String s = cs.getLinesSet().get(i);
                 if (s != null) {
                     logRow(i, lastKey, s, session);
                 }

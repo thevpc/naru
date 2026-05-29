@@ -7,6 +7,11 @@ import net.thevpc.nuts.io.NOut;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NCancelException;
+import net.thevpc.nuts.util.NIllegalArgumentException;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Parses CLI arguments and wires everything together for a single agent run.
@@ -33,9 +38,10 @@ import net.thevpc.nuts.util.NBlankable;
  */
 public class NaruCmdLineProcessor {
 
-    private String task;
     private String projectDir = ".";
     private boolean help = false;
+    private final List<PreCommand> tasks = new ArrayList<>();
+    private Boolean forceInteractive;
 
     public NaruCmdLineProcessor(NCmdLine args) {
         parse(args);
@@ -44,15 +50,15 @@ public class NaruCmdLineProcessor {
     // ── Argument parser ────────────────────────────────────────────────────────
 
     private void parse(NCmdLine args) {
-        NCmdLine.Matcher matcher = args
+        args
                 .matcher()
-                .with("--task").matchEntry(a -> task = a.value())
-                .with("--project-dir").matchEntry(a -> projectDir = a.value())
+                .with("--tasks", "-t").matchEntry(a -> tasks.add(new PreCommand(false, a.value())))
+                .with("--file", "-f").matchEntry(a -> tasks.add(new PreCommand(true, a.value())))
+                .with("--interactive", "-i").matchFlag(a -> forceInteractive = a.booleanValue())
+                .with("--project","-d").matchEntry(a -> projectDir = a.value())
                 .with("--help", "-h").matchTrueFlag(a -> help = a.booleanValue())
-                .withNonOption().matchAny(a -> task = (task == null ? "" : task + " ") + a.image());
-        while (args.hasNext()) {
-            matcher.requireDefaults();
-        }
+                .withDefaults()
+                .requireAll();
     }
 
 
@@ -65,10 +71,18 @@ public class NaruCmdLineProcessor {
         }
         NaruAgent runner = new NaruAgentImpl();
         runner.setProjectDirectory(NPath.of(projectDir));
-        if (NBlankable.isBlank(task)) {
-            runner.runInteractive();
+        boolean interactive = (forceInteractive == null ? tasks.isEmpty() : forceInteractive);
+        if (interactive) {
+            runner.runInteractive(tasks.toArray(new PreCommand[0]));
         } else {
-            runner.runTask(task);
+            if (tasks.isEmpty()) {
+                throw new NIllegalArgumentException(NMsg.ofC("no task specified"));
+            }
+            try {
+                runner.runTasks(tasks.toArray(new PreCommand[0]));
+            }catch (NCancelException e){
+                // just exit
+            }
         }
     }
 
@@ -84,20 +98,16 @@ public class NaruCmdLineProcessor {
                         "Usage:\n" +
                         "  naru --task \"<description>\" [options]\n\n" +
                         "Options:\n" +
-                        "  --task <text>          (required) The task description\n" +
-                        "  --model <name>         Reasoning model  (default: qwen2.5-coder:7b)\n" +
-                        "  --vision-model <name>  Vision model     (default: qwen2.5vl:7b)\n" +
-                        "  --provider <name>      Provider         (default: ollama)\n" +
-                        "  --provider-url <url>   Provider URL     (default: http://localhost:11434)\n" +
-                        "  --project-dir <path>   Working dir      (default: .)\n" +
-                        "  --max-steps <n>        Max iterations   (default: 20)\n" +
-                        "  --no-vision            Disable inspect_image tool\n" +
-                        "  --quiet                Suppress step output\n" +
+                        "  -t|--task <text>          task to run\n" +
+                        "  -f|--file <text>          task file to run\n" +
+                        "  -i|--interactive          force interactive mode\n" +
+                        "  -d|--project <directory>  select project folder\n" +
                         "  --help, -h             Show this help\n\n" +
                         "Examples:\n" +
                         "  naru --task \"What files are in the project?\"\n" +
-                        "  naru --task \"Fix the bug in MyApp.java\" --project-dir ./my-app --model qwen2.5-coder:7b\n" +
-                        "  naru --task \"Verify the output.png matches input.tson\" --project-dir ./my-app\n"
+                        "  naru -t \"/model set qwen2.5-coder:7b\"  -t \"Fix the bug in MyApp.java\" --project ./my-app" +
+                        "  naru -t \"/model set qwen2.5-coder:7b\"  -f \"myscript.naru\" --project ./my-app" +
+                        "  naru --task \"Verify the output.png matches input.tson\" --project ./my-app\n"
         );
     }
 }

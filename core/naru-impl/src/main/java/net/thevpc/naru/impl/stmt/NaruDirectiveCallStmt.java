@@ -1,22 +1,21 @@
 package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
-public class NaruDirectiveCallStmt extends NaruStatement {
+public class NaruDirectiveCallStmt extends NaruSimpleStatement {
     public String call;
 
     public NaruDirectiveCallStmt(String call) {
-        super(Type.DIRECTIVE_CALL);
+        super(Type.CALL);
         this.call = call;
     }
 
     public NaruDirectiveCallStmt(NElement element) {
-        super(Type.DIRECTIVE_CALL);
+        super(Type.CALL);
         String name;
         if (element.isName()) {
             name = element.asName().get().stringValue();
@@ -27,7 +26,7 @@ public class NaruDirectiveCallStmt extends NaruStatement {
             throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
         }
         switch (NNameFormat.CONST_NAME.format(name)) {
-            case "DIRECTIVE_CALL": {
+            case "CALL": {
                 this.call = element.asObject().get().get("call").get().asStringValue().get();
             }
             default: {

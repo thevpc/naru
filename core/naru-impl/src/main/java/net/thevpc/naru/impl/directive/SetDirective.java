@@ -35,6 +35,6 @@ public class SetDirective extends AbstractDirective {
             context.session().setSessionEnv(key, value);
         }
 
-        context.session().advancePcOrEnd();
+//        context.session().advancePcOrEnd();
     }
 }

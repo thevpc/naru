@@ -10,6 +10,6 @@ public class WhileDirective extends AbstractDirective {
 
     @Override
     public void execute(NaruDirectiveCallContext context) {
-        context.session().pushStatement(new NaruWhileStmt(context.argument()));
+        context.session().addStatement(new NaruWhileStmt(context.argument()));
     }
 }

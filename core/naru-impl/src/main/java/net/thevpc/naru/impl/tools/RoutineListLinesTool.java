@@ -4,7 +4,6 @@ import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
-import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
@@ -15,7 +14,7 @@ import java.util.TreeMap;
 public class RoutineListLinesTool implements NaruTool {
 
     @Override
-    public String getName() {
+    public String name() {
         return "routine_list_lines";
     }
 
@@ -31,7 +30,7 @@ public class RoutineListLinesTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(),
+                name(),
                 getDescription(session),
                 // ✅ Optional: target a specific routine by name
                 NaruToolParameter.string("routine_name",
@@ -60,7 +59,7 @@ public class RoutineListLinesTool implements NaruTool {
         // Temporarily switch context, put line, switch back
         String oldName = sm.getCurrentRoutineName();
         sm.switchRoutine(scriptName);
-        TreeMap<Integer, String> lines = sm.getCurrentRoutine().getLines(x -> {
+        TreeMap<Integer, String> lines = sm.getCurrentRoutine().getLinesSet(x -> {
             if (startNumObj != null && x < startNumObj.intValue()) return false;
             return endNumObj == null || x <= endNumObj.intValue();
         });

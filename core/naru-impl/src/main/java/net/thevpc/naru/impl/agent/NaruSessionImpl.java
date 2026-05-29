@@ -3,8 +3,9 @@ package net.thevpc.naru.impl.agent;
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.budget.NaruTokenTransaction;
+import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.routine.RunContext;
 import net.thevpc.naru.api.skills.NaruSkill;
@@ -42,12 +43,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private int userQueries;
     private String inputBuffer = "";
     private NaruMessage lastResult;
+    private Object returnResult;
     private boolean requireUserInput;
-    private final List<RunContextImpl> todo = new ArrayList<>();
+    private final Stack<RunContextImpl> runContexts = new Stack<>();
     private final NaruAgent agent;
     private boolean publicSession;
     private NPath workingDir;
     private NaruModelConfig model;
+    private NaruMode mode;
     private NAruInputMode inputMode = NAruInputMode.LINE;
     /**
      * Root directory of the project being worked on.
@@ -83,6 +86,22 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 this.inputMode = inputMode;
                 fireChanged();
             }
+        }
+        return this;
+    }
+
+    @Override
+    public NaruMode mode() {
+        if (mode != null) {
+            return mode;
+        }
+        return registry().mode(NaruStandardMode.PLANNING).get();
+    }
+
+    @Override
+    public NaruSession mode(NaruMode newMode) {
+        if (newMode != null) {
+            this.mode = newMode;
         }
         return this;
     }
@@ -144,7 +163,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             List<NaruModelInfo> any = registry.modelsInfos(this)
                     .stream().filter(x -> x.capabilities().isTools()).collect(Collectors.toList());
             if (any.isEmpty()) {
-                NOut.println(NMsg.ofC("model %s not found. actually no model (with tools capability) was found at all", model0).asError());
+                if (model0 == null) {
+                    NOut.println(NMsg.ofC("no model (with tools capability) was found at all", model0).asError());
+                } else {
+                    NOut.println(NMsg.ofC("model %s not found. actually no model (with tools capability) was found at all", model0).asError());
+                }
                 return;
             } else {
                 model = findModel(any.get(0).key().toString()).orNull();
@@ -334,7 +357,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         clearHistory();
         userQueries = 0;
         lastResult = null;
-        todo.clear();
+        runContexts.clear();
 //        if (forever) {
 //            pushStatement(NaruStatementHelper.ofReadLine());
 //        }
@@ -393,7 +416,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         o.set("inputMode", inputMode.name());
         o.set("inputBuffer", inputBuffer);
         NArrayElementBuilder _todos = NArrayElementBuilder.of();
-        for (RunContextImpl a : todo) {
+        for (RunContextImpl a : runContexts) {
             _todos.add(a.toElement());
         }
         NArrayElementBuilder _history = NArrayElementBuilder.of();
@@ -427,10 +450,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             this.inputBuffer = ibe.get().asStringValue().get();
         }
         NArrayElement todo1 = o.get("todo").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
-        todo.clear();
+        runContexts.clear();
         if (todo1 != null) {
             for (NElement nElement : todo1) {
-                todo.add(new RunContextImpl(nElement));
+                runContexts.add(new RunContextImpl(nElement));
             }
         }
         NArrayElement history1 = o.get("history").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
@@ -551,16 +574,16 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
 
-
     @Override
     public NaruModelRequest context(NaruSource... sources) {
         List<NaruToolDefinition> defs = new ArrayList<>();
+        NaruMode mode = mode();
         for (NaruTool t : registry().tools().values()) {
-            defs.add(t.getDefinition(this));
+            if (t.acceptMode(mode)) {
+                defs.add(t.getDefinition(this));
+            }
         }
         List<MarkdownWithHeader> headerAndTexts = loadLoadModelAgentInfos(sources);
-
-
         Set<NaruSource> sourcesOk = new HashSet<>();
         if (sources != null) {
             for (NaruSource s : sources) {
@@ -573,6 +596,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (sourcesOk.contains(NaruSource.SYSTEM)) {
             all.addAll(systemHistory.stream().map(x -> x.copy().setSource(NaruSource.SYSTEM).setSourceName("system")).collect(Collectors.toList()));
         }
+        all.add(NaruMessage.system(mode().systemPrompt()).setSource(NaruSource.MODE).setSourceName(NNameFormat.LOWER_KEBAB_CASE.format(mode().name())));
         HashMap<String, NElement> env = new HashMap<>();
         for (MarkdownWithHeader h : headerAndTexts) {
             if (!h.header().isEmpty()) {
@@ -699,9 +723,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                             if (!h.body().isEmpty()) {
                                 all.add(
                                         NaruMessage.user(
-                                                st==NaruSource.PROJECT?
+                                                st == NaruSource.PROJECT ?
                                                         ("### USER PROJECT SPECIFIC CONTEXT: \n" + h.body())
-                                                        :("### USER FOLDER SPECIFIC CONTEXT: " + h.source().relativize(projectDir) + "\n" + h.body())
+                                                        : ("### USER FOLDER SPECIFIC CONTEXT: " + h.source().relativize(projectDir) + "\n" + h.body())
                                         ).setSource(st).setSourceName(h.source().toString())
                                 );
                             }
@@ -893,16 +917,16 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public int pc() {
-        if (todo.isEmpty()) {
+        if (runContexts.isEmpty()) {
             return -1;
         }
-        return todo.get(0).pc();
+        return runContexts.peek().pc();
     }
 
     @Override
     public NaruSession pc(int nextPc) {
-        if (!todo.isEmpty()) {
-            todo.get(0).setPc(nextPc);
+        if (!runContexts.isEmpty()) {
+            runContexts.peek().pc(nextPc);
             fireChanged();
         }
         return this;
@@ -924,14 +948,18 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (!nf.equals(this.workingDir)) {
             this.workingDir = nf;
             List<NaruStatement> all = new ArrayList<>();
-            for (NPath path : workingDir.resolve(".naru/directives/").list().stream().filter(x -> x.name().endsWith(".md")).sorted(Comparator.comparing(x -> x.name())).collect(Collectors.toList())) {
-                all.addAll(loadDirectivesFile(path));
-            }
-            for (NPath path : workingDir.resolve(".naru/local/directives/").list().stream().filter(x -> x.name().endsWith(".md")).sorted(Comparator.comparing(x -> x.name())).collect(Collectors.toList())) {
-                all.addAll(loadDirectivesFile(path));
+            for (NPath path : listOverridablePaths(
+                    projectDir.resolve(".naru/hooks"),
+                    projectDir.resolve(".naru/local/hooks"),
+                    a -> a.equals("init.naru")
+            )) {
+                List<NaruStatement> c = agent.parseFile(path).orNull();
+                if(c!=null){
+                    all.addAll(c);
+                }
             }
             if (!all.isEmpty()) {
-                pushStatements(all.toArray(new NaruStatement[0]));
+                addStatements(all.toArray(new NaruStatement[0]));
                 this.run();
             }
             fireChanged();
@@ -1001,12 +1029,17 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSession terminate() {
-        todo.clear();
+        runContexts.clear();
         return this;
     }
 
     public boolean hasMoreStatements() {
-        return !todo.isEmpty();
+        if (!runContexts.isEmpty()) {
+            normalizeRunContext();
+            return !runContexts.isEmpty();
+        } else {
+            return false;
+        }
     }
 
 
@@ -1017,25 +1050,31 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruStatement popStatement() {
-        if (todo.isEmpty()) {
+        if (runContexts.isEmpty()) {
             return null;
         }
         NaruStatement result = null;
-        normalizeTodo();
-        if (!todo.isEmpty()) {
-            List<NaruStatement> a = todo.get(0).todo;
+        normalizeRunContext();
+        if (!runContexts.isEmpty()) {
+            List<NaruStatement> a = runContexts.peek().todo;
             result = a.remove(0);
-            normalizeTodo();
         }
         fireChanged();
         return result;
     }
 
+    public RunContext peekContext() {
+        if (runContexts.isEmpty()) {
+            return null;
+        }
+        return runContexts.peek();
+    }
+
     // Pop context (remove index 0)
     public NaruSession popContext() {
-        if (!todo.isEmpty()) {
-            todo.remove(0);
-            normalizeTodo();
+        if (!runContexts.isEmpty()) {
+            runContexts.pop();
+            normalizeRunContext();
             fireChanged();
         }
         return this;
@@ -1044,26 +1083,27 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSession pushContext() {
-        todo.add(0, new RunContextImpl());
+        runContexts.push(new RunContextImpl());
         fireChanged();
         return this;
     }
 
     @Override
-    public NaruSession pushContext(int pc, Integer returnTo) {
+    public NaruSession pushContext(int pc, Integer returnTo, String routine) {
         RunContextImpl cc = new RunContextImpl();
-        cc.setPc(pc);
+        cc.pc(pc);
         cc.setReturnPc(pc);
-        todo.add(0, cc);
+        cc.setRunningRoutine(routine);
+        runContexts.push(cc);
         fireChanged();
         return this;
     }
 
-    private void normalizeTodo() {
-        while (!todo.isEmpty()) {
-            List<NaruStatement> a = todo.get(0).todo;
+    private void normalizeRunContext() {
+        while (!runContexts.isEmpty()) {
+            List<NaruStatement> a = runContexts.peek().todo;
             if (a.isEmpty()) {
-                todo.remove(0);
+                runContexts.pop();
             } else {
                 return;
             }
@@ -1080,7 +1120,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSession pushStatementModelCall(String prompt) {
-        pushStatement(NaruStatementHelper.ofModelCall(prompt));
+        addStatement(NaruStatementHelper.ofModelCall(prompt));
         return this;
     }
 
@@ -1095,28 +1135,29 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             all.addAll(loadDirectivesFile(path));
         }
         if (!all.isEmpty()) {
-            pushStatements(all.toArray(new NaruStatement[0]));
+            addStatements(all.toArray(new NaruStatement[0]));
             this.run();
         }
         return this;
     }
 
     @Override
-    public NaruSession pushStatement(NaruStatement any) {
-        if (todo.isEmpty()) {
-            todo.add(0, new RunContextImpl());
+    public NaruSession addStatement(NaruStatement any) {
+        if (runContexts.isEmpty()) {
+            runContexts.add(new RunContextImpl());
         }
-        if (todo.get(0).todo.isEmpty()) {
-            todo.get(0).todo.add(0, any);
+        if (runContexts.peek().todo.isEmpty()) {
+            runContexts.peek().todo.add(any);
         } else {
-            NaruStatement z = todo.get(0).todo.get(0);
+            int s = runContexts.peek().todo.size();
+            NaruStatement z = runContexts.peek().todo.get(s - 1);
             if (z instanceof NaruIncrementalStmt && ((NaruIncrementalStmt) z).isPending()) {
                 NaruIncrementalStmt z1 = (NaruIncrementalStmt) z;
                 if (z1.acceptStatement(any, this)) {
-                    z1.exec(this);
+                    z1.execAndAdvance(this);
                 }
             } else {
-                todo.get(0).todo.add(0, any);
+                runContexts.peek().todo.add(any);
             }
         }
         fireChanged();
@@ -1124,9 +1165,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NaruSession pushStatements(NaruStatement... any) {
-        for (int i = any.length - 1; i >= 0; i--) {
-            pushStatement(any[i]);
+    public NaruSession addStatements(NaruStatement... any) {
+        for (NaruStatement s : any) {
+            addStatement(s);
         }
         return this;
     }
@@ -1184,30 +1225,54 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
     }
 
-    public void advancePcOrEnd() {
-        RunContextImpl c = (RunContextImpl) getTopContext();
-        if (c == null) {
-            return;
-        }
-        String routineName = c.getRoutine();
-        if (routineName != null) {
-            NaruRoutine routine = routineManager().getRoutine(routineName);
-            Integer next = routine.getLines().higherKey(pc());
-            if (next != null) {
-                pc(next);
-                pushStatement(NaruStatementHelper.ofExecRoutineLine());
-            } else {
-                log(NaruLogMode.PROGRESS, NMsg.ofC("Routine execution finished."));
-                pc(-1);
-//                if (isForever()) {
-//                    pushStatement(NaruStatementHelper.ofReadLine());
-//                }
-            }
-        } else {
-
+    @Override
+    public String expandString(String condition) {
+        NExprContext ctx = NExprContextBuilder.of()
+                .declareBuiltins()
+                .declareMathConstants()
+                .declareMathFunctions()
+                .declarePhysicsConstants()
+                .declareVars(new NExprVarResolver() {
+                    @Override
+                    public NOptional<NExprVar> getVar(String varName, NExprContext context) {
+                        return NOptional.of(NExprVar.ofVar(varName,
+                                a -> resolveVariable(varName),
+                                (a, v) -> setVariable(varName, a)
+                        ));
+                    }
+                }).build();
+        try {
+            return ctx.ofTemplate().withBashStyle().compile(condition).runString();
+        } catch (Exception e) {
+            throwError(NMsg.ofC("Error evaluating expression '%s'", condition));
+            return condition;
         }
     }
 
+//    public void advancePcOrEnd() {
+//        RunContextImpl c = (RunContextImpl) getTopContext();
+//        if (c == null) {
+//            return;
+//        }
+//        String routineName = c.getRoutine();
+//        if (routineName != null) {
+//            NaruRoutine routine = routineManager().getRoutine(routineName);
+//            Integer next = routine.getLinesSet().higherKey(pc());
+//            if (next != null) {
+//                pc(next);
+//                pushStatement(NaruStatementHelper.ofExecRoutineLine());
+//            } else {
+//                log(NaruLogMode.PROGRESS, NMsg.ofC("Routine execution finished."));
+//                pc(-1);
+
+    /// /                if (isForever()) {
+    /// /                    pushStatement(NaruStatementHelper.ofReadLine());
+    /// /                }
+//            }
+//        } else {
+//
+//        }
+//    }
     @Override
     public int userQueriesCount() {
         return userQueries;
@@ -1254,6 +1319,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
+    public void setReturnResult(Object returnResult) {
+        this.returnResult = returnResult;
+        fireChanged();
+    }
+
+    @Override
     public NaruSessionManager sessionManager() {
         return sessionManager;
     }
@@ -1269,7 +1340,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     // Get the top RunContext (index 0) safely
     public RunContext getTopContext() {
-        return todo.isEmpty() ? null : todo.get(0);
+        return runContexts.isEmpty() ? null : runContexts.peek();
     }
 
     // Get param frame from top context
@@ -1366,14 +1437,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                         this.runStep();
                     }
                 } else {
-                    pushStatements(NaruStatementHelper.ofReadLine());
+                    addStatements(NaruStatementHelper.ofReadLine());
                 }
             } catch (NCancelException e) {
                 break;
             } catch (Exception e) {
                 log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error running step: %s", e));
                 if (!hasMoreStatements()) {
-                    pushStatements(NaruStatementHelper.ofReadLine());
+                    addStatements(NaruStatementHelper.ofReadLine());
                 }
             }
         }

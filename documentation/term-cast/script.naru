@@ -1,0 +1,37 @@
+/model
+# we select model by name or by index
+# let's select qwen2.5-coder:14b (index 6)
+/model set 6
+# we check the model we selected
+/model
+# we list all available skills
+/skill available
+# we load a skill, javadoc.md file we pre-filled with some instructions
+/skill load javadoc
+# lets show what we have loaded so far
+/context files
+/context all 1-3
+# now lets call the model with a targeted task
+# note that, because we just started ollama, it will take a while to load the model...
+# as a senior architect, provide javadoc for /home/vpc/xprojects/nuts-world/nuts-productivity/naru/core/naru-api/src/main/java/net/thevpc/naru/api/agent/NaruAgent.java
+# because we are in planning mode, changes to apply only shown not applied
+# ────────────────────────────────────
+# PHASE 4: Routines & Workflow"
+# ────────────────────────────────────
+# we start to check what we have as routines
+#/routine list
+# ensure the current routine name and content (should be empty)
+/routine name
+/routine
+# we add some lines to the routine
+20 Based on these files, describe what this project does in one sentence. do not call any tool.
+10 /sys find . -name "*.java" | head -20
+# lets check the routine
+/routine
+# finally lets run the routine
+/routine run
+# Note that you can create multiple routines...
+# and add conditions and loops (using /if, /while, /for...)
+# and even create sub-routines (functions), check the documentation for more details...
+# lets exit
+/exit

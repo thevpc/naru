@@ -7,12 +7,11 @@ import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruToolCallContext;
 import net.thevpc.naru.api.tool.NaruToolParameter;
-import net.thevpc.naru.api.tool.NaruRegistry;
 
 public class RoutineAddLineTool implements NaruTool {
 
     @Override
-    public String getName() {
+    public String name() {
         return "routine_add_line";
     }
 
@@ -28,7 +27,7 @@ public class RoutineAddLineTool implements NaruTool {
     @Override
     public NaruToolDefinition getDefinition(NaruSession session) {
         return new NaruToolDefinitionFunction(
-                getName(),
+                name(),
                 getDescription(session),
                 NaruToolParameter.string("routine_name", "Name of the routine to modify. If empty, uses the currently active routine.", false),
                 NaruToolParameter.integer("line_number", "Line number to write (e.g. 10, 20,100). Supports gaps for easy insertion.", true),

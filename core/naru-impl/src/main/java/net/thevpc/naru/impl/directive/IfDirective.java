@@ -14,6 +14,6 @@ public class IfDirective extends AbstractDirective {
         String assignment = raw.substring(4).trim();
         NaruIfStmt stmt = new NaruIfStmt();
         stmt.setCondition(assignment);
-        context.session().pushStatement(stmt);
+        context.session().addStatement(stmt);
     }
 }

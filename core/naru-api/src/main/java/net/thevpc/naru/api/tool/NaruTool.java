@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.tool;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.mode.NaruMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 
 /**
@@ -11,13 +12,19 @@ import net.thevpc.naru.api.model.NaruToolDefinition;
  */
 public interface NaruTool {
 
-    /** Machine-readable name used in the tool schema (no spaces). */
-    String getName();
+    /**
+     * Machine-readable name used in the tool schema (no spaces).
+     */
+    String name();
 
-    /** Human-readable description sent to the model. */
+    /**
+     * Human-readable description sent to the model.
+     */
     String getDescription(NaruSession session);
 
-    /** Returns the full OpenAI-compatible JSON tool definition. */
+    /**
+     * Returns the full OpenAI-compatible JSON tool definition.
+     */
     NaruToolDefinition getDefinition(NaruSession session);
 
     /**
@@ -28,4 +35,8 @@ public interface NaruTool {
      * @return result string (text, JSON snippet, error message, …)
      */
     String execute(NaruToolCallContext context);
+
+    default boolean acceptMode(NaruMode mode) {
+        return true;
+    }
 }

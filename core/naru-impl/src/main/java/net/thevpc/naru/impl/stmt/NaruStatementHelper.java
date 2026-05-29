@@ -29,8 +29,8 @@ public class NaruStatementHelper {
                 return new NaruToolCallStmt(element);
             case "MODEL_CALL":
                 return new NaruModelCallStmt(element);
-            case "EXEC_ROUTINE_LINE":
-                return new NaruExecRoutineLineStmt(element);
+//            case "EXEC_ROUTINE_LINE":
+//                return new NaruExecRoutineLineStmt(element);
             case "IF":
                 return new NaruIfStmt(element);
             case "END":
@@ -45,8 +45,10 @@ public class NaruStatementHelper {
                 return new NaruForStmt(element);
             case "DEF_ROUTINE_LINE":
                 return new NaruDefRoutineLineStmt(element);
-            case "DIRECTIVE_CALL":
+            case "CALL":
                 return new NaruDirectiveCallStmt(element);
+            case "RETURN":
+                return new NaruDirectiveReturn(element);
         }
         throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
     }
@@ -55,9 +57,9 @@ public class NaruStatementHelper {
         return new NaruReadlineStmt();
     }
 
-    public static NaruStatement ofExecRoutineLine() {
-        return new NaruExecRoutineLineStmt();
-    }
+//    public static NaruStatement ofExecRoutineLine() {
+//        return new NaruExecRoutineLineStmt();
+//    }
 
     public static NaruStatement ofToolCall(NaruToolCall call) {
         return new NaruToolCallStmt(call);
@@ -65,6 +67,14 @@ public class NaruStatementHelper {
 
     public static NaruStatement ofModelCall(String prompt) {
         return new NaruModelCallStmt(prompt);
+    }
+
+    public static NaruStatement ofReturn() {
+        return ofReturn(null);
+    }
+
+    public static NaruStatement ofReturn(String expression) {
+        return new NaruDirectiveReturn(expression);
     }
 
 }

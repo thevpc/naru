@@ -17,10 +17,10 @@ public class NaruModelRequest {
         this.env = env;
     }
 
-    public NaruModelRequest(List<NaruMessage> messages) {
+    public NaruModelRequest(List<NaruMessage> messages, Map<String, NElement> env) {
         this.messages = messages;
         this.tools = Collections.emptyList();
-        this.env = Collections.emptyMap();
+        this.env = env;
     }
 
     public Map<String, NElement> env() {

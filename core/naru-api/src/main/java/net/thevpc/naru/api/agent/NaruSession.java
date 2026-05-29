@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.agent;
 
 import net.thevpc.naru.api.budget.NaruMeteringService;
+import net.thevpc.naru.api.mode.NaruMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.routine.RunContext;
@@ -19,9 +20,13 @@ import java.util.Map;
 
 public interface NaruSession {
     boolean isPublicSession();
+
     String inputBuffer();
+
     NaruSession inputBuffer(String buffer);
+
     NAruInputMode inputMode();
+
     NaruSession inputMode(NAruInputMode newMode);
 
     NaruSession publicSession(boolean publicSession);
@@ -32,13 +37,13 @@ public interface NaruSession {
 
     NaruSession pushContext();
 
-    NaruSession pushContext(int pc, Integer returnTo);
+    NaruSession pushContext(int pc, Integer returnTo, String routine);
 
     NaruSession popContext();
 
-    NaruSession pushStatements(NaruStatement... any);
+    NaruSession addStatements(NaruStatement... any);
 
-    NaruSession pushStatement(NaruStatement any);
+    NaruSession addStatement(NaruStatement any);
 
     int userQueriesCount();
 
@@ -48,11 +53,13 @@ public interface NaruSession {
 
     boolean addHistory(String m);
 
-    void advancePcOrEnd();
+//    void advancePcOrEnd();
 
     void addHistory(NaruMessage assistantMsg);
 
     void setLastResult(NaruMessage lastResult);
+
+    void setReturnResult(Object lastResult);
 
     boolean hasMoreStatements();
 
@@ -87,6 +94,10 @@ public interface NaruSession {
     int trimHistory(int count);
 
     NaruModelConfig model();
+
+    NaruMode mode();
+
+    NaruSession mode(NaruMode newMode);
 
     NaruSession setModel(NaruModelConfig model);
 
@@ -147,6 +158,8 @@ public interface NaruSession {
     void throwError(NMsg nMsg);
 
     Object evalExpression(String condition);
+
+    String expandString(String condition);
 
     NaruSession pushStatementModelCall(String prompt);
 

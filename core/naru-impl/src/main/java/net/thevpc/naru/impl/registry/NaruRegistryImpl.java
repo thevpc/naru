@@ -2,22 +2,22 @@ package net.thevpc.naru.impl.registry;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.tool.NaruDirective;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.impl.directive.*;
+import net.thevpc.naru.impl.mode.NAruModeRegistry;
 import net.thevpc.naru.impl.model.gemini.NaruGeminiProvider;
 import net.thevpc.naru.impl.model.ollama.NaruOllamaProvider;
 import net.thevpc.naru.impl.tools.*;
 import net.thevpc.nuts.text.NMsg;
-import net.thevpc.nuts.util.NCancelException;
-import net.thevpc.nuts.util.NLiteral;
-import net.thevpc.nuts.util.NOptional;
-import net.thevpc.nuts.util.NStringUtils;
+import net.thevpc.nuts.util.*;
 
 import java.util.*;
-import java.util.concurrent.CancellationException;
+import java.util.stream.Collectors;
 
 /**
  * Registry of all tools available to the agent.
@@ -31,8 +31,46 @@ public class NaruRegistryImpl implements NaruRegistry {
     private final Map<String, NaruDirective> stools = new LinkedHashMap<>();
     private final Map<String, String> stoolsAliases = new LinkedHashMap<>();
     private final Map<String, NaruModelProvider> modelProviders = new HashMap<>();
+    private final NAruModeRegistry modeRegistry =new NAruModeRegistry();
 
     public NaruRegistryImpl() {
+    }
+
+    @Override
+    public List<NaruMode> modes() {
+        return modeRegistry.modes();
+    }
+
+    @Override
+    public List<String> modeNames() {
+        return modes().stream().map(x-> NNameFormat.LOWER_KEBAB_CASE.format(x.name())).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<String> modeNamesAndAliases() {
+        List<String> all=new ArrayList<>();
+        for (NaruMode mode : modes()) {
+            all.add(NNameFormat.LOWER_KEBAB_CASE.format(mode.name()));
+            for (String alias : mode.aliases()) {
+                all.add(NNameFormat.LOWER_KEBAB_CASE.format(alias));
+            }
+        }
+        return all;
+    }
+
+    @Override
+    public void declareMode(NaruMode mode) {
+        modeRegistry.register(mode);
+    }
+
+    @Override
+    public NOptional<NaruMode> mode(NaruStandardMode mode) {
+        return modeRegistry.mode(mode);
+    }
+
+    @Override
+    public NOptional<NaruMode> mode(String mode) {
+        return modeRegistry.mode(mode);
     }
 
     /**
@@ -40,7 +78,7 @@ public class NaruRegistryImpl implements NaruRegistry {
      */
     @Override
     public NaruRegistry registerTool(NaruTool tool) {
-        tools.put(tool.getName(), tool);
+        tools.put(tool.name(), tool);
         return this;
     }
 
@@ -214,12 +252,12 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerTool(new FileReadTool());
         this.registerTool(new FileAppendTool());
         this.registerTool(new FileEditLinesTool());
-        this.registerTool(new WriteFileTool());
+        this.registerTool(new FileWriteTool());
         this.registerTool(new RunShellTool());
         this.registerTool(new MavenCompileTool());
         this.registerTool(new MavenTestTool());
         this.registerTool(new RoutineAddLineTool());
-        this.registerTool(new RunScriptTool());
+        this.registerTool(new RoutineRunTool());
         this.registerTool(new SearchWebScriptTool());
         this.registerTool(new DiffFilesTool());
         this.registerTool(new GetWorkingDirTool());
@@ -231,10 +269,12 @@ public class NaruRegistryImpl implements NaruRegistry {
 
         this.registerDirective(new RoutineDirective());
         this.registerDirective(new ExitDirective());
+        this.registerDirective(new PrintDirective());
         this.registerDirective(new HelpDirective());
         this.registerDirective(new ToolsDirective());
         this.registerDirective(new StatDirective());
         this.registerDirective(new ModelDirective());
+        this.registerDirective(new ModeDirective());
         this.registerDirective(new PwdDirective());
         this.registerDirective(new CdDirective());
         this.registerDirective(new CatDirective());
