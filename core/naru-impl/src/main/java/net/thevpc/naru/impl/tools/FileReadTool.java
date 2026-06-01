@@ -48,7 +48,7 @@ public class FileReadTool implements NaruTool {
         String pathStr = context.stringArg("path").onBlankEmpty().orNull();
         if (pathStr == null) return "ERROR: 'path' is required.";
 
-        NPath file = context.session().resolve(pathStr);
+        NPath file = context.task().resolve(pathStr);
         if (!file.exists()) return "ERROR: File not found: " + file;
         if (!file.isRegularFile()) return "ERROR: Path is not a regular file: " + file;
         if (!file.permissions().contains(NPathPermission.CAN_READ)) return "ERROR: File is not readable: " + file;

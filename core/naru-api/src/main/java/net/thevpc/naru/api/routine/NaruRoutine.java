@@ -1,6 +1,9 @@
 package net.thevpc.naru.api.routine;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.stmt.NaruStatement;
+import net.thevpc.nuts.util.NOptional;
 
 import java.util.List;
 import java.util.Map;
@@ -21,10 +24,12 @@ public interface NaruRoutine {
     int clear();
 
     TreeMap<Integer, String> getLinesSet();
-    List<IndexedLine> getIndexedLines();
-    int firstIndex();
-    int nextLineIndex(int currentLineIndex);
 
+    List<NaruIndexedLine> getIndexedLines();
+
+    int firstIndex();
+
+    int nextPc(int currentPc);
 
     TreeMap<Integer, String> getLinesSet(IntPredicate lineFilter);
 
@@ -34,5 +39,7 @@ public interface NaruRoutine {
 
     Map<String, SubroutineDef> getSubroutines();
 
-    String getLine(int n);
+    String lineCommandAt(int n);
+    NOptional<List<NaruStatement>> parseStatements(NaruTask task);
+
 }

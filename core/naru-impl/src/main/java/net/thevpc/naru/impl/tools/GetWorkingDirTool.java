@@ -33,7 +33,7 @@ public class GetWorkingDirTool implements NaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
-        return context.session().workingDir().toString();
+        return context.task().workingDir().toString();
     }
 
 }

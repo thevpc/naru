@@ -7,7 +7,6 @@ import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
-import net.thevpc.nuts.util.NOptional;
 
 public class NaruStatementHelper {
 
@@ -28,7 +27,7 @@ public class NaruStatementHelper {
             case "TOOL_CALL":
                 return new NaruToolCallStmt(element);
             case "MODEL_CALL":
-                return new NaruModelCallStmt(element);
+                return new NaruPromptStmt(element);
 //            case "EXEC_ROUTINE_LINE":
 //                return new NaruExecRoutineLineStmt(element);
             case "IF":
@@ -66,7 +65,7 @@ public class NaruStatementHelper {
     }
 
     public static NaruStatement ofModelCall(String prompt) {
-        return new NaruModelCallStmt(prompt);
+        return new NaruPromptStmt(prompt);
     }
 
     public static NaruStatement ofReturn() {

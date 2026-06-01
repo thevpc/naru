@@ -1,8 +1,11 @@
 package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NAruInputMode;
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.agent.NaruTaskSchedulerView;
+import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.stmt.NaruStatement;
+import net.thevpc.naru.impl.scheduler.NaruInputRequest;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
@@ -11,90 +14,84 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
-public class NaruReadlineStmt extends NaruSimpleStatement {
+public class NaruReadlineStmt extends NaruStatement implements Cloneable{
 
     public static final String DEFAULT_BLOCK_SEPARATOR = "≫";
     public static final String DEFAULT_LINE_SEPARATOR = "›";
     public static final String DEFAULT_PROMPT = "なる";
-
+    private boolean runtimeWaiting = false; // false=first time, true=resumed
     public NaruReadlineStmt() {
         super(Type.READLINE);
     }
 
     public NaruReadlineStmt(NElement element) {
-        super(Type.READLINE);
-        String name;
-        if (element.isName()) {
-            name = element.asName().get().stringValue();
-        } else if (element.isAnyObject()) {
-            NObjectElement o = element.asObject().get();
-            name = o.asNamed().get().name().get();
-        } else {
-            throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
-        }
-        switch (NNameFormat.CONST_NAME.format(name)) {
-            case "READLINE": {
-                break;
-            }
-            default: {
-                throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
-            }
-        }
+        super(Type.READLINE,element);
     }
 
-    @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = NElement.ofObjectBuilder(type.name());
-        return a.build();
-    }
 
     @Override
-    public void exec(NaruSession session) {
-        String line = null;
-        line = NTerminal.of().readLine(NMsg.ofC("%s%s ", NMsg.ofStyledPrimary1(DEFAULT_PROMPT),
-                session.inputMode()== NAruInputMode.LINE ? NMsg.ofStyledSeparator(DEFAULT_LINE_SEPARATOR): NMsg.ofStyledString(DEFAULT_BLOCK_SEPARATOR)
-        ));
-        if (line == null) {
+    public void exec(NaruTask task) {
+
+        if (!runtimeWaiting) {
+            // Phase A — first time: block and wait for input
+            NaruReadlineStmt selfCopy = (NaruReadlineStmt) copy();
+            selfCopy.runtimeWaiting = true;
+
+            // prepend self copy — will process input when resumed
+            task.prependStatement(selfCopy);
+            task.requestInput(NMsg.ofC("%s%s ", NMsg.ofStyledPrimary1(DEFAULT_PROMPT),
+                task.inputMode()== NAruInputMode.LINE ? NMsg.ofStyledSeparator(DEFAULT_LINE_SEPARATOR): NMsg.ofStyledString(DEFAULT_BLOCK_SEPARATOR)
+            ));
             return;
         }
-//        if (session.isForever()) {
-//            session.pushStatement(NaruStatementHelper.ofReadLine());
-//        }
-        switch (session.inputMode()) {
+
+        String line =task.consumeInput();
+
+        if (line == null) {
+            task.defaultAdvance(this);
+            return;
+        }
+
+        switch (task.inputMode()) {
             case LINE: {
                 StringBuilder sb = new StringBuilder();
-                sb.append(session.inputBuffer());
+                sb.append(task.inputBuffer());
                 if (sb.length() > 0) {
                     sb.append("\n");
                 }
                 sb.append(line);
-                session.inputBuffer("");
-                NaruStatement stmt = session.agent().parseStatement(sb.toString()).orNull();
+                task.inputBuffer("");
+                NaruStatement stmt = task.parseStatement(sb.toString()).orNull();
                 if (stmt != null) {
-                    session.addStatement(stmt);
+                    task.addStatement(stmt);
                 }
+                task.defaultAdvance(this);
                 break;
             }
             case BLOC: {
                 if(line.trim().equals("/buffer")) {
-                    session.inputMode(session.inputMode() == NAruInputMode.LINE ? NAruInputMode.BLOC : NAruInputMode.LINE);
+                    task.inputMode(task.inputMode() == NAruInputMode.LINE ? NAruInputMode.BLOC : NAruInputMode.LINE);
                 }else if(line.trim().equals("/go")){
-                    String b=session.inputBuffer();
-                    session.inputBuffer("");
-                    NaruStatement stmt = session.agent().parseStatement(b).orNull();
+                    String b= task.inputBuffer();
+                    task.inputBuffer("");
+                    NaruStatement stmt = task.parseStatement(b).orNull();
                     if (stmt != null) {
-                        session.addStatement(stmt);
+                        task.addStatement(stmt);
                     }
                 }else {
                     StringBuilder sb = new StringBuilder();
-                    sb.append(session.inputBuffer());
+                    sb.append(task.inputBuffer());
                     if (sb.length() > 0) {
                         sb.append("\n");
                     }
                     sb.append(line);
-                    session.inputBuffer(sb.toString());
+                    task.inputBuffer(sb.toString());
                 }
+                task.defaultAdvance(this);
                 break;
+            }
+            default:{
+                task.defaultAdvance(this);
             }
         }
     }

@@ -41,11 +41,11 @@ public class SetWorkingDirTool implements NaruTool {
     public String execute(NaruToolCallContext context) {
         String workingDirArg = context.stringArg("work_dir").orNull();
         NPath neworkDir = NBlankable.isNonBlank(workingDirArg)
-                ? context.session().resolve(workingDirArg)
-                : context.session().projectDir();
+                ? context.task().resolve(workingDirArg)
+                : context.task().projectDir();
 
-        context.session().setWorkingDir(neworkDir);
-        return context.session().workingDir().toString();
+        context.task().setWorkingDir(neworkDir);
+        return context.task().workingDir().toString();
     }
 
 }

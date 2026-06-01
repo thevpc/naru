@@ -39,7 +39,7 @@ public class RoutineAddLineTool implements NaruTool {
     public String execute(NaruToolCallContext context) {
         String scriptName = context.stringArg("routine_name")
                 .onBlankEmpty()
-                .orElseGet(() -> context.session().routineManager().getCurrentRoutineName());
+                .orElseGet(() -> context.task().session().routineManager().getCurrentRoutineName());
 
         Number lineNumObj = context.numberArg("line_number").orNull();
         if (lineNumObj == null) {
@@ -52,7 +52,7 @@ public class RoutineAddLineTool implements NaruTool {
             return "Error: command is required";
         }
 
-        NaruRoutineManager sm = context.session().routineManager();
+        NaruRoutineManager sm = context.task().session().routineManager();
         String oldName = sm.getCurrentRoutineName();
         sm.switchRoutine(scriptName);
         sm.putLine(lineNum, command);

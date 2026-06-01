@@ -9,4 +9,5 @@ public enum NaruLogMode {
     AGENT_RESPONSE,
     RAW,
     MODEL_THINKING,
+    SCHEDULER,
 }

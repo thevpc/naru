@@ -173,7 +173,7 @@ Type "# we add some lines to the routine"
 Enter
 Type "20 Based on these files, describe what this project does in one sentence. do not call any tool."
 Enter
-Type "10 /sys find . -name *.java | head -20"
+Type "10 /sys find . -name *.java 2>/dev/null | head -20"
 Enter
 Sleep 1s
 Type "# lets check the routine"

@@ -1,13 +1,10 @@
 package net.thevpc.naru.api.agent;
 
 import net.thevpc.naru.api.budget.NaruMeteringService;
-import net.thevpc.naru.api.mode.NaruMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
-import net.thevpc.naru.api.routine.RunContext;
-import net.thevpc.naru.api.skills.NaruSkill;
+import net.thevpc.naru.api.scheduler.NaruScheduler;
 import net.thevpc.naru.api.skills.NaruSkillManager;
-import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
@@ -19,59 +16,15 @@ import java.util.List;
 import java.util.Map;
 
 public interface NaruSession {
-    boolean isPublicSession();
+    NAruVisibility getVisibility();
 
-    String inputBuffer();
+    NaruScheduler scheduler();
 
-    NaruSession inputBuffer(String buffer);
-
-    NAruInputMode inputMode();
-
-    NaruSession inputMode(NAruInputMode newMode);
-
-    NaruSession publicSession(boolean publicSession);
+    NaruSession setVisibility(NAruVisibility visibility);
 
     NaruAgent agent();
 
-    NaruStatement popStatement();
-
-    NaruSession pushContext();
-
-    NaruSession pushContext(int pc, Integer returnTo, String routine);
-
-    NaruSession popContext();
-
-    NaruSession addStatements(NaruStatement... any);
-
-    NaruSession addStatement(NaruStatement any);
-
-    int userQueriesCount();
-
-    boolean isRequireUserInput();
-
-    NaruSession setRequireUserInput(boolean requireUserInput);
-
-    boolean addHistory(String m);
-
-//    void advancePcOrEnd();
-
-    void addHistory(NaruMessage assistantMsg);
-
-    void setLastResult(NaruMessage lastResult);
-
-    void setReturnResult(Object lastResult);
-
     boolean hasMoreStatements();
-
-    boolean removeHistoryAt(int index);
-
-    NaruModelRequest context(NaruSource... sources);
-
-    int pc();
-
-    NaruSession pc(int nextPc);
-
-    NPath resolve(String path);
 
     NPath projectDir();
 
@@ -81,25 +34,11 @@ public interface NaruSession {
 
     NaruSession terminate();
 
-    String getExtraContext();
-
     void log(NaruLogMode mode, NMsg s);
 
     NPath workingDir();
 
     NaruSession setWorkingDir(NPath workingDir);
-
-    int clearHistory();
-
-    int trimHistory(int count);
-
-    NaruModelConfig model();
-
-    NaruMode mode();
-
-    NaruSession mode(NaruMode newMode);
-
-    NaruSession setModel(NaruModelConfig model);
 
     NaruSession load(NElement element);
 
@@ -143,39 +82,31 @@ public interface NaruSession {
 
     Map<NaruModelConfig, List<String>> reversedModelAliases();
 
-    NaruResponse chat(NaruModelConfig modelKey, NaruModelRequest request);
-
     NaruMeteringService meteringService();
-
-    RunContext getTopContext();
 
     NOptional<NElement> getProjectEnv(String key);
 
     void setProjectEnv(String key, NElement value, NAruVisibility visibility);
 
-    void setSessionEnv(String key, Object value);
+    NOptional<Object> getSessionProperty(String key);
 
-    void throwError(NMsg nMsg);
+    NaruSession unsetSessionProperty(String key);
 
-    Object evalExpression(String condition);
+    NaruSession setSessionProperty(String key, Object value);
 
-    String expandString(String condition);
+    List<NaruTask> tasks();
 
-    NaruSession pushStatementModelCall(String prompt);
+    NaruTask newTask(long parentId, NPath cwd, String... statements);
 
-    NaruSession prepareProject();
+    NOptional<NaruTask> findTask(long tid);
 
-    NaruSkill findSkill(String name);
+    long foregroundTaskId();
 
-    boolean loadSkill(String name);
+    NaruSession foregroundTaskId(long taskId);
 
-    boolean unloadSkill(String name);
+    void start();
 
-    List<NaruResourceInfo> listSkills();
+    void stop();
 
-    NaruSession run();
-
-    NaruSession runOrReadline();
-
-    NaruSession runStep();
+    void waitFor();
 }

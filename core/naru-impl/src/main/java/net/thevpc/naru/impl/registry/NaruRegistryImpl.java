@@ -2,13 +2,15 @@ package net.thevpc.naru.impl.registry;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.tool.NaruDirective;
 import net.thevpc.naru.api.tool.NaruTool;
 import net.thevpc.naru.api.tool.NaruRegistry;
 import net.thevpc.naru.impl.directive.*;
+import net.thevpc.naru.impl.directive.NaruCallDirective;
 import net.thevpc.naru.impl.mode.NAruModeRegistry;
 import net.thevpc.naru.impl.model.gemini.NaruGeminiProvider;
 import net.thevpc.naru.impl.model.ollama.NaruOllamaProvider;
@@ -37,7 +39,7 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     @Override
-    public List<NaruMode> modes() {
+    public List<NaruPromptMode> modes() {
         return modeRegistry.modes();
     }
 
@@ -49,7 +51,7 @@ public class NaruRegistryImpl implements NaruRegistry {
     @Override
     public List<String> modeNamesAndAliases() {
         List<String> all=new ArrayList<>();
-        for (NaruMode mode : modes()) {
+        for (NaruPromptMode mode : modes()) {
             all.add(NNameFormat.LOWER_KEBAB_CASE.format(mode.name()));
             for (String alias : mode.aliases()) {
                 all.add(NNameFormat.LOWER_KEBAB_CASE.format(alias));
@@ -59,17 +61,17 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     @Override
-    public void declareMode(NaruMode mode) {
+    public void declareMode(NaruPromptMode mode) {
         modeRegistry.register(mode);
     }
 
     @Override
-    public NOptional<NaruMode> mode(NaruStandardMode mode) {
+    public NOptional<NaruPromptMode> mode(NaruStandardMode mode) {
         return modeRegistry.mode(mode);
     }
 
     @Override
-    public NOptional<NaruMode> mode(String mode) {
+    public NOptional<NaruPromptMode> mode(String mode) {
         return modeRegistry.mode(mode);
     }
 
@@ -185,13 +187,13 @@ public class NaruRegistryImpl implements NaruRegistry {
      * @throws IllegalArgumentException if the tool name is unknown
      */
     @Override
-    public String dispatch(String name, Map<String, Object> arguments, NaruSession context) {
+    public String dispatch(String name, Map<String, Object> arguments, NaruTask task) {
         NaruTool tool = tools.get(name);
         if (tool == null) {
             return "ERROR: Unknown tool '" + name + "'. Available tools: " + tools.keySet();
         }
         try {
-            return tool.execute(new NaruToolCallContextImpl(arguments, context));
+            return tool.execute(new NaruToolCallContextImpl(arguments, task));
         } catch (Exception e) {
             return "ERROR executing tool '" + name + "': " + e.getMessage();
         }
@@ -212,18 +214,18 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     @Override
-    public void dispatchSlash(String name, String argument, NaruSession context) {
+    public void dispatchSlash(String name, String argument, NaruTask task) {
         NaruDirective tool = findDirective(name).orNull();
         if (tool == null) {
-            context.log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + stools.keySet()).asError());
+            task.log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + stools.keySet()).asError());
             return;
         }
         try {
-            tool.execute(new NaruDirectiveCallContextImpl(name, argument, context));
+            tool.execute(new NaruDirectiveCallContextImpl(name, argument, task));
         } catch (NCancelException e) {
             throw e;
         } catch (Exception e) {
-            context.log(NaruLogMode.TRACE, NMsg.ofC("ERROR executing tool '" + name + "': " + e.getMessage()).asError());
+            task.log(NaruLogMode.TRACE, NMsg.ofC("ERROR executing tool '" + name + "': " + e.getMessage()).asError());
         }
     }
 
@@ -233,7 +235,7 @@ public class NaruRegistryImpl implements NaruRegistry {
      * @throws IllegalArgumentException if the tool name is unknown
      */
     @Override
-    public String dispatch(NaruToolCall toolCall, NaruSession context) {
+    public String dispatch(NaruToolCall toolCall, NaruTask context) {
         return dispatch(toolCall.getName(), toolCall.getArguments(), context);
     }
 
@@ -267,38 +269,42 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerTool(new FolderFindTool());
         this.registerTool(new FileGrepTool());
 
-        this.registerDirective(new RoutineDirective());
-        this.registerDirective(new ExitDirective());
-        this.registerDirective(new PrintDirective());
-        this.registerDirective(new HelpDirective());
-        this.registerDirective(new ToolsDirective());
-        this.registerDirective(new StatDirective());
-        this.registerDirective(new ModelDirective());
-        this.registerDirective(new ModeDirective());
-        this.registerDirective(new PwdDirective());
-        this.registerDirective(new CdDirective());
-        this.registerDirective(new CatDirective());
-        this.registerDirective(new BufferDirective());
-        this.registerDirective(new HistoryDirective());
-        this.registerDirective(new SessionDirective());
-        this.registerDirective(new ShDirective());
-        this.registerDirective(new LsDirective());
-        this.registerDirective(new SetDirective());
-        this.registerDirective(new SkillDirective());
-        this.registerDirective(new SystemDirective());
-        this.registerDirective(new WhileDirective());
-        this.registerDirective(new ForDirective());
-        this.registerDirective(new IfDirective());
-        this.registerDirective(new ElseDirective());
-        this.registerDirective(new ElseIfDirective());
-        this.registerDirective(new EndDirective());
-        this.registerDirective(new ReloadDirective());
-        this.registerDirective(new NewDirective());
-        this.registerDirective(new RestoreDirective());
-        this.registerDirective(new SaveDirective());
-        this.registerDirective(new ResetDirective());
-        this.registerDirective(new ContextDirective());
-        this.registerDirective(new GoDirective());
+        this.registerDirective(new NaruRoutineDirective());
+        this.registerDirective(new NaruExitDirective());
+        this.registerDirective(new NaruPrintDirective());
+        this.registerDirective(new NaruHelpDirective());
+        this.registerDirective(new NaruToolsDirective());
+        this.registerDirective(new NaruStatDirective());
+        this.registerDirective(new NaruModelDirective());
+        this.registerDirective(new NaruModeDirective());
+        this.registerDirective(new NaruPwdDirective());
+        this.registerDirective(new NaruCdDirective());
+        this.registerDirective(new NaruCatDirective());
+        this.registerDirective(new NaruBufferDirective());
+        this.registerDirective(new NaruHistoryDirective());
+        this.registerDirective(new NaruSessionDirective());
+        this.registerDirective(new NaruShDirective());
+        this.registerDirective(new NaruLsDirective());
+        this.registerDirective(new NaruSetDirective());
+        this.registerDirective(new NaruSkillDirective());
+        this.registerDirective(new NaruSystemDirective());
+        this.registerDirective(new NaruWhileDirective());
+        this.registerDirective(new NaruForDirective());
+        this.registerDirective(new NaruIfDirective());
+        this.registerDirective(new NaruElseDirective());
+        this.registerDirective(new NaruElseIfDirective());
+        this.registerDirective(new NaruEndDirective());
+        this.registerDirective(new NaruReloadDirective());
+        this.registerDirective(new NaruNewDirective());
+        this.registerDirective(new NaruRestoreDirective());
+        this.registerDirective(new NaruSaveDirective());
+        this.registerDirective(new NaruResetDirective());
+        this.registerDirective(new NaruContextDirective());
+        this.registerDirective(new NaruGoDirective());
+        this.registerDirective(new NaruCallDirective());
+        this.registerDirective(new NaruSourceDirective());
+        this.registerDirective(new NaruStartDirective());
+        this.registerDirective(new NaruTaskDirective());
 
         registerModelProvider(new NaruOllamaProvider());
         registerModelProvider(new NaruGeminiProvider());

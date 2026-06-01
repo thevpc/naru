@@ -1,7 +1,8 @@
 package net.thevpc.naru.api.tool;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.nuts.util.NOptional;
@@ -21,13 +22,13 @@ public interface NaruRegistry {
 
     NaruRegistry registerModelProvider(NaruModelProvider tool);
 
-    String dispatch(String name, Map<String, Object> arguments, NaruSession context);
+    String dispatch(String name, Map<String, Object> arguments, NaruTask context);
 
-    String dispatch(NaruToolCall toolCall, NaruSession context);
+    String dispatch(NaruToolCall toolCall, NaruTask context);
 
     NOptional<NaruDirective> findDirective(String name);
 
-    void dispatchSlash(String name, String argument, NaruSession context);
+    void dispatchSlash(String name, String argument, NaruTask task);
 
     boolean isEmpty();
 
@@ -45,14 +46,14 @@ public interface NaruRegistry {
 
     NOptional<NaruModelProtocol> protocol(NaruModelConfig model, NaruSession session);
 
-    List<NaruMode> modes();
+    List<NaruPromptMode> modes();
 
     List<String> modeNames();
     List<String> modeNamesAndAliases();
 
-    void declareMode(NaruMode mode);
+    void declareMode(NaruPromptMode mode);
 
-    NOptional<NaruMode> mode(NaruStandardMode mode);
+    NOptional<NaruPromptMode> mode(NaruStandardMode mode);
 
-    NOptional<NaruMode> mode(String mode);
+    NOptional<NaruPromptMode> mode(String mode);
 }

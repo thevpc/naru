@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
@@ -52,7 +52,7 @@ public class RunShellTool implements NaruTool {
 
         if (NBlankable.isBlank(command)) return "ERROR: 'command' is required.";
 
-        NPath cwd = !NBlankable.isBlank(workDir) ? context.session().resolve(workDir) : context.session().projectDir();
+        NPath cwd = !NBlankable.isBlank(workDir) ? context.task().resolve(workDir) : context.task().projectDir();
 
         try {
             NExec nExec = NExec.ofSystem("/bin/sh", "-c", command)
@@ -68,7 +68,7 @@ public class RunShellTool implements NaruTool {
         }
     }
 
-    public boolean acceptMode(NaruMode mode) {
+    public boolean acceptMode(NaruPromptMode mode) {
         NaruStandardMode m = mode.asStandardMode().orNull();
         if (m != null) {
             switch (m) {

@@ -1,7 +1,7 @@
 package net.thevpc.naru.api.tool;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 
 /**
@@ -36,7 +36,7 @@ public interface NaruTool {
      */
     String execute(NaruToolCallContext context);
 
-    default boolean acceptMode(NaruMode mode) {
+    default boolean acceptMode(NaruPromptMode mode) {
         return true;
     }
 }

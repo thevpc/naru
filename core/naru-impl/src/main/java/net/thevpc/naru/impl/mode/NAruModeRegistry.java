@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.mode;
 
-import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
@@ -8,19 +8,19 @@ import net.thevpc.nuts.util.*;
 import java.util.*;
 
 public class NAruModeRegistry {
-    private final Map<String, NaruMode> modes = new HashMap<>();
+    private final Map<String, NaruPromptMode> modes = new HashMap<>();
     private final Map<String, String> aliases = new HashMap<>();
 
     public NAruModeRegistry() {
-        register(NaruStandardModeImpl.ASK);
-        register(NaruStandardModeImpl.AUDIT);
-        register(NaruStandardModeImpl.DEBUG);
-        register(NaruStandardModeImpl.PLANNING);
-        register(NaruStandardModeImpl.IMPLEMENT);
-        register(NaruStandardModeImpl.REVIEW);
+        register(NaruStandardPromptModeImpl.ASK);
+        register(NaruStandardPromptModeImpl.AUDIT);
+        register(NaruStandardPromptModeImpl.DEBUG);
+        register(NaruStandardPromptModeImpl.PLANNING);
+        register(NaruStandardPromptModeImpl.IMPLEMENT);
+        register(NaruStandardPromptModeImpl.REVIEW);
     }
 
-    public void register(NaruMode mode) {
+    public void register(NaruPromptMode mode) {
         NAssert.requireNamedNonNull(mode, "mode");
         String m = NNameFormat.LOWER_KEBAB_CASE.format(mode.name());
         if (modes.containsKey(m)) {
@@ -47,17 +47,17 @@ public class NAruModeRegistry {
     }
 
 
-    public List<NaruMode> modes() {
+    public List<NaruPromptMode> modes() {
         return new ArrayList<>(modes.values());
     }
 
-    public NOptional<NaruMode> mode(NaruStandardMode name) {
+    public NOptional<NaruPromptMode> mode(NaruStandardMode name) {
         return mode(name.name());
     }
 
-    public NOptional<NaruMode> mode(String name) {
+    public NOptional<NaruPromptMode> mode(String name) {
         String n = NNameFormat.LOWER_KEBAB_CASE.format(name);
-        NaruMode a = modes.get(n);
+        NaruPromptMode a = modes.get(n);
         if (a != null) {
             return NOptional.of(a);
         }

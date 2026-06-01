@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
@@ -55,7 +55,7 @@ public class FileEditLinesTool implements NaruTool {
         String path = context.stringArg("path").onBlankEmpty().orNull();
         if (path == null) return "ERROR: 'path' is required.";
 
-        NPath p = context.session().resolve(path);
+        NPath p = context.task().resolve(path);
         if (!p.exists()) return "ERROR: File not found: " + p;
         if (!p.permissions().contains(NPathPermission.CAN_WRITE)) return "ERROR: File is not writable: " + p;
 
@@ -121,7 +121,7 @@ public class FileEditLinesTool implements NaruTool {
         return (int) Math.min(idx, total);                  // clamp large positives to total
     }
 
-    public boolean acceptMode(NaruMode mode) {
+    public boolean acceptMode(NaruPromptMode mode) {
         NaruStandardMode m = mode.asStandardMode().orNull();
         if (m != null) {
             switch (m) {

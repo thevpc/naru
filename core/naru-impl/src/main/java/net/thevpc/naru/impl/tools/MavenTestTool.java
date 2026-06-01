@@ -45,8 +45,8 @@ public class MavenTestTool implements NaruTool {
         String testClass = context.stringArg("test_class").orNull();
 
         NPath projectDir = NBlankable.isNonBlank(projectDirArg)
-                ? context.session().resolve(projectDirArg)
-                : context.session().projectDir();
+                ? context.task().resolve(projectDirArg)
+                : context.task().projectDir();
 
         if (!NBlankable.isBlank(testClass)) {
             return MavenCompileTool.runMaven(projectDir, "test", "-Dtest=" + testClass, "-DfailIfNoTests=false");

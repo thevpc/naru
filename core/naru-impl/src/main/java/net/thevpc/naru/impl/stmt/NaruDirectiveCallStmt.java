@@ -1,12 +1,13 @@
 package net.thevpc.naru.impl.stmt;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
-public class NaruDirectiveCallStmt extends NaruSimpleStatement {
+public class NaruDirectiveCallStmt extends NaruStatement implements Cloneable{
     public String call;
 
     public NaruDirectiveCallStmt(String call) {
@@ -16,28 +17,13 @@ public class NaruDirectiveCallStmt extends NaruSimpleStatement {
 
     public NaruDirectiveCallStmt(NElement element) {
         super(Type.CALL);
-        String name;
-        if (element.isName()) {
-            name = element.asName().get().stringValue();
-        } else if (element.isAnyObject()) {
-            NObjectElement o = element.asObject().get();
-            name = o.asNamed().get().name().get();
-        } else {
-            throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
-        }
-        switch (NNameFormat.CONST_NAME.format(name)) {
-            case "CALL": {
-                this.call = element.asObject().get().get("call").get().asStringValue().get();
-            }
-            default: {
-                throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
-            }
-        }
+        NListContainerElement lc = element.asListContainer().get();
+        this.call = lc.get("call").flatMap(NElement::asStringValue).orNull();
     }
 
     @Override
     public NElement toElement() {
-        NObjectElementBuilder a = NElement.ofObjectBuilder(type.name());
+        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
         if (call != null) {
             a.set("call", call);
         }
@@ -45,7 +31,8 @@ public class NaruDirectiveCallStmt extends NaruSimpleStatement {
     }
 
     @Override
-    public void exec(NaruSession session) {
-        session.agent().invokeDirective(call, session);
+    public void exec(NaruTask task) {
+        task.invokeDirective(call);
+        task.defaultAdvance(this);
     }
 }

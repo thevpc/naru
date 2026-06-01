@@ -1,14 +1,16 @@
 package net.thevpc.naru.impl.stmt;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
-public class NaruDefRoutineLineStmt extends NaruSimpleStatement {
+public class NaruDefRoutineLineStmt extends NaruStatement implements Cloneable{
     public int number;
     public String command;
 
@@ -19,37 +21,25 @@ public class NaruDefRoutineLineStmt extends NaruSimpleStatement {
     }
 
     public NaruDefRoutineLineStmt(NElement element) {
-        super(Type.DEF_ROUTINE_LINE);
-        String name;
-        if (element.isName()) {
-            name = element.asName().get().stringValue();
-        } else if (element.isAnyObject()) {
-            NObjectElement o = element.asObject().get();
-            name = o.asNamed().get().name().get();
-        } else {
-            throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
-        }
-        switch (NNameFormat.CONST_NAME.format(name)) {
-            case "DEF_ROUTINE_LINE": {
-                this.number = element.asListContainer().get().get("number").get().asIntValue().get();
-                this.command = element.asListContainer().get().get("command").get().asStringValue().orNull();
-            }
-            default: {
-                throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
-            }
-        }
+        super(Type.DEF_ROUTINE_LINE,element);
+        NListContainerElement lc = element.asListContainer().get();
+        this.number = lc.getIntValue("number").get();
+        this.command = lc.getStringValue("command").orNull();
     }
 
     @Override
     public NElement toElement() {
-        NObjectElementBuilder a = NElement.ofObjectBuilder(type.name());
+        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
         a.set("number", number);
-        a.set("command", command);
+        if(command!=null){
+            a.set("command", command);
+        }
         return a.build();
     }
 
     @Override
-    public void exec(NaruSession session) {
-        session.routineManager().putLine(number, command);
+    public void exec(NaruTask task) {
+        task.session().routineManager().putLine(number, command);
+        task.defaultAdvance(this);
     }
 }

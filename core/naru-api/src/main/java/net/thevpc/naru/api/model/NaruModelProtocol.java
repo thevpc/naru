@@ -1,8 +1,6 @@
 package net.thevpc.naru.api.model;
 
-import net.thevpc.naru.api.agent.NaruSession;
-
-import java.util.List;
+import net.thevpc.naru.api.agent.NaruTask;
 
 public interface NaruModelProtocol {
     /**
@@ -10,7 +8,7 @@ public interface NaruModelProtocol {
      *
      * @return the model's response
      */
-    NaruResponse chat(NaruModelRequest request, NaruSession session);
+    NaruResponse chat(NaruModelRequest request, NaruTask task);
 
     NaruModelCapabilities getCapabilities();
 }

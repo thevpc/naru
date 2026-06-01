@@ -6,7 +6,6 @@ import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.io.NOut;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
-import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NCancelException;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 
@@ -40,7 +39,7 @@ public class NaruCmdLineProcessor {
 
     private String projectDir = ".";
     private boolean help = false;
-    private final List<PreCommand> tasks = new ArrayList<>();
+    private final List<String> precommands = new ArrayList<>();
     private Boolean forceInteractive;
 
     public NaruCmdLineProcessor(NCmdLine args) {
@@ -52,8 +51,8 @@ public class NaruCmdLineProcessor {
     private void parse(NCmdLine args) {
         args
                 .matcher()
-                .with("--tasks", "-t").matchEntry(a -> tasks.add(new PreCommand(false, a.value())))
-                .with("--file", "-f").matchEntry(a -> tasks.add(new PreCommand(true, a.value())))
+                .with("--tasks", "-t").matchEntry(a -> precommands.add(a.value()))
+                .with("--file", "-f").matchEntry(a -> precommands.add("/source "+a.value()))
                 .with("--interactive", "-i").matchFlag(a -> forceInteractive = a.booleanValue())
                 .with("--project","-d").matchEntry(a -> projectDir = a.value())
                 .with("--help", "-h").matchTrueFlag(a -> help = a.booleanValue())
@@ -71,15 +70,17 @@ public class NaruCmdLineProcessor {
         }
         NaruAgent runner = new NaruAgentImpl();
         runner.setProjectDirectory(NPath.of(projectDir));
-        boolean interactive = (forceInteractive == null ? tasks.isEmpty() : forceInteractive);
+        boolean interactive = (forceInteractive == null ? precommands.isEmpty() : forceInteractive);
         if (interactive) {
-            runner.runInteractive(tasks.toArray(new PreCommand[0]));
+            runner.startInteractiveSession(precommands.toArray(new String[0]))
+                    ;
         } else {
-            if (tasks.isEmpty()) {
+            if (precommands.isEmpty()) {
                 throw new NIllegalArgumentException(NMsg.ofC("no task specified"));
             }
             try {
-                runner.runTasks(tasks.toArray(new PreCommand[0]));
+                runner.startSession(precommands.toArray(new String[0]))
+                        .waitFor();
             }catch (NCancelException e){
                 // just exit
             }

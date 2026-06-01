@@ -56,7 +56,7 @@ public class FileGrepTool implements NaruTool {
         if (path == null) return "ERROR: 'path' is required.";
         if (pattern == null) return "ERROR: 'pattern' is required.";
 
-        NPath p = context.session().resolve(path);
+        NPath p = context.task().resolve(path);
         if (!p.exists()) return "ERROR: File not found: " + p;
         if (!p.permissions().contains(NPathPermission.CAN_READ)) return "ERROR: File is not readable: " + p;
 

@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.util;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruTask;
 import net.thevpc.naru.impl.cmd.NaruTerminalFormatter;
 import net.thevpc.naru.impl.model.ollama.NaruOllamaProvider;
 import net.thevpc.nuts.artifact.NId;
@@ -109,13 +110,13 @@ public class NaruUtils {
         log(NMsg.ofC("%s", sb.build()).withDuration(chronometer.duration()));
     }
 
-    public static void showItems(List<NText> items, Set<Integer> toShow, NaruSession session) {
+    public static void showItems(List<NText> items, Set<Integer> toShow, NaruTask task) {
         int lastKey = items.size() + 1;
         if (toShow.isEmpty()) {
             if (!items.isEmpty()) {
                 for (int i = 0; i < items.size(); i++) {
                     NText e = items.get(i);
-                    showItem(i + 1, lastKey, e, session);
+                    showItem(i + 1, lastKey, e, task);
                 }
             }
         } else {
@@ -124,14 +125,14 @@ public class NaruUtils {
                 int i = bb.get(k);
                 int im1 = i - 1;
                 if (im1 >= 0 && im1 < items.size()) {
-                    showItem(i, lastKey, items.get(im1), session);
+                    showItem(i, lastKey, items.get(im1), task);
                 }
             }
         }
     }
 
 
-    private static void showItem(int rowIndex, int max, NText item, NaruSession session) {
+    private static void showItem(int rowIndex, int max, NText item, NaruTask task) {
         int zeros = (int) Math.ceil(Math.log10(max));
         if (zeros <= 0) {
             zeros = 1;
@@ -142,18 +143,45 @@ public class NaruUtils {
         for (int j = 0; j < lines.size(); j++) {
             NText line = lines.get(j);
             if (j == 0) {
-                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
                         NMsg.ofStyledNumber(zformat.format(rowIndex)),
                         line));
             } else {
-                session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("        %s", line));
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("        %s", line));
             }
         }
         if (lines.isEmpty()) {
-            session.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
+            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
                     NMsg.ofStyledNumber(zformat.format(rowIndex)),
                     item));
         }
+    }
+
+    public static boolean isPath(String command) {
+        String a = command.trim();
+        if (a.indexOf('/') >= 0) {
+            for (int i = 0; i < a.length(); i++) {
+                char c = a.charAt(i);
+                switch (c) {
+                    case ' ':
+                    case ':':
+                    case '\t':
+                    case '(':
+                    case ')':
+                    case '[':
+                    case ']':
+                    case '$':
+                    case ',':
+                    case ';':
+                    case '=':
+                    case '#': {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        return false;
     }
 
     public static class LineRange {
@@ -259,7 +287,7 @@ public class NaruUtils {
         }
     }
 
-    public static void showItemsWithFormat(String context2, String format, List<LineRange> ranges, NaruSession session) {
+    public static void showItemsWithFormat(String context2, String format, List<LineRange> ranges, NaruTask task) {
         NText nText;
         switch (format) {
             case "markdown": {
@@ -273,7 +301,7 @@ public class NaruUtils {
         }
         List<NText> linesOk = nText.splitLines();
         Set<Integer> toShow = NaruUtils.resolveIndexes(ranges.toArray(new LineRange[0]), linesOk.size());
-        NaruUtils.showItems(linesOk, toShow, session);
+        NaruUtils.showItems(linesOk, toShow, task);
     }
 
     public static String timeAgo(Instant instant) {

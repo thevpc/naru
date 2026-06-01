@@ -3,6 +3,7 @@ package net.thevpc.naru.impl.model;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruTask;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
@@ -17,7 +18,7 @@ public class NoTollWrapHelper {
     public static final Separators TOOL_RESULT_SEP = new Separators("<|tool_result|>", "<|end_tool_result|>");
 
 
-    public static NaruModelRequest wrapRequest(NaruModelRequest mrequest, Separators callSep, Separators resultSep, NaruSession session) {
+    public static NaruModelRequest wrapRequest(NaruModelRequest mrequest, Separators callSep, Separators resultSep) {
         List<NaruMessage> messages = new ArrayList<>(mrequest.messages());
         for (int i = 0; i < messages.size(); i++) {
             NaruMessage message = messages.get(i);
@@ -101,9 +102,9 @@ public class NoTollWrapHelper {
         }
     }
 
-    public static NaruResponse unwrapResponse(NaruResponse naruResponse, Separators openClose, NaruSession session) {
+    public static NaruResponse unwrapResponse(NaruResponse naruResponse, Separators openClose, NaruTask task) {
         NaruMessage msg = naruResponse.getMessage();
-        ParsedEmulatedResponse parsed = parseEmulatedToolCalls(msg.getContent(), openClose, session);
+        ParsedEmulatedResponse parsed = parseEmulatedToolCalls(msg.getContent(), openClose, task);
         if (!parsed.calls.isEmpty()) {
             return new NaruResponse(
                     new NaruMessage(msg.getSourceName(),
@@ -125,7 +126,7 @@ public class NoTollWrapHelper {
     }
 
     private static ParsedEmulatedResponse parseEmulatedToolCalls(
-            String content, Separators separators, NaruSession session) {
+            String content, Separators separators, NaruTask task) {
         List<NaruToolCall> calls = new ArrayList<>();
         if (content == null) return new ParsedEmulatedResponse(null, calls);
 
@@ -150,7 +151,7 @@ public class NoTollWrapHelper {
                 call.setArguments(argsEl != null ? (Map) NElements.of().fromElement(argsEl,Map.class) : new HashMap<>());
                 calls.add(call);
             } catch (Exception e) {
-                session.log(NaruLogMode.AGENT_RESPONSE,
+                task.log(NaruLogMode.AGENT_RESPONSE,
                         NMsg.ofC("Failed to parse emulated tool_call: %s", json));
             }
             matcher.appendReplacement(clean, "");

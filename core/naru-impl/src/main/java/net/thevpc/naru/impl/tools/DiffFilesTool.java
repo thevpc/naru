@@ -47,8 +47,8 @@ public class DiffFilesTool implements NaruTool {
         if (NBlankable.isBlank(path2)) return "Error: file2 is required.";
 
         try {
-            List<String> lines1 = context.session().resolve(path1).lines().toList();
-            List<String> lines2 = context.session().resolve(path2).lines().toList();
+            List<String> lines1 = context.task().resolve(path1).lines().toList();
+            List<String> lines2 = context.task().resolve(path2).lines().toList();
             return computeUnifiedDiff(path1, path2, lines1, lines2, contextLines);
         } catch (Exception e) {
             return "Error reading files: " + e.getMessage();

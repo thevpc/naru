@@ -42,8 +42,8 @@ public class MavenCompileTool implements NaruTool {
     public String execute(NaruToolCallContext context) {
         String projectDirArg = context.stringArg("project_dir").orNull();
         NPath projectDir = NBlankable.isNonBlank(projectDirArg)
-                ? context.session().resolve(projectDirArg)
-                : context.session().projectDir();
+                ? context.task().resolve(projectDirArg)
+                : context.task().projectDir();
 
         return runMaven(projectDir, "compile");
     }

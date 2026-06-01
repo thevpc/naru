@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
@@ -34,7 +34,7 @@ public class FileWriteTool implements NaruTool {
         if (NBlankable.isBlank(path)) return "ERROR: 'path' is required.";
         if (content == null) content = "";
 
-        NPath p = context.session().resolve(path);
+        NPath p = context.task().resolve(path);
         try {
             p.mkParentDirs().writeString(content);
             return "OK: wrote " + content.length() + " chars to " + p;
@@ -43,7 +43,7 @@ public class FileWriteTool implements NaruTool {
         }
     }
 
-    public boolean acceptMode(NaruMode mode) {
+    public boolean acceptMode(NaruPromptMode mode) {
         NaruStandardMode m = mode.asStandardMode().orNull();
         if (m != null) {
             switch (m) {

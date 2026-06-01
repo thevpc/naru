@@ -97,13 +97,13 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
         NPath s = sessionFile(uuid, true);
         if (s.isRegularFile()) {
             adapter.load(NElementReader.ofTson().read(s));
-            adapter.publicSession(true);
+            adapter.setVisibility(NAruVisibility.PUBLIC);
             return this;
         }
         s = sessionFile(uuid, false);
         if (s.isRegularFile()) {
             adapter.load(NElementReader.ofTson().read(s));
-            adapter.publicSession(false);
+            adapter.setVisibility(NAruVisibility.PRIVATE);
         }
         return this;
     }
@@ -114,8 +114,8 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
     }
 
     public NaruSessionManager saveCurrent() {
-        NPath pathOk = sessionFile(adapter.uuid(), adapter.isPublicSession());
-        NPath pathKo = sessionFile(adapter.uuid(), !adapter.isPublicSession());
+        NPath pathOk = sessionFile(adapter.uuid(), adapter.getVisibility()==NAruVisibility.PUBLIC);
+        NPath pathKo = sessionFile(adapter.uuid(), adapter.getVisibility()==NAruVisibility.PRIVATE);
         NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
                 .write(adapter.toElement(), pathOk.mkParentDirs());
         if (pathKo.isRegularFile()) {

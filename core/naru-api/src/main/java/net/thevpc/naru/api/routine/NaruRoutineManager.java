@@ -1,12 +1,18 @@
 package net.thevpc.naru.api.routine;
 
 import net.thevpc.naru.api.agent.NaruResourceInfo;
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.util.NOptional;
 
 import java.util.List;
 
 public interface NaruRoutineManager {
-    NaruRoutine getRoutine(String name);
+    NOptional<NaruRoutine> routine(String name);
+
+    NOptional<NaruRoutine> unnumberedRoutine(NPath path);
+
+    NOptional<NaruRoutine> routineOrUnnumberedRoutine(String nameOrPath, NaruTask task);
 
     NaruRoutine getCurrentRoutine();
 

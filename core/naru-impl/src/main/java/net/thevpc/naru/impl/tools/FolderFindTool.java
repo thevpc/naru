@@ -92,7 +92,7 @@ public class FolderFindTool implements NaruTool {
         NBooleanRef truncated = NBooleanRef.of(false);
         NIntRef totalMatches = NIntRef.of(0);
 
-        NPath root = context.session().resolve(pathStr);
+        NPath root = context.task().resolve(pathStr);
         if (!root.exists()) return "ERROR: Path not found: " + root;
         if (!root.isDirectory()) return "ERROR: Path is not a directory: " + root;
         if (!root.permissions().contains(NPathPermission.CAN_READ)) return "ERROR: Directory is not readable: " + root;

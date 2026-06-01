@@ -1,15 +1,12 @@
 package net.thevpc.naru.impl.stmt;
 
-import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.elem.NElements;
-import net.thevpc.nuts.elem.NObjectElement;
-import net.thevpc.nuts.elem.NObjectElementBuilder;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
-public class NaruElseIfStmt extends NaruFlowStatement {
+public class NaruElseIfStmt extends NaruFlowStatement implements Cloneable{
     public String condition;
 
     public NaruElseIfStmt(String condition) {
@@ -19,36 +16,19 @@ public class NaruElseIfStmt extends NaruFlowStatement {
 
     public NaruElseIfStmt(NElement element) {
         super(Type.ELSEIF);
-        String name;
-        if (element.isName()) {
-            name = element.asName().get().stringValue();
-        } else if (element.isAnyObject()) {
-            NObjectElement o = element.asObject().get();
-            name = o.asNamed().get().name().get();
-        } else {
-            throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
-        }
-        switch (NNameFormat.CONST_NAME.format(name)) {
-            case "ELSEIF": {
-                this.condition = element.asStringValue().orNull();
-            }
-            default: {
-                throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
-            }
-        }
+        NListContainerElement lc = element.asListContainer().get();
+        this.condition = lc.get("condition").flatMap(NElement::asStringValue).orNull();
     }
 
     @Override
     public NElement toElement() {
-        NObjectElementBuilder a = NElement.ofObjectBuilder(type.name());
-        if (condition != null) {
-            a.set("condition", NElements.of().toElement(condition));
-        }
+        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+        a.set("condition", NElement.ofString(condition));
         return a.build();
     }
 
     @Override
-    public void execAndAdvance(NaruSession session) {
+    public void exec(NaruTask task) {
 
     }
 }

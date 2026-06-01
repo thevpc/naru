@@ -1,9 +1,13 @@
 package net.thevpc.naru.impl.routine;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
-import net.thevpc.naru.api.routine.IndexedLine;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.routine.NaruIndexedLine;
 import net.thevpc.naru.api.routine.SubroutineDef;
 import net.thevpc.naru.api.routine.NaruRoutine;
+import net.thevpc.naru.api.stmt.NaruStatement;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NOptional;
 
 import java.util.*;
 import java.util.function.IntPredicate;
@@ -71,10 +75,10 @@ public class NaruRoutineImpl implements NaruRoutine {
     }
 
     @Override
-    public List<IndexedLine> getIndexedLines() {
-        ArrayList<IndexedLine> all = new ArrayList<>();
+    public List<NaruIndexedLine> getIndexedLines() {
+        ArrayList<NaruIndexedLine> all = new ArrayList<>();
         for (Map.Entry<Integer, String> e : lines.entrySet()) {
-            all.add(new IndexedLine(e.getKey(), e.getValue()));
+            all.add(new NaruIndexedLine(e.getKey(), e.getValue()));
         }
         return all;
     }
@@ -88,12 +92,12 @@ public class NaruRoutineImpl implements NaruRoutine {
     }
 
     @Override
-    public int nextLineIndex(int currentLineIndex) {
-        List<IndexedLine> lines = getIndexedLines();
+    public int nextPc(int currentPc) {
+        List<NaruIndexedLine> lines = getIndexedLines();
         int currentIt = -1;
 
         for (int i = 0; i < lines.size(); i++) {
-            if (lines.get(i).index() == currentLineIndex) {
+            if (lines.get(i).index() == currentPc) {
                 currentIt = i;
                 break;
             }
@@ -134,8 +138,23 @@ public class NaruRoutineImpl implements NaruRoutine {
     }
 
     @Override
-    public String getLine(int n) {
+    public String lineCommandAt(int n) {
         return lines.get(n);
+    }
+
+    @Override
+    public NOptional<List<NaruStatement>> parseStatements(NaruTask task) {
+        List<NaruStatement> curr = new ArrayList<>();
+        for (NaruIndexedLine aa : getIndexedLines()) {
+            NOptional<NaruStatement> o = task.parseStatement(aa.command());
+            if (o.isError()) {
+                return NOptional.ofNamedError(NMsg.ofC("Error statement: routine line invalid %s", aa.command()));
+            }
+            if (o.isPresent()) {
+                curr.add(o.get());
+            }
+        }
+        return NOptional.of(curr);
     }
 
     @Override

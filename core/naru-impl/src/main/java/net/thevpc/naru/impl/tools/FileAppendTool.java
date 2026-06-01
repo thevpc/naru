@@ -46,7 +46,7 @@ public class FileAppendTool implements NaruTool {
         if (content == null) return "ERROR: 'content' argument is required.";
 
         try {
-            NPath p = context.session().resolve(path);
+            NPath p = context.task().resolve(path);
             p.mkParentDirs().writeString(content, NPathOption.APPEND);
             return "content appended successfully.";
         } catch (Exception e) {

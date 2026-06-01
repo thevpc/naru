@@ -1,14 +1,16 @@
 package net.thevpc.naru.impl.stmt;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
-public class NaruDirectiveReturn extends NaruSimpleStatement {
+public class NaruDirectiveReturn extends NaruStatement implements Cloneable{
     public String expression;
 
     public NaruDirectiveReturn(String expression) {
@@ -18,28 +20,13 @@ public class NaruDirectiveReturn extends NaruSimpleStatement {
 
     public NaruDirectiveReturn(NElement element) {
         super(Type.DIRECTIVE_RETURN);
-        String name;
-        if (element.isName()) {
-            name = element.asName().get().stringValue();
-        } else if (element.isAnyObject()) {
-            NObjectElement o = element.asObject().get();
-            name = o.asNamed().get().name().get();
-        } else {
-            throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
-        }
-        switch (NNameFormat.CONST_NAME.format(name)) {
-            case "RETURN": {
-                this.expression = element.asObject().get().get("expression").flatMap(x->x.asStringValue()).orNull();
-            }
-            default: {
-                throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
-            }
-        }
+        NListContainerElement lc = element.asListContainer().get();
+        this.expression = lc.get("expression").flatMap(NElement::asStringValue).orNull();
     }
 
     @Override
     public NElement toElement() {
-        NObjectElementBuilder a = NElement.ofObjectBuilder(type.name());
+        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
         if (expression != null) {
             a.set("expression", expression);
         }
@@ -47,11 +34,11 @@ public class NaruDirectiveReturn extends NaruSimpleStatement {
     }
 
     @Override
-    public void exec(NaruSession session) {
+    public void exec(NaruTask task) {
         Object ret=null;
         if(expression!=null){
-            ret = session.evalExpression(expression);
+            ret = task.evalExpression(expression);
         }
-        session.popContext().setReturnResult(ret);
+        task.popFrame().setReturnResult(ret);
     }
 }

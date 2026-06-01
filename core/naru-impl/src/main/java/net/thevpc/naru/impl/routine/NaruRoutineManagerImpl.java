@@ -2,15 +2,17 @@ package net.thevpc.naru.impl.routine;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
+import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.routine.NaruIndexedLine;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
+import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.agent.NaruSessionImpl;
+import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.io.NPath;
-import net.thevpc.nuts.util.NAssert;
-import net.thevpc.nuts.util.NBlankable;
-import net.thevpc.nuts.util.NLiteral;
-import net.thevpc.nuts.util.NStringUtils;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.*;
 
 import java.time.Instant;
 import java.util.*;
@@ -87,27 +89,73 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
 
 
     private NPath routinesDir(NAruVisibility publicSession) {
-        if (publicSession==NAruVisibility.PUBLIC) {
+        if (publicSession == NAruVisibility.PUBLIC) {
             return session.projectDir().resolve(".naru/routines/");
         }
         return session.projectDir().resolve(".naru/local/routines/");
     }
 
     @Override
-    public NaruRoutine getRoutine(String name) {
+    public NOptional<NaruRoutine> routine(String name) {
+        if (name.startsWith("path:")) {
+            return unnumberedRoutine(NPath.of(name.substring(5)));
+        }
         String a = findByUuidOrName(name);
         if (a != null) {
             return load(a);
         }
         if ("main".equals(name)) {
-            return defaultMain;
+            return NOptional.of(defaultMain);
         }
         return null;
     }
 
     @Override
+    public NOptional<NaruRoutine> unnumberedRoutine(NPath path) {
+        //will add cache/pool later
+        if (path != null && path.exists()) {
+            try (NStream<String> lines = path.lines()) {
+                NIterator<String> it = lines.iterator();
+                int index = 1;
+                NaruRoutineImpl r = new NaruRoutineImpl("path:" + path);
+                while (it.hasNext()) {
+                    String line = it.next();
+                    if (!line.isEmpty()) {
+                        r.putLine(index, line);
+                    }
+                    index++;
+                }
+                return NOptional.of(r);
+            }
+        }
+        return NOptional.ofNamedEmpty(NMsg.ofC("invalid path '%s'", path));
+    }
+
+    @Override
+    public NOptional<NaruRoutine> routineOrUnnumberedRoutine(String s, NaruTask task) {
+        NaruRoutine rtn;
+        if (NaruUtils.isPath(s)) {
+            NPath f = NPath.of(s).toAbsolute(task.workingDir());
+            rtn = unnumberedRoutine(f).orNull();
+        } else {
+            rtn = routine(s).orNull();
+            if (rtn == null) {
+                NPath f = NPath.of(s).toAbsolute(task.workingDir());
+                rtn = unnumberedRoutine(f).orNull();
+                if (rtn != null) {
+                    return NOptional.of(rtn);
+                }
+            }
+        }
+        if (rtn != null) {
+            return NOptional.of(rtn);
+        }
+        return NOptional.ofEmpty(NMsg.ofC("Error statement: routine not found %s", s));
+    }
+
+    @Override
     public NaruRoutine getCurrentRoutine() {
-        return getRoutine(currentScriptName);
+        return routine(currentScriptName).orNull();
     }
 
     @Override
@@ -142,7 +190,8 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
         return getCurrentRoutine().getFormattedText();
     }
 
-    private synchronized NaruRoutine load(String uuid) {
+    private synchronized NOptional<NaruRoutine> load(String uuid) {
+        //will add cache/pool later
         NPath path1 = routinesDir(NAruVisibility.PRIVATE).resolve(uuid + ".md");
         NPath path2 = routinesDir(NAruVisibility.PUBLIC).resolve(uuid);
         NPath path;
@@ -154,7 +203,7 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
             visibility = NAruVisibility.PUBLIC;
             path = path2;
         } else {
-            return null;
+            return NOptional.ofNamedEmpty(uuid);
         }
         NaruRoutineImpl r = new NaruRoutineImpl(path.name());
         String text = path.readString();
@@ -196,8 +245,8 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
             }
         }
         r.setVisibility(visibility);
-        save(r);
-        return r;
+//        save(r);
+        return NOptional.of(r);
     }
 
     public synchronized void save(NaruRoutine r) {
@@ -210,7 +259,7 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
         }
         NPath pub = routinesDir(NAruVisibility.PUBLIC).resolve(r.getName());
         NPath priv = routinesDir(NAruVisibility.PRIVATE).resolve(r.getName());
-        if (r.getVisibility()==NAruVisibility.PUBLIC) {
+        if (r.getVisibility() == NAruVisibility.PUBLIC) {
             if (priv.isRegularFile()) {
                 priv.delete();
             }

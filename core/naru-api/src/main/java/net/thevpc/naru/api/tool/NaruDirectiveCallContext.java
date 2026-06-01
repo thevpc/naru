@@ -1,9 +1,9 @@
 package net.thevpc.naru.api.tool;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruTask;
 
 public interface NaruDirectiveCallContext {
     String name();
     String argument();
-    NaruSession session();
+    NaruTask task();
 }

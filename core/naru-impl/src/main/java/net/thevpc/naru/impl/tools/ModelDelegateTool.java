@@ -66,7 +66,7 @@ public class ModelDelegateTool implements NaruTool {
 
         if (!NBlankable.isBlank(imagePath)) {
             try {
-                String base64 = ImageUtil.toBase64(context.session().resolve(imagePath).toString());
+                String base64 = ImageUtil.toBase64(context.task().resolve(imagePath).toString());
                 msg.setImages(Collections.singletonList(base64));
             } catch (Exception e) {
                 return "Error loading image: " + e.getMessage();
@@ -75,15 +75,15 @@ public class ModelDelegateTool implements NaruTool {
 
 
         messages.add(msg);
-        NaruModelConfig model = context.session().findModel(modelName).orNull();
+        NaruModelConfig model = context.task().session().findModel(modelName).orNull();
         if (model == null) {
             return "Error: Model not found : " + modelName;
         }
-        NaruModelConfig oldModel = context.session().model();
-        context.session().setModel(model);
-        Map<String, NElement> env = context.session().context(NaruSource.values()).env();
+        NaruModelConfig oldModel = context.task().model();
+        context.task().setModel(model);
+        Map<String, NElement> env = context.task().context(NaruSource.values()).env();
         try {
-            NaruResponse response = context.session().chat(model,
+            NaruResponse response = context.task().chat(model,
                     new NaruModelRequest(messages,
                             env
                     )
@@ -95,7 +95,7 @@ public class ModelDelegateTool implements NaruTool {
         } catch (Exception e) {
             return "Error calling model " + modelName + ": " + e.getMessage();
         } finally {
-            context.session().setModel(oldModel);
+            context.task().setModel(oldModel);
         }
     }
 }

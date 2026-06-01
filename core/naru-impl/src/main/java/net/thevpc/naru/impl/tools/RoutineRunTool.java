@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.tools;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.mode.NaruMode;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
@@ -38,11 +38,11 @@ public class RoutineRunTool implements NaruTool {
         }
 
         String r= "running routine " + scriptName;
-        context.session().agent().invokeRoutine(context.session(), scriptName);
+        context.task().invokeRoutine(scriptName);
         return r;
     }
 
-    public boolean acceptMode(NaruMode mode) {
+    public boolean acceptMode(NaruPromptMode mode) {
         NaruStandardMode m = mode.asStandardMode().orNull();
         if (m != null) {
             switch (m) {

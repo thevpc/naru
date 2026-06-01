@@ -50,12 +50,12 @@ public class RoutineListLinesTool implements NaruTool {
     public String execute(NaruToolCallContext context) {
         String scriptName = context.stringArg("script_name")
                 .onBlankEmpty()
-                .orElseGet(() -> context.session().routineManager().getCurrentRoutineName());
+                .orElseGet(() -> context.task().session().routineManager().getCurrentRoutineName());
 
         Number startNumObj = context.numberArg("line_start").orNull();
         Number endNumObj = context.numberArg("line_end").orNull();
 
-        NaruRoutineManager sm = context.session().routineManager();
+        NaruRoutineManager sm = context.task().session().routineManager();
         // Temporarily switch context, put line, switch back
         String oldName = sm.getCurrentRoutineName();
         sm.switchRoutine(scriptName);
