@@ -29,7 +29,7 @@ This project appears to be a comprehensive framework for building and managing w
 
 ## Technical Details
 
-- Java 8 compatible (maven.compiler.source/target = 1.8)
+- Java 17 compatible (maven.compiler.source/target = 17)
 - Uses Maven for build management
 - Follows standard Maven directory structure
 - Multi-module project structure for clear separation of concerns

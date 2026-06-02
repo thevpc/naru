@@ -3,7 +3,7 @@ package net.thevpc.naru.impl.model.ollama;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.tool.NaruToolParameter;
+import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.nuts.elem.*;
 
 import java.util.*;

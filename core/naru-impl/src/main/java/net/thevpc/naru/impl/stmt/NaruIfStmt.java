@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NListContainerElement;

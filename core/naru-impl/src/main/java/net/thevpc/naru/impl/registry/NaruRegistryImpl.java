@@ -2,19 +2,17 @@ package net.thevpc.naru.impl.registry;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.tool.NaruDirective;
-import net.thevpc.naru.api.tool.NaruTool;
-import net.thevpc.naru.api.tool.NaruRegistry;
-import net.thevpc.naru.impl.directive.*;
-import net.thevpc.naru.impl.directive.NaruCallDirective;
+import net.thevpc.naru.api.registry.*;
+import net.thevpc.naru.impl.registry.builtindirectives.*;
 import net.thevpc.naru.impl.mode.NAruModeRegistry;
 import net.thevpc.naru.impl.model.gemini.NaruGeminiProvider;
 import net.thevpc.naru.impl.model.ollama.NaruOllamaProvider;
-import net.thevpc.naru.impl.tools.*;
+import net.thevpc.nuts.elem.NObjectElement;
+import net.thevpc.nuts.elem.NPairElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
 
@@ -29,13 +27,18 @@ import java.util.stream.Collectors;
  */
 public class NaruRegistryImpl implements NaruRegistry {
 
-    private final Map<String, NaruTool> tools = new LinkedHashMap<>();
-    private final Map<String, NaruDirective> stools = new LinkedHashMap<>();
-    private final Map<String, String> stoolsAliases = new LinkedHashMap<>();
+    private final Map<String, NaruToolsetProvider> toolsetProviders = new LinkedHashMap<>();
+    private final Map<String, NaruDirectiveProvider> directiveProviders = new LinkedHashMap<>();
+    private final List<NaruToolset> activeToolsets = new ArrayList<>();
+    //    private final Map<String, NaruTool> tools = new LinkedHashMap<>();
+    private final Map<String, NaruDirective> availableDirectives = new LinkedHashMap<>();
+    private final Map<String, String> directiveAliases = new LinkedHashMap<>();
     private final Map<String, NaruModelProvider> modelProviders = new HashMap<>();
-    private final NAruModeRegistry modeRegistry =new NAruModeRegistry();
+    private final NAruModeRegistry modeRegistry = new NAruModeRegistry();
+    private final NaruSession session;
 
-    public NaruRegistryImpl() {
+    public NaruRegistryImpl(NaruSession session) {
+        this.session = session;
     }
 
     @Override
@@ -45,12 +48,12 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public List<String> modeNames() {
-        return modes().stream().map(x-> NNameFormat.LOWER_KEBAB_CASE.format(x.name())).collect(Collectors.toList());
+        return modes().stream().map(x -> NNameFormat.LOWER_KEBAB_CASE.format(x.name())).collect(Collectors.toList());
     }
 
     @Override
     public List<String> modeNamesAndAliases() {
-        List<String> all=new ArrayList<>();
+        List<String> all = new ArrayList<>();
         for (NaruPromptMode mode : modes()) {
             all.add(NNameFormat.LOWER_KEBAB_CASE.format(mode.name()));
             for (String alias : mode.aliases()) {
@@ -75,32 +78,88 @@ public class NaruRegistryImpl implements NaruRegistry {
         return modeRegistry.mode(mode);
     }
 
-    /**
-     * Register a tool.  Overwrites any previous tool with the same name.
-     */
+
     @Override
-    public NaruRegistry registerTool(NaruTool tool) {
-        tools.put(tool.name(), tool);
+    public NaruRegistry registerDirectiveProvider(NaruDirectiveProvider directiveProvider) {
+        if(directiveProviders.containsKey(directiveProvider.name())){
+            throw new IllegalArgumentException("directive provider "+directiveProvider.name()+" already registered");
+        }
+        directiveProviders.put(directiveProvider.name(), directiveProvider);
+        for (NaruDirective directive : directiveProvider.directives()) {
+            registerDirective(directive);
+        }
         return this;
     }
 
+    @Override
+    public NaruRegistry registerToolsetProvider(NaruToolsetProvider tool) {
+        toolsetProviders.put(tool.name(), tool);
+        NObjectElement e = session.agent().env().get("toolset." + tool.name()).map(x -> {
+            if (x instanceof NObjectElement) {
+                return (NObjectElement) x;
+            }
+            return NObjectElement.ofEmpty();
+        }).orElse(NObjectElement.ofEmpty());
+        List<NPairElement> pairs = e.namedPairs();
+        for (NPairElement p : pairs) {
+            NObjectElement config = p.value().asObject().orElse(NObjectElement.ofEmpty());
+            if (tool.accept(config)) {
+                registerToolset(tool.createToolset(p.key().asStringValue().orNull(), config));
+            }
+        }
+        if (pairs.isEmpty()) {
+            for (String t : tool.supportedTypes()) {
+                NObjectElement config = e.get(t).map(x -> x.asObject().orElse(NObjectElement.ofEmpty())).orElse(NObjectElement.ofEmpty());
+                if (tool.accept(config)) {
+                    registerToolset(tool.createToolset(t, config));
+                }
+            }
+        }
+        return this;
+    }
+
+    public NaruRegistry registerToolset(NaruToolset toolset) {
+        activeToolsets.add(toolset);
+        if (session.isRunning()) {
+            toolset.open(session);
+        }
+        return this;
+    }
+
+    public NOptional<NaruTool> findTool(String name) {
+        for (NaruToolset a : activeToolsets) {
+            for (NaruTool tool : a.tools()) {
+                if (tool.name().equals(name)) {
+                    return NOptional.of(tool);
+                }
+            }
+        }
+        return NOptional.ofNamedEmpty(NMsg.ofC("tool '%s'", name));
+    }
+
     public Map<String, NaruTool> tools() {
-        return tools;
+        Map<String, NaruTool> all = new LinkedHashMap<>();
+        for (NaruToolset a : activeToolsets) {
+            for (NaruTool tool : a.tools()) {
+                all.put(tool.name(), tool);
+            }
+        }
+        return all;
     }
 
     public Map<String, NaruDirective> directives() {
-        return stools;
+        return availableDirectives;
     }
 
-    @Override
-    public NaruRegistry registerDirective(NaruDirective tool) {
-        stools.put(tool.name(), tool);
+
+    private NaruRegistry registerDirective(NaruDirective tool) {
+        availableDirectives.put(tool.name(), tool);
         for (String alias : tool.getAliases()) {
-            String old = stoolsAliases.get(alias);
+            String old = directiveAliases.get(alias);
             if (old != null && !old.equals(tool.name())) {
                 throw new IllegalArgumentException("alias " + alias + " is already used by " + old);
             }
-            stoolsAliases.put(alias, tool.name());
+            directiveAliases.put(alias, tool.name());
         }
         return this;
     }
@@ -123,7 +182,7 @@ public class NaruRegistryImpl implements NaruRegistry {
                 NaruModelCapabilities c = p.getProtocol(new NaruModelConfig(
                         p.name(),
                         m
-                ),session).get().getCapabilities();
+                ), session).get().getCapabilities();
                 a.add(new NaruModelInfo(p.name(), m, c));
             }
         }
@@ -149,13 +208,13 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     @Override
-    public NOptional<NaruModelProtocol> protocol(NaruModelConfig model,NaruSession session) {
+    public NOptional<NaruModelProtocol> protocol(NaruModelConfig model, NaruSession session) {
         return provider(model.provider())
-                .flatMap(p -> p.getProtocol(model,session));
+                .flatMap(p -> p.getProtocol(model, session));
     }
 
     @Override
-    public NOptional<NaruModelKey> findModel(String keyOrName,NaruSession session) {
+    public NOptional<NaruModelKey> findModel(String keyOrName, NaruSession session) {
         List<NaruModelKey> models = modelsKeys(session);
         if (keyOrName.contains("/")) {
             NOptional<NaruModelKey> r = NaruModelKey.parse(keyOrName);
@@ -188,9 +247,10 @@ public class NaruRegistryImpl implements NaruRegistry {
      */
     @Override
     public String dispatch(String name, Map<String, Object> arguments, NaruTask task) {
-        NaruTool tool = tools.get(name);
+
+        NaruTool tool = findTool(name).orNull();
         if (tool == null) {
-            return "ERROR: Unknown tool '" + name + "'. Available tools: " + tools.keySet();
+            return "ERROR: Unknown tool '" + name + "'. Available tools: " + tools().keySet().stream().sorted().collect(Collectors.joining(", "));
         }
         try {
             return tool.execute(new NaruToolCallContextImpl(arguments, task));
@@ -200,11 +260,11 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     public NOptional<NaruDirective> findDirective(String name) {
-        NaruDirective d = stools.get(name);
+        NaruDirective d = availableDirectives.get(name);
         if (d == null) {
-            String s = stoolsAliases.get(name);
+            String s = directiveAliases.get(name);
             if (s != null) {
-                d = stools.get(s);
+                d = availableDirectives.get(s);
             }
             if (d == null) {
                 return NOptional.ofNamedEmpty(NMsg.ofC("directive '%s'", name));
@@ -217,7 +277,7 @@ public class NaruRegistryImpl implements NaruRegistry {
     public void dispatchSlash(String name, String argument, NaruTask task) {
         NaruDirective tool = findDirective(name).orNull();
         if (tool == null) {
-            task.log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + stools.keySet()).asError());
+            task.log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + availableDirectives.keySet()).asError());
             return;
         }
         try {
@@ -241,73 +301,34 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public boolean isEmpty() {
-        return tools.isEmpty();
+        if (!toolsetProviders.isEmpty()) {
+            return false;
+        }
+        if (!activeToolsets.isEmpty()) {
+            return false;
+        }
+        if (!availableDirectives.isEmpty()) {
+            return false;
+        }
+        if (!directiveAliases.isEmpty()) {
+            return false;
+        }
+        if (!modelProviders.isEmpty()) {
+            return false;
+        }
+        return tools().isEmpty();
     }
 
     @Override
-    public Set<String> names() {
-        return Collections.unmodifiableSet(tools.keySet());
+    public Set<String> toolNames() {
+        return Collections.unmodifiableSet(tools().keySet());
     }
 
     public NaruRegistry registerDefaults() {
-        this.registerTool(new FileReadTool());
-        this.registerTool(new FileReadTool());
-        this.registerTool(new FileAppendTool());
-        this.registerTool(new FileEditLinesTool());
-        this.registerTool(new FileWriteTool());
-        this.registerTool(new RunShellTool());
-        this.registerTool(new MavenCompileTool());
-        this.registerTool(new MavenTestTool());
-        this.registerTool(new RoutineAddLineTool());
-        this.registerTool(new RoutineRunTool());
-        this.registerTool(new SearchWebScriptTool());
-        this.registerTool(new DiffFilesTool());
-        this.registerTool(new GetWorkingDirTool());
-        this.registerTool(new SetWorkingDirTool());
-        this.registerTool(new ModelDelegateTool());
-        this.registerTool(new RoutineListLinesTool());
-        this.registerTool(new FolderFindTool());
-        this.registerTool(new FileGrepTool());
-
-        this.registerDirective(new NaruRoutineDirective());
-        this.registerDirective(new NaruExitDirective());
-        this.registerDirective(new NaruPrintDirective());
-        this.registerDirective(new NaruHelpDirective());
-        this.registerDirective(new NaruToolsDirective());
-        this.registerDirective(new NaruStatDirective());
-        this.registerDirective(new NaruModelDirective());
-        this.registerDirective(new NaruModeDirective());
-        this.registerDirective(new NaruPwdDirective());
-        this.registerDirective(new NaruCdDirective());
-        this.registerDirective(new NaruCatDirective());
-        this.registerDirective(new NaruBufferDirective());
-        this.registerDirective(new NaruHistoryDirective());
-        this.registerDirective(new NaruSessionDirective());
-        this.registerDirective(new NaruShDirective());
-        this.registerDirective(new NaruLsDirective());
-        this.registerDirective(new NaruSetDirective());
-        this.registerDirective(new NaruSkillDirective());
-        this.registerDirective(new NaruSystemDirective());
-        this.registerDirective(new NaruWhileDirective());
-        this.registerDirective(new NaruForDirective());
-        this.registerDirective(new NaruIfDirective());
-        this.registerDirective(new NaruElseDirective());
-        this.registerDirective(new NaruElseIfDirective());
-        this.registerDirective(new NaruEndDirective());
-        this.registerDirective(new NaruReloadDirective());
-        this.registerDirective(new NaruNewDirective());
-        this.registerDirective(new NaruRestoreDirective());
-        this.registerDirective(new NaruSaveDirective());
-        this.registerDirective(new NaruResetDirective());
-        this.registerDirective(new NaruContextDirective());
-        this.registerDirective(new NaruGoDirective());
-        this.registerDirective(new NaruCallDirective());
-        this.registerDirective(new NaruSourceDirective());
-        this.registerDirective(new NaruStartDirective());
-        this.registerDirective(new NaruTaskDirective());
-
-        registerModelProvider(new NaruOllamaProvider());
-        registerModelProvider(new NaruGeminiProvider());
+        this.registerToolsetProvider(new NaruBuiltinToolsetProvider());
+        this.registerDirectiveProvider(new NaruBuiltinDirectiveProvider());
+        this.registerModelProvider(new NaruOllamaProvider());
+        this.registerModelProvider(new NaruGeminiProvider());
         return this;
     }
 

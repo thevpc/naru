@@ -11,9 +11,12 @@ import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.skills.NaruSkill;
 import net.thevpc.naru.api.stmt.NaruStatement;
-import net.thevpc.naru.api.tool.NaruDirective;
-import net.thevpc.naru.api.tool.NaruStructuralDirective;
-import net.thevpc.naru.api.tool.NaruTool;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.registry.NaruDirective;
+import net.thevpc.naru.api.registry.NaruStructuralDirective;
+import net.thevpc.naru.api.registry.NaruTool;
+import net.thevpc.naru.api.task.NaruTaskStackFrame;
+import net.thevpc.naru.api.task.NaruTaskStackItem;
 import net.thevpc.naru.impl.agent.NaruSessionImpl;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.naru.impl.stmt.*;
@@ -72,6 +75,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private Instant modificationDate;
     private NaruModelConfig model;
     private String extraContext;
+    private Boolean logInstructions;
     private final Map<String, NaruEvent> awaitReceived = new ConcurrentHashMap<>();
     private final Map<String, NaruEventSubscription> eventSubscriptions = new ConcurrentHashMap<>();
     private final Map<String, Object> properties = new ConcurrentHashMap<>();
@@ -80,6 +84,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private NaruSchedulerMode schedulerMode = NaruSchedulerMode.AUTO;
     private final List<String> linesDelivered = new ArrayList<>();
     private NMsg pendingPrompt;
+    private NaruIncrementalStmt pendingStatement;
 
     public NaruTaskImpl(NElement element, NaruSession session) {
         this.session = session;
@@ -171,6 +176,88 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public NaruTask schedulerMode(NaruSchedulerMode mode) {
         this.schedulerMode = mode == null ? NaruSchedulerMode.AUTO : mode;
         return this;
+    }
+
+    @Override
+    public List<NaruTaskStackItem> stacktrace() {
+        List<NaruTaskStackItem> all = new ArrayList<>();
+        for (NaruTaskFrameImpl frame : frames) {
+            String u = null;
+            int index = -1;
+            String routineName = null;
+            if (!frames.isEmpty()) {
+                if (frames.peek().todo.isEmpty()) {
+                    u = "<empty>";
+                } else {
+                    NaruStatement uu = frames.peek().todo.get(0);
+                    u = uu.toString();
+                }
+            } else {
+                routineName = frame.routine();
+                if (routineName == null) {
+                    u = "<empty>";
+                } else {
+                    NaruRoutine r = session().routineManager().routine(routineName).orNull();
+                    index = frame.pc();
+                    if (r != null) {
+                        u = r.lineCommandAt(index);
+                    } else {
+                        u = "<line not found " + index + ">";
+                    }
+                }
+            }
+            all.add(new NaruTaskStackItem(
+                    routineName,
+                    index,
+                    u
+            ));
+        }
+        Collections.reverse(all);
+        return all;
+    }
+
+    @Override
+    public List<NaruTaskStackFrame> stackframes() {
+        List<NaruTaskStackFrame> all = new ArrayList<>();
+        for (NaruTaskFrameImpl frame : frames) {
+            String u = null;
+            int index = -1;
+            String routineName = null;
+            Map<String, Object> params = frame.params();
+            Map<String, Object> localVars = frame.params();
+            if (!frames.isEmpty()) {
+                if (frames.peek().todo.isEmpty()) {
+                    u = "<empty>";
+                } else {
+                    NaruStatement uu = frames.peek().todo.get(0);
+                    u = uu.toString();
+                }
+            } else {
+                routineName = frame.routine();
+                if (routineName == null) {
+                    u = "<empty>";
+                } else {
+                    NaruRoutine r = session().routineManager().routine(routineName).orNull();
+                    index = frame.pc();
+                    if (r != null) {
+                        u = r.lineCommandAt(index);
+                    } else {
+                        u = "<line not found " + index + ">";
+                    }
+                }
+            }
+            params.putAll(frame.params());
+            localVars.putAll(frame.localVars());
+            all.add(new NaruTaskStackFrame(
+                    routineName,
+                    index,
+                    u,
+                    params,
+                    localVars
+            ));
+        }
+        Collections.reverse(all);
+        return all;
     }
 
     @Override
@@ -804,15 +891,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (frames.peek().todo.isEmpty()) {
             frames.peek().todo.add(any);
         } else {
-            int s = frames.peek().todo.size();
-            NaruStatement z = frames.peek().todo.get(s - 1);
-            if (z instanceof NaruIncrementalStmt && ((NaruIncrementalStmt) z).isPending()) {
-                NaruIncrementalStmt z1 = (NaruIncrementalStmt) z;
-                if (z1.acceptStatement(any, this)) {
-                    fireChanged();
-                    return this;
-                }
-            }
             frames.peek().todo.add(any);
         }
         fireChanged();
@@ -987,6 +1065,75 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public void tick() {
+        if (pendingStatement != null) {
+            if (frames.isEmpty()) {
+                //log(NaruLogMode.SCHEDULER, NMsg.ofC("PENDING %s", pendingStatement.toElement()));
+                //throwError(NMsg.ofC("PENDING %s", pendingStatement.toElement()));
+                return;
+            }
+            NaruTaskFrameImpl frame = frames.get(frames.size() - 1);
+            if (!frame.todo.isEmpty()) {
+                if (pendingStatement.acceptStatement(frame.todo.get(0), this)) {
+                    frame.todo.remove(0);
+                    if (!pendingStatement.isPending()) {
+                        NaruIncrementalStmt op2 = pendingStatement;
+                        pendingStatement = null;
+                        op2.exec(this);
+                        return;
+                    } else {
+                        //still pending
+                        return;
+                    }
+                } else {
+                    log(NaruLogMode.SCHEDULER, NMsg.ofC("PENDING %s", pendingStatement.toElement()));
+                    throwError(NMsg.ofC("PENDING %s", pendingStatement.toElement()));
+                    return;
+                }
+            }
+
+            // 2. check live routine via PC
+            String routineName = frame.routine();
+            if (routineName == null) {
+                //still pending
+                return;
+            }
+
+            NaruRoutine routine = session()
+                    .routineManager()
+                    .routine(routineName).orNull();
+            if (routine == null) {
+                //still pending
+                return;
+            }
+            String line = routine.lineCommandAt(frame.pc());
+            if (line == null) {
+                log(NaruLogMode.SCHEDULER, NMsg.ofC("PENDING %s", pendingStatement.toElement()));
+                throwError(NMsg.ofC("PENDING %s", pendingStatement.toElement()));
+                return;
+            }
+            NaruStatement n = parseStatement(line).orNull();
+            if (n != null) {
+                if (pendingStatement.acceptStatement(n, this)) {
+                    frame.pc(routine.nextPc(frame.pc()));
+                    if (!pendingStatement.isPending()) {
+                        NaruIncrementalStmt op2 = pendingStatement;
+                        pendingStatement = null;
+                        op2.exec(this);
+                        return;
+                    } else {
+                        //still pending
+                        return;
+                    }
+                } else {
+                    log(NaruLogMode.SCHEDULER, NMsg.ofC("PENDING %s", pendingStatement.toElement()));
+                    throwError(NMsg.ofC("PENDING %s", pendingStatement.toElement()));
+                    return;
+                }
+            } else {
+                //still pending
+                return;
+            }
+        }
         NaruStatement op = this.popStatement();
         if (op == null) {
             if (taskMode() == NaruTaskMode.INTERACTIVE) {
@@ -996,9 +1143,31 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 status(NaruTaskStatus.DONE);
             }
         } else {
-            log(NaruLogMode.SCHEDULER, NMsg.ofC("INVOKE %s", op.toElement()));
+            if (op instanceof NaruIncrementalStmt incrementalStmt && incrementalStmt.isPending()) {
+                this.pendingStatement = incrementalStmt;
+                fireChanged();
+                return;
+            }
+            boolean li= logInstructions()!=null? logInstructions().booleanValue():
+                    session.logInstructions()!=null?
+                            session.logInstructions().booleanValue():
+                            false;
+            if (li) {
+                log(NaruLogMode.SCHEDULER, NMsg.ofC("INVOKE STMT : %s", op.toElement()));
+            }
             op.exec(this);
         }
+    }
+
+    @Override
+    public Boolean logInstructions() {
+        return logInstructions;
+    }
+
+    @Override
+    public NaruTask logInstructions(Boolean logInstructions) {
+        this.logInstructions = logInstructions;
+        return this;
     }
 
     @Override
@@ -1055,7 +1224,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public NaruStatement popStatement() {
         NaruTask task = this;
         while (true) {
-// 1. injected statements take priority (prepend/event handlers)
             if (!frames.isEmpty() && !frames.peek().todo.isEmpty()) {
                 normalizeRunContext();
                 if (!frames.isEmpty()) {
@@ -1085,16 +1253,74 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 continue;
             }
 
-            // advance PC to next line
-            frame.pc(routine.nextPc(frame.pc()));
-            fireChanged();
-            // parse and return live line
             return task.parseStatement(line).orNull();
         }
     }
 
     @Override
-    public NaruTaskFrame peekContext() {
+    public NaruStatement peekStatement() {
+        NaruTask task = this;
+        // walk frames from top without mutating
+        for (int fi = frames.size() - 1; fi >= 0; fi--) {
+            NaruTaskFrameImpl frame = frames.get(fi);
+
+            // 1. check buffered todo statements first
+            if (!frame.todo.isEmpty()) {
+                return frame.todo.get(0);
+            }
+
+            // 2. check live routine via PC
+            String routineName = frame.routine();
+            if (routineName == null) continue; // anonymous frame, exhausted — look at parent
+
+            NaruRoutine routine = task.session()
+                    .routineManager()
+                    .routine(routineName).orNull();
+            if (routine == null) continue;
+            String line = routine.lineCommandAt(frame.pc());
+            if (line == null) continue; // routine exhausted at this pc — look at parent
+            return task.parseStatement(line).orNull();
+        }
+        return null;
+    }
+
+
+    @Override
+    public NaruStatement peekStatement(int pos) {
+        NaruTask task = this;
+        // walk frames from top without mutating
+        for (int fi = frames.size() - 1; fi >= 0; fi--) {
+            NaruTaskFrameImpl frame = frames.get(fi);
+
+            // 1. check buffered todo statements first
+            if (frame.todo.size() > pos) {
+                return frame.todo.get(pos);
+            }
+
+            // 2. check live routine via PC
+            String routineName = frame.routine();
+            if (routineName == null) continue; // anonymous frame, exhausted — look at parent
+
+            NaruRoutine routine = task.session()
+                    .routineManager()
+                    .routine(routineName).orNull();
+            if (routine == null) continue;
+            int cpc = frame.pc();
+            for (int i = 0; i < pos; i++) {
+                cpc = routine.nextPc(cpc);
+                if (cpc < 0) {
+                    return null;
+                }
+            }
+            String line = routine.lineCommandAt(cpc);
+            if (line == null) continue; // routine exhausted at this pc — look at parent
+            return task.parseStatement(line).orNull();
+        }
+        return null;
+    }
+
+    @Override
+    public NaruTaskFrame peekFrame() {
         if (frames.isEmpty()) {
             return null;
         }
@@ -1160,7 +1386,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     public Map<String, Object> getParamFrame() {
         NaruTaskFrame ctx = frame();
-        return ctx == null ? new HashMap<>() : new HashMap<>(ctx.params());
+        return ctx == null ? new HashMap<>() : ctx.params();
     }
 
     public void setVariable(String key, Object value) {
@@ -1170,9 +1396,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             if (k.isPresent()) {
                 return;
             }
-            k = ctx.getState(key);
+            k = ctx.getLocalState(key);
             if (k.isPresent()) {
-                ctx.setState(key, value);
+                ctx.setLocalVar(key, value);
                 return;
             }
             NOptional<Object> s = getTaskProperty(key, false);
@@ -1183,7 +1409,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 if (s.isPresent()) {
                     session().setSessionProperty(key, value);
                 } else {
-                    ctx.setState(key, value);
+                    ctx.setLocalVar(key, value);
                 }
             }
         } else {
@@ -1229,7 +1455,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             if (k.isPresent()) {
                 return k.get();
             }
-            NOptional<Object> s = ctx.getState(key);
+            NOptional<Object> s = ctx.getLocalState(key);
             if (s.isPresent()) {
                 return s.get();
             }

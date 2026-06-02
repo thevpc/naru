@@ -6,9 +6,9 @@ import net.thevpc.nuts.util.NOptional;
 import java.util.Map;
 
 public interface NaruTaskFrame extends NToElement {
-    void setState(String key, Object value);
+    void setLocalVar(String key, Object value);
 
-    NOptional<Object> getState(String key);
+    NOptional<Object> getLocalState(String key);
 
     void setInternalState(String key, Object value);
 
@@ -24,9 +24,12 @@ public interface NaruTaskFrame extends NToElement {
 
     Map<String, Object> params();
 
+    Map<String, Object> localVars();
+
     Integer returnPc();
 
     NaruTaskFrame pc(int pc);
+
     int pc();
 
     String routine();

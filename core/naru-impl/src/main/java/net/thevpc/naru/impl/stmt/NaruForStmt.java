@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.stmt;
 
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.stmt.shared.NaruSimpleParseStatus;
@@ -111,7 +111,7 @@ public class NaruForStmt extends NaruIncrementalStmt implements Cloneable {
             task.throwError(NMsg.ofC("Error statement: incomplete 'for' statement"));
         }
 
-        NaruTaskFrame ctx = task.peekContext();
+        NaruTaskFrame ctx = task.peekFrame();
 
         final NaruForStmt selfCopy=(NaruForStmt) copy();
         // Phase A: First Pass Initialization
@@ -165,8 +165,8 @@ public class NaruForStmt extends NaruIncrementalStmt implements Cloneable {
                 return;
             }
 
-            BigDecimal vFrom = NLiteral.of(from.eval(ectx)).asBigDecimal().orNull();
-            BigDecimal vTo = NLiteral.of(to.eval(ectx)).asBigDecimal().orNull();
+            BigDecimal vFrom = NLiteral.of(from.eval(ectx).orNull()).asBigDecimal().orNull();
+            BigDecimal vTo = NLiteral.of(to.eval(ectx).orNull()).asBigDecimal().orNull();
             BigDecimal vStep = step == null ? null : NLiteral.of(step.eval(ectx)).asBigDecimal().orNull();
             if (vFrom == null || vTo == null) {
                 task.throwError(NMsg.ofC("Loop boundaries must evaluate to valid numbers in expression '%s'", condition));
@@ -244,19 +244,19 @@ public class NaruForStmt extends NaruIncrementalStmt implements Cloneable {
 
         if (nextChildIndex < body.size()) {
             NaruStatement currentChild = body.get(nextChildIndex);
+            task.prependStatement(selfCopy.injected(true));
             if (nextChildIndex + 1 < body.size()) {
                 // Step internal instruction pointer inside the branch
                 selfCopy.runtimeChildIndexKey++;
             } else {
                 if (!selfCopy.runtimeIterator.isEmpty()) {
-                    ctx.bindParam(selfCopy.runtimeVarName, selfCopy.runtimeIterator.remove(0));
+                    task.prependStatement(new NaruSetStmt(selfCopy.runtimeVarName,""+selfCopy.runtimeIterator.remove(0)));
                     selfCopy.runtimeChildIndexKey=0;
                 } else {
                     selfCopy.runtimeChildIndexKey=body.size();
                 }
             }
 
-            task.prependStatement(selfCopy.injected(true));
             task.prependStatement(currentChild.copy().injected(true));
         } else {
             task.defaultAdvance(this);

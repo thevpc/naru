@@ -1,7 +1,7 @@
 package net.thevpc.naru.api.routine;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.util.NOptional;
 

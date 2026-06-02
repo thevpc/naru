@@ -9,6 +9,9 @@ import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.task.NaruTaskStackFrame;
+import net.thevpc.naru.api.task.NaruTaskStackItem;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.expr.NExprContextBuilder;
 import net.thevpc.nuts.expr.NExprVarResolver;
@@ -244,12 +247,22 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
+    public Boolean logInstructions() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask logInstructions(Boolean logInstructions) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
     public NaruStatement popStatement() {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public NaruTaskFrame peekContext() {
+    public NaruTaskFrame peekFrame() {
         throw new NUnsupportedOperationException();
     }
 
@@ -505,6 +518,26 @@ public class NaruPoisonTask implements NaruTask {
 
     @Override
     public NaruTask taskMode(NaruTaskMode newMode) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public List<NaruTaskStackFrame> stackframes() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public List<NaruTaskStackItem> stacktrace() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruStatement peekStatement() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruStatement peekStatement(int pos) {
         throw new NUnsupportedOperationException();
     }
 }

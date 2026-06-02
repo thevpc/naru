@@ -16,7 +16,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     public List<NaruStatement> todo = new ArrayList<>();
     private Integer returnPc = null;          // to resume after /return
     private final Map<String, Object> params = new HashMap<>(); // local param frame
-    private final Map<String, Object> state = new HashMap<>(); // Local mutable state
+    private final Map<String, Object> localVars = new HashMap<>(); // Local mutable state
     private final Map<String, Object> internalState = new HashMap<>(); // used by while etc...
     private String routine;
     private String runningRoutine;
@@ -32,7 +32,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
             this.params.put(p.key().asStringValue().orNull(), NElements.of().toSimple(p.value())); // NEW
         }
         for (NPairElement p : o.getObject("state").orElse(NObjectElement.ofEmpty()).namedPairs()) {
-            this.state.put(p.key().asStringValue().orNull(), NElements.of().toSimple(p.value())); // NEW
+            this.localVars.put(p.key().asStringValue().orNull(), NElements.of().toSimple(p.value())); // NEW
         }
         for (NPairElement p : o.getObject("internalState").orElse(NObjectElement.ofEmpty()).namedPairs()) {
             this.internalState.put(p.key().asStringValue().orNull(), NElements.of().toSimple(p.value())); // NEW
@@ -80,18 +80,23 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     }
 
     public Map<String, Object> params() {
-        return params;
+        return new HashMap<>(params);
     }
 
     @Override
-    public void setState(String key, Object value) {
-        state.put(key, value);
+    public Map<String, Object> localVars() {
+        return new HashMap<>(localVars);
     }
 
     @Override
-    public NOptional<Object> getState(String name) {
-        if (state.containsKey(name)) {
-            return NOptional.ofNullable(state.get(name));
+    public void setLocalVar(String key, Object value) {
+        localVars.put(key, value);
+    }
+
+    @Override
+    public NOptional<Object> getLocalState(String name) {
+        if (localVars.containsKey(name)) {
+            return NOptional.ofNullable(localVars.get(name));
         }
         return NOptional.ofNamedEmpty(name);
     }
@@ -109,7 +114,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
 
     @Override
     public NaruTaskFrame unsetState(String key) {
-        state.remove(key);
+        localVars.remove(key);
         return this;
     }
 
@@ -141,7 +146,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
             pb.set(e.getKey(), NElements.of().toElement(e.getValue()));
         }
         NObjectElementBuilder ps = NObjectElementBuilder.of();
-        for (Map.Entry<String, Object> e : state.entrySet()) {
+        for (Map.Entry<String, Object> e : localVars.entrySet()) {
             ps.set(e.getKey(), NElements.of().toElement(e.getValue()));
         }
         NObjectElementBuilder ips = NObjectElementBuilder.of();

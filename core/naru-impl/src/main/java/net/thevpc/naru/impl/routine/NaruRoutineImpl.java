@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.routine;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.routine.NaruIndexedLine;
 import net.thevpc.naru.api.routine.SubroutineDef;
 import net.thevpc.naru.api.routine.NaruRoutine;

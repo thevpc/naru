@@ -1,11 +1,14 @@
 package net.thevpc.naru.impl.scheduler;
 
+import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.agent.NaruTask;
-import net.thevpc.naru.api.agent.NaruTaskSchedulerView;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.scheduler.NaruTaskSchedulerView;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.agent.NaruSessionImpl;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NCancelException;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -194,20 +197,45 @@ public class NaruSchedulerImpl implements NaruScheduler {
     public void onKill(long tid) {
         NaruTask task = session.findTask(tid).orNull();
         if (task == null) return;
-        task.kill();
         ((NaruTaskSchedulerView) task).status(NaruTaskStatus.KILLED);
         readyQueue.remove(task);
+        ((NaruSessionImpl)session).onKill(tid);
         onTaskStatusChanged(task);
     }
 
     @Override
     public void tick(long tid) {
-        // force one tick on calling thread — only when task is held
         NaruTask task = session.findTask(tid).orNull();
         if (task == null) return;
+        //manual tick only works in help mode
         if (!task.isHeld() && status != NaruSchedulerStatus.HELD) return;
+        tick(task);
+    }
+
+    private void tick(NaruTask task) {
+        // force one tick on calling thread — only when task is held
+        if (task == null) return;
+        if (stopped || shutdownRequested) {
+            return;
+        }
         drainInbox(task);
-        task.tick();
+        NaruTaskStatus os = task.status();
+        try {
+            ((NaruTaskSchedulerView) task).status(NaruTaskStatus.RUNNING);
+            try {
+                task.tick();
+            } catch (NCancelException exit) {
+                task.kill();
+            } catch (Exception error) {
+                session.log(NaruLogMode.SCHEDULER, NMsg.ofC("Task %s failed: %s", task.id(), error.getMessage()).asError());
+                task.kill();
+            }
+        } finally {
+            NaruTaskStatus ns = task.status();
+            if (ns == NaruTaskStatus.RUNNING) {
+                ((NaruTaskSchedulerView) task).status(os);
+            }
+        }
         requeue(task);
     }
 
@@ -238,24 +266,6 @@ public class NaruSchedulerImpl implements NaruScheduler {
     public void stepAll() {
         allReadyTasks().forEach(NaruTask::releaseStepPermit);
     }
-
-    // -------------------------------------------------------------------------
-    // Mode
-    // -------------------------------------------------------------------------
-
-//    @Override
-//    public NaruSchedulerMode mode() {
-//        return mode;
-//    }
-//
-//    @Override
-//    public void mode(NaruSchedulerMode mode) {
-//        this.mode = mode;
-//        if (mode == NaruSchedulerMode.AUTO) {
-//            // release all step permits so no task stays stuck
-//            session.tasks().forEach(t -> t.releaseStepPermit());
-//        }
-//    }
 
     @Override
     public void throttleDelay(long ms) {
@@ -364,11 +374,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
                 if (stopped) break;
 
                 // 3. drain inbox before tick
-                drainInbox(task);
-
-                // 4. execute tick
-                task.tick();
-
+                this.tick(task);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -388,11 +394,6 @@ public class NaruSchedulerImpl implements NaruScheduler {
                     status = NaruSchedulerStatus.STOPPED;
                 }
             }
-
-            // 5. requeue based on new status
-            requeue(task);
-
-            // 6. notify for STEP/THROTTLED observability
             notifyTickDone(task);
         }
 
@@ -467,20 +468,10 @@ public class NaruSchedulerImpl implements NaruScheduler {
     }
 
     public void onTaskStatusChanged(NaruTask task) {
-        // only session-specific concerns
-        switch (task.status()) {
-            case DONE:
-            case FAILED:
-            case KILLED:
-                if (session.foregroundTaskId() == task.id()) {
-                    session.foregroundTaskId(-1);
-                }
-                break;
-        }
     }
 
     public void enqueue(NaruTask task) {
-        if(readyQueue.contains(task)){
+        if (readyQueue.contains(task)) {
             return;
         }
         readyQueue.offer(task);

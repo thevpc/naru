@@ -5,7 +5,9 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.scheduler.NaruScheduler;
 import net.thevpc.naru.api.skills.NaruSkillManager;
-import net.thevpc.naru.api.tool.NaruRegistry;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
@@ -17,6 +19,10 @@ import java.util.Map;
 
 public interface NaruSession {
     NAruVisibility getVisibility();
+
+    NaruSession logInstructions(Boolean logInstructions);
+
+    Boolean logInstructions();
 
     NaruScheduler scheduler();
 
@@ -96,7 +102,7 @@ public interface NaruSession {
 
     List<NaruTask> tasks();
 
-    NaruTask newTask(long parentId, NPath cwd, String... statements);
+    NaruTask newTask(NaruTaskSpec taskBuilder);
 
     NOptional<NaruTask> findTask(long tid);
 
@@ -104,9 +110,15 @@ public interface NaruSession {
 
     NaruSession foregroundTaskId(long taskId);
 
+    boolean isRunning();
+
     void start();
 
     void stop();
 
     void waitFor();
+
+    String systemPrompt();
+
+    NaruSession systemPrompt(String systemPrompt);
 }

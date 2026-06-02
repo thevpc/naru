@@ -1,10 +1,7 @@
 package net.thevpc.naru.impl.stmt;
 
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.*;
-import net.thevpc.nuts.text.NMsg;
-import net.thevpc.nuts.util.NIllegalArgumentException;
-import net.thevpc.nuts.util.NNameFormat;
 
 public class NaruElseIfStmt extends NaruFlowStatement implements Cloneable{
     public String condition;

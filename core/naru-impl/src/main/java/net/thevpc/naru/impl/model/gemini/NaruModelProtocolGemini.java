@@ -1,7 +1,6 @@
 package net.thevpc.naru.impl.model.gemini;
 
-import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.impl.model.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.elem.NElement;

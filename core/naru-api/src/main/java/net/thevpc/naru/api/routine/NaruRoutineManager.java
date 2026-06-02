@@ -1,7 +1,7 @@
 package net.thevpc.naru.api.routine;
 
 import net.thevpc.naru.api.agent.NaruResourceInfo;
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
 

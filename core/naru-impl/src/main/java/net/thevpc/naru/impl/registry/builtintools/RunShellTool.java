@@ -1,0 +1,81 @@
+package net.thevpc.naru.impl.registry.builtintools;
+
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.mode.NaruPromptMode;
+import net.thevpc.naru.api.mode.NaruStandardMode;
+import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
+import net.thevpc.naru.api.registry.NaruTool;
+import net.thevpc.naru.api.registry.NaruToolCallContext;
+import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.nuts.command.NExec;
+import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.util.NBlankable;
+
+/**
+ * Runs an arbitrary shell command and returns combined stdout+stderr.
+ *
+ * <p>Output is capped at 8 KB to avoid flooding the model context.
+ */
+public class RunShellTool implements NaruTool {
+
+    private static final int MAX_OUTPUT_CHARS = 8_000;
+
+    public RunShellTool() {
+    }
+
+    @Override
+    public String name() {
+        return "run_shell";
+    }
+
+    @Override
+    public String getDescription(NaruSession session) {
+        return "Execute a shell command and return its output (stdout + stderr). Use sparingly; prefer specialised tools like maven_compile when available.";
+    }
+
+    @Override
+    public NaruToolDefinition getDefinition(NaruSession session) {
+        return new NaruToolDefinitionFunction(
+                name(), getDescription(session),
+                NaruToolParameter.string("command", "Shell command to execute", true).build(),
+                NaruToolParameter.string("working_dir", "Directory to run the command in (defaults to project dir)", false).build(),
+                NaruToolParameter.integer("timeout_seconds", "Max seconds to wait (default: 60)", false).build()
+        );
+    }
+
+    @Override
+    public String execute(NaruToolCallContext context) {
+        String command = context.stringArg("command").orNull();
+        String workDir = context.stringArg("working_dir").orNull();
+        int timeout = context.numberArg("timeout_seconds").map(Number::intValue).orElse(60);
+
+        if (NBlankable.isBlank(command)) return "ERROR: 'command' is required.";
+
+        NPath cwd = !NBlankable.isBlank(workDir) ? context.task().resolve(workDir) : context.task().projectDir();
+
+        try {
+            NExec nExec = NExec.ofSystem("/bin/sh", "-c", command)
+                    .directory(cwd)
+                    .failFast(true);
+            String grabbedAllString = nExec
+                    .grabbedAll();
+            int exitCode = nExec.exitCode();
+            return "EXIT_CODE=" + exitCode + "\n" + grabbedAllString;
+
+        } catch (Exception e) {
+            return "ERROR running command: " + e.getMessage();
+        }
+    }
+
+    public boolean acceptMode(NaruPromptMode mode) {
+        NaruStandardMode m = mode.asStandardMode().orNull();
+        if (m != null) {
+            switch (m) {
+                case IMPLEMENT:
+                    return true;
+            }
+        }
+        return false;
+    }
+}

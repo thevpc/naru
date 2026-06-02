@@ -1,7 +1,7 @@
 //package net.thevpc.naru.impl.stmt;
 //
 //import net.thevpc.naru.api.agent.NaruLogMode;
-//import net.thevpc.naru.api.agent.NaruTask;
+//import net.thevpc.naru.api.task.NaruTask;
 //import net.thevpc.naru.api.routine.NaruRoutine;
 //import net.thevpc.naru.api.routine.NaruRoutineManager;
 //import net.thevpc.naru.api.routine.NaruTaskFrame;

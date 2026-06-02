@@ -1,8 +1,7 @@
 package net.thevpc.naru.impl.cmd;
 
-import net.thevpc.naru.api.agent.NaruAgent;
-import net.thevpc.naru.api.tool.NaruDirective;
-import net.thevpc.naru.impl.agent.NaruAgentImpl;
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.nuts.io.NTerminalFormatter;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextBuilder;
@@ -14,15 +13,15 @@ import net.thevpc.nuts.util.NStringUtils;
 import java.util.List;
 
 public class NaruTerminalFormatter implements NTerminalFormatter {
-    private final NaruAgentImpl naruAgent;
+    private final NaruSession session;
 
-    public NaruTerminalFormatter(NaruAgentImpl naruAgent) {
-        this.naruAgent = naruAgent;
+    public NaruTerminalFormatter(NaruSession session) {
+        this.session = session;
     }
 
     @Override
     public NText format(Context context) {
-        return formatInput(context.buffer(), naruAgent);
+        return formatInput(context.buffer(), session);
     }
 
     public static List<NText> formatOutputLines(String b, NText prefix) {
@@ -54,14 +53,14 @@ public class NaruTerminalFormatter implements NTerminalFormatter {
         return tb.build();
     }
 
-    public static NText formatInput(String b, NaruAgent agent) {
+    public static NText formatInput(String b, NaruSession session) {
         String b2 = b.trim();
         if (!b2.isEmpty()) {
             if (b2.startsWith("#")) {
                 return formatCommentsLine(b);
             }
             if (b2.startsWith("/")) {
-                return formatDirective(b, agent);
+                return formatDirective(b, session);
             }
             if (Character.isDigit(b2.charAt(0))) {
                 return formatRoutineLine(b);
@@ -227,7 +226,7 @@ public class NaruTerminalFormatter implements NTerminalFormatter {
         return tb.build();
     }
 
-    public static NText formatDirective(String b, NaruAgent agent) {
+    public static NText formatDirective(String b, NaruSession session) {
         String b2 = b.trim();
         if (b2.equals("/")) {
             return NTextBuilder.of()
@@ -247,7 +246,7 @@ public class NaruTerminalFormatter implements NTerminalFormatter {
         NTextBuilder tb = NTextBuilder.of();
         tb.append(b.substring(0, i0));
         String directive = b.substring(i0, i1);
-        NOptional<NaruDirective> d = agent.registry().findDirective(directive.substring(1));
+        NOptional<NaruDirective> d = session.registry().findDirective(directive.substring(1));
         if (d.isPresent()) {
             tb.append(directive, NTextStyle.primary5());
         } else {

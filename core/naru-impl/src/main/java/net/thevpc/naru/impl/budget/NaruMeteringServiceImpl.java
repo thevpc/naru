@@ -18,6 +18,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public class NaruMeteringServiceImpl implements NaruMeteringService {
     Map<NaruModelKeyAndUser, NaruModelStatsAccumulator> statsByAndUser = new ConcurrentHashMap<>();
 
+    public NaruMeteringServiceImpl() {
+    }
+
     private static class NaruModelKeyAndUser {
         NaruModelKey model;
         String user;

@@ -2,10 +2,10 @@ package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSource;
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
-import net.thevpc.naru.api.tool.NaruTool;
+import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;

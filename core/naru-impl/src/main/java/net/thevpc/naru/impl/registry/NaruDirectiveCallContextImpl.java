@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.registry;
 
-import net.thevpc.naru.api.agent.NaruTask;
-import net.thevpc.naru.api.tool.NaruDirectiveCallContext;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 
 public class NaruDirectiveCallContextImpl implements NaruDirectiveCallContext {
     private final String name;

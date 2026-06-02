@@ -1,11 +1,5 @@
 package net.thevpc.naru.api.model;
 
-import net.thevpc.naru.api.tool.NaruToolParameter;
-
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 /**
  * OpenAI-compatible tool definition (Ollama uses the same format).
  *

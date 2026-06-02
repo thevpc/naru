@@ -1,6 +1,6 @@
 package net.thevpc.naru.api.model;
 
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 
 public interface NaruModelProtocol {
     /**

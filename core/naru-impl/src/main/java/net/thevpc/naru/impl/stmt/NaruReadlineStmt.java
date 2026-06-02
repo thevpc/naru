@@ -1,18 +1,10 @@
 package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NAruInputMode;
-import net.thevpc.naru.api.agent.NaruTask;
-import net.thevpc.naru.api.agent.NaruTaskSchedulerView;
-import net.thevpc.naru.api.scheduler.NaruTaskStatus;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
-import net.thevpc.naru.impl.scheduler.NaruInputRequest;
 import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.elem.NObjectElement;
-import net.thevpc.nuts.elem.NObjectElementBuilder;
-import net.thevpc.nuts.io.NTerminal;
 import net.thevpc.nuts.text.NMsg;
-import net.thevpc.nuts.util.NIllegalArgumentException;
-import net.thevpc.nuts.util.NNameFormat;
 
 public class NaruReadlineStmt extends NaruStatement implements Cloneable{
 

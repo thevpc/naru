@@ -2,11 +2,9 @@ package net.thevpc.naru.impl.routine;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
-import net.thevpc.naru.api.agent.NaruTask;
-import net.thevpc.naru.api.routine.NaruIndexedLine;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
-import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.agent.NaruSessionImpl;
 import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.elem.NElementReader;

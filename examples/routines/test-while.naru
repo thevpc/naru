@@ -1,0 +1,8 @@
+# --- /while : refine iteratively until done ---
+/set iteration = 1
+/while iteration <= 3
+    /print "the iteration is $iteration"
+    /set iteration = iteration + 1
+/end
+# lets exit
+/exit

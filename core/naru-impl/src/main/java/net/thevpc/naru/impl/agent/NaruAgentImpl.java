@@ -2,13 +2,12 @@ package net.thevpc.naru.impl.agent;
 
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.scheduler.NaruSchedulerMode;
 import net.thevpc.naru.api.scheduler.NaruTaskMode;
-import net.thevpc.naru.api.tool.NaruRegistry;
+import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.naru.impl.budget.NaruMeteringServiceImpl;
 import net.thevpc.naru.impl.cmd.NaruTerminalFormatter;
 import net.thevpc.naru.impl.cmd.NaruNCmdLineAutoCompleteResolver;
-import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.naru.impl.util.StoredStringMap;
 import net.thevpc.nuts.artifact.NVersion;
 import net.thevpc.nuts.io.*;
@@ -37,7 +36,6 @@ import java.util.*;
  */
 public class NaruAgentImpl implements NaruAgent {
 
-    private final NaruRegistry registry;
     private final NaruMeteringServiceImpl meteringService = new NaruMeteringServiceImpl();
     /**
      * Optional step listener for CLI progress printing.
@@ -46,28 +44,12 @@ public class NaruAgentImpl implements NaruAgent {
     private NPath projectDirectory;
     private StoredStringMap<NaruModelConfig> modelAliases;
     private NaruProjectEnv projectEnv;
-    private String systemPrompt;
+
 
     public NaruAgentImpl() {
-        this(new NaruRegistryImpl()
-                .registerDefaults());
-    }
-
-    public NaruAgentImpl(NaruRegistry registry) {
-        this.registry = registry;
         this.logger = NLogger.STDOUT;
     }
 
-    @Override
-    public String getSystemPrompt() {
-        return systemPrompt;
-    }
-
-    @Override
-    public NaruAgent setSystemPrompt(String systemPrompt) {
-        this.systemPrompt = systemPrompt;
-        return this;
-    }
 
     @Override
     public NPath getProjectDirectory() {
@@ -101,38 +83,21 @@ public class NaruAgentImpl implements NaruAgent {
         return this;
     }
 
-    public NaruRegistry registry() {
-        return registry;
-    }
-    // ── Public entry point ─────────────────────────────────────────────────────
-
-
     public NaruSession startInteractiveSession(String... commands) {
         NPath pwd = projectDirectory;
         if (pwd == null) {
             pwd = NPath.ofUserDirectory();
         }
-        NaruSession session = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService);
+        NaruSession session = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService,true);
         enableRichTerm(session);
         NOut.resetLine();
         log(NaruLogMode.RAW, NMsg.ofC(
                 "╭╮╷╭─╮╭─╮╷ ╷\n" +
                         "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
                         "╵ ╵╵ ╵╵╰╴╰─╯ v%s", NVersion.of("0.8.9.0")));
-        String name="naru";
-        if(commands.length==1){
-            if(commands[0].startsWith("/source ")){
-                String s = commands[0].substring("/source ".length()).trim();
-                if(!s.isEmpty()){
-                    NPath p = NPath.of(s);
-                    name= p.nameParts().baseName();
-                }
-            }
-        }
-        session.newTask(-1, null, commands)
+        session.newTask(NaruTaskSpec.of().statements(commands).resolveNameOr("naru"))
                 .taskMode(NaruTaskMode.INTERACTIVE)
                 .fg()
-                .name(name)
                 .unhold()
         ;
         session.start(); // ← missing
@@ -148,19 +113,9 @@ public class NaruAgentImpl implements NaruAgent {
         if (pwd == null) {
             pwd = NPath.ofUserDirectory();
         }
-        NaruSession session = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService);
-        String name="naru";
-        if(commands.length==1){
-            if(commands[0].startsWith("/source ")){
-                String s = commands[0].substring("/source ".length()).trim();
-                if(!s.isEmpty()){
-                    NPath p = NPath.of(s);
-                    name= p.nameParts().baseName();
-                }
-            }
-        }
-        session.newTask(-1, null, commands).fg()
-                .name(name)
+        NaruSession session = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService,true);
+        session.newTask(NaruTaskSpec.of().statements(commands).resolveNameOr("naru"))
+                .fg()
                 .unhold();
         session.start();
         return session;
@@ -170,7 +125,7 @@ public class NaruAgentImpl implements NaruAgent {
         NSystemTerminal.enableRichTerm();
         NIO.of().systemTerminal()
                 .commandAutoCompleteResolver(new NaruNCmdLineAutoCompleteResolver(session))
-                .commandHighlighter(new NaruTerminalFormatter(this))
+                .commandHighlighter(new NaruTerminalFormatter(session))
         ;
     }
 //    private void handleCallDirective(String raw, NaruSession ctx, NaruRoutine routine) {

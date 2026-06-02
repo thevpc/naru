@@ -1,6 +1,6 @@
 package net.thevpc.naru.api.stmt;
 
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NCopiable;
@@ -27,6 +27,7 @@ public abstract class NaruStatement implements NToElement, NCopiable, Cloneable 
         DIRECTIVE_RETURN,
         SOURCE,
         START,
+        SET,
     }
 
     public NaruStatement() {

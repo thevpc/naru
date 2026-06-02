@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.cmd;
 
-import net.thevpc.naru.api.tool.NaruDirective;
+import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.nuts.cmdline.DefaultNArgCandidate;
 import net.thevpc.nuts.cmdline.NArgCandidate;
 import net.thevpc.nuts.cmdline.NCmdLine;

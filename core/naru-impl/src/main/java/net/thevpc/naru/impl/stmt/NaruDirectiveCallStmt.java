@@ -1,11 +1,8 @@
 package net.thevpc.naru.impl.stmt;
 
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.*;
-import net.thevpc.nuts.text.NMsg;
-import net.thevpc.nuts.util.NIllegalArgumentException;
-import net.thevpc.nuts.util.NNameFormat;
 
 public class NaruDirectiveCallStmt extends NaruStatement implements Cloneable{
     public String call;

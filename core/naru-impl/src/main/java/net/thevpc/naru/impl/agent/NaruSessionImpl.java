@@ -6,10 +6,15 @@ import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.scheduler.NaruScheduler;
+import net.thevpc.naru.api.scheduler.NaruTaskSchedulerView;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.skills.NaruSkillManager;
 import net.thevpc.naru.api.stmt.NaruStatement;
-import net.thevpc.naru.api.tool.NaruRegistry;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.registry.NaruRegistry;
+import net.thevpc.naru.impl.budget.NaruMeteringServiceImpl;
+import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.naru.impl.routine.NaruRoutineManagerImpl;
 import net.thevpc.naru.impl.scheduler.NaruSchedulerImpl;
 import net.thevpc.naru.impl.scheduler.NaruTaskImpl;
@@ -72,20 +77,24 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final BlockingQueue<NaruTask> inputRequests = new LinkedBlockingQueue<>();
     private Thread readlineThread;
     private boolean readlineThreadRunning = true;
+    private boolean running = false;
+    private final NaruRegistry registry;
+    private String systemPrompt;
+    private Boolean logInstructions;
 
 
-    public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruMeteringService meteringService) {
+    public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruMeteringService meteringService, boolean configureDefaults) {
         this.agent = agent;
         this.projectDir = projectDir;
         this.workingDir = projectDir;
-        this.meteringService = meteringService;
+        this.meteringService = meteringService == null ? new NaruMeteringServiceImpl() : meteringService;
         this.sessionManager = new NaruSessionManagerImpl(this);
         this.routineManager = new NaruRoutineManagerImpl(this);
         this.skillManager = new NaruSkillManagerImpl(this);
+        this.registry = new NaruRegistryImpl(this);
 
         NaruModelConfig model0 = null;
         NaruModelConfig model = model0;
-        NaruRegistry registry = agent.registry();
         if (model == null) {
             model = getProjectEnv("model").flatMap(x -> findModel(new NaruModelConfig(x))).orNull();
         } else {
@@ -111,6 +120,18 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         this.model = model;
         this.scheduler = new NaruSchedulerImpl(this, 1);
+        if (configureDefaults) {
+            ((NaruRegistryImpl) registry).registerDefaults();
+        }
+    }
+
+    public Boolean logInstructions() {
+        return logInstructions;
+    }
+
+    public NaruSession logInstructions(Boolean logInstructions) {
+        this.logInstructions = logInstructions;
+        return this;
     }
 
     public NaruScheduler scheduler() {
@@ -147,10 +168,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NaruTask newTask(long parentId, NPath cwd, String... statements) {
+    public NaruTask newTask(NaruTaskSpec taskBuilder) {
+        long parentId = taskBuilder.parentId();
+        NPath cwd = taskBuilder.workingDirectory();
         NaruTask parent = tasks.get(parentId);
         long id = maxTaskId.incrementAndGet();
         NaruTaskImpl natuTask = new NaruTaskImpl(id, parent == null ? -1 : parent.id(), this);
+        natuTask.name(taskBuilder.name());
         if (parent == null) {
             natuTask._setInputMode(NAruInputMode.LINE);
             natuTask._setWorkingDir(cwd == null ? workingDir : cwd);
@@ -182,15 +206,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         for (NPath path : projectDir.resolve(".naru/local/directives/").list().stream().filter(x -> x.name().endsWith(".md")).sorted(Comparator.comparing(x -> x.name())).collect(Collectors.toList())) {
             all.addAll(natuTask.loadDirectivesFile(path));
         }
-        all.addAll(Arrays.stream(statements).map(x -> natuTask.parseStatement(x).get().injected(true)).collect(Collectors.toList()));
+        all.addAll(taskBuilder.statements().stream().map(x -> natuTask.parseStatement(x).get().injected(true)).collect(Collectors.toList()));
         natuTask.addStatements(all.stream().map(x -> x.injected(true)).toArray(NaruStatement[]::new));
         tasks.put(id, natuTask);
         return natuTask;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-    private String buildSystemPrompt(NaruSession context) {
-        String s = agent.getSystemPrompt();
+    private String buildSystemPrompt(NaruSession session) {
+        String s = systemPrompt();
         if (NBlankable.isBlank(s)) {
             StringBuilder sb = new StringBuilder();
             sb.append("You are NARU (Nuts AI Reasoning Unit), an expert software engineering agent.\n");
@@ -202,11 +226,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             sb.append("- Use inspect_image to verify that generated images match expectations.\n");
             sb.append("- Be concise in your final answer. Summarise what you changed and why.\n");
 
-            if (context.projectDir() != null) {
-                sb.append("\nProject directory: ").append(context.projectDir()).append('\n');
+            if (session.projectDir() != null) {
+                sb.append("\nProject directory: ").append(session.projectDir()).append('\n');
             }
-            if (!agent.registry().isEmpty()) {
-                sb.append("\nAvailable tools: ").append(agent.registry().names()).append('\n');
+            if (!registry().isEmpty()) {
+                sb.append("\nAvailable tools: ").append(registry().toolNames()).append('\n');
             }
             return sb.toString();
         }
@@ -639,7 +663,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruRegistry registry() {
-        return agent.registry();
+        return registry;
     }
 
     public NaruMeteringService meteringService() {
@@ -682,6 +706,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public void start() {
+        if (running) {
+            return;
+        }
+        running = true;
         // start readline thread
         readlineThread = new Thread(this::readlineLoop, "naru-readline");
         readlineThread.setDaemon(false);
@@ -692,10 +720,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
+    public boolean isRunning() {
+        return running;
+    }
+
+    @Override
     public void stop() {
+        if (!running) {
+            return;
+        }
         scheduler.shutdown();
         readlineThreadRunning = false;
         readlineThread.interrupt();
+        running = false;
     }
 
     @Override
@@ -707,6 +744,29 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             readlineThread.join();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    @Override
+    public String systemPrompt() {
+        return systemPrompt;
+    }
+
+    @Override
+    public NaruSession systemPrompt(String systemPrompt) {
+        this.systemPrompt = systemPrompt;
+        return this;
+    }
+
+    public void onKill(long tid) {
+        if (foregroundTaskId() == tid) {
+            foregroundTaskId(-1);
+        }
+        if(tasks.containsKey(tid)){
+            tasks.remove(tid);
+            if(tasks.isEmpty()){
+                stop();
+            }
         }
     }
 }

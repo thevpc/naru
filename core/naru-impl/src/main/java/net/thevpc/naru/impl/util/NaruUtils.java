@@ -1,13 +1,10 @@
 package net.thevpc.naru.impl.util;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
-import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.impl.cmd.NaruTerminalFormatter;
-import net.thevpc.naru.impl.model.ollama.NaruOllamaProvider;
 import net.thevpc.nuts.artifact.NId;
 import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.core.NSession;
 import net.thevpc.nuts.core.NStoreKey;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
@@ -15,7 +12,6 @@ import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.elem.NPairElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.io.NPathOption;
-import net.thevpc.nuts.log.NLog;
 import net.thevpc.nuts.net.NWebRequest;
 import net.thevpc.nuts.platform.NStoreScope;
 import net.thevpc.nuts.platform.NStoreType;

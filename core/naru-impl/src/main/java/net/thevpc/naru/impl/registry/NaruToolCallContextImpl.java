@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.registry;
 
-import net.thevpc.naru.api.agent.NaruTask;
-import net.thevpc.naru.api.tool.NaruToolCallContext;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 

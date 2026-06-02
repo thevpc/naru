@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
-import net.thevpc.naru.api.agent.NaruTask;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.api.stmt.NaruStatement;
@@ -9,11 +9,8 @@ import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
-import net.thevpc.nuts.util.NIllegalArgumentException;
-import net.thevpc.nuts.util.NNameFormat;
 
 import java.util.Map;
-import java.util.stream.Collectors;
 
 public class NaruToolCallStmt extends NaruStatement implements Cloneable {
     public NaruToolCall call;

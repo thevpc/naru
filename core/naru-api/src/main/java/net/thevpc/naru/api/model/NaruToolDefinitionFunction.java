@@ -1,6 +1,6 @@
 package net.thevpc.naru.api.model;
 
-import net.thevpc.naru.api.tool.NaruToolParameter;
+import net.thevpc.naru.api.registry.NaruToolParameter;
 
 import java.util.ArrayList;
 import java.util.Arrays;
