@@ -18,6 +18,7 @@ import net.thevpc.nuts.platform.NStoreType;
 import net.thevpc.nuts.text.*;
 import net.thevpc.nuts.time.NChronometer;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.text.DecimalFormat;
@@ -27,6 +28,34 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class NaruUtils {
+    public static void checkValidRoutineName(String text) {
+        if (!isValidRoutineName(text)) {
+            throw new NIllegalArgumentException(NMsg.ofC("invalid routine name %s", text));
+        }
+    }
+
+    public static boolean isValidRoutineName(String text) {
+        if (text == null || text.isEmpty()) return false;
+
+        char first = text.charAt(0);
+        if (!Character.isLetter(first) && first != '_') return false;
+        if (text.length() == 1) return Character.isLetter(first);
+        boolean prevWasDash = false;
+        for (int i = 1; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '-') {
+                if (prevWasDash) return false;
+                prevWasDash = true;
+            } else if (Character.isLetterOrDigit(c) || c == '_') {
+                prevWasDash = false;
+            } else {
+                return false;
+            }
+        }
+        // last char was '-' → prevWasDash is true
+        return !prevWasDash;
+    }
+
     public static String stripAnsi(String text) {
         if (text == null) return null;
         return text.replaceAll("\u001B(\\[[;\\d]*[A-Za-z]|[^\\[\\]])", "");

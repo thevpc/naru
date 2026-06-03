@@ -6,6 +6,7 @@ import net.thevpc.naru.api.routine.NaruIndexedLine;
 import net.thevpc.naru.api.routine.SubroutineDef;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.stmt.NaruStatement;
+import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
@@ -29,8 +30,7 @@ public class NaruRoutineImpl implements NaruRoutine {
     private static final Pattern LINE_PATTERN = Pattern.compile("^(\\d+)(?:\\s+(.*))?$");
     private static final Pattern METADATA = Pattern.compile("^([a-z]+)\\s*:(\\s*(.*))?$");
 
-    public NaruRoutineImpl(String uuid, String name, NPath publicDir, NPath privateDir, NPath preferredPath, NAruVisibility visibility, boolean loadContent) {
-        this.uuid = NAssert.requireNamedNonNull(uuid, "uuid");
+    public NaruRoutineImpl(String name, NPath publicDir, NPath privateDir, NPath preferredPath, NAruVisibility visibility, boolean loadContent) {
         this.name = name;
         this.publicDir = publicDir;
         this.privateDir = privateDir;
@@ -41,7 +41,9 @@ public class NaruRoutineImpl implements NaruRoutine {
             this.visibility = NAruVisibility.PUBLIC;
             fill(preferredPath, false, loadContent);
         } else {
-            String pathName = uuid + ".naru";
+            name=NStringUtils.trimToNull(name);
+            NaruUtils.checkValidRoutineName(name);
+            String pathName = name + ".naru";
             if (visibility == NAruVisibility.PUBLIC) {
                 fill(publicDir.resolve(pathName), false, loadContent);
             } else {
@@ -50,60 +52,51 @@ public class NaruRoutineImpl implements NaruRoutine {
         }
     }
 
+    private boolean isRuler(String line) {
+        char[] cc = line.trim().toCharArray();
+        if (cc.length < 3) {
+            return false;
+        }
+        for (char c : cc) {
+            if (c != '-') {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private synchronized void fill(NPath path, boolean numbered, boolean loadContent) {
         if (!path.exists()) {
             return;
         }
         String text = path.readString();
-        boolean metadata = true;
+        final int EXPECT_START_METADATA = 1;
+        final int EXPECT_END_METADATA = 2;
+        final int EXPECT_CMD = 3;
+        int status = EXPECT_START_METADATA;
         int goodIndex = 10;
         for (String line : text.split("\n")) {
             line = line.trim();
-            if (!line.isEmpty()) {
-                if (metadata) {
-                    Matcher m0 = METADATA.matcher(line);
-                    if (m0.matches()) {
-                        String n = m0.group(1);
-                        String content = m0.group(2);
-                        switch (n) {
-                            case "name": {
-                                if (NBlankable.isBlank(content)) {
-                                    this.name = content.trim();
-                                }
-                                break;
-                            }
-                            case "creationInstant": {
-                                if (NBlankable.isBlank(content)) {
-                                    try {
-                                        this.creationInstant = Instant.parse(content.trim());
-                                    } catch (Exception ex) {
-                                        this.creationInstant = path.creationInstant();
-                                    }
-                                }
-                                break;
-                            }
-                            case "modificationInstant": {
-                                if (NBlankable.isBlank(content)) {
-                                    try {
-                                        this.creationInstant = Instant.parse(content.trim());
-                                    } catch (Exception ex) {
-                                        this.modificationInstant = path.lastModifiedInstant();
-                                    }
-                                }
-                                break;
-                            }
-                        }
+            switch (status) {
+                case EXPECT_START_METADATA: {
+                    if (line.isEmpty()) {
+
+                    } else if (isRuler(line)) {
+                        status = EXPECT_END_METADATA;
                     } else {
+                        status = EXPECT_CMD;
                         if (!loadContent) {
-                            if(creationInstant==null){
-                                creationInstant=path.creationInstant();
+                            if (creationInstant == null) {
+                                creationInstant = path.creationInstant();
                             }
-                            if(modificationInstant==null){
-                                modificationInstant=creationInstant;
+                            if (modificationInstant == null) {
+                                modificationInstant = creationInstant;
+                            }
+                            if(uuid==null){
+                                uuid=UUID.randomUUID().toString();
                             }
                             return;
                         }
-                        metadata = false;
                         if (numbered) {
                             Matcher m = LINE_PATTERN.matcher(line);
                             if (m.matches()) {
@@ -116,35 +109,98 @@ public class NaruRoutineImpl implements NaruRoutine {
                             goodIndex += 10;
                         }
                     }
-                } else {
-                    if (!loadContent) {
-                        if(creationInstant==null){
-                            creationInstant=path.creationInstant();
+                    break;
+                }
+                case EXPECT_END_METADATA: {
+                    if (line.isEmpty()) {
+
+                    } else if (isRuler(line)) {
+                        status = EXPECT_CMD;
+                    } else {
+                        Matcher m0 = METADATA.matcher(line);
+                        if (m0.matches()) {
+                            String n = m0.group(1);
+                            String content = m0.group(2);
+                            switch (n) {
+//                                case "name": {
+//                                    if (NBlankable.isBlank(content)) {
+//                                        this.name = content.trim();
+//                                    }
+//                                    break;
+//                                }
+                                case "uuid": {
+                                    if (!NBlankable.isBlank(content)) {
+                                        this.uuid = content.trim();
+                                    }
+                                    break;
+                                }
+                                case "creationInstant": {
+                                    if (!NBlankable.isBlank(content)) {
+                                        try {
+                                            this.creationInstant = Instant.parse(content.trim());
+                                        } catch (Exception ex) {
+                                            this.creationInstant = path.creationInstant();
+                                        }
+                                    }
+                                    break;
+                                }
+                                case "modificationInstant": {
+                                    if (!NBlankable.isBlank(content)) {
+                                        try {
+                                            this.creationInstant = Instant.parse(content.trim());
+                                        } catch (Exception ex) {
+                                            this.modificationInstant = path.lastModifiedInstant();
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
                         }
-                        if(modificationInstant==null){
-                            modificationInstant=creationInstant;
+                        break;
+                    }
+                    break;
+                }
+                default: {
+                    if (!loadContent) {
+                        if (creationInstant == null) {
+                            creationInstant = path.creationInstant();
+                        }
+                        if (modificationInstant == null) {
+                            modificationInstant = creationInstant;
+                        }
+                        if(uuid==null){
+                            uuid=UUID.randomUUID().toString();
                         }
                         return;
                     }
-                    Matcher m = LINE_PATTERN.matcher(line);
-                    if (numbered) {
-                        if (m.matches()) {
-                            int num = Integer.parseInt(m.group(1));
-                            String content = m.group(2) != null ? m.group(2) : "";
-                            lines.put(num, content);
+                    if (line.isEmpty()) {
+                        if (!numbered) {
+                            goodIndex += 10;
                         }
                     } else {
-                        lines.put(goodIndex, line);
-                        goodIndex += 10;
+                        if (numbered) {
+                            Matcher m = LINE_PATTERN.matcher(line);
+                            if (m.matches()) {
+                                int num = Integer.parseInt(m.group(1));
+                                String content = m.group(2) != null ? m.group(2) : "";
+                                lines.put(num, content);
+                            }
+                        } else {
+                            lines.put(goodIndex, line);
+                            goodIndex += 10;
+                        }
                     }
                 }
             }
         }
-        if(creationInstant==null){
-            creationInstant=path.creationInstant();
+        if (creationInstant == null) {
+            creationInstant = path.creationInstant();
         }
-        if(modificationInstant==null){
-            modificationInstant=creationInstant;
+        if (modificationInstant == null) {
+            modificationInstant = creationInstant;
+        }
+        if(uuid==null){
+            uuid=UUID.randomUUID().toString();
         }
     }
 
@@ -330,11 +386,7 @@ public class NaruRoutineImpl implements NaruRoutine {
         if (preferredPath != null) {
             _write(preferredPath.mkParentDirs());
         } else {
-            NAssert.requireNamedNonBlank(name(), "name");
-            if (!NStringUtils.isValidVar(name())) {
-                throw new IllegalArgumentException("invalid name " + name());
-            }
-            String pathName = uuid() + ".naru";
+            String pathName = NStringUtils.firstNonBlankTrimmed(name(),"noname") + ".naru";
             NPath pub = publicDir.resolve(pathName);
             NPath priv = privateDir.resolve(pathName);
             if (visibility() == NAruVisibility.PUBLIC) {
@@ -351,23 +403,24 @@ public class NaruRoutineImpl implements NaruRoutine {
         }
     }
 
-    private String effectiveName() {
-        if (preferredPath != null) {
-            String n = preferredPath.name();
-            if (n.endsWith(".naru")) {
-                n = n.substring(0, n.length() - 5);
-            }
-            return n;
-        }
-        return name();
-    }
+//    private String effectiveName() {
+//        if (preferredPath != null) {
+//            String n = preferredPath.name();
+//            if (n.endsWith(".naru")) {
+//                n = n.substring(0, n.length() - 5);
+//            }
+//            return n;
+//        }
+//        return name();
+//    }
 
     private void _write(NPath pub) {
         StringBuilder sb = new StringBuilder();
-        sb.append("name : ").append(NStringUtils.firstNonBlankTrimmed(effectiveName(), "NO_NAME")).append("\n");
-        sb.append("creationInstant : ").append(creationInstant==null?Instant.now():creationInstant).append("\n");
-        sb.append("modificationInstant : ").append(modificationInstant==null?Instant.now():modificationInstant).append("\n");
-        sb.append("\n");
+        sb.append("------- ").append("\n");
+        sb.append("uuid : ").append(NStringUtils.firstNonBlankTrimmed(uuid(), "NO_UUID")).append("\n");
+        sb.append("creationInstant : ").append(creationInstant == null ? Instant.now() : creationInstant).append("\n");
+        sb.append("modificationInstant : ").append(modificationInstant == null ? Instant.now() : modificationInstant).append("\n");
+        sb.append("------- ").append("\n");
         for (Map.Entry<Integer, String> e : getLinesSet().entrySet()) {
             sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
         }

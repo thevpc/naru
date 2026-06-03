@@ -249,16 +249,6 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public Boolean logInstructions() {
-        throw new NUnsupportedOperationException();
-    }
-
-    @Override
-    public NaruTask logInstructions(Boolean logInstructions) {
-        throw new NUnsupportedOperationException();
-    }
-
-    @Override
     public NaruStatement popStatement() {
         throw new NUnsupportedOperationException();
     }
@@ -314,7 +304,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NExprVarResolver sessionVarResolver() {
+    public NExprVarResolver varResolver() {
         throw new NUnsupportedOperationException();
     }
 
@@ -569,7 +559,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public void useRoutine(String name) {
+    public NaruRoutine useRoutine(String name) {
         throw new NUnsupportedOperationException();
     }
 

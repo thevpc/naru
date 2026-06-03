@@ -6,9 +6,11 @@ import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
+import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.text.DecimalFormat;
@@ -174,13 +176,8 @@ public class NaruRoutineDirective extends AbstractDirective {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                NaruRoutineManager sm = task.session().routineManager();
-                String name = context.argument();
-                if (name.isEmpty()) {
-                    name = "main";
-                }
-                task.useRoutine(name);
-                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded routine context: %s", name));
+                String n = task.useRoutine(cmdLine.next().map(NArg::image).orNull()).name();
+                context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("Loaded routine context: %s", n));
             }
         });
         register(new AbstractSubCommand("main", NText.ofPlain("select 'main' current routine")
@@ -188,17 +185,15 @@ public class NaruRoutineDirective extends AbstractDirective {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                NaruRoutineManager sm = task.session().routineManager();
                 task.useRoutine("main");
                 context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("Unloaded routine context. Back to main."));
             }
         });
-        register(new AbstractSubCommand("name", NText.ofPlain("shows current routine name")
+        register(new AbstractSubCommand("current", NText.ofPlain("shows current routine name")
                 ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                NaruRoutineManager sm = task.session().routineManager();
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current routine: %s", task.currentRoutineName()));
             }
         });

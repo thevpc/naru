@@ -20,10 +20,6 @@ import java.util.Map;
 public interface NaruSession {
     NAruVisibility getVisibility();
 
-    NaruSession logInstructions(Boolean logInstructions);
-
-    Boolean logInstructions();
-
     NaruScheduler scheduler();
 
     NaruSession setVisibility(NAruVisibility visibility);

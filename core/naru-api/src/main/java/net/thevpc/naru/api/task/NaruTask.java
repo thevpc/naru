@@ -127,10 +127,6 @@ public interface NaruTask extends NToElement {
 
     void tick();
 
-    Boolean logInstructions();
-
-    NaruTask logInstructions(Boolean logInstructions);
-
     void invokeDirective(String line);
 
     void invokeRoutine(String routineName);
@@ -165,7 +161,7 @@ public interface NaruTask extends NToElement {
 
     NaruTask pushStatementModelCall(String prompt);
 
-    NExprVarResolver sessionVarResolver();
+    NExprVarResolver varResolver();
 
     NExprContextBuilder expressionBuilder();
 
@@ -241,7 +237,7 @@ public interface NaruTask extends NToElement {
 
     String currentRoutineName();
 
-    void useRoutine(String name);
+    NaruRoutine useRoutine(String name);
 
     void saveRoutineLine(int index, String name);
 }

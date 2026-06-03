@@ -43,14 +43,14 @@ public class NaruSetDirective extends AbstractDirective {
                             case TASK: {
                                 context.task().setTaskEnv(
                                         a.children().get(0).name(),
-                                        a.children().get(1).eval(b).get()
+                                        a.children().get(1).eval(b).orNull()
                                 );
                                 break;
                             }
                             case SESSION: {
                                 context.task().session().setSessionEnv(
                                         a.children().get(0).name(),
-                                        a.children().get(1).eval(b).get()
+                                        a.children().get(1).eval(b).orNull()
                                 );
                                 break;
                             }

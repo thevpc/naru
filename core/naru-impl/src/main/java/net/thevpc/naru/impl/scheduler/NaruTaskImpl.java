@@ -76,10 +76,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private Instant modificationDate;
     private NaruModelConfig model;
     private String extraContext;
-    private Boolean logInstructions;
     private final List<NaruEvent> awaitReceived = new ArrayList<>();
     private final Map<String, NaruEventSubscription> eventSubscriptions = new ConcurrentHashMap<>();
-    private final Map<String, Object> env = new ConcurrentHashMap<>();
+    private final Map<String, NOptional<Object>> env = new ConcurrentHashMap<>();
     private final Map<String, String> eventHooks = new ConcurrentHashMap<>();
     private final Queue<NaruEvent> inbox = new ConcurrentLinkedQueue<>();
     private final Semaphore stepPermit = new Semaphore(0);
@@ -381,7 +380,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (session.foregroundTaskId() == id) {
             session.foregroundTaskId(-1);
         }
-        return null;
+        return this;
     }
 
     public void status(NaruTaskStatus newStatus) {
@@ -437,8 +436,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             _history.add(a.toElement());
         }
         NArrayElementBuilder _props = NArrayElementBuilder.of();
-        for (Map.Entry<String, Object> e : env.entrySet()) {
-            _props.add(e.getKey(), NElements.of().toElement(e.getValue()));
+        for (Map.Entry<String, NOptional<Object>> e : env.entrySet()) {
+            _props.add(e.getKey(), NElements.of().toElement(e.getValue().orNull()));
         }
         o.set("history", _history.build());
         o.set("properties", _props.build());
@@ -485,7 +484,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (props1 != null) {
             for (NPairElement nElement : props1.namedPairs()) {
                 env.put(nElement.key().asStringValue().orNull(),
-                        NElements.of().toSimple(nElement.value())
+                        NOptional.ofNullable(NElements.of().toSimple(nElement.value()))
                 );
             }
         }
@@ -1170,24 +1169,15 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 fireChanged();
                 return;
             }
-            boolean li = logInstructions() != null ? logInstructions().booleanValue() :
-                    session.logInstructions() != null && session.logInstructions().booleanValue();
-            if (li) {
+            if (logInstructions()) {
                 log(NaruLogMode.SCHEDULER, NMsg.ofC("INVOKE STMT : %s", op.toElement()));
             }
             op.exec(this);
         }
     }
 
-    @Override
-    public Boolean logInstructions() {
-        return logInstructions;
-    }
-
-    @Override
-    public NaruTask logInstructions(Boolean logInstructions) {
-        this.logInstructions = logInstructions;
-        return this;
+    public boolean logInstructions() {
+        return getTaskEnv("logInstructions", true).map(x -> NLiteral.of(x).asBoolean().orNull()).orElse(false);
     }
 
     @Override
@@ -1206,18 +1196,17 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         } else {
             line = "";
         }
-        NaruDirective tool = session().registry().findDirective(cmd).orNull();
-        if (tool == null) {
-
-            log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + cmd + "'. Available tools: " + session().registry().directives().keySet()).asError());
+        NaruDirective dir = session().registry().findDirective(cmd).orNull();
+        if (dir == null) {
+            log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown directive '/" + cmd + "'. Available tools: " + session().registry().directives().keySet()).asError());
             return;
         }
         try {
-            tool.execute(new NaruDirectiveCallContextImpl(cmd, line, this));
+            dir.execute(new NaruDirectiveCallContextImpl(cmd, line, this));
         } catch (NCancelException e) {
             throw e;
         } catch (Exception e) {
-            log(NaruLogMode.TRACE, NMsg.ofC("ERROR executing tool '" + cmd + "': " + e.getMessage()).asError());
+            log(NaruLogMode.TRACE, NMsg.ofC("ERROR executing directive '/" + cmd + "': " + e.getMessage()).asError());
         }
     }
 
@@ -1262,7 +1251,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
             NaruRoutine routine = task.session()
                     .routineManager()
-                    .routine(routineName,task).orNull();
+                    .routine(routineName, task).orNull();
             if (routine == null) return null;
 
             String line = routine.lineCommandAt(frame.pc());
@@ -1295,7 +1284,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
             NaruRoutine routine = task.session()
                     .routineManager()
-                    .routine(routineName,task).orNull();
+                    .routine(routineName, task).orNull();
             if (routine == null) continue;
             String line = routine.lineCommandAt(frame.pc());
             if (line == null) continue; // routine exhausted at this pc — look at parent
@@ -1323,7 +1312,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
             NaruRoutine routine = task.session()
                     .routineManager()
-                    .routine(routineName,task).orNull();
+                    .routine(routineName, task).orNull();
             if (routine == null) continue;
             int cpc = frame.pc();
             for (int i = 0; i < pos; i++) {
@@ -1386,12 +1375,36 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         return list.stream().mapToInt(x -> x).toArray();
     }
 
+    public void _prependInitHooks() {
+        List<NaruStatement> all = new ArrayList<>();
+        NPath p = NPath.of(NStoreKey.ofShared(NId.of("net.thevpc.naru:naru"))).resolve("init.naru");
+        if(p.exists() && p.isFile()) {
+            List<NaruStatement> c = parseFile(p).orNull();
+            if (c != null) {
+                all.addAll(c);
+            }
+        }
+        for (NPath path : ((NaruSessionImpl) session).listOverridablePaths(
+                projectDir.resolve(".naru/hooks"),
+                projectDir.resolve(".naru/local/hooks"),
+                a -> a.equals("init.naru")
+        )) {
+            List<NaruStatement> c = parseFile(path).orNull();
+            if (c != null) {
+                all.addAll(c);
+            }
+        }
+        if (!all.isEmpty()) {
+            prependStatements(all.toArray(new NaruStatement[0]));
+        }
+    }
+
 
     private class MyNExprVarResolver implements NExprVarResolver {
         @Override
         public NOptional<NExprVar> getVar(String varName, NExprContext context) {
             return NOptional.of(NExprVar.ofVar(varName,
-                    a -> resolveVariable(varName),
+                    a -> resolveVariable(varName).orNull(),
                     (a, v) -> setVariable(varName, a)
             ));
         }
@@ -1450,10 +1463,10 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NaruTask setTaskEnv(String key, Object value) {
-        if (env.containsKey(key) && Objects.equals(env.get(key), value)) {
+        if (env.containsKey(key) && Objects.equals(env.get(key).get(), value)) {
             return this;
         }
-        env.put(key, value);
+        env.put(key, NOptional.ofNullable(value));
         fireChanged();
         return this;
     }
@@ -1461,7 +1474,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public NOptional<Object> getTaskEnv(String key, boolean inherited) {
         if (env.containsKey(key)) {
-            return NOptional.ofNullable(env.get(key));
+            return NOptional.ofNullable(env.get(key).get());
         }
         if (inherited) {
             return session().getSessionEnv(key);
@@ -1470,28 +1483,28 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public Object resolveVariable(String key) {
+    public NOptional<Object> resolveVariable(String key) {
         NaruTaskFrame ctx = frame();
         boolean inherit = ctx != null && ctx.isInheritVars();
         if (ctx != null) {
             NOptional<Object> k = ctx.getParam(key);
             if (k.isPresent()) {
-                return k.get();
+                return k;
             }
             NOptional<Object> s = ctx.getLocalVar(key);
             if (s.isPresent()) {
-                return s.get();
+                return s;
             }
             if (inherit) {
                 for (int i = frames.size() - 1; i >= 0; i--) {
                     ctx = frames.get(i);
                     k = ctx.getParam(key);
                     if (k.isPresent()) {
-                        return k.get();
+                        return k;
                     }
                     s = ctx.getLocalVar(key);
                     if (s.isPresent()) {
-                        return s.get();
+                        return s;
                     }
                     if (!ctx.isInheritVars()) {
                         break;
@@ -1510,7 +1523,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public NExprVarResolver sessionVarResolver() {
+    public NExprVarResolver varResolver() {
         return new MyNExprVarResolver();
     }
 
@@ -1521,7 +1534,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 .declareMathConstants()
                 .declareMathFunctions()
                 .declarePhysicsConstants()
-                .declareVars(sessionVarResolver())
+                .declareVars(varResolver())
                 .literalMapper((value, context) -> {
                     if (value instanceof NExprLiteralNode && ((NExprLiteralNode) value).value() instanceof String) {
                         return context.ofDollarInterpolatedString((String) ((NExprLiteralNode) value).value());
@@ -1558,15 +1571,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 .declareMathConstants()
                 .declareMathFunctions()
                 .declarePhysicsConstants()
-                .declareVars(new NExprVarResolver() {
-                    @Override
-                    public NOptional<NExprVar> getVar(String varName, NExprContext context) {
-                        return NOptional.of(NExprVar.ofVar(varName,
-                                a -> resolveVariable(varName),
-                                (a, v) -> setVariable(varName, a)
-                        ));
-                    }
-                }).build();
+                .declareVars(varResolver()).build();
         try {
             return ctx.ofTemplate().withBashStyle().compile(condition).runString();
         } catch (Exception e) {
@@ -1820,20 +1825,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         NPath nf = workingDir.toAbsolute(this.workingDir);
         if (!nf.equals(this.workingDir)) {
             this.workingDir = nf;
-            List<NaruStatement> all = new ArrayList<>();
-            for (NPath path : ((NaruSessionImpl) session).listOverridablePaths(
-                    projectDir.resolve(".naru/hooks"),
-                    projectDir.resolve(".naru/local/hooks"),
-                    a -> a.equals("init.naru")
-            )) {
-                List<NaruStatement> c = parseFile(path).orNull();
-                if (c != null) {
-                    all.addAll(c);
-                }
-            }
-            if (!all.isEmpty()) {
-                prependStatements(all.toArray(new NaruStatement[0]));
-            }
+            _prependInitHooks();
             fireChanged();
         }
         return this;
@@ -1921,9 +1913,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public void useRoutine(String name) {
+    public NaruRoutine useRoutine(String name) {
         this.currentScriptName = NStringUtils.firstNonBlankTrimmed(name, "main");
-        session.routineManager().ensureRoutineExists(currentScriptName, null, this);
+        return session.routineManager().ensureRoutineExists(currentScriptName, null, this);
     }
 
     @Override

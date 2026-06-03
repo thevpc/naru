@@ -17,8 +17,6 @@ import net.thevpc.naru.impl.routine.NaruRoutineManagerImpl;
 import net.thevpc.naru.impl.scheduler.NaruSchedulerImpl;
 import net.thevpc.naru.impl.scheduler.NaruTaskImpl;
 import net.thevpc.naru.impl.skill.NaruSkillManagerImpl;
-import net.thevpc.nuts.artifact.NId;
-import net.thevpc.nuts.core.NStoreKey;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.io.NIOUtils;
 import net.thevpc.nuts.io.NOut;
@@ -45,8 +43,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      */
     private NAruVisibility visibility;
     private NaruModelConfig model;
-    private final Set<NPath> alreadyLoadedMdFiles = new HashSet<>();
-    private final Set<NPath> alreadyLoadedDirectiveFiles = new HashSet<>();
+    private final Set<NPath> alreadyLoadedFiles = new HashSet<>();
 
     /**
      * Optional: additional context the user wants to share with every tool.
@@ -61,7 +58,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private Instant creationDate = Instant.now();
     private Instant modificationDate = creationDate;
     // Add to NaruSessionImpl fields:
-    private final Map<String, Object> properties = new ConcurrentHashMap<>();
+    //use NOptional because ConcurrentHashMap cannot support null
+    private final Map<String, NOptional<Object>> env = new ConcurrentHashMap<>();
     private final AtomicLong maxTaskId = new AtomicLong(0);
     private long foregroundTaskId;
     private final Map<Long, NaruTask> tasks = new ConcurrentHashMap<>();
@@ -78,7 +76,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private boolean running = false;
     private final NaruRegistry registry;
     private String systemPrompt;
-    private Boolean logInstructions;
 
 
     public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruMeteringService meteringService, boolean configureDefaults) {
@@ -123,15 +120,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
     }
 
-    public Boolean logInstructions() {
-        return logInstructions;
-    }
-
-    public NaruSession logInstructions(Boolean logInstructions) {
-        this.logInstructions = logInstructions;
-        return this;
-    }
-
     public NaruScheduler scheduler() {
         return scheduler;
     }
@@ -153,8 +141,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     // Accessors
     public NaruSession unsetSessionenv(String key) {
-        if (properties.containsKey(key)) {
-            properties.remove(key);
+        if (env.containsKey(key)) {
+            env.remove(key);
             fireChanged();
         }
         return this;
@@ -195,17 +183,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setSkills(parent.skillNames());
         }
         natuTask.addHistory(NaruMessage.system(buildSystemPrompt(this)));
-
-        List<NaruStatement> all = new ArrayList<>();
-        all.addAll(natuTask.loadDirectivesFile(NPath.of(NStoreKey.ofShared(NId.of("net.thevpc.naru:naru"))).resolve("directives")));
-        for (NPath path : projectDir.resolve(".naru/directives/").list().stream().filter(x -> x.name().endsWith(".md")).sorted(Comparator.comparing(x -> x.name())).collect(Collectors.toList())) {
-            all.addAll(natuTask.loadDirectivesFile(path));
-        }
-        for (NPath path : projectDir.resolve(".naru/local/directives/").list().stream().filter(x -> x.name().endsWith(".md")).sorted(Comparator.comparing(x -> x.name())).collect(Collectors.toList())) {
-            all.addAll(natuTask.loadDirectivesFile(path));
-        }
-        all.addAll(taskBuilder.statements().stream().map(x -> natuTask.parseStatement(x).get().injected(true)).collect(Collectors.toList()));
-        natuTask.addStatements(all.stream().map(x -> x.injected(true)).toArray(NaruStatement[]::new));
+        natuTask._prependInitHooks();
+        natuTask.addStatements(
+                taskBuilder.statements().stream().map(x -> natuTask.parseStatement(x).get().injected(true)).collect(Collectors.toList())
+                .stream().map(x -> x.injected(true)).toArray(NaruStatement[]::new));
         tasks.put(id, natuTask);
         return natuTask;
     }
@@ -242,17 +223,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public NaruSession setSessionEnv(String key, Object value) {
-        if (properties.containsKey(key) && Objects.equals(properties.get(key), value)) {
+        if (env.containsKey(key) && Objects.equals(env.get(key).orNull(), value)) {
             return this;
         }
-        properties.put(key, value);
+
+        env.put(key, NOptional.ofNullable(value));
         fireChanged();
         return this;
     }
 
     public NOptional<Object> getSessionEnv(String key) {
-        if (properties.containsKey(key)) {
-            return NOptional.ofNullable(properties.get(key));
+        if (env.containsKey(key)) {
+            Object u = env.get(key).get();
+            return NOptional.ofNullable(u);
         }
         return NOptional.ofNamedEmpty(key);
     }
@@ -271,7 +254,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
 
     public Map<String, Object> getGlobalStateSnapshot() {
-        return new HashMap<>(properties);
+        return new HashMap<>(env);
     }
 
 
@@ -551,7 +534,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
 
     public void _reportUsing(NPath source) {
-        if (alreadyLoadedMdFiles.add(source)) {
+        if (alreadyLoadedFiles.add(source)) {
             log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading agent from %s", source));
         }
     }
@@ -579,7 +562,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 if (u != null) {
                     byte[] b = NIOUtils.readBytes(u);
                     if (b.length > 0) {
-                        if (alreadyLoadedMdFiles.add(NPath.of(u))) {
+                        if (alreadyLoadedFiles.add(NPath.of(u))) {
                             log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loading agent from %s", NPath.of(u)));
                         }
                         String content = new String(b, StandardCharsets.UTF_8).trim();
