@@ -7,6 +7,7 @@ import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.impl.util.ToolHelper;
 
 import java.util.Map;
 import java.util.TreeMap;
@@ -48,26 +49,6 @@ public class RoutineListLinesTool implements NaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
-        String scriptName = context.stringArg("script_name")
-                .onBlankEmpty()
-                .orElseGet(() -> context.task().session().routineManager().getCurrentRoutineName());
-
-        Number startNumObj = context.numberArg("line_start").orNull();
-        Number endNumObj = context.numberArg("line_end").orNull();
-
-        NaruRoutineManager sm = context.task().session().routineManager();
-        // Temporarily switch context, put line, switch back
-        String oldName = sm.getCurrentRoutineName();
-        sm.switchRoutine(scriptName);
-        TreeMap<Integer, String> lines = sm.getCurrentRoutine().getLinesSet(x -> {
-            if (startNumObj != null && x < startNumObj.intValue()) return false;
-            return endNumObj == null || x <= endNumObj.intValue();
-        });
-        sm.switchRoutine(oldName);
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<Integer, String> e : lines.entrySet()) {
-            sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
-        }
-        return sb.toString();
+        return ToolHelper.listLines(context.task(), context.stringArg("script_name").orNull(), context.numberArg("line_start").orNull(), context.numberArg("line_end").orNull());
     }
 }

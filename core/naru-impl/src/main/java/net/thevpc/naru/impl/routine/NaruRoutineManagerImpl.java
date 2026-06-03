@@ -7,36 +7,29 @@ import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.impl.agent.NaruSessionImpl;
 import net.thevpc.naru.impl.util.NaruUtils;
-import net.thevpc.nuts.elem.NElementReader;
+import net.thevpc.nuts.io.NDigest;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
 
-import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class NaruRoutineManagerImpl implements NaruRoutineManager {
-    private String currentScriptName = "main";
-    private static final Pattern LINE_PATTERN = Pattern.compile("^(\\d+)(?:\\s+(.*))?$");
-    private static final Pattern METADATA = Pattern.compile("^([a-z]+)\\s*:(\\s*(.*))?$");
     private final NaruSessionImpl session;
-    private final NaruRoutineImpl defaultMain = new NaruRoutineImpl("main");
 
     public NaruRoutineManagerImpl(NaruSessionImpl session) {
         this.session = session;
     }
 
-    public String findByUuidOrName(String uuidOrName) {
-        List<NaruResourceInfo> list = list();
+    public String resolveRoutineUuid(String uuidOrName) {
+        List<NaruResourceInfo> list = routines();
         for (NaruResourceInfo s : list) {
             if (Objects.equals(s.getUuid(), uuidOrName)) {
                 return s.getUuid();
             }
         }
-
         for (NaruResourceInfo s : list) {
             if (Objects.equals(NStringUtils.trim(s.getName()), NStringUtils.trim(uuidOrName))) {
                 return s.getUuid();
@@ -55,34 +48,80 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
     }
 
     @Override
-    public List<NaruResourceInfo> list() {
-        List<NaruResourceInfo> a = new ArrayList<>();
-        for (NPath p : routinesDir(NAruVisibility.PUBLIC).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
-            NaruResourceInfo s = NElementReader.ofTson().read(p, NaruResourceInfo.class);
-            s.setMode(NAruVisibility.PUBLIC);
-            s.setCreationDate(p.creationInstant());
-            s.setModificationDate(p.lastModifiedInstant());
-            a.add(s);
+    public NaruRoutine ensureRoutineExists(String routineName, NAruVisibility visibilityOnCreate, NaruTask naruTask) {
+        routineName=NStringUtils.firstNonBlankTrimmed(routineName,"main");
+        NaruRoutine rt = routine(routineName, naruTask).orNull();
+        if(rt!=null){
+            return rt;
         }
-        for (NPath p : routinesDir(NAruVisibility.PRIVATE).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
-            NaruResourceInfo s = NElementReader.ofTson().read(p, NaruResourceInfo.class);
-            s.setMode(NAruVisibility.PRIVATE);
-            s.setCreationDate(p.creationInstant());
-            s.setModificationDate(p.lastModifiedInstant());
-            a.add(s);
+        if (NaruUtils.isPath(routineName) || NBlankable.isBlank(routineName)) {
+            throw new NIllegalArgumentException(NMsg.ofC("Invalid routine name: %s", routineName));
+        } else {
+            NaruRoutineImpl r=new NaruRoutineImpl(UUID.randomUUID().toString(), routineName, routinesDir(NAruVisibility.PUBLIC), routinesDir(NAruVisibility.PRIVATE), null,
+                    visibilityOnCreate ==null?NAruVisibility.PRIVATE: visibilityOnCreate
+                    , true);
+            r.flush();
+            return r;
         }
-        if (a.stream().noneMatch(x -> Objects.equals("main", x.getName()))) {
-            Instant now = Instant.now();
-            a.add(
-                    new NaruResourceInfo()
-                            .setName(defaultMain.getName())
-                            .setCreationDate(now)
-                            .setModificationDate(now)
-                            .setMode(NAruVisibility.PUBLIC)
-            );
+    }
+
+    @Override
+    public NaruRoutine newRoutine(String routineName, NAruVisibility visibility, NaruTask naruTask) {
+        if (NaruUtils.isPath(routineName) || NBlankable.isBlank(routineName)) {
+            throw new NIllegalArgumentException(NMsg.ofC("Invalid routine name: %s", routineName));
+        } else {
+            NaruRoutine rt = routine(routineName, naruTask).orNull();
+            if(rt!=null){
+                throw new NIllegalArgumentException(NMsg.ofC("Routine already exist name: %s", routineName));
+            }
+            NaruRoutineImpl r=new NaruRoutineImpl(UUID.randomUUID().toString(), routineName, routinesDir(NAruVisibility.PUBLIC), routinesDir(NAruVisibility.PRIVATE), null,
+                    visibility ==null?NAruVisibility.PRIVATE: visibility
+                    , true);
+            r.flush();
+            return r;
         }
-        a.sort((o1, o2) -> o2.getModificationDate().compareTo(o1.getModificationDate()));
-        return a;
+    }
+
+    @Override
+    public List<NaruResourceInfo> routines() {
+        NPath publicDir = routinesDir(NAruVisibility.PUBLIC);
+        NPath privateDir = routinesDir(NAruVisibility.PRIVATE);
+        Map<String, NaruResourceInfo> list = new HashMap<>();
+        for (NPath p : privateDir.list().stream().filter(x -> x.name().endsWith(".naru")).collect(Collectors.toList())) {
+            String uuid = p.name().substring(0, p.name().length() - 5);
+            try {
+                NaruRoutineImpl u = new NaruRoutineImpl(uuid, null, publicDir, privateDir, null, NAruVisibility.PRIVATE, false);
+                list.put(u.uuid(),
+                        new NaruResourceInfo()
+                                .setCreationDate(u.creationInstant())
+                                .setModificationDate(u.modificationInstant())
+                                .setVisibility(NAruVisibility.PRIVATE)
+                                .setName(u.name())
+                                .setUuid(u.uuid())
+                );
+            } catch (Exception ex) {
+                //
+            }
+        }
+        for (NPath p : publicDir.list().stream().filter(x -> x.name().endsWith(".naru")).collect(Collectors.toList())) {
+            String uuid = p.name().substring(0, p.name().length() - 5);
+            try {
+                NaruRoutineImpl u = new NaruRoutineImpl(uuid, null, publicDir, privateDir, null, NAruVisibility.PRIVATE, false);
+                if (!list.containsKey(u.uuid())) {
+                    list.put(u.uuid(),
+                            new NaruResourceInfo()
+                                    .setCreationDate(u.creationInstant())
+                                    .setModificationDate(u.modificationInstant())
+                                    .setVisibility(NAruVisibility.PUBLIC)
+                                    .setName(u.name())
+                                    .setUuid(u.uuid())
+                    );
+                }
+            } catch (Exception ex) {
+                //
+            }
+        }
+        return list.values().stream().sorted((o1, o2) -> o2.getModificationDate().compareTo(o1.getModificationDate())).collect(Collectors.toList());
     }
 
 
@@ -94,205 +133,76 @@ public class NaruRoutineManagerImpl implements NaruRoutineManager {
     }
 
     @Override
-    public NOptional<NaruRoutine> routine(String name) {
-        if (name.startsWith("path:")) {
-            return unnumberedRoutine(NPath.of(name.substring(5)));
-        }
-        String a = findByUuidOrName(name);
-        if (a != null) {
-            return load(a);
-        }
-        if ("main".equals(name)) {
-            return NOptional.of(defaultMain);
-        }
-        return null;
-    }
-
-    @Override
-    public NOptional<NaruRoutine> unnumberedRoutine(NPath path) {
-        //will add cache/pool later
-        if (path != null && path.exists()) {
-            try (NStream<String> lines = path.lines()) {
-                NIterator<String> it = lines.iterator();
-                int index = 1;
-                NaruRoutineImpl r = new NaruRoutineImpl("path:" + path);
-                while (it.hasNext()) {
-                    String line = it.next();
-                    if (!line.isEmpty()) {
-                        r.putLine(index, line);
-                    }
-                    index++;
-                }
-                return NOptional.of(r);
+    public NOptional<NaruRoutine> routine(String nameOrUuidOrPath, NaruTask task) {
+        NPath publicDir = routinesDir(NAruVisibility.PUBLIC);
+        NPath privateDir = routinesDir(NAruVisibility.PRIVATE);
+        if (NaruUtils.isPath(nameOrUuidOrPath)) {
+            NPath path = NPath.of(nameOrUuidOrPath).toAbsolute(task.workingDir());
+            if (path.exists()) {
+                String uuid = NDigest.of().sha256().addSource(path.toString().getBytes(StandardCharsets.UTF_8)).computeString();
+                return NOptional.of(new NaruRoutineImpl(uuid, path.toString(), publicDir, privateDir, path, NAruVisibility.PUBLIC, true));
             }
-        }
-        return NOptional.ofNamedEmpty(NMsg.ofC("invalid path '%s'", path));
-    }
-
-    @Override
-    public NOptional<NaruRoutine> routineOrUnnumberedRoutine(String s, NaruTask task) {
-        NaruRoutine rtn;
-        if (NaruUtils.isPath(s)) {
-            NPath f = NPath.of(s).toAbsolute(task.workingDir());
-            rtn = unnumberedRoutine(f).orNull();
-        } else {
-            rtn = routine(s).orNull();
-            if (rtn == null) {
-                NPath f = NPath.of(s).toAbsolute(task.workingDir());
-                rtn = unnumberedRoutine(f).orNull();
-                if (rtn != null) {
-                    return NOptional.of(rtn);
+            if (!path.name().endsWith(".naru") && !path.name().endsWith(".")) {
+                path = NPath.of(nameOrUuidOrPath + ".naru").toAbsolute(task.workingDir());
+                if (path.exists()) {
+                    String uuid = NDigest.of().sha256().addSource(path.toString().getBytes(StandardCharsets.UTF_8)).computeString();
+                    return NOptional.of(new NaruRoutineImpl(uuid, path.toString(), publicDir, privateDir, path, NAruVisibility.PUBLIC, true));
                 }
             }
-        }
-        if (rtn != null) {
-            return NOptional.of(rtn);
-        }
-        return NOptional.ofEmpty(NMsg.ofC("Error statement: routine not found %s", s));
-    }
-
-    @Override
-    public NaruRoutine getCurrentRoutine() {
-        return routine(currentScriptName).orNull();
-    }
-
-    @Override
-    public String getCurrentRoutineName() {
-        return currentScriptName;
-    }
-
-    @Override
-    public void switchRoutine(String name) {
-        this.currentScriptName = name;
-    }
-
-    @Override
-    public void putLine(int number, String text) {
-        NaruRoutine r = getCurrentRoutine();
-        r.putLine(number, text);
-        save(r);
-    }
-
-    @Override
-    public void removeLine(int number) {
-        getCurrentRoutine().removeLine(number);
-    }
-
-    @Override
-    public void clearCurrent() {
-        getCurrentRoutine().clear();
-    }
-
-    @Override
-    public String listCurrent() {
-        return getCurrentRoutine().getFormattedText();
-    }
-
-    private synchronized NOptional<NaruRoutine> load(String uuid) {
-        //will add cache/pool later
-        NPath path1 = routinesDir(NAruVisibility.PRIVATE).resolve(uuid + ".md");
-        NPath path2 = routinesDir(NAruVisibility.PUBLIC).resolve(uuid);
-        NPath path;
-        NAruVisibility visibility = NAruVisibility.PUBLIC;
-        if (path1.isRegularFile()) {
-            visibility = NAruVisibility.PRIVATE;
-            path = path1;
-        } else if (path2.isRegularFile()) {
-            visibility = NAruVisibility.PUBLIC;
-            path = path2;
         } else {
-            return NOptional.ofNamedEmpty(uuid);
-        }
-        NaruRoutineImpl r = new NaruRoutineImpl(path.name());
-        String text = path.readString();
-        clearCurrent();
-        boolean metadata = true;
-        for (String line : text.split("\n")) {
-            line = line.trim();
-            if (!line.isEmpty()) {
-                if (metadata) {
-                    Matcher m0 = METADATA.matcher(line);
-                    if (m0.matches()) {
-                        String n = m0.group(1);
-                        String content = m0.group(2);
-                        switch (n) {
-                            case "name": {
-                                if (NBlankable.isBlank(content)) {
-                                    r.setName(content);
-                                }
-                                break;
-                            }
-                        }
-                    } else {
-                        metadata = false;
-                        Matcher m = LINE_PATTERN.matcher(line);
-                        if (m.matches()) {
-                            int num = Integer.parseInt(m.group(1));
-                            String content = m.group(2) != null ? m.group(2) : "";
-                            r.putLine(num, content);
-                        }
+            NPath t = privateDir.resolve(nameOrUuidOrPath + ".naru");
+            if (t.exists()) {
+                try {
+                    return NOptional.of(new NaruRoutineImpl(nameOrUuidOrPath, null, publicDir, privateDir, null, NAruVisibility.PRIVATE, true));
+                } catch (Exception ex) {
+                    //
+                }
+            }
+            t = publicDir.resolve(nameOrUuidOrPath + ".naru");
+            if (t.exists()) {
+                try {
+                    return NOptional.of(new NaruRoutineImpl(nameOrUuidOrPath, null, publicDir, privateDir, null, NAruVisibility.PUBLIC, true));
+                } catch (Exception ex) {
+                    //
+                }
+            }
+            for (NPath p : privateDir.list().stream().filter(x -> x.name().endsWith(".naru")).collect(Collectors.toList())) {
+                String uuid = p.name().substring(0, p.name().length() - 5);
+                try {
+                    NaruRoutineImpl u = new NaruRoutineImpl(uuid, null, publicDir, privateDir, null, NAruVisibility.PRIVATE, true);
+                    if (Objects.equals(u.name(), nameOrUuidOrPath)) {
+                        return NOptional.of(u);
                     }
-                } else {
-                    Matcher m = LINE_PATTERN.matcher(line);
-                    if (m.matches()) {
-                        int num = Integer.parseInt(m.group(1));
-                        String content = m.group(2) != null ? m.group(2) : "";
-                        r.putLine(num, content);
+                } catch (Exception ex) {
+                    //
+                }
+            }
+            for (NPath p : publicDir.list().stream().filter(x -> x.name().endsWith(".naru")).collect(Collectors.toList())) {
+                String uuid = p.name().substring(0, p.name().length() - 5);
+                try {
+                    NaruRoutineImpl u = new NaruRoutineImpl(uuid, null, publicDir, privateDir, null, NAruVisibility.PUBLIC, true);
+                    if (Objects.equals(u.name(), nameOrUuidOrPath)) {
+                        return NOptional.of(u);
                     }
+                } catch (Exception ex) {
+                    //
+                }
+            }
+
+            NPath path = NPath.of(nameOrUuidOrPath).toAbsolute(task.workingDir());
+            if (path.exists()) {
+                String uuid = NDigest.of().sha256().addSource(path.toString().getBytes(StandardCharsets.UTF_8)).computeString();
+                return NOptional.of(new NaruRoutineImpl(uuid, path.toString(), publicDir, privateDir, path, NAruVisibility.PUBLIC, true));
+            }
+            if (!path.name().endsWith(".naru") && !path.name().endsWith(".")) {
+                path = NPath.of(nameOrUuidOrPath + ".naru").toAbsolute(task.workingDir());
+                if (path.exists()) {
+                    String uuid = NDigest.of().sha256().addSource(path.toString().getBytes(StandardCharsets.UTF_8)).computeString();
+                    return NOptional.of(new NaruRoutineImpl(uuid, path.toString(), publicDir, privateDir, path, NAruVisibility.PUBLIC, true));
                 }
             }
         }
-        r.setVisibility(visibility);
-//        save(r);
-        return NOptional.of(r);
+        return NOptional.ofEmpty(NMsg.ofC("Error statement: routine not found %s", nameOrUuidOrPath));
     }
 
-    public synchronized void save(NaruRoutine r) {
-        NAssert.requireNamedNonBlank(r.getName(), "name");
-        if (!NStringUtils.isValidVar(r.getName())) {
-            throw new IllegalArgumentException("invalid name " + r.getName());
-        }
-        if (NBlankable.isBlank(r.uuid())) {
-            ((NaruRoutineImpl) r).setUuid(UUID.randomUUID().toString());
-        }
-        NPath pub = routinesDir(NAruVisibility.PUBLIC).resolve(r.getName());
-        NPath priv = routinesDir(NAruVisibility.PRIVATE).resolve(r.getName());
-        if (r.getVisibility() == NAruVisibility.PUBLIC) {
-            if (priv.isRegularFile()) {
-                priv.delete();
-            }
-            _write(pub.mkParentDirs(), r);
-        } else {
-            if (pub.isRegularFile()) {
-                pub.delete();
-            }
-            _write(priv.mkParentDirs(), r);
-        }
-    }
-
-    private void _write(NPath pub, NaruRoutine r) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("name : ").append(NStringUtils.firstNonBlankTrimmed(r.getName(), "NO_NAME")).append("\n");
-        sb.append("\n");
-        for (Map.Entry<Integer, String> e : r.getLinesSet().entrySet()) {
-            sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
-        }
-        pub.mkParentDirs().writeString(sb.toString());
-    }
-
-    @Override
-    public boolean tryParseLine(String input) {
-        Matcher m = LINE_PATTERN.matcher(input);
-        if (m.matches()) {
-            int num = Integer.parseInt(m.group(1));
-            String content = m.group(2) != null ? m.group(2).trim() : "";
-            if (content.isEmpty()) {
-                removeLine(num);
-            } else {
-                putLine(num, content);
-            }
-            return true;
-        }
-        return false;
-    }
 }

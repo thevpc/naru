@@ -1,11 +1,14 @@
 package net.thevpc.naru.impl.registry.builtintools;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.mode.NaruPromptMode;
+import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.impl.util.ToolHelper;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.io.NPathOption;
 
@@ -34,25 +37,28 @@ public class FileAppendTool implements NaruTool {
         return new NaruToolDefinitionFunction(
                 name(), getDescription(session),
                 NaruToolParameter.string("path", "Path of the file to append to", true).build(),
-                NaruToolParameter.string("content", "content to append", true).build()
+                NaruToolParameter.string("content", "content to append", true).build(),
+                NaruToolParameter.bool("dry", "If true, preview changes without modifying the file", false).build()
         );
     }
 
     @Override
     public String execute(NaruToolCallContext context) {
-        String path = context.stringArg("path").onBlankEmpty().orNull();
-        if (path == null) return "ERROR: 'path' argument is required.";
-        String content = context.stringArg("content").onBlankEmpty().orNull();
-        if (content == null) return "ERROR: 'content' argument is required.";
-
-        try {
-            NPath p = context.task().resolve(path);
-            p.mkParentDirs().writeString(content, NPathOption.APPEND);
-            return "content appended successfully.";
-        } catch (Exception e) {
-            return "ERROR reading file: " + e.getMessage();
-        }
+        return ToolHelper.fileAppend(context.task(), context.stringArg("path").onBlankEmpty().orNull(),
+                context.stringArg("content").onBlankEmpty().orNull(),
+                context.booleanArg("dry").onBlankEmpty().orNull()
+        );
     }
 
+    public boolean acceptMode(NaruPromptMode mode) {
+        NaruStandardMode m = mode.asStandardMode().orNull();
+        if (m != null) {
+            switch (m) {
+                case IMPLEMENT:
+                    return true;
+            }
+        }
+        return false;
+    }
 
 }

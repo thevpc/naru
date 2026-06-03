@@ -2,22 +2,14 @@ package net.thevpc.naru.impl.skill;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
-import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.skills.NaruSkill;
 import net.thevpc.naru.api.skills.NaruSkillManager;
 import net.thevpc.naru.impl.agent.NaruSessionImpl;
-import net.thevpc.naru.impl.routine.NaruRoutineImpl;
-import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.io.NPath;
-import net.thevpc.nuts.util.NAssert;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NNameFormat;
-import net.thevpc.nuts.util.NStringUtils;
 
-import java.time.Instant;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class NaruSkillManagerImpl implements NaruSkillManager {
@@ -36,7 +28,7 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
             NaruResourceInfo s = a.computeIfAbsent(goodName, x -> new NaruResourceInfo().setName(goodName));
             s.setModificationDate(p.creationInstant());
             s.setModificationDate(p.lastModifiedInstant());
-            s.setMode(NAruVisibility.PUBLIC);
+            s.setVisibility(NAruVisibility.PUBLIC);
         }
         for (NPath p : skillsDir(NAruVisibility.PRIVATE).list().stream().filter(x -> isValidSkillName(x)).collect(Collectors.toList())) {
             String goodName = NNameFormat.LOWER_KEBAB_CASE.format(p.name().substring(0, p.name().length() - 3));
@@ -45,7 +37,7 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
             if (conflictResolution == ConflictResolution.PRIVATE_WINS) {
                 s.setModificationDate(p.creationInstant());
                 s.setModificationDate(p.lastModifiedInstant());
-                s.setMode(NAruVisibility.PRIVATE);
+                s.setVisibility(NAruVisibility.PRIVATE);
             } else if (conflictResolution == ConflictResolution.MERGE) {
                 if (s.getCreationDate() == null || s.getCreationDate().isAfter(p.creationInstant())) {
                     s.setModificationDate(p.creationInstant());
@@ -59,11 +51,11 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
                 }
                 switch (mode) {
                     case PUBLIC: {
-                        s.setMode(NAruVisibility.MIXED);
+                        s.setVisibility(NAruVisibility.MIXED);
                         break;
                     }
                     default: {
-                        s.setMode(NAruVisibility.PRIVATE);
+                        s.setVisibility(NAruVisibility.PRIVATE);
                     }
                 }
 
@@ -156,7 +148,7 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
                 case PRIVATE_WINS: {
                     s.setCreationDate(sf.privateSkill.creationInstant());
                     s.setModificationDate(sf.privateSkill.lastModifiedInstant());
-                    s.setMode(NAruVisibility.PRIVATE);
+                    s.setVisibility(NAruVisibility.PRIVATE);
                     break;
                 }
                 case MERGE: {
@@ -174,7 +166,7 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
                     if (s.getModificationDate() == null || s.getModificationDate().isBefore(p.lastModifiedInstant())) {
                         s.setModificationDate(p.lastModifiedInstant());
                     }
-                    s.setMode(NAruVisibility.MIXED);
+                    s.setVisibility(NAruVisibility.MIXED);
                     break;
                 }
             }
@@ -182,12 +174,12 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
             if (sf.publicSkill != null) {
                 s.setCreationDate(sf.publicSkill.creationInstant());
                 s.setModificationDate(sf.publicSkill.lastModifiedInstant());
-                s.setMode(NAruVisibility.PUBLIC);
+                s.setVisibility(NAruVisibility.PUBLIC);
             }
             if (sf.privateSkill != null) {
                 s.setCreationDate(sf.privateSkill.creationInstant());
                 s.setModificationDate(sf.privateSkill.lastModifiedInstant());
-                s.setMode(NAruVisibility.PRIVATE);
+                s.setVisibility(NAruVisibility.PRIVATE);
             }
         }
         return s;

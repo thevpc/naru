@@ -6,10 +6,18 @@ import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruStructuralDirective;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
 import net.thevpc.naru.impl.stmt.NaruForStmt;
+import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.text.NText;
 
 public class NaruForDirective extends AbstractDirective implements NaruStructuralDirective {
     public NaruForDirective() {
         super("for","routine", "start for bloc");
+        register(new AbstractSubCommand() {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                context.task().addStatement(new NaruForStmt(context.argument()));
+            }
+        });
     }
 
     @Override
@@ -17,8 +25,4 @@ public class NaruForDirective extends AbstractDirective implements NaruStructura
         return new NaruForStmt(arguments);
     }
 
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        context.task().addStatement(new NaruForStmt(context.argument()));
-    }
 }

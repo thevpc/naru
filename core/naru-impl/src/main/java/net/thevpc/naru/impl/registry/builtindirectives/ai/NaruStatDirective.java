@@ -21,15 +21,14 @@ import java.util.stream.Collectors;
 public class NaruStatDirective extends AbstractDirective {
     public NaruStatDirective() {
         super("stat", "ai", "show and manage stats", "stats");
+        register(new AbstractSubCommand() {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                executeList(context, cmdLine);
+            }
+        });
     }
 
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
-        if (cmdLine.isEmpty()) {
-            executeList(context, cmdLine);
-        }
-    }
 
     public void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();

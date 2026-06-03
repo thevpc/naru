@@ -7,6 +7,7 @@ import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.impl.util.ToolHelper;
 
 public class RoutineAddLineTool implements NaruTool {
 
@@ -37,27 +38,10 @@ public class RoutineAddLineTool implements NaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
-        String scriptName = context.stringArg("routine_name")
-                .onBlankEmpty()
-                .orElseGet(() -> context.task().session().routineManager().getCurrentRoutineName());
-
-        Number lineNumObj = context.numberArg("line_number").orNull();
-        if (lineNumObj == null) {
-            return "Error: line_number is required";
-        }
-        int lineNum = lineNumObj.intValue();
-
-        String command = context.stringArg("command").orNull();
-        if (command == null) {
-            return "Error: command is required";
-        }
-
-        NaruRoutineManager sm = context.task().session().routineManager();
-        String oldName = sm.getCurrentRoutineName();
-        sm.switchRoutine(scriptName);
-        sm.putLine(lineNum, command);
-        sm.switchRoutine(oldName);
-
-        return "Successfully wrote line " + lineNum + " to script '" + scriptName + "'";
+        return ToolHelper.routineAddLine(context.task(),
+                context.stringArg("routine_name").orNull(),
+                context.numberArg("line_number").orNull(),
+                context.stringArg("command").orNull()
+        );
     }
 }

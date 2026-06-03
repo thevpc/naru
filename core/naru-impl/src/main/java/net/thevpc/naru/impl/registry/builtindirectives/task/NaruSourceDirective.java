@@ -16,33 +16,33 @@ public class NaruSourceDirective extends AbstractDirective {
 
     public NaruSourceDirective() {
         super("source", "task", "inline routine");
-    }
-
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        NaruTask task = context.task();
-        NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
-        List<List<NaruStatement>> li = new ArrayList<>();
-        cmdLine.matcher()
-                .withNonOption().matchAny(a->{
-                    String s = a.image();
-                    NaruRoutine rtn;
-                    rtn = task.session().routineManager().routineOrUnnumberedRoutine(s, task).orNull();
-                    if (rtn == null) {
-                        task.throwError(NMsg.ofC("Error statement: routine not found %s", s));
-                        return;
-                    }
-                    NOptional<List<NaruStatement>> ll = rtn.parseStatements(task);
-                    if (!ll.isPresent()) {
-                        task.throwError(ll.getMessage().get());
-                        return;
-                    }
-                    li.add(ll.get());
-                })
-                .requireAll();
-        for (int i = li.size() - 1; i >= 0; i--) {
-            task.prependStatements(li.get(i).toArray(new NaruStatement[0]));
-        }
+        register(new AbstractSubCommand(new SubCommandHelp("<routine>...", "inline and run one or more routines in the current task\n<routine> can be routine name or routine path")) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                List<List<NaruStatement>> li = new ArrayList<>();
+                cmdLine.matcher()
+                        .withNonOption().matchAny(a->{
+                            String s = a.image();
+                            NaruRoutine rtn;
+                            rtn = task.session().routineManager().routine(s, task).orNull();
+                            if (rtn == null) {
+                                task.throwError(NMsg.ofC("Error statement: routine not found %s", s));
+                                return;
+                            }
+                            NOptional<List<NaruStatement>> ll = rtn.parseStatements(task);
+                            if (!ll.isPresent()) {
+                                task.throwError(ll.getMessage().get());
+                                return;
+                            }
+                            li.add(ll.get());
+                        })
+                        .requireAll();
+                for (int i = li.size() - 1; i >= 0; i--) {
+                    task.prependStatements(li.get(i).toArray(new NaruStatement[0]));
+                }
+            }
+        });
     }
 
 }

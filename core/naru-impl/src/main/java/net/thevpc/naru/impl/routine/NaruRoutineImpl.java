@@ -6,27 +6,163 @@ import net.thevpc.naru.api.routine.NaruIndexedLine;
 import net.thevpc.naru.api.routine.SubroutineDef;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.stmt.NaruStatement;
+import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
-import net.thevpc.nuts.util.NOptional;
+import net.thevpc.nuts.util.*;
 
+import java.time.Instant;
 import java.util.*;
 import java.util.function.IntPredicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class NaruRoutineImpl implements NaruRoutine {
     private String uuid;
     private String name;
     private NAruVisibility visibility;
+    private Instant creationInstant;
+    private Instant modificationInstant;
     private final TreeMap<Integer, String> lines = new TreeMap<>();
+    private final NPath publicDir;
+    private final NPath privateDir;
+    private final NPath preferredPath;
+    private static final Pattern LINE_PATTERN = Pattern.compile("^(\\d+)(?:\\s+(.*))?$");
+    private static final Pattern METADATA = Pattern.compile("^([a-z]+)\\s*:(\\s*(.*))?$");
 
-    public NaruRoutineImpl(String name) {
+    public NaruRoutineImpl(String uuid, String name, NPath publicDir, NPath privateDir, NPath preferredPath, NAruVisibility visibility, boolean loadContent) {
+        this.uuid = NAssert.requireNamedNonNull(uuid, "uuid");
         this.name = name;
+        this.publicDir = publicDir;
+        this.privateDir = privateDir;
+        this.preferredPath = preferredPath;
+        this.visibility = visibility;
+        this.lines.putAll(lines);
+        if (preferredPath != null) {
+            this.visibility = NAruVisibility.PUBLIC;
+            fill(preferredPath, false, loadContent);
+        } else {
+            String pathName = uuid + ".naru";
+            if (visibility == NAruVisibility.PUBLIC) {
+                fill(publicDir.resolve(pathName), false, loadContent);
+            } else {
+                fill(privateDir.resolve(pathName), false, loadContent);
+            }
+        }
     }
 
-    public NAruVisibility getVisibility() {
+    private synchronized void fill(NPath path, boolean numbered, boolean loadContent) {
+        if (!path.exists()) {
+            return;
+        }
+        String text = path.readString();
+        boolean metadata = true;
+        int goodIndex = 10;
+        for (String line : text.split("\n")) {
+            line = line.trim();
+            if (!line.isEmpty()) {
+                if (metadata) {
+                    Matcher m0 = METADATA.matcher(line);
+                    if (m0.matches()) {
+                        String n = m0.group(1);
+                        String content = m0.group(2);
+                        switch (n) {
+                            case "name": {
+                                if (NBlankable.isBlank(content)) {
+                                    this.name = content.trim();
+                                }
+                                break;
+                            }
+                            case "creationInstant": {
+                                if (NBlankable.isBlank(content)) {
+                                    try {
+                                        this.creationInstant = Instant.parse(content.trim());
+                                    } catch (Exception ex) {
+                                        this.creationInstant = path.creationInstant();
+                                    }
+                                }
+                                break;
+                            }
+                            case "modificationInstant": {
+                                if (NBlankable.isBlank(content)) {
+                                    try {
+                                        this.creationInstant = Instant.parse(content.trim());
+                                    } catch (Exception ex) {
+                                        this.modificationInstant = path.lastModifiedInstant();
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    } else {
+                        if (!loadContent) {
+                            if(creationInstant==null){
+                                creationInstant=path.creationInstant();
+                            }
+                            if(modificationInstant==null){
+                                modificationInstant=creationInstant;
+                            }
+                            return;
+                        }
+                        metadata = false;
+                        if (numbered) {
+                            Matcher m = LINE_PATTERN.matcher(line);
+                            if (m.matches()) {
+                                int num = Integer.parseInt(m.group(1));
+                                String content = m.group(2) != null ? m.group(2) : "";
+                                lines.put(num, content);
+                            }
+                        } else {
+                            lines.put(goodIndex, line);
+                            goodIndex += 10;
+                        }
+                    }
+                } else {
+                    if (!loadContent) {
+                        if(creationInstant==null){
+                            creationInstant=path.creationInstant();
+                        }
+                        if(modificationInstant==null){
+                            modificationInstant=creationInstant;
+                        }
+                        return;
+                    }
+                    Matcher m = LINE_PATTERN.matcher(line);
+                    if (numbered) {
+                        if (m.matches()) {
+                            int num = Integer.parseInt(m.group(1));
+                            String content = m.group(2) != null ? m.group(2) : "";
+                            lines.put(num, content);
+                        }
+                    } else {
+                        lines.put(goodIndex, line);
+                        goodIndex += 10;
+                    }
+                }
+            }
+        }
+        if(creationInstant==null){
+            creationInstant=path.creationInstant();
+        }
+        if(modificationInstant==null){
+            modificationInstant=creationInstant;
+        }
+    }
+
+    public NAruVisibility visibility() {
         return visibility;
     }
 
-    public NaruRoutineImpl setVisibility(NAruVisibility visibility) {
+    @Override
+    public Instant creationInstant() {
+        return creationInstant;
+    }
+
+    @Override
+    public Instant modificationInstant() {
+        return modificationInstant;
+    }
+
+    public NaruRoutineImpl visibility(NAruVisibility visibility) {
         this.visibility = visibility;
         return this;
     }
@@ -47,7 +183,7 @@ public class NaruRoutineImpl implements NaruRoutine {
     }
 
     @Override
-    public String getName() {
+    public String name() {
         return name;
     }
 
@@ -186,4 +322,55 @@ public class NaruRoutineImpl implements NaruRoutine {
         return subs;
     }
 
+    @Override
+    public void flush() {
+        if (NBlankable.isBlank(uuid())) {
+            setUuid(UUID.randomUUID().toString());
+        }
+        if (preferredPath != null) {
+            _write(preferredPath.mkParentDirs());
+        } else {
+            NAssert.requireNamedNonBlank(name(), "name");
+            if (!NStringUtils.isValidVar(name())) {
+                throw new IllegalArgumentException("invalid name " + name());
+            }
+            String pathName = uuid() + ".naru";
+            NPath pub = publicDir.resolve(pathName);
+            NPath priv = privateDir.resolve(pathName);
+            if (visibility() == NAruVisibility.PUBLIC) {
+                if (priv.isRegularFile()) {
+                    priv.delete();
+                }
+                _write(pub.mkParentDirs());
+            } else {
+                if (pub.isRegularFile()) {
+                    pub.delete();
+                }
+                _write(priv.mkParentDirs());
+            }
+        }
+    }
+
+    private String effectiveName() {
+        if (preferredPath != null) {
+            String n = preferredPath.name();
+            if (n.endsWith(".naru")) {
+                n = n.substring(0, n.length() - 5);
+            }
+            return n;
+        }
+        return name();
+    }
+
+    private void _write(NPath pub) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("name : ").append(NStringUtils.firstNonBlankTrimmed(effectiveName(), "NO_NAME")).append("\n");
+        sb.append("creationInstant : ").append(creationInstant==null?Instant.now():creationInstant).append("\n");
+        sb.append("modificationInstant : ").append(modificationInstant==null?Instant.now():modificationInstant).append("\n");
+        sb.append("\n");
+        for (Map.Entry<Integer, String> e : getLinesSet().entrySet()) {
+            sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
+        }
+        pub.mkParentDirs().writeString(sb.toString());
+    }
 }

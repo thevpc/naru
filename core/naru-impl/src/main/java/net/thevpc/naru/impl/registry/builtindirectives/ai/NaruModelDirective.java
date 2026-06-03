@@ -14,6 +14,7 @@ import net.thevpc.nuts.cmdline.NArgCandidate;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.cmdline.NCmdLineAutoCompleteResolver;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextBuilder;
 import net.thevpc.nuts.util.*;
 
@@ -25,187 +26,247 @@ public class NaruModelDirective extends AbstractDirective {
 
     public NaruModelDirective() {
         super("model", "ai", "manage AI models");
-    }
-
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        NaruTask task = context.task();
-        NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
-        if (cmdLine.isEmpty()) {
-            executeList(context, cmdLine);
-        } else {
-            NArg a = cmdLine.next().get();
-            switch (a.image()) {
-                case "get": {
-                    executeGet(context, cmdLine);
-                    break;
+        noCommand("list");
+        register(new AbstractSubCommand("current", NText.ofPlain("show current model")) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", task.model().toText()));
+            }
+        });
+        register(new AbstractSubCommand("use", NText.ofPlain("select model"),
+                new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name or index (as given by 'list' subcommand) to select"))
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NOptional<NArg> n = cmdLine.next();
+                if (!n.isPresent()) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to set.").asError());
+                    return;
                 }
-                case "set": {
-                    executeSet(context, cmdLine);
-                    break;
+                NArg a = n.get();
+                NaruModelConfig k = task.session().findModel(a.image()).orNull();
+                if (k == null) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
+                            a.image()).asError());
                 }
-                case "install": {
-                    executeInstall(context, cmdLine);
-                    break;
+                context.task().setModel(k);
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s",
+                        task.model().toText()));
+            }
+        });
+        register(new AbstractSubCommand("install", NText.ofPlain("install a new model (equivalent to ollama pull)"),
+                new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name to install"))
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NOptional<NArg> n = cmdLine.next();
+                if (!n.isPresent()) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to install.").asError());
+                    return;
                 }
-                case "uninstall": {
-                    executeUninstall(context, cmdLine);
-                    break;
+                NaruModelKey key = NaruModelKey.parse(n.get().image()).get();
+                if (NBlankable.isBlank(key.provider())) {
+                    key = new NaruModelKey("ollama", n.get().image());
                 }
-                case "unload": {
-                    executeUnload(context, cmdLine);
-                    break;
+                NaruModelProvider naruModelProvider = task.session().registry().provider(key.provider()).orNull();
+                if (naruModelProvider == null) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: provider not found :%s", key.provider()).asError());
+                    return;
                 }
-                case "ps": {
-                    executePs(context, cmdLine);
-                    break;
+                if (naruModelProvider.isSupportedInstallModel()) {
+                    naruModelProvider.installModel(key, task.session());
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("model installed/pulled :%s", key.toMsg()).asError());
+                } else {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: unsupported 'install' :%s", key.toMsg()).asError());
                 }
-                case "set-global": {
-                    executeSetGlobal(context, cmdLine);
-                    break;
+            }
+        });
+        register(new AbstractSubCommand("uninstall", NText.ofPlain("uninstall a new model (equivalent to ollama delete)"),
+                new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name to uninstall"))
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NOptional<NArg> n = cmdLine.next();
+                if (!n.isPresent()) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to uninstall.").asError());
+                    return;
                 }
-                case "alias": {
-                    if (cmdLine.isEmpty()) {
-                        executeListAlias(context, cmdLine);
-                    } else {
-                        executeSetAlias(context, cmdLine);
+                NaruModelKey key = NaruModelKey.parse(n.get().image()).get();
+                if (NBlankable.isBlank(key.provider())) {
+                    key = new NaruModelKey("ollama", n.get().image());
+                }
+                NaruModelProvider naruModelProvider = task.session().registry().provider(key.provider()).orNull();
+                if (naruModelProvider == null) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: provider not found :%s", key.provider()).asError());
+                    return;
+                }
+                if (naruModelProvider.isSupportedUninstallModel()) {
+                    naruModelProvider.uninstallModel(key, task.session());
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("model uninstalled :%s", key.toMsg()).asError());
+                } else {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: unsupported 'uninstall' :%s", key.toMsg()).asError());
+                }
+            }
+        });
+        register(new AbstractSubCommand("unload", NText.ofPlain("unload model and free VRAM/RAM"),
+                new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name to unload"))
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NOptional<NArg> n = cmdLine.next();
+                if (!n.isPresent()) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to unload.").asError());
+                    return;
+                }
+                NaruModelKey key = NaruModelKey.parse(n.get().image()).get();
+                if (NBlankable.isBlank(key.provider())) {
+                    key = new NaruModelKey("ollama", n.get().image());
+                }
+                NaruModelProvider naruModelProvider = task.session().registry().provider(key.provider()).orNull();
+                if (naruModelProvider == null) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: provider not found :%s", key.provider()).asError());
+                    return;
+                }
+                if (naruModelProvider.isSupportedUnloadModel()) {
+                    naruModelProvider.unloadModel(key, task.session());
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("model unload :%s", key.toMsg()).asError());
+                } else {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: unsupported 'unload' :%s", key.toMsg()).asError());
+                }
+            }
+        });
+        register(new AbstractSubCommand("ps", NText.ofPlain("list loaded (in VRAM) models")
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+//                NOptional<NArg> n = cmdLine.next();
+                //should call all providers
+                String provider = "ollama";
+//                if (n.isPresent()) {
+//                    String provider2 = n.get().image();
+//                    if(!NBlankable.isBlank(provider2)) {
+//                        provider=provider2;
+//                    }
+//                }
+                NaruModelProvider naruModelProvider = task.session().registry().provider(provider).orNull();
+                if (naruModelProvider == null) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: provider not found :%s", provider).asError());
+                    return;
+                }
+                if (naruModelProvider.isSupportedPsModel()) {
+                    List<NaruModelPsResult> elements = naruModelProvider.psModel(task.session());
+                    for (NaruModelPsResult element : elements) {
+                        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s size: %s vram-size: %s (%s on VRAM) %s",
+                                element.getModel().toMsg(),
+                                NMsg.ofStyledNumber(NMemoryFormat.DEFAULT.format(NMemorySize.ofBytes(element.getSize()).normalize().canonicalize())),
+                                NMsg.ofStyledNumber(NMemoryFormat.DEFAULT.format(NMemorySize.ofBytes(element.getSizeVram()).normalize().canonicalize())),
+                                NMsg.ofStyledNumber(
+                                        (element.getSize() == 0 ? "0.00" :
+                                                new DecimalFormat("0.00").format((100.0 * element.getSizeVram() / element.getSize()))
+                                        ) + "%"
+                                ),
+                                element.getExpiresAt()
+                        ));
                     }
-                    break;
+                } else {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: unsupported 'ps' :%s", provider).asError());
                 }
-                case "update": {
-                    executeUpdateAlias(context, cmdLine);
-                    break;
+            }
+        });
+        register(new AbstractSubCommand("set-global", NText.ofPlain("set model as default globally")
+                , new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name to set as default globally"))
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NOptional<NArg> n = cmdLine.next();
+                if (!n.isPresent()) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to set.").asError());
+                    return;
                 }
-                case "unalias": {
-                    executeUnsetAlias(context, cmdLine);
-                    break;
+                NArg a = n.get();
+                NaruModelConfig k = task.session().findModel(a.image()).orNull();
+                if (k == null) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
+                            a.image()).asError());
                 }
-                case "list": {
-                    executeList(context, cmdLine);
-                    break;
+                context.task().setModel(k);
+                NAssert.requireNamedNonNull(k, "key");
+                context.task().session().setProjectEnv("model", k.toElement(), NAruVisibility.PRIVATE);
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("switch global model : %s",
+                        task.model().toText()));
+            }
+        });
+
+        register(new AbstractSubCommand("alias", NText.ofPlain("manager model aliases")
+                , new SubCommandHelp(NText.of(""), NText.ofPlain("list aliases"))
+                , new SubCommandHelp(NText.of("<alias>=<name>"), NText.ofPlain("set alias"))
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                if (cmdLine.isEmpty()) {
+                    executeListAlias(context, cmdLine);
+                } else {
+                    executeSetAlias(context, cmdLine);
                 }
-                case "--help":
-                case "help": {
-                    executeHelp(context, cmdLine);
-                    break;
-                }
-                default: {
+            }
+        });
+        register(new AbstractSubCommand("update", NText.ofPlain("update an alias to configure context length etc...")
+                , new SubCommandHelp(NText.of("<alias> <options>"), NText.ofPlain("update option of the alias"))
+                , new SubCommandHelp(NText.of("<alias> --alias=<value>"), NText.ofPlain("update alias name"))
+                , new SubCommandHelp(NText.of("<alias> --alias=<value>"), NText.ofPlain("update alias name"))
+                , new SubCommandHelp(NText.of("<alias> --model=<value>"), NText.ofPlain("update model name"))
+                , new SubCommandHelp(NText.of("<alias> --contextLength=<value>"), NText.ofPlain("update context length (ex: 15b)"))
+                , new SubCommandHelp(NText.of("<alias> --temperature=<value>"), NText.ofPlain("update temperature length (ex: 0.6)"))
+                , new SubCommandHelp(NText.of("<alias> --nucleusThreshold=<value>"), NText.ofPlain("update nucleusThreshold (top_p) (ex: 0.6)"))
+                , new SubCommandHelp(NText.of("<alias> --candidateCount=<value>"), NText.ofPlain("update candidateCount ('top_k') (ex: 2)"))
+                , new SubCommandHelp(NText.of("<alias> --maxTokens=<value>"), NText.ofPlain("update maxTokens ('num_predict') (ex: 2)"))
+                , new SubCommandHelp(NText.of("<alias> --stop=<value>"), NText.ofPlain("update/append stop words ('stop') (ex: '<|start>')"))
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                executeSetAlias(context, cmdLine);
+            }
+        });
+        register(new AbstractSubCommand("unalias", NText.ofPlain("remove alias by name")
+                , new SubCommandHelp(NText.of("<alias>"), NText.ofPlain("remove alias named <alias>"))
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                executeUnsetAlias(context, cmdLine);
+            }
+        });
+        register(new AbstractSubCommand("list", NText.ofPlain("list aliases")
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                executeList(context, cmdLine);
+            }
+        });
+        register(new AbstractSubCommand("", NText.ofPlain("special..."),
+                new SubCommandHelp("<n>", "set model by index")
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                for (NArg a : cmdLine) {
                     NOptional<Integer> b = NLiteral.of(a.image()).asInt();
                     if (b.isPresent()) {
                         executeSetByNumber(context, b.get());
                         return;
+                    }else{
+                        context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                     }
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
                 }
+                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
             }
-        }
-    }
+        });
 
-    public void executeInstall(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NOptional<NArg> n = cmdLine.next();
-        if (!n.isPresent()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to install.").asError());
-            return;
-        }
-        NaruModelKey key = NaruModelKey.parse(n.get().image()).get();
-        if (NBlankable.isBlank(key.provider())) {
-            key = new NaruModelKey("ollama", n.get().image());
-        }
-        NaruModelProvider naruModelProvider = task.session().registry().provider(key.provider()).orNull();
-        if (naruModelProvider == null) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: provider not found :%s", key.provider()).asError());
-            return;
-        }
-        if (naruModelProvider.isSupportedInstallModel()) {
-            naruModelProvider.installModel(key, task.session());
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("model installed/pulled :%s", key.toMsg()).asError());
-        } else {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: unsupported 'install' :%s", key.toMsg()).asError());
-        }
-    }
-
-    public void executeUninstall(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NOptional<NArg> n = cmdLine.next();
-        if (!n.isPresent()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to uninstall.").asError());
-            return;
-        }
-        NaruModelKey key = NaruModelKey.parse(n.get().image()).get();
-        if (NBlankable.isBlank(key.provider())) {
-            key = new NaruModelKey("ollama", n.get().image());
-        }
-        NaruModelProvider naruModelProvider = task.session().registry().provider(key.provider()).orNull();
-        if (naruModelProvider == null) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: provider not found :%s", key.provider()).asError());
-            return;
-        }
-        if (naruModelProvider.isSupportedUninstallModel()) {
-            naruModelProvider.uninstallModel(key, task.session());
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("model uninstalled :%s", key.toMsg()).asError());
-        } else {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: unsupported 'uninstall' :%s", key.toMsg()).asError());
-        }
-    }
-
-    public void executeUnload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NOptional<NArg> n = cmdLine.next();
-        if (!n.isPresent()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to unload.").asError());
-            return;
-        }
-        NaruModelKey key = NaruModelKey.parse(n.get().image()).get();
-        if (NBlankable.isBlank(key.provider())) {
-            key = new NaruModelKey("ollama", n.get().image());
-        }
-        NaruModelProvider naruModelProvider = task.session().registry().provider(key.provider()).orNull();
-        if (naruModelProvider == null) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: provider not found :%s", key.provider()).asError());
-            return;
-        }
-        if (naruModelProvider.isSupportedUnloadModel()) {
-            naruModelProvider.unloadModel(key, task.session());
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("model unload :%s", key.toMsg()).asError());
-        } else {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: unsupported 'unload' :%s", key.toMsg()).asError());
-        }
-    }
-
-    public void executePs(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NOptional<NArg> n = cmdLine.next();
-        String provider = "ollama";
-        if (n.isPresent()) {
-            String provider2 = n.get().image();
-            if(!NBlankable.isBlank(provider2)) {
-                provider=provider2;
-            }
-        }
-        NaruModelProvider naruModelProvider = task.session().registry().provider(provider).orNull();
-        if (naruModelProvider == null) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: provider not found :%s", provider).asError());
-            return;
-        }
-        if (naruModelProvider.isSupportedPsModel()) {
-            List<NaruModelPsResult> elements = naruModelProvider.psModel(task.session());
-            for (NaruModelPsResult element : elements) {
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s size: %s vram-size: %s (%s on VRAM) %s",
-                        element.getModel().toMsg(),
-                        NMsg.ofStyledNumber(NMemoryFormat.DEFAULT.format(NMemorySize.ofBytes(element.getSize()).normalize().canonicalize())),
-                        NMsg.ofStyledNumber(NMemoryFormat.DEFAULT.format(NMemorySize.ofBytes(element.getSizeVram()).normalize().canonicalize())),
-                        NMsg.ofStyledNumber(
-                                (element.getSize() == 0 ? "0.00" :
-                                        new DecimalFormat("0.00").format((100.0 * element.getSizeVram() / element.getSize()))
-                                )+"%"
-                        ),
-                        element.getExpiresAt()
-                ));
-            }
-        } else {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: unsupported 'ps' :%s", provider).asError());
-        }
     }
 
     public void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -213,7 +274,7 @@ public class NaruModelDirective extends AbstractDirective {
         int index = 1;
         List<NaruModelInfo> models = context.task().session().registry().modelsInfos(task.session());
         if (models.isEmpty()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("no model found. is %s live?",NMsg.ofStyledPrimary1("ollama")).asError());
+            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("no model found. is %s live?", NMsg.ofStyledPrimary1("ollama")).asError());
             return;
         }
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s Available models:", models.size()));
@@ -276,83 +337,6 @@ public class NaruModelDirective extends AbstractDirective {
         }
     }
 
-    public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NMsg kk = NMsg.ofC("%s%s", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary5(name()));
-        task.log(NaruLogMode.AGENT_RESPONSE, kk);
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk,NMsg.ofStyledPrimary4("list")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list models"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk,NMsg.ofStyledPrimary4("get")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show current name"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <name>", kk,NMsg.ofStyledPrimary4("set")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           switch current model"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %sname>", kk,NMsg.ofStyledPrimary4("set-global")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           switch current model and save it as global model"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <name>=<value>", kk,NMsg.ofStyledPrimary4("alias")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           add an alias to a model"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <alias-name>", kk,NMsg.ofStyledPrimary4("update")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           update an alias"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <model>", kk,NMsg.ofStyledPrimary4("install")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           install a new model (equivalent to ollama pull)"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <model>", kk,NMsg.ofStyledPrimary4("uninstall")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           uninstall a model (equivalent to ollama delete)"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <model>", kk,NMsg.ofStyledPrimary4("unload")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           unload a model and free VRAM/RAM"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <name>", kk,NMsg.ofStyledPrimary4("list")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           remove an alias from a model"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
-
-    }
-
-    @Override
-    public List<NArgCandidate> resolveCandidates(
-            NCmdLine cmdLine,
-            NCmdLineAutoCompleteResolver.Pos pos,
-            NaruSession session) {
-        List<NArgCandidate> candidates = new java.util.ArrayList<>();
-        String[] stringArray = cmdLine.toStringArray();
-        int wordIndex = pos.wordIndex();
-        String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
-
-        if (wordIndex == 1) {
-            addCandidates(candidates, currentArg, "name", "list", "help", "alias", "unalias", "set", "get");
-        }
-        return candidates;
-    }
-
-    public void executeGet(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", task.model().toText()));
-    }
-
-    public void executeSet(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NOptional<NArg> n = cmdLine.next();
-        if (!n.isPresent()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to set.").asError());
-            return;
-        }
-        NArg a = n.get();
-        NaruModelConfig k = task.session().findModel(a.image()).orNull();
-        if (k == null) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
-                    a.image()).asError());
-        }
-        context.task().setModel(k);
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s",
-                task.model().toText()));
-    }
 
     public void executeSetByNumber(NaruDirectiveCallContext context, int nbr) {
         NaruTask task = context.task();
@@ -363,26 +347,6 @@ public class NaruModelDirective extends AbstractDirective {
         }
         context.task().setModel(k);
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s",
-                task.model().toText()));
-    }
-
-    public void executeSetGlobal(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NOptional<NArg> n = cmdLine.next();
-        if (!n.isPresent()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to set.").asError());
-            return;
-        }
-        NArg a = n.get();
-        NaruModelConfig k = task.session().findModel(a.image()).orNull();
-        if (k == null) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
-                    a.image()).asError());
-        }
-        context.task().setModel(k);
-        NAssert.requireNamedNonNull(k, "key");
-        context.task().session().setProjectEnv("model", k.toElement(), NAruVisibility.PRIVATE);
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("switch global model : %s",
                 task.model().toText()));
     }
 
@@ -440,7 +404,7 @@ public class NaruModelDirective extends AbstractDirective {
                 })
                 .with("--alias").matchEntry(a -> aliasName.set(a.asString().orNull()))
                 .with("--model").matchEntry(a -> modelName.set(a.asString().orNull()))
-                .with("--contextLength").matchEntry(a -> contextLength.set(NMemorySize.parse(a.value(),NMemoryUnit.BYTE).get().asBytes()))
+                .with("--contextLength").matchEntry(a -> contextLength.set(NMemorySize.parse(a.value(), NMemoryUnit.BYTE).get().asBytes()))
                 .with("--temperature").matchEntry(a -> temperature.set(a.asFloat().orNull()))
                 .with("--nucleusThreshold").matchEntry(a -> nucleusThreshold.set(a.asFloat().orNull()))
                 .with("--candidateCount").matchEntry(a -> candidateCount.set(a.asInt().orNull()))

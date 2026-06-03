@@ -5,9 +5,7 @@ import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
-import net.thevpc.naru.api.scheduler.NaruScheduler;
-import net.thevpc.naru.api.scheduler.NaruTaskSchedulerView;
-import net.thevpc.naru.api.scheduler.NaruTaskStatus;
+import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.skills.NaruSkillManager;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
@@ -154,7 +152,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     // Accessors
-    public NaruSession unsetSessionProperty(String key) {
+    public NaruSession unsetSessionenv(String key) {
         if (properties.containsKey(key)) {
             properties.remove(key);
             fireChanged();
@@ -243,7 +241,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return NOptional.ofNamed(tasks.get(tid), "task " + tid);
     }
 
-    public NaruSession setSessionProperty(String key, Object value) {
+    public NaruSession setSessionEnv(String key, Object value) {
         if (properties.containsKey(key) && Objects.equals(properties.get(key), value)) {
             return this;
         }
@@ -252,7 +250,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return this;
     }
 
-    public NOptional<Object> getSessionProperty(String key) {
+    public NOptional<Object> getSessionEnv(String key) {
         if (properties.containsKey(key)) {
             return NOptional.ofNullable(properties.get(key));
         }
@@ -762,11 +760,28 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (foregroundTaskId() == tid) {
             foregroundTaskId(-1);
         }
-        if(tasks.containsKey(tid)){
-            tasks.remove(tid);
-            if(tasks.isEmpty()){
+        if (tasks.containsKey(tid)) {
+            NaruTask i = tasks.remove(tid);
+            scheduler.dispatch(new NaruEvent("task.terminated",
+                    NMaps.of(
+                            "status", i.status().name(),
+                            "name", i.name()
+                    )
+                    , tid, i.parentId(), Set.of(NaruEventRouting.all())));
+            if (tasks.isEmpty()) {
                 stop();
             }
         }
+    }
+
+    @Override
+    public long[] findTaskIdsByParent(long taskId) {
+        Set<Long> ids = new HashSet<>();
+        for (NaruTask t : tasks.values()) {
+            if (t.parentId() == taskId) {
+                ids.add(t.id());
+            }
+        }
+        return ids.stream().mapToLong(x -> x).toArray();
     }
 }

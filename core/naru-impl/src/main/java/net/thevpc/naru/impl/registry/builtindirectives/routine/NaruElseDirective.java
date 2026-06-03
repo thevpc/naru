@@ -6,10 +6,17 @@ import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruStructuralDirective;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
 import net.thevpc.naru.impl.stmt.NaruElseStmt;
+import net.thevpc.nuts.cmdline.NCmdLine;
 
 public class NaruElseDirective extends AbstractDirective implements NaruStructuralDirective {
     public NaruElseDirective() {
-        super("else","routine", "else statement");
+        super("else","routine", "else statement to close /if, /while and /for statements.\n it takes to arguments/options");
+        register(new AbstractSubCommand() {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                context.task().prependStatement(toStatement(context.argument(), context.task()).injected(true));
+            }
+        });
     }
 
     @Override
@@ -17,8 +24,4 @@ public class NaruElseDirective extends AbstractDirective implements NaruStructur
         return new NaruElseStmt();
     }
 
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        context.task().prependStatement(toStatement(context.argument(), context.task()).injected(true));
-    }
 }

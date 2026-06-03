@@ -11,7 +11,6 @@ import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -32,7 +31,7 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
                 continue;
             }
             NaruResourceInfo s = NElementReader.ofTson().read(p, NaruResourceInfo.class);
-            s.setMode(NAruVisibility.PRIVATE);
+            s.setVisibility(NAruVisibility.PRIVATE);
             a.add(s);
         }
         for (NPath p : sessionDir(true).list().stream().filter(x -> x.name().endsWith(".tson")).collect(Collectors.toList())) {
@@ -41,7 +40,7 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
                 continue;
             }
             NaruResourceInfo s = NElementReader.ofTson().read(p, NaruResourceInfo.class);
-            s.setMode(NAruVisibility.PUBLIC);
+            s.setVisibility(NAruVisibility.PUBLIC);
             a.add(s);
         }
         a.sort((o1, o2) -> o2.getModificationDate().compareTo(o1.getModificationDate()));

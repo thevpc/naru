@@ -158,7 +158,7 @@ Enter
 Type "# we start to check what we have as routines"
 Enter
 Sleep 1s
-Type "#/routine list"
+Type "/routine list"
 Enter
 Sleep 1s
 Type "# ensure the current routine name and content (should be empty)"
@@ -184,8 +184,8 @@ Enter
 Type "# finally lets run the routine"
 Enter
 Type "/routine run"
-Sleep 60s
 Enter
+Sleep 60s
 Type "# Note that you can create multiple routines..."
 Enter
 Type "# and add conditions and loops (using /if, /while, /for...)"

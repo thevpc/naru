@@ -6,10 +6,21 @@ import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruStructuralDirective;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
 import net.thevpc.naru.impl.stmt.NaruElseIfStmt;
+import net.thevpc.naru.impl.stmt.NaruForStmt;
+import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.text.NText;
 
 public class NaruElseIfDirective extends AbstractDirective implements NaruStructuralDirective {
     public NaruElseIfDirective() {
         super("elseif", "routine", "elseif statement");
+        register(new AbstractSubCommand(new SubCommandHelp(
+                NText.ofPlain("<condition>"),NText.ofPlain("elseif branch with condition as any valid expression")
+        )) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                context.task().prependStatement(toStatement(context.argument(), context.task()).injected(true));
+            }
+        });
     }
 
     @Override
@@ -17,8 +28,5 @@ public class NaruElseIfDirective extends AbstractDirective implements NaruStruct
         return new NaruElseIfStmt(arguments);
     }
 
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        context.task().prependStatement(toStatement(context.argument(), context.task()).injected(true));
-    }
+
 }

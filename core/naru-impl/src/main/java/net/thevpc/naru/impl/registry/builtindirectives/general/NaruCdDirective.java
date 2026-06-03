@@ -17,15 +17,16 @@ import java.util.List;
 
 public class NaruCdDirective extends AbstractDirective {
     public NaruCdDirective() {
-        super("cd","general", "change directory");
-    }
-
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        NaruTask task = context.task();
-        task.setWorkingDir(NBlankable.isBlank(context.argument()) ? context.task().projectDir() : NPath.of(context.argument()));
-        context.task().addHistory(NaruMessage.user(NMsg.ofC("change working directory to %s", task.workingDir()).toString()));
-        context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("change directory to : %s", task.workingDir()));
+        super("cd", "general", "change directory");
+        register(new AbstractSubCommand(new SubCommandHelp("<dir>", "change directory to <dir>")) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                task.setWorkingDir(NBlankable.isBlank(context.argument()) ? context.task().projectDir() : NPath.of(context.argument()));
+                context.task().addHistory(NaruMessage.user(NMsg.ofC("change working directory to %s", task.workingDir()).toString()));
+                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("change directory to : %s", task.workingDir()));
+            }
+        });
     }
 
     @Override
@@ -37,25 +38,25 @@ public class NaruCdDirective extends AbstractDirective {
         String[] stringArray = cmdLine.toStringArray();
         int wordIndex = pos.wordIndex();
         String prefix = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
-        
+
         if (wordIndex == 1) {
             String dirPath = prefix.isEmpty() ? "." : prefix;
             java.io.File f = new java.io.File(dirPath);
             java.io.File parent = f.getParentFile();
             String namePrefix = f.getName();
-            
+
             if (prefix.endsWith("/") || prefix.endsWith("\\") || prefix.isEmpty() || (f.isDirectory() && prefix.endsWith(java.io.File.separator))) {
                 parent = f;
                 namePrefix = "";
             } else if (parent == null) {
                 parent = new java.io.File(".");
             }
-            
+
             java.io.File resolvedParent = parent;
             if (!parent.isAbsolute() && session.workingDir() != null) {
                 resolvedParent = new java.io.File(new java.io.File(session.workingDir().toAbsolute().toString()), parent.getPath());
             }
-            
+
             java.io.File[] files = resolvedParent.listFiles();
             if (files != null) {
                 for (java.io.File child : files) {

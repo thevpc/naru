@@ -10,8 +10,10 @@ import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextStyle;
 import net.thevpc.nuts.util.NStringUtils;
+import org.w3c.dom.Text;
 
 import java.text.DecimalFormat;
 import java.util.*;
@@ -20,50 +22,46 @@ import java.util.stream.Collectors;
 public class NaruHistoryDirective extends AbstractDirective {
     public NaruHistoryDirective() {
         super("history", "ai", "print or manipulate history");
-    }
-
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        NaruTask task = context.task();
-        NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
-        if (cmdLine.isEmpty()) {
-            executeList(context, false, cmdLine);
-        } else {
-            NArg a = cmdLine.next().get();
-            switch (a.image()) {
-                case "list": {
-                    executeList(context, false, cmdLine);
-                    break;
-                }
-                case "all": {
-                    executeList(context, true, cmdLine);
-                    break;
-                }
-                case "drop":
-                case "delete":
-                case "del":
-                {
-                    executeDrop(context, cmdLine);
-                    break;
-                }
-                case "clear": {
-                    executeClear(context, cmdLine);
-                    break;
-                }
-                case "trim": {
-                    executeTrim(context, cmdLine);
-                    break;
-                }
-                case "--help":
-                case "help": {
-                    executeHelp(context, cmdLine);
-                    break;
-                }
-                default: {
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
-                }
+        noCommand("list");
+        register(new AbstractSubCommand("list", NText.ofPlain("list history"),
+                new SubCommandHelp("[<n1>-<n2>]", "list history (user only) selected lines, or all")
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                executeList(context, false, cmdLine);
             }
-        }
+        });
+        register(new AbstractSubCommand("all", NText.ofPlain("list all context history"),
+                new SubCommandHelp("[<n1>-<n2>]", "list all context history (user only) selected lines, or all")
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                executeList(context, true, cmdLine);
+            }
+        });
+        register(new AbstractSubCommand("delete", NText.ofPlain("delete history lines"),
+                new SubCommandHelp("[<n1>-<n2>]", "delete all context history selected lines")
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                executeDrop(context, cmdLine);
+            }
+        });
+        register(new AbstractSubCommand("clear", NText.ofPlain("delete all history lines")
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                executeClear(context, cmdLine);
+            }
+        });
+        register(new AbstractSubCommand("trim", NText.ofPlain("trim history lines"),
+                new SubCommandHelp("<count>", "trim <count> lines")
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                executeTrim(context, cmdLine);
+            }
+        });
     }
 
     public void executeList(NaruDirectiveCallContext context, boolean includeAll, NCmdLine cmdLine) {
@@ -205,28 +203,6 @@ public class NaruHistoryDirective extends AbstractDirective {
         // Fix: group assistant+tool_call+tool_results by tool call id before removal.
     }
 
-    public void executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NMsg kk = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary5(name()));
-        task.log(NaruLogMode.AGENT_RESPONSE, kk);
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("list")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <n1>-<p1>,<n2>-<p2>", kk, NMsg.ofStyledPrimary4("list")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           list intervals"));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("trim")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           remove empty items intervals"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s <n1>-<p1>,<n2>-<p2>", kk, NMsg.ofStyledPrimary4("drop")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           drop intervals"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("clear")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           clear history"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s", kk, NMsg.ofStyledPrimary4("all")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show all history (including agents, skills, tool calls and results)"));
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s help", kk));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
-    }
 
     public void executeTrim(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();

@@ -5,7 +5,6 @@ public enum NaruTaskStatus {
     RUNNING,          // currently being ticked by a worker thread
     BLOCKED_ON_INPUT, // hit readline, waiting for user input
     BLOCKED_ON_EVENT, // hit /task await, waiting for event
-    BLOCKED_ON_TASK,  // waiting for child task to complete
     DONE,             // no more instructions, completed normally
     FAILED,           // terminated with error
     KILLED            // terminated forcefully

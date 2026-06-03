@@ -5,6 +5,7 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
+import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.cmdline.NArgCandidate;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.cmdline.NCmdLineAutoCompleteResolver;
@@ -16,7 +17,7 @@ import java.util.stream.Collectors;
 public class NaruHelpDirective extends AbstractDirective {
 
     public NaruHelpDirective() {
-        super("help","help", "show help", "?");
+        super("help", "help", "show help", "?");
     }
 
     @Override
@@ -41,6 +42,14 @@ public class NaruHelpDirective extends AbstractDirective {
                         NMsg.ofStyledPrimary1(value.name()),
                         value.getDescription()
                 ));
+            }
+        }
+        if (true) {
+            for (NaruDirective value : values) {
+                if(!value.name().equals("help")) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("-------------"));
+                    value.execute(new NaruDirectiveCallContextImpl(value.name(), "help", task));
+                }
             }
         }
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("-------------"));

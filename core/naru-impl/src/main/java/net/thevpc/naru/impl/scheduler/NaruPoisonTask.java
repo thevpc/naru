@@ -6,6 +6,7 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruResponse;
+import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
@@ -17,6 +18,7 @@ import net.thevpc.nuts.expr.NExprContextBuilder;
 import net.thevpc.nuts.expr.NExprVarResolver;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NUnsupportedOperationException;
 
@@ -272,12 +274,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NaruTask pushFrame() {
-        throw new NUnsupportedOperationException();
-    }
-
-    @Override
-    public NaruTask pushFrame(int pc, Integer returnTo, String routine) {
+    public NaruTaskFrame pushFrame(int pc, Integer returnTo, String routine, boolean inheritVars) {
         throw new NUnsupportedOperationException();
     }
 
@@ -292,17 +289,17 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NaruTask unsetTaskProperty(String key) {
+    public NaruTask unsetTaskEnv(String key) {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public NaruTask setTaskProperty(String key, Object value) {
+    public NaruTask setTaskEnv(String key, Object value) {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public NOptional<Object> getTaskProperty(String key, boolean inherited) {
+    public NOptional<Object> getTaskEnv(String key, boolean inherited) {
         throw new NUnsupportedOperationException();
     }
 
@@ -412,7 +409,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public Map<String, NaruEvent> awaitReceived() {
+    public List<NaruEvent> awaitReceived() {
         throw new NUnsupportedOperationException();
     }
 
@@ -539,5 +536,45 @@ public class NaruPoisonTask implements NaruTask {
     @Override
     public NaruStatement peekStatement(int pos) {
         throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask fireEvent(String eventType, Map<String, Object> args, NaruEventRouting... routing) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask sleep(NDuration duration) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask addAwaitReceived(NaruEvent event) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask subscribe(String eventType, NaruEventSubscription subscription) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NOptional<NaruRoutine> currentRoutine() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public String currentRoutineName() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public void useRoutine(String name) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public void saveRoutineLine(int index, String name) {
+
     }
 }

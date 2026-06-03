@@ -79,7 +79,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         // ── Case 1: model wants to call tools ─────────────────────────────
         if (assistantMsg.hasToolCalls()) {
             List<NaruToolCall> toolCalls = assistantMsg.getToolCalls();
-            task.pushFrame();
+            task.pushFrame(0,null,null,false);
             for (NaruToolCall c : toolCalls) {
                 task.addStatement(NaruStatementHelper.ofToolCall(c));
             }

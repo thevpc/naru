@@ -1,0 +1,257 @@
+# ============================================================
+# NARU DEMO SESSION — Full Feature Showcase (v0.8.9.0)
+# ============================================================
+# CORE CONCEPT:
+# Naru uses a BASIC-like dual-mode execution model:
+# 1. EDITING MODE: Lines starting with a NUMBER (e.g., 10, 20)
+#    are added to the currently selected routine.
+# 2. EXECUTION MODE: Lines WITHOUT a number are executed
+#    immediately in the REPL.
+# 3. CONTEXT: Use `/routine use <name>` to select a routine to edit.
+#    Use `/routine main` to switch back to the main routine.
+# 4. VARIABLES: No '$' unless interpolating inside a string/prompt.
+# ============================================================
+
+# ============================================================
+# 1. SESSION BOOTSTRAP
+# ============================================================
+# Start fresh and set working variables
+/session new
+/cd ~/xprojects/nuts-world/nuts-productivity/naru
+/pwd
+
+/set language = "en"
+/set max_retries = 3
+/set project_root = "."
+
+# ============================================================
+# 2. MODEL SETUP
+# ============================================================
+# List available models and pick one
+/model list
+/model use qwen2.5-coder:14b
+/model current
+
+# Check what is currently loaded in VRAM
+/model ps
+
+# ============================================================
+# 3. SKILLS & CONTEXT
+# ============================================================
+/skills available
+/skills load javadoc
+/context files
+/context all 1-3
+
+# ============================================================
+# 4. FILE SYSTEM EXPLORATION
+# ============================================================
+/ls
+/file find . --include="*.java" --recursive
+/file find . --pattern="NaruAgent" --regex --include="*.java" --recursive
+
+# Read a specific file (with line range)
+/file read core/naru-api/src/main/java/net/thevpc/naru/api/agent/NaruAgent.java --from=1 --to=40
+
+# Search for TODOs across the codebase
+/file find . --pattern="TODO|FIXME" --regex --include="*.java" --recursive --max-matches=20
+
+# Grep within a specific file
+/file grep core/naru-api/src/main/java/net/thevpc/naru/api/agent/NaruAgent.java \
+    --pattern="void|NaruTask" --regex --context-lines=2
+
+# ============================================================
+# 5. DIRECT PROMPTS (Execution Mode)
+# ============================================================
+# Simple factual prompt — no tool needed
+What is the capital of Tunisia?
+
+# Project-aware prompt — model has codebase context from above
+Based on the files found, describe what NARU does in one sentence. Do not call any tool.
+
+# ============================================================
+# 6. ROUTINE DEFINITIONS (Editing Mode)
+# ============================================================
+
+# --- summarize-file: reads and summarizes a source file ---
+/routine use summarize-file
+10 /file read $file_path --from=1 --to=60
+20 Summarize what this Java class does in 2 sentences. Be concise.
+
+# --- add-javadoc: generates and patches javadoc into a file ---
+/routine use add-javadoc
+10 /file read $file_path
+20 As a senior architect, generate complete Javadoc for all public methods in the file above.
+30 /file edit $file_path --from=1 --to=1 --content="// [javadoc pass applied by NARU]" --dry
+
+# --- classify-complexity: rates a file's complexity ---
+/routine use classify-complexity
+10 /file grep $file_path --pattern="(implements|extends|throws|catch)" --regex --max-matches=50
+20 Based on the code patterns above, classify the complexity of this file as LOW, MEDIUM, or HIGH. Return only one word.
+
+# --- escalate: logs a high-complexity finding ---
+/routine use escalate
+10 /print "⚠  High complexity detected in: $file_path"
+20 /file append ./naru-review.log --content="HIGH COMPLEXITY: $file_path"
+30 Draft a one-paragraph code review note for a senior engineer about this file.
+
+# --- analyze-file: full pipeline — read, summarize, classify, escalate if needed ---
+/routine use analyze-file
+10  /call summarize-file file_path=$file_path
+20  /call classify-complexity file_path=$file_path
+30  /set complexity = _
+40  /print "=== Analysis: $file_path ==="
+50  /print "Complexity : $complexity"
+60  /if complexity == "HIGH"
+70    /call escalate file_path=$file_path
+80  /else
+90    /print "✓ Complexity acceptable."
+100 /end
+
+# --- handle-review-event: event handler for review completions ---
+/routine use handle-review-event
+10 /print "Event received: review done for $event.file_path (complexity=$event.complexity)"
+20 /if event.complexity == "HIGH"
+30   /print "⚠  Triggering escalation from event bus."
+40   /call escalate file_path=event.file_path
+50 /end
+
+# --- batch-review: iterate over a list of files ---
+/routine use batch-review
+10 /for file_path : files
+20   /print "--- Reviewing: $file_path ---"
+30   /call analyze-file file_path=$file_path
+40   /fire event.review.done file_path=$file_path complexity=$complexity
+50 /end
+
+/routine main
+
+# ============================================================
+# 7. RUNNING ROUTINES (Execution Mode)
+# ============================================================
+/call analyze-file file_path="core/naru-api/src/main/java/net/thevpc/naru/api/agent/NaruAgent.java"
+
+# ============================================================
+# 8. IMMEDIATE CONTROL FLOW (Execution Mode)
+# ============================================================
+/if complexity == "HIGH"
+  /print "⚠  Immediate check: file flagged as high complexity."
+/else
+  /print "✓  Immediate check passed: $complexity"
+/end
+
+# Retry loop — re-analyze until complexity is not HIGH or retries exhausted
+/set retry_count = 0
+/set complexity = "HIGH"
+/while complexity == "HIGH" && retry_count < max_retries
+  /set retry_count = retry_count + 1
+  /print "Retry $retry_count: re-evaluating complexity..."
+  /call classify-complexity file_path="core/naru-api/src/main/java/net/thevpc/naru/api/agent/NaruAgent.java"
+  /set complexity = _
+/end
+
+# For loop — batch review a set of key files
+/set files = [
+  "core/naru-api/src/main/java/net/thevpc/naru/api/agent/NaruAgent.java",
+  "core/naru-api/src/main/java/net/thevpc/naru/api/task/NaruTask.java",
+  "core/naru-api/src/main/java/net/thevpc/naru/api/session/NaruSession.java"
+]
+/call batch-review
+
+# ============================================================
+# 9. EVENT BUS — fire and react
+# ============================================================
+# Register the hook: when event.review.done fires, call handle-review-event
+/on event.review.done handle-review-event
+
+# Fire manually to test the handler
+/fire event.review.done file_path="core/naru-api/src/main/java/net/thevpc/naru/api/agent/NaruAgent.java" complexity="HIGH"
+
+# Fire to a specific task (broadcast to children)
+/fire event.review.done --to=children file_path="NaruSession.java" complexity="LOW"
+
+# ============================================================
+# 10. BACKGROUND TASKS & LIFECYCLE
+# ============================================================
+# Start a long-running research task in background
+/routine use deep-research
+10 Research and compile a 500-word technical brief on the state of JVM-based AI agent frameworks in 2025.
+20 Compare with NARU's approach: durable sessions, actor model, zero external dependencies.
+
+/routine main
+
+/start deep-research
+
+/print "Background task launched — continuing foreground work..."
+
+# Pause the background task
+/task list
+/task hold 2
+
+# Do foreground work while task is held
+What are the top 3 JVM languages by popularity in 2025?
+
+# Resume background task
+/task unhold 2
+
+# Inspect task state
+/task stacktrace 2
+/task frames 2
+
+# ============================================================
+# 11. MULTI-LLM ROUTING
+# ============================================================
+# Switch to a larger model for strategic analysis
+/model use claude-opus-4
+Analyze the strategic implications of embedding AI agents directly in a Java package manager.
+Structure as: Opportunities / Risks / Recommendations.
+
+# Switch to a lighter model for classification
+/model use qwen2.5-coder:1.5b
+Classify this project: "NARU" into one of: [DevTool, AI Framework, Package Manager, Agent Runtime]. Return only the category name.
+
+# Back to default
+/model use qwen2.5-coder:14b
+
+# ============================================================
+# 12. TOOLS — direct invocation
+# ============================================================
+/tools list
+/tools run file_read path=core/naru-api/src/main/java/net/thevpc/naru/api/agent/NaruAgent.java
+/tools run file_grep path=. pattern=NaruScheduler recursive=true
+
+# ============================================================
+# 13. HISTORY & CONTEXT MANAGEMENT
+# ============================================================
+/history list
+/history delete -3..-1
+/context all -2..-1
+
+# ============================================================
+# 14. LIVE FILE EDITING (Execution Mode)
+# ============================================================
+# Write a generated changelog entry
+/file write ./CHANGELOG-draft.md --content="## v0.8.9.0\n- Added /file directive with read/write/append/edit/grep/find ops\n- Added /fire event broadcasting\n- Improved /model alias management"
+
+# Verify it was written
+/file read ./CHANGELOG-draft.md
+
+# Append a note
+/file append ./CHANGELOG-draft.md --content="\n- Demo session completed successfully"
+
+# Dry-run an edit (preview without applying)
+/file edit ./CHANGELOG-draft.md --from=1 --to=1 --content="## v0.8.9.0 — The File Edition" --dry
+
+# ============================================================
+# 15. DURABLE CHECKPOINT
+# ============================================================
+/save demo-full-showcase
+/print "Checkpoint saved. Resume later with: /session load demo-full-showcase"
+/session list
+
+# ============================================================
+# 16. SESSION TEARDOWN
+# ============================================================
+/task kill 2
+/print "=== NARU Full Feature Demo complete ==="
+/exit

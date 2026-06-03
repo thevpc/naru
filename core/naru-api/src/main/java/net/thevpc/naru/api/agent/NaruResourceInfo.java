@@ -13,7 +13,7 @@ public class NaruResourceInfo {
         return mode;
     }
 
-    public NaruResourceInfo setMode(NAruVisibility mode) {
+    public NaruResourceInfo setVisibility(NAruVisibility mode) {
         this.mode = mode;
         return this;
     }

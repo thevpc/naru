@@ -2,20 +2,21 @@ package net.thevpc.naru.impl.scheduler;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.scheduler.NaruTaskSchedulerView;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.agent.NaruSessionImpl;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NCancelException;
+import net.thevpc.nuts.util.NOptional;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 public class NaruSchedulerImpl implements NaruScheduler {
 
@@ -82,6 +83,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
             t.start();
         }
     }
+
 
     @Override
     public void awaitTermination() {
@@ -174,8 +176,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
                 break;
             }
             case BLOCKED_ON_INPUT:
-            case BLOCKED_ON_EVENT:
-            case BLOCKED_ON_TASK: {
+            case BLOCKED_ON_EVENT:{
                 // can't resume a blocked task — it must be unblocked
                 // by its blocking condition (input arrives, event fires, child completes)
                 // just clear the held flag, which we already did above
@@ -199,7 +200,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
         if (task == null) return;
         ((NaruTaskSchedulerView) task).status(NaruTaskStatus.KILLED);
         readyQueue.remove(task);
-        ((NaruSessionImpl)session).onKill(tid);
+        ((NaruSessionImpl) session).onKill(tid);
         onTaskStatusChanged(task);
     }
 
@@ -278,9 +279,65 @@ public class NaruSchedulerImpl implements NaruScheduler {
 
     @Override
     public void dispatch(NaruEvent event) {
-        for (NaruTask task : session.tasks()) {
+        for (NaruTask task : resolveTargets(event)) {
             dispatchToTask(task, event);
         }
+    }
+
+
+    private List<NaruTask> resolveTargets(NaruEvent event) {
+        List<NaruTask> targets = new ArrayList<>();
+        NaruTask source = session.findTask(event.sourceTid()).orNull();
+        Set<NaruEventRouting> routing1 = event.routing();
+        if(routing1.isEmpty() || routing1.contains(NaruEventRouting.all())){
+            routing1=new HashSet<>(Arrays.asList(NaruEventRouting.all()));
+        }
+        for (NaruEventRouting routing : routing1) {
+            switch (routing.type()) {
+                case SELF: {
+                    if (source != null) targets.add(source);
+                    break;
+                }
+                case PARENT: {
+                    if (source != null && source.parentId() >= 0) {
+                        NaruTask parent = session.findTask(source.parentId()).orNull();
+                        if (parent != null) targets.add(parent);
+                    }
+                    break;
+                }
+                case CHILDREN: {
+                    if (source != null) {
+                        for (long id : session.findTaskIdsByParent(source.id())) {
+                            NaruTask child = session.findTask(id).orNull();
+                            if (child != null) targets.add(child);
+                        }
+                    }
+                    break;
+                }
+                case SIBLINGS: {
+                    if (source != null && source.parentId() >= 0) {
+                        for (long id : session.findTaskIdsByParent(source.parentId())) {
+                            if (id != source.id()) {
+                                NaruTask sibling = session.findTask(id).orNull();
+                                if (sibling != null) targets.add(sibling);
+                            }
+                        }
+                    }
+                    break;
+                }
+                case TASK: {
+                    NaruTask task = session.findTask(routing.id()).orNull();
+                    if (task != null) targets.add(task);
+                    break;
+                }
+                case ALL: {
+                    targets.addAll(session.tasks());
+                    break;
+                }
+            }
+        }
+        // deduplicate — same task could appear via multiple routing rules
+        return targets.stream().distinct().collect(Collectors.toList());
     }
 
     private void dispatchToTask(NaruTask task, NaruEvent event) {
@@ -289,12 +346,12 @@ public class NaruSchedulerImpl implements NaruScheduler {
                 NaruEventFilter filter = task.awaitFilter();
                 if (filter != null
                         && filter.matches(event, task.awaitReceived())) {
-                    task.awaitReceived().put(event.type(), event);
-                    task.addInbox(event);
+                    task.addAwaitReceived(event);
                     if (filter.satisfied(task.awaitReceived())) {
                         // unblock
+                        task.addInbox(event);
                         task.awaitFilter(null);
-                        task.awaitReceived().clear();
+                        task.awaitReceived().removeIf(NaruEvent::isMarked);
                         ((NaruTaskImpl) task).status(NaruTaskStatus.READY);
                         if (!task.isHeld()) {
                             enqueue(task);
@@ -321,8 +378,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
                 break;
             }
 
-            case BLOCKED_ON_INPUT:
-            case BLOCKED_ON_TASK: {
+            case BLOCKED_ON_INPUT:{
                 // queue — deliver on resume
                 NaruEventSubscription sub = findMatchingSubscription(task, event);
                 if (sub != null || task.awaitFilter() != null) {
@@ -345,7 +401,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
         for (Map.Entry<String, NaruEventSubscription> entry
                 : task.eventSubscriptions().entrySet()) {
             NaruEventSubscription sub = entry.getValue();
-            if (sub.filter().matches(event, Collections.emptyMap())) {
+            if (sub.filter().matches(event, new ArrayList<>())) {
                 return sub;
             }
         }
@@ -409,11 +465,10 @@ public class NaruSchedulerImpl implements NaruScheduler {
         while ((event = task.pollInbox()) != null) {
             NaruEventSubscription sub = findMatchingSubscription(task, event);
             if (sub != null) {
-                task.setTaskProperty("$event", event.type());
-                task.setTaskProperty("$eventData", event.data());
-                task.pushFrame();
+                NaruTaskFrame f = task.pushFrame(0, null, null, true);
+                f.setLocalVar("event", event);
                 task.addStatements(
-                        task.session().routineManager().routine(sub.routineName()).get().getIndexedLines()
+                        task.session().routineManager().routine(sub.routineName(),task).get().getIndexedLines()
                                 .stream().map(x -> task.parseStatement(x.command()).orNull())
                                 .filter(x -> x != null)
                                 .toArray(NaruStatement[]::new)
@@ -440,15 +495,6 @@ public class NaruSchedulerImpl implements NaruScheduler {
             case DONE:
             case FAILED: {
                 // notify parent
-                NaruTask parent = task.parent().orNull();
-                if (parent != null) {
-                    dispatch(new NaruEvent(
-                            task.status() == NaruTaskStatus.DONE
-                                    ? "task.done" : "task.failed",
-                            task.getReturnResult(),
-                            task.id()
-                    ));
-                }
                 onTaskStatusChanged(task); // clear foreground if needed
                 break;
             }
@@ -461,7 +507,6 @@ public class NaruSchedulerImpl implements NaruScheduler {
                 break;
             }
             case BLOCKED_ON_EVENT:
-            case BLOCKED_ON_TASK:
                 onTaskStatusChanged(task); // clear foreground if needed
                 break;
         }

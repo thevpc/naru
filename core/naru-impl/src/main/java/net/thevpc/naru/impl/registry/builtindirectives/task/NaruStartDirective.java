@@ -15,34 +15,35 @@ import java.util.stream.Collectors;
 public class NaruStartDirective extends AbstractDirective {
 
     public NaruStartDirective() {
-        super("start", "task", "start routine in new task");
+        super("start", "task", "start new task");
+        register(new AbstractSubCommand(new SubCommandHelp("<routine>...", "start one or more routines as a single consecutive new task\n<routine> can be routine name or routine path")) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                List<String> li = new ArrayList<>();
+                cmdLine.matcher()
+                        .withNonOption().matchAny(a -> {
+                            String s = a.image();
+                            NaruRoutine rtn;
+                            rtn = task.session().routineManager().routine(s, task).orNull();
+                            if (rtn == null) {
+                                task.throwError(NMsg.ofC("Error statement: routine not found %s", s));
+                                return;
+                            }
+                            li.addAll(rtn.getIndexedLines().stream().map(x -> x.command()).collect(Collectors.toList()));
+                        })
+                        .requireAll();
+                task.session().newTask(
+                                NaruTaskSpec.of()
+                                        .parentId(context.task().id())
+                                        .statements(li.toArray(new String[0]))
+                                        .resolveName()
+                        )
+                        .bg()
+                        .unhold();
+            }
+        });
     }
 
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        NaruTask task = context.task();
-        NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
-        List<String> li = new ArrayList<>();
-        cmdLine.matcher()
-                .withNonOption().matchAny(a -> {
-                    String s = a.image();
-                    NaruRoutine rtn;
-                    rtn = task.session().routineManager().routineOrUnnumberedRoutine(s, task).orNull();
-                    if (rtn == null) {
-                        task.throwError(NMsg.ofC("Error statement: routine not found %s", s));
-                        return;
-                    }
-                    li.addAll(rtn.getIndexedLines().stream().map(x -> x.command()).collect(Collectors.toList()));
-                })
-                .requireAll();
-        task.session().newTask(
-                NaruTaskSpec.of()
-                        .parentId(context.task().id())
-                        .statements(li.toArray(new String[0]))
-                        .resolveName()
-                )
-                .bg()
-                .unhold();
-    }
 
 }

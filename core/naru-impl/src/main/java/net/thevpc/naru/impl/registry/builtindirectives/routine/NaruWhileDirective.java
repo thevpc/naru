@@ -6,10 +6,18 @@ import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruStructuralDirective;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
 import net.thevpc.naru.impl.stmt.NaruWhileStmt;
+import net.thevpc.nuts.cmdline.NCmdLine;
 
 public class NaruWhileDirective extends AbstractDirective implements NaruStructuralDirective {
     public NaruWhileDirective() {
         super("while","routine", "start a while bloc");
+        register(new AbstractSubCommand() {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                context.task().prependStatement(toStatement(context.argument(), context.task()).injected(true));
+
+            }
+        });
     }
 
 
@@ -18,8 +26,5 @@ public class NaruWhileDirective extends AbstractDirective implements NaruStructu
         return new NaruWhileStmt(arguments);
     }
 
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        context.task().prependStatement(toStatement(context.argument(), context.task()).injected(true));
-    }
+
 }

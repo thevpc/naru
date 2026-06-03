@@ -94,11 +94,11 @@ public interface NaruSession {
 
     void setProjectEnv(String key, NElement value, NAruVisibility visibility);
 
-    NOptional<Object> getSessionProperty(String key);
+    NOptional<Object> getSessionEnv(String key);
 
-    NaruSession unsetSessionProperty(String key);
+    NaruSession unsetSessionenv(String key);
 
-    NaruSession setSessionProperty(String key, Object value);
+    NaruSession setSessionEnv(String key, Object value);
 
     List<NaruTask> tasks();
 
@@ -121,4 +121,6 @@ public interface NaruSession {
     String systemPrompt();
 
     NaruSession systemPrompt(String systemPrompt);
+
+    long[] findTaskIdsByParent(long taskId);
 }

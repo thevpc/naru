@@ -180,6 +180,14 @@ public class NaruUtils {
         return false;
     }
 
+    public static String snippet(String content) {
+        if (NBlankable.isBlank(content)) {
+            return "";
+        }
+        String cc = content.substring(0, Math.min(content.length(), 40));
+        return cc.replace("\r\n", " ").replace("\n", " ");
+    }
+
     public static class LineRange {
         private final int from;
         private final int to;

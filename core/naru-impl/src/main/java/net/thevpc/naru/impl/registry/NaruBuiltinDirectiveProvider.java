@@ -3,13 +3,14 @@ package net.thevpc.naru.impl.registry;
 import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.impl.registry.builtindirectives.*;
 import net.thevpc.naru.impl.registry.builtindirectives.ai.*;
+import net.thevpc.naru.impl.registry.builtindirectives.fs.NaruCatDirective;
+import net.thevpc.naru.impl.registry.builtindirectives.fs.NaruFileDirective;
+import net.thevpc.naru.impl.registry.builtindirectives.fs.NaruLsDirective;
+import net.thevpc.naru.impl.registry.builtindirectives.fs.NaruPwdDirective;
 import net.thevpc.naru.impl.registry.builtindirectives.general.*;
 import net.thevpc.naru.impl.registry.builtindirectives.routine.*;
 import net.thevpc.naru.impl.registry.builtindirectives.session.*;
-import net.thevpc.naru.impl.registry.builtindirectives.task.NaruCallDirective;
-import net.thevpc.naru.impl.registry.builtindirectives.task.NaruSourceDirective;
-import net.thevpc.naru.impl.registry.builtindirectives.task.NaruStartDirective;
-import net.thevpc.naru.impl.registry.builtindirectives.task.NaruTaskDirective;
+import net.thevpc.naru.impl.registry.builtindirectives.task.*;
 
 import java.util.*;
 
@@ -34,6 +35,7 @@ public class NaruBuiltinDirectiveProvider implements NaruDirectiveProvider {
         this.registerDirective(new NaruSessionDirective());
         this.registerDirective(new NaruShDirective());
         this.registerDirective(new NaruLsDirective());
+        this.registerDirective(new NaruFileDirective());
         this.registerDirective(new NaruSetDirective());
         this.registerDirective(new NaruSkillDirective());
         this.registerDirective(new NaruSystemDirective());
@@ -51,9 +53,13 @@ public class NaruBuiltinDirectiveProvider implements NaruDirectiveProvider {
         this.registerDirective(new NaruContextDirective());
         this.registerDirective(new NaruGoDirective());
         this.registerDirective(new NaruCallDirective());
+        this.registerDirective(new NaruOnDirective());
+        this.registerDirective(new NaruFireDirective());
         this.registerDirective(new NaruSourceDirective());
         this.registerDirective(new NaruStartDirective());
         this.registerDirective(new NaruTaskDirective());
+        this.registerDirective(new NaruSleepDirective());
+        this.registerDirective(new NaruWaitDirective());
     }
 
     private NaruBuiltinDirectiveProvider registerDirective(NaruDirective tool) {

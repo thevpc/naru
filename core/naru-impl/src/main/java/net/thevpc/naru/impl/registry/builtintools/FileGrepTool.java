@@ -6,6 +6,7 @@ import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.impl.util.ToolHelper;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.io.NPathPermission;
 import net.thevpc.nuts.util.NIterator;
@@ -46,91 +47,15 @@ public class FileGrepTool implements NaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
-        String path = context.stringArg("path").onBlankEmpty().orNull();
-        String pattern = context.stringArg("pattern").onBlankEmpty().orNull();
-        boolean regex = context.booleanArg("regex").orFalse();
-        boolean caseSensitive = context.booleanArg("case_sensitive").orFalse();
-        int contextLines = Math.max(0, context.intArg("context_lines").orElse(DEFAULT_CONTEXT));
-        int maxMatches = Math.max(1, context.intArg("max_matches").orElse(DEFAULT_MAX_MATCHES));
-
-        if (path == null) return "ERROR: 'path' is required.";
-        if (pattern == null) return "ERROR: 'pattern' is required.";
-
-        NPath p = context.task().resolve(path);
-        if (!p.exists()) return "ERROR: File not found: " + p;
-        if (!p.permissions().contains(NPathPermission.CAN_READ)) return "ERROR: File is not readable: " + p;
-
-        Pattern compiledPattern = null;
-        if (regex) {
-            try {
-                int flags = caseSensitive ? 0 : Pattern.CASE_INSENSITIVE;
-                compiledPattern = Pattern.compile(pattern, flags);
-            } catch (PatternSyntaxException e) {
-                return "ERROR: Invalid regex pattern: " + e.getMessage();
-            }
-        }
-
-        try {
-            NIterator<String> it = p.lines().iterator();
-            Deque<String> beforeBuffer = new ArrayDeque<>(contextLines + 1);
-            int afterContextRemaining = 0;
-            int matchCount = 0;
-            int lineNum = 1;
-            List<String> outputLines = new ArrayList<>();
-
-            while (it.hasNext() && matchCount < maxMatches) {
-                String line = it.next();
-                boolean isMatch = matches(line, pattern, compiledPattern, caseSensitive, regex);
-
-                if (isMatch) {
-                    // 1. Output "before" context from deque
-                    int bufferStart = lineNum - beforeBuffer.size();
-                    for (String ctx : beforeBuffer) {
-                        outputLines.add(formatLine(bufferStart++, ctx, false));
-                    }
-                    // 2. Output match
-                    outputLines.add(formatLine(lineNum, line, true));
-                    matchCount++;
-
-                    // 3. Prepare for "after" context
-                    afterContextRemaining = contextLines;
-                    beforeBuffer.clear(); // reset buffer for next search block
-                } else if (afterContextRemaining > 0) {
-                    // Part of "after" context from previous match
-                    outputLines.add(formatLine(lineNum, line, false));
-                    afterContextRemaining--;
-                } else {
-                    // Normal line: keep in sliding window for future "before" context
-                    beforeBuffer.add(line);
-                    if (beforeBuffer.size() > contextLines) {
-                        beforeBuffer.pollFirst();
-                    }
-                }
-                lineNum++;
-            }
-
-            if (matchCount == 0) {
-                return "No matches found for pattern: " + pattern;
-            }
-
-            String result = String.join("\n", outputLines);
-            if (result.length() > MAX_OUTPUT_CHARS) {
-                result = result.substring(0, MAX_OUTPUT_CHARS) + "\n... [output truncated]";
-            }
-
-            return String.format("Found %d match(es) in %s:\n%s", matchCount, p.name(), result);
-        } catch (Exception e) {
-            return "ERROR searching file: " + e.getMessage();
-        }
+        return ToolHelper.fileGrep(
+                context.task(), context.stringArg("path").onBlankEmpty().orNull(),
+                context.stringArg("pattern").onBlankEmpty().orNull(),
+                context.booleanArg("regex").orFalse(),
+                context.booleanArg("case_sensitive").orFalse(),
+                context.intArg("context_lines").orNull(),
+                context.intArg("max_matches").orNull()
+                );
     }
 
-    private boolean matches(String line, String pattern, Pattern compiled, boolean caseSensitive, boolean regex) {
-        if (regex) return compiled.matcher(line).find();
-        if (caseSensitive) return line.contains(pattern);
-        return line.toLowerCase().contains(pattern.toLowerCase());
-    }
 
-    private String formatLine(int lineNum, String content, boolean isMatch) {
-        return String.format("L%04d:%s%s", lineNum, content, isMatch ? " [MATCH]" : "");
-    }
 }

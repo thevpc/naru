@@ -13,7 +13,7 @@
 /context all 1-3
 # now lets call the model with a targeted task
 # note that, because we just started ollama, it will take a while to load the model...
-# as a senior architect, provide javadoc for /home/vpc/xprojects/nuts-world/nuts-productivity/naru/core/naru-api/src/main/java/net/thevpc/naru/api/agent/NaruAgent.java
+as a senior architect, provide javadoc for /home/vpc/xprojects/nuts-world/nuts-productivity/naru/core/naru-api/src/main/java/net/thevpc/naru/api/agent/NaruAgent.java
 # because we are in planning mode, changes to apply only shown not applied
 # ────────────────────────────────────
 # PHASE 4: Routines & Workflow"

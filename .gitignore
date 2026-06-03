@@ -30,3 +30,4 @@ documentation/term-cast/nuts.jar
 documentation/term-cast/naru-install-demo.gif
 documentation/.naru
 /.naru/local/
+/extensions/naru-mcp-cli/target

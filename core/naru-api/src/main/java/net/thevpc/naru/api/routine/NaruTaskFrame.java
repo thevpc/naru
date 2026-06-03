@@ -6,9 +6,10 @@ import net.thevpc.nuts.util.NOptional;
 import java.util.Map;
 
 public interface NaruTaskFrame extends NToElement {
+    boolean isInheritVars();
     void setLocalVar(String key, Object value);
 
-    NOptional<Object> getLocalState(String key);
+    NOptional<Object> getLocalVar(String key);
 
     void setInternalState(String key, Object value);
 

@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.task;
 
 import net.thevpc.naru.api.agent.*;
+import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.NaruMessage;
@@ -15,6 +16,7 @@ import net.thevpc.nuts.expr.NExprContextBuilder;
 import net.thevpc.nuts.expr.NExprVarResolver;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NOptional;
 
 import java.time.Instant;
@@ -143,9 +145,7 @@ public interface NaruTask extends NToElement {
 
     NaruTask popFrame();
 
-    NaruTask pushFrame();
-
-    NaruTask pushFrame(int pc, Integer returnTo, String routine);
+    NaruTaskFrame pushFrame(int pc, Integer returnTo, String routine, boolean inheritVars);
 
     NaruTaskFrame frame();
 
@@ -155,11 +155,11 @@ public interface NaruTask extends NToElement {
 
     NaruTask schedulerMode(NaruSchedulerMode mode);
 
-    NaruTask unsetTaskProperty(String key);
+    NaruTask unsetTaskEnv(String key);
 
-    NaruTask setTaskProperty(String key, Object value);
+    NaruTask setTaskEnv(String key, Object value);
 
-    NOptional<Object> getTaskProperty(String key, boolean inherited);
+    NOptional<Object> getTaskEnv(String key, boolean inherited);
 
     Object resolveVariable(String key);
 
@@ -199,7 +199,7 @@ public interface NaruTask extends NToElement {
 
     NaruEventFilter awaitFilter();
 
-    Map<String, NaruEvent> awaitReceived();
+    List<NaruEvent> awaitReceived();
 
     NaruTask releaseStepPermit();
 
@@ -207,6 +207,9 @@ public interface NaruTask extends NToElement {
     NaruTask addInbox(NaruEvent event);
 
     Map<String, NaruEventSubscription> eventSubscriptions();
+
+    NaruTask subscribe(String eventType, NaruEventSubscription subscription);
+
 
     NaruEvent pollInbox();
 
@@ -228,4 +231,17 @@ public interface NaruTask extends NToElement {
     // NaruTask — consumes delivered input
     String consumeInput();
 
+    NaruTask fireEvent(String eventType, Map<String, Object> args, NaruEventRouting... routing);
+
+    NaruTask sleep(NDuration duration);
+
+    NaruTask addAwaitReceived(NaruEvent event);
+
+    NOptional<NaruRoutine> currentRoutine();
+
+    String currentRoutineName();
+
+    void useRoutine(String name);
+
+    void saveRoutineLine(int index, String name);
 }

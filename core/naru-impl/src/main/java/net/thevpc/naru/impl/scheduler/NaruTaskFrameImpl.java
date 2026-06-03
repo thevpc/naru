@@ -20,6 +20,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     private final Map<String, Object> internalState = new HashMap<>(); // used by while etc...
     private String routine;
     private String runningRoutine;
+    private boolean inheritVars;
 
     public NaruTaskFrameImpl() {
     }
@@ -28,6 +29,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
         NObjectElement o = element.asObject().get();
         this.pc = o.getIntValue("pc").orElse(-1);
         this.returnPc = o.getIntValue("returnPc").orNull();
+        this.inheritVars = o.getBooleanValue("inheritVars").orNull();
         for (NPairElement p : o.getObject("params").orElse(NObjectElement.ofEmpty()).namedPairs()) {
             this.params.put(p.key().asStringValue().orNull(), NElements.of().toSimple(p.value())); // NEW
         }
@@ -43,14 +45,25 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     }
 
     @Override
+    public boolean isInheritVars() {
+        return inheritVars;
+    }
+
+    public NaruTaskFrameImpl inheritVars(boolean inheritVars) {
+        this.inheritVars = inheritVars;
+        return this;
+    }
+
+    @Override
     public String getRunningRoutine() {
         return runningRoutine;
     }
 
-    public NaruTaskFrameImpl setRunningRoutine(String runningRoutine) {
+    public NaruTaskFrameImpl runningRoutine(String runningRoutine) {
         this.runningRoutine = runningRoutine;
         return this;
     }
+
 
     public String routine() {
         return routine;
@@ -70,7 +83,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
         return this;
     }
 
-    public NaruTaskFrameImpl setReturnPc(Integer returnPc) {
+    public NaruTaskFrameImpl returnPc(Integer returnPc) {
         this.returnPc = returnPc;
         return this;
     }
@@ -94,7 +107,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     }
 
     @Override
-    public NOptional<Object> getLocalState(String name) {
+    public NOptional<Object> getLocalVar(String name) {
         if (localVars.containsKey(name)) {
             return NOptional.ofNullable(localVars.get(name));
         }
@@ -156,6 +169,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
         return NElement.ofObjectBuilder()
                 .set("pc", pc)
                 .set("returnPc", returnPc)
+                .set("inheritVars", inheritVars)
                 .set("params", pb.build())
                 .set("state", ps.build())
                 .set("internalState", ips.build())

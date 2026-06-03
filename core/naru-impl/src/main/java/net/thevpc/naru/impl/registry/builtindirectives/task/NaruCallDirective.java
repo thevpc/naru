@@ -14,28 +14,28 @@ public class NaruCallDirective extends AbstractDirective {
 
     public NaruCallDirective() {
         super("call", "task", "call routine");
-    }
-
-    @Override
-    public void execute(NaruDirectiveCallContext context) {
-        NaruTask task = context.task();
-        NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
-        List<String> li = new ArrayList<>();
-        cmdLine.matcher()
-                .withNonOption().matchAny(a->{
-                    String s = a.image();
-                    NaruRoutine rtn;
-                    rtn = task.session().routineManager().routineOrUnnumberedRoutine(s, task).orNull();
-                    if (rtn == null) {
-                        task.throwError(NMsg.ofC("Error statement: routine not found %s", s));
-                        return;
-                    }
-                    li.add(rtn.getName());
-                })
-                .requireAll();
-        for (int i = li.size() - 1; i >= 0; i--) {
-            task.pushFrame(0,null,li.get(i));
-        }
+        register(new AbstractSubCommand(new SubCommandHelp("<routine>...", "call one or more routines in the current task as a new frame\n<routine> can be routine name or routine path")) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                List<String> li = new ArrayList<>();
+                cmdLine.matcher()
+                        .withNonOption().matchAny(a -> {
+                            String s = a.image();
+                            NaruRoutine rtn;
+                            rtn = task.session().routineManager().routine(s, task).orNull();
+                            if (rtn == null) {
+                                task.throwError(NMsg.ofC("Error statement: routine not found %s", s));
+                                return;
+                            }
+                            li.add(rtn.name());
+                        })
+                        .requireAll();
+                for (int i = li.size() - 1; i >= 0; i--) {
+                    task.pushFrame(0, null, li.get(i),false);
+                }
+            }
+        });
     }
 
 }
