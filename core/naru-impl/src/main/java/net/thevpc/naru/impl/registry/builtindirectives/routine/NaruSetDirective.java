@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.registry.builtindirectives.routine;
 
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.expr.NExprContext;
@@ -17,7 +18,7 @@ public class NaruSetDirective extends AbstractDirective {
                 new SubCommandHelp("<var> = <expr>", "set variable value.\nex:\n/set a=x*2"),
                 new SubCommandHelp("--task <var> = <expr>", "set task env variable value.\nex:\n/set --task a=x*2"),
                 new SubCommandHelp("--session <var> = <expr>", "set session env variable value.\nex:\n/set --session a=x*2")
-                ) {
+        ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 String raw = context.argument();
@@ -35,26 +36,33 @@ public class NaruSetDirective extends AbstractDirective {
                     NExprNode a = n.get();
                     if (a instanceof NExprOpNode && a.name().equals("=") && a.children().size() == 2) {
                         //this will assign var using varResolver (and store it into runcontext
+                        String varName = a.children().get(0).name();
+                        Object exprValue = a.children().get(1).eval(b).orNull();
                         switch (v) {
                             case VAR: {
+                                context.task().frame().setLocalVar(
+                                        varName,
+                                        exprValue
+                                );
                                 a.eval(b).get();
                                 break;
                             }
                             case TASK: {
                                 context.task().setTaskEnv(
-                                        a.children().get(0).name(),
-                                        a.children().get(1).eval(b).orNull()
+                                        varName,
+                                        exprValue
                                 );
                                 break;
                             }
                             case SESSION: {
                                 context.task().session().setSessionEnv(
-                                        a.children().get(0).name(),
-                                        a.children().get(1).eval(b).orNull()
+                                        varName,
+                                        exprValue
                                 );
                                 break;
                             }
                         }
+                        context.task().frame().setLastResult(NaruStmtResult.ofSuccess(exprValue));
                         return;
                     }
                 }

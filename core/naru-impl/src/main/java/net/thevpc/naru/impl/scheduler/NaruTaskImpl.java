@@ -1170,7 +1170,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 return;
             }
             if (logInstructions()) {
-                log(NaruLogMode.SCHEDULER, NMsg.ofC("INVOKE STMT : %s", op.toElement()));
+                log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] INVOKE STMT : %s",id(), op.toElement()));
             }
             op.exec(this);
         }

@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSource;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
@@ -62,10 +63,12 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             response = task.chat(task.model(),
                     task.context(NaruSource.values())
             );
+            task.frame().setLastResult(NaruStmtResult.ofSuccess(response.getMessage()==null?"":response.getMessage().getContent()));
         } catch (Exception e) {
             String err = "ERROR calling model: " + e.getMessage();
             task.log(NaruLogMode.PROGRESS, NMsg.ofC("%s", err).asError());
             task.defaultAdvance(this);
+            NaruStmtResult.ofError(err);
             return;
         }
 
@@ -73,6 +76,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         if (assistantMsg == null) {
             task.log(NaruLogMode.DEBUG, NMsg.ofC("Model returned empty response."));
             task.defaultAdvance(this);
+            NaruStmtResult.ofSuccess("");
             return;
         }
         task.addHistory(assistantMsg);

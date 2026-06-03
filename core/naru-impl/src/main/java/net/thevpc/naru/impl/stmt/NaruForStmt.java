@@ -236,7 +236,7 @@ public class NaruForStmt extends NaruIncrementalStmt implements Cloneable {
             selfCopy.runtimeIterator=it;
             selfCopy.runtimeVarName=varName;
             // Bind the initial precise BigDecimal value directly to the parameter context environment
-            ctx.bindParam(varName, it.remove(0));
+            ctx.setParam(varName, it.remove(0));
             selfCopy.runtimeChildIndexKey=0;
         }
 

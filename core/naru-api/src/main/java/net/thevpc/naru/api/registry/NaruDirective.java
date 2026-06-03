@@ -6,14 +6,20 @@ package net.thevpc.naru.api.registry;
  * <p>Implementations must be stateless (or thread-safe) — the registry
  * reuses the same instance across calls.
  */
-    public interface NaruDirective {
+public interface NaruDirective {
 
-    /** Machine-readable name used in the tool schema (no spaces). */
+    /**
+     * Machine-readable name used in the tool schema (no spaces).
+     */
     String name();
+
     String group();
+
     String[] getAliases();
 
-    /** Human-readable description sent to the model. */
+    /**
+     * Human-readable description sent to the model.
+     */
     String getDescription();
 
     /**

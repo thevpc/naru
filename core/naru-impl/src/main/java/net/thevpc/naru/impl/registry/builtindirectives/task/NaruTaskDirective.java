@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.registry.builtindirectives.task;
 
 import net.thevpc.naru.api.agent.*;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.task.NaruTaskStackFrame;
@@ -40,6 +41,7 @@ public class NaruTaskDirective extends AbstractDirective {
                         task.schedulerMode(),
                         task.name()
                 ));
+                task.frame().setLastResult(NaruStmtResult.ofSuccess(task.id()));
             }
         });
         register(new AbstractSubCommand("list", NText.ofPlain("list current tasks")) {
@@ -63,6 +65,9 @@ public class NaruTaskDirective extends AbstractDirective {
                     ));
                     index++;
                 }
+                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(
+                        session.tasks().stream().mapToLong(x -> x.id()).toArray()
+                ));
             }
         });
         register(new AbstractSubCommand("kill", NText.ofPlain("kill one or more tasks"),
@@ -74,7 +79,7 @@ public class NaruTaskDirective extends AbstractDirective {
                     return;
                 }
                 NaruTask task = context.task();
-                int count = 0;
+                List<Long> collected = new ArrayList<>();
                 while (!cmdLine.isEmpty()) {
                     long a = NLiteral.of(cmdLine.next().get().image()).asLong().orElse(-1L);
                     if (a >= 0) {
@@ -83,12 +88,15 @@ public class NaruTaskDirective extends AbstractDirective {
                             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("task not found %s", a));
                         } else {
                             t.kill();
-                            count++;
+                            collected.add(t.id());
                             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("task killed %s", a));
                         }
                     }
                 }
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("killed %s " + (count == 1 ? "task" : "tasks"), count));
+                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(
+                        collected.stream().mapToLong(x -> x).toArray()
+                ));
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("killed %s " + (collected.size() == 1 ? "task" : "tasks"), collected.size()));
             }
         });
         register(new AbstractSubCommand("hold", NText.ofPlain("hold one or more tasks"),
@@ -101,7 +109,7 @@ public class NaruTaskDirective extends AbstractDirective {
                 }
                 NaruTask task = context.task();
 
-                int count = 0;
+                List<Long> collected = new ArrayList<>();
                 while (!cmdLine.isEmpty()) {
                     long a = NLiteral.of(cmdLine.next().get().image()).asLong().orElse(-1L);
                     if (a >= 0) {
@@ -113,13 +121,15 @@ public class NaruTaskDirective extends AbstractDirective {
                                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("task already hold %s", a));
                             } else {
                                 t.hold();
-                                count++;
-                                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("task killed %s", a));
+                                collected.add(t.id());
+                                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("task hold %s", a));
                             }
                         }
                     }
                 }
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("killed %s " + (count == 1 ? "task" : "tasks"), count));
+
+                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(collected.stream().mapToLong(x -> x).toArray()));
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("killed %s " + (collected.size() == 1 ? "task" : "tasks"), collected.size()));
             }
         });
         register(new AbstractSubCommand("unhold", NText.ofPlain("unhold one or more tasks"),
@@ -131,7 +141,7 @@ public class NaruTaskDirective extends AbstractDirective {
                     return;
                 }
                 NaruTask task = context.task();
-                int count = 0;
+                List<Long> collected = new ArrayList<>();
                 while (!cmdLine.isEmpty()) {
                     long a = NLiteral.of(cmdLine.next().get().image()).asLong().orElse(-1L);
                     if (a >= 0) {
@@ -143,13 +153,14 @@ public class NaruTaskDirective extends AbstractDirective {
                                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("task is not hold %s", a));
                             } else {
                                 t.unhold();
-                                count++;
+                                collected.add(t.id());
                                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("task killed %s", a));
                             }
                         }
                     }
                 }
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("unhold %s " + (count == 1 ? "task" : "tasks"), count));
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("unhold %s " + (collected.size() == 1 ? "task" : "tasks"), collected.size()));
+                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(collected.stream().mapToLong(x -> x).toArray()));
             }
         });
 
@@ -158,11 +169,14 @@ public class NaruTaskDirective extends AbstractDirective {
         ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                List<String> collected = new ArrayList<>();
                 if (cmdLine.isEmpty()) {
                     NaruTask task = context.task();
                     int index = 1;
                     for (NaruTaskStackItem naruTaskStackItem : task.stacktrace()) {
-                        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s <%s> %s", index, naruTaskStackItem.index(), naruTaskStackItem.name(), naruTaskStackItem.instruction()));
+                        NMsg msg = NMsg.ofC("[%s] %s <%s> %s", index, naruTaskStackItem.index(), naruTaskStackItem.name(), naruTaskStackItem.instruction());
+                        task.log(NaruLogMode.AGENT_RESPONSE, msg);
+                        collected.add(msg.toString());
                         index++;
                     }
                 } else {
@@ -175,16 +189,20 @@ public class NaruTaskDirective extends AbstractDirective {
                             if (t == null) {
                                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("task not found %s", a));
                             } else {
+                                count++;
                                 int index = 1;
                                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Task %s", t.id()));
+                                collected.add(NMsg.ofC("Task %s", t.id()).toString());
                                 for (NaruTaskStackItem naruTaskStackItem : t.stacktrace()) {
                                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s <%s> %s", index, naruTaskStackItem.index(), naruTaskStackItem.name(), naruTaskStackItem.instruction()));
+                                    collected.add(NMsg.ofC("[%s] %s <%s> %s", index, naruTaskStackItem.index(), naruTaskStackItem.name(), naruTaskStackItem.instruction()).toString());
                                     index++;
                                 }
                             }
                         }
                     }
                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("stacks of %s " + (count == 1 ? "task" : "tasks"), count));
+                    context.task().frame().setLastResult(NaruStmtResult.ofSuccess(collected.stream().toArray(String[]::new)));
                 }
             }
         });
@@ -193,18 +211,23 @@ public class NaruTaskDirective extends AbstractDirective {
         ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                List<String> collected = new ArrayList<>();
                 if (cmdLine.isEmpty()) {
                     NaruTask task = context.task();
                     int index = 1;
                     for (NaruTaskStackFrame item : task.stackframes()) {
                         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s <%s> %s", index, item.index(), item.name(), item.instruction()));
+                        collected.add(NMsg.ofC("[%s] %s <%s> %s", index, item.index(), item.name(), item.instruction()).toString());
                         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("\tparams : %s", item.params().size()));
+                        collected.add(NMsg.ofC("\tparams : %s", item.params().size()).toString());
                         for (Map.Entry<String, Object> e : item.params().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
                             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()));
+                            collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()).toString());
                         }
                         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("\tlocal vars :%s", item.localVars().size()));
                         for (Map.Entry<String, Object> e : item.localVars().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
                             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()));
+                            collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()).toString());
                         }
                         index++;
                     }
@@ -218,16 +241,22 @@ public class NaruTaskDirective extends AbstractDirective {
                             if (t == null) {
                                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("task not found %s", a));
                             } else {
+                                count++;
                                 int index = 1;
                                 for (NaruTaskStackFrame item : t.stackframes()) {
                                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s <%s> %s", index, item.index(), item.name(), item.instruction()));
+                                    collected.add(NMsg.ofC("[%s] %s <%s> %s", index, item.index(), item.name(), item.instruction()).toString());
                                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("\tparams : %s", item.params().size()));
+                                    collected.add(NMsg.ofC("\tparams : %s", item.params().size()).toString());
                                     for (Map.Entry<String, Object> e : item.params().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
                                         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()));
+                                        collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()).toString());
                                     }
                                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("\tlocal vars :%s", item.localVars().size()));
+                                    collected.add(NMsg.ofC("\tlocal vars :%s", item.localVars().size()).toString());
                                     for (Map.Entry<String, Object> e : item.localVars().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
                                         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()));
+                                        collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()).toString());
                                     }
                                     index++;
                                 }
@@ -235,6 +264,7 @@ public class NaruTaskDirective extends AbstractDirective {
                         }
                     }
                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("frames of %s " + (count == 1 ? "task" : "tasks"), count));
+                    context.task().frame().setLastResult(NaruStmtResult.ofSuccess(collected.stream().toArray(String[]::new)));
                 }
             }
         });

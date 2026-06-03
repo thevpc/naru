@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolCall;
@@ -62,5 +63,6 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
                 NaruUtils.abbreviate(result, 300)));
         task.addHistory(NaruMessage.tool(call.getName(), call.getId(), result));
         task.defaultAdvance(this);
+        task.frame().setLastResult(NaruStmtResult.ofSuccess(result));
     }
 }

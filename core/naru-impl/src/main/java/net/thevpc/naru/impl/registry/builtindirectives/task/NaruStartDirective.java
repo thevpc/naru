@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.registry.builtindirectives.task;
 
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.routine.NaruRoutine;
@@ -33,7 +34,7 @@ public class NaruStartDirective extends AbstractDirective {
                             li.addAll(rtn.getIndexedLines().stream().map(x -> x.command()).collect(Collectors.toList()));
                         })
                         .requireAll();
-                task.session().newTask(
+                NaruTask tt = task.session().newTask(
                                 NaruTaskSpec.of()
                                         .parentId(context.task().id())
                                         .statements(li.toArray(new String[0]))
@@ -41,6 +42,7 @@ public class NaruStartDirective extends AbstractDirective {
                         )
                         .bg()
                         .unhold();
+                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(tt.id()));
             }
         });
     }

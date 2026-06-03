@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.registry.builtindirectives.general;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -25,6 +26,7 @@ public class NaruCdDirective extends AbstractDirective {
                 task.setWorkingDir(NBlankable.isBlank(context.argument()) ? context.task().projectDir() : NPath.of(context.argument()));
                 context.task().addHistory(NaruMessage.user(NMsg.ofC("change working directory to %s", task.workingDir()).toString()));
                 context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("change directory to : %s", task.workingDir()));
+                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(task.workingDir().toString()));
             }
         });
     }

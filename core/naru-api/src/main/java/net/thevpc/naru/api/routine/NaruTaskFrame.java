@@ -9,6 +9,7 @@ public interface NaruTaskFrame extends NToElement {
     boolean isInheritVars();
     void setLocalVar(String key, Object value);
 
+    Object getLastResult();
     NOptional<Object> getLocalVar(String key);
 
     void setInternalState(String key, Object value);
@@ -19,7 +20,7 @@ public interface NaruTaskFrame extends NToElement {
 
     NOptional<Object> getInternalState(String key);
 
-    void bindParam(String name, Object value);
+    void setParam(String name, Object value);
 
     NOptional<Object> getParam(String name);
 
@@ -36,4 +37,6 @@ public interface NaruTaskFrame extends NToElement {
     String routine();
 
     String getRunningRoutine();
+
+    NaruTaskFrame setLastResult(NaruStmtResult ret);
 }

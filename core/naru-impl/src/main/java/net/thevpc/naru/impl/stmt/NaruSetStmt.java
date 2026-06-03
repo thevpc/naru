@@ -36,7 +36,7 @@ public class NaruSetStmt extends NaruStatement implements Cloneable {
     public void exec(NaruTask task) {
         NaruTaskFrame f = task.peekFrame();
         Object last = task.evalExpression(expression);
-        f.bindParam(varName, last);
+        f.setParam(varName, last);
         task.defaultAdvance(this);
     }
 }

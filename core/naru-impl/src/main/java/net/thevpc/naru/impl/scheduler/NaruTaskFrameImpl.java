@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.scheduler;
 
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.impl.stmt.NaruStatementHelper;
@@ -15,6 +16,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     private int pc = -1; // -1 means not currently executing a script
     public List<NaruStatement> todo = new ArrayList<>();
     private Integer returnPc = null;          // to resume after /return
+    private NaruStmtResult lastResult = null;          // to resume after /return
     private final Map<String, Object> params = new HashMap<>(); // local param frame
     private final Map<String, Object> localVars = new HashMap<>(); // Local mutable state
     private final Map<String, Object> internalState = new HashMap<>(); // used by while etc...
@@ -108,10 +110,23 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
 
     @Override
     public NOptional<Object> getLocalVar(String name) {
+        if ("_".equals(name)) {
+            return NOptional.of(NaruStmtResult.nonNull(lastResult).successValue());
+        }
         if (localVars.containsKey(name)) {
             return NOptional.ofNullable(localVars.get(name));
         }
         return NOptional.ofNamedEmpty(name);
+    }
+
+    public NaruStmtResult getLastResult() {
+        return NaruStmtResult.nonNull(lastResult);
+    }
+
+    @Override
+    public NaruTaskFrame setLastResult(NaruStmtResult lastResult) {
+        this.lastResult = NaruStmtResult.nonNull(lastResult);
+        return this;
     }
 
     @Override
@@ -140,7 +155,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     }
 
     @Override
-    public void bindParam(String name, Object value) {
+    public void setParam(String name, Object value) {
         params.put(name, value);
     }
 
@@ -155,20 +170,22 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     @Override
     public NElement toElement() {
         NObjectElementBuilder pb = NObjectElementBuilder.of();
+        NElements ee = NElements.of();
         for (Map.Entry<String, Object> e : params.entrySet()) {
-            pb.set(e.getKey(), NElements.of().toElement(e.getValue()));
+            pb.set(e.getKey(), ee.toElement(e.getValue()));
         }
         NObjectElementBuilder ps = NObjectElementBuilder.of();
         for (Map.Entry<String, Object> e : localVars.entrySet()) {
-            ps.set(e.getKey(), NElements.of().toElement(e.getValue()));
+            ps.set(e.getKey(), ee.toElement(e.getValue()));
         }
         NObjectElementBuilder ips = NObjectElementBuilder.of();
         for (Map.Entry<String, Object> e : internalState.entrySet()) {
-            ips.set(e.getKey(), NElements.of().toElement(e.getValue()));
+            ips.set(e.getKey(), ee.toElement(e.getValue()));
         }
         return NElement.ofObjectBuilder()
                 .set("pc", pc)
                 .set("returnPc", returnPc)
+                .set("lastResult", ee.toElement(lastResult))
                 .set("inheritVars", inheritVars)
                 .set("params", pb.build())
                 .set("state", ps.build())

@@ -1,12 +1,13 @@
 package net.thevpc.naru.impl.stmt;
 
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 
-public class NaruDirectiveReturn extends NaruStatement implements Cloneable{
+public class NaruDirectiveReturn extends NaruStatement implements Cloneable {
     public String expression;
 
     public NaruDirectiveReturn(String expression) {
@@ -31,10 +32,12 @@ public class NaruDirectiveReturn extends NaruStatement implements Cloneable{
 
     @Override
     public void exec(NaruTask task) {
-        Object ret=null;
-        if(expression!=null){
+        Object ret = null;
+        if (expression != null) {
             ret = task.evalExpression(expression);
         }
-        task.popFrame().setReturnResult(ret);
+        NaruTask f = task.popFrame();
+        f.setReturnResult(ret);
+        f.frame().setLastResult(NaruStmtResult.ofSuccess(ret));
     }
 }
