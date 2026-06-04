@@ -88,7 +88,12 @@ public class NaruEventFilters {
                 case "siblings":
                 case "any":
                 default:{
-                    NLiteral.of(s).asLong().ifPresent(tids::add);
+                    NOptional<Long> ll = NLiteral.of(s).asLong();
+                    if(ll.isPresent()){
+                        tids.add(ll.get());
+                    }else{
+                        tids.add(s);
+                    }
                 }
             }
         }

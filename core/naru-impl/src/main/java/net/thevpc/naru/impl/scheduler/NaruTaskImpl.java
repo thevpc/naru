@@ -87,6 +87,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private NMsg pendingPrompt;
     private NaruIncrementalStmt pendingStatement;
     private String currentScriptName = "main";
+//    private NaruTaskInboxImpl inbox;
 
     public NaruTaskImpl(NElement element, NaruSession session) {
         this.session = session;

@@ -27,7 +27,7 @@ public class NaruRoutineImpl implements NaruRoutine {
     private final NPath publicDir;
     private final NPath privateDir;
     private final NPath preferredPath;
-    private static final Pattern LINE_PATTERN = Pattern.compile("^(\\d+)(?:\\s+(.*))?$");
+    private static final Pattern NUMBEDRED_LINE_PATTERN = Pattern.compile("^(\\d+)(?:\\s+(.*))?$");
     private static final Pattern METADATA = Pattern.compile("^([a-z]+)\\s*:(\\s*(.*))?$");
 
     public NaruRoutineImpl(String name, NPath publicDir, NPath privateDir, NPath preferredPath, NAruVisibility visibility, boolean loadContent) {
@@ -45,11 +45,15 @@ public class NaruRoutineImpl implements NaruRoutine {
             NaruUtils.checkValidRoutineName(name);
             String pathName = name + ".naru";
             if (visibility == NAruVisibility.PUBLIC) {
-                fill(publicDir.resolve(pathName), false, loadContent);
+                fill(publicDir.resolve(pathName), true, loadContent);
             } else {
-                fill(privateDir.resolve(pathName), false, loadContent);
+                fill(privateDir.resolve(pathName), true, loadContent);
             }
         }
+    }
+
+    private boolean isNumberedLine(String line) {
+        return NUMBEDRED_LINE_PATTERN.matcher(line.trim()).matches();
     }
 
     private boolean isRuler(String line) {
@@ -98,7 +102,7 @@ public class NaruRoutineImpl implements NaruRoutine {
                             return;
                         }
                         if (numbered) {
-                            Matcher m = LINE_PATTERN.matcher(line);
+                            Matcher m = NUMBEDRED_LINE_PATTERN.matcher(line);
                             if (m.matches()) {
                                 int num = Integer.parseInt(m.group(1));
                                 String content = m.group(2) != null ? m.group(2) : "";
@@ -179,7 +183,7 @@ public class NaruRoutineImpl implements NaruRoutine {
                         }
                     } else {
                         if (numbered) {
-                            Matcher m = LINE_PATTERN.matcher(line);
+                            Matcher m = NUMBEDRED_LINE_PATTERN.matcher(line);
                             if (m.matches()) {
                                 int num = Integer.parseInt(m.group(1));
                                 String content = m.group(2) != null ? m.group(2) : "";
@@ -245,6 +249,15 @@ public class NaruRoutineImpl implements NaruRoutine {
 
     @Override
     public void putLine(int lineNumber, String text) {
+        if (preferredPath != null) {
+            if(isNumberedLine(text)){
+                System.out.println("Why");
+            }
+        } else {
+            if(isNumberedLine(text)){
+                System.out.println("Why");
+            }
+        }
         lines.put(lineNumber, text);
     }
 

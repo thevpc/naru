@@ -1,6 +1,6 @@
 /routine use sender
 10 /print "sender: firing"
-20 /fire event.ping --to=siblings message="hello from sender"
+20 /fire event.ping --to=siblings "message=hello from sender"
 30 /print "sender: done"
 
 /routine use handle-ping
