@@ -4,6 +4,7 @@ import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.scheduler.NaruScheduler;
+import net.thevpc.naru.api.scheduler.NaruSessionEventLog;
 import net.thevpc.naru.api.skills.NaruSkillManager;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
@@ -119,4 +120,6 @@ public interface NaruSession {
     NaruSession systemPrompt(String systemPrompt);
 
     long[] findTaskIdsByParent(long taskId);
+
+    NaruSessionEventLog eventLog();
 }

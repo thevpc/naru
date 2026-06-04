@@ -29,9 +29,7 @@ public interface NaruScheduler {
     // --- mode ---
     void throttleDelay(long ms);
 
-    // --- event dispatch ---
-    void dispatch(NaruEvent event);  // called by session event bus
-
+    void fire(NaruEvent event) ;
     // --- introspection ---
     NaruSchedulerStatus status();
 

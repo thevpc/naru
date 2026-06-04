@@ -200,14 +200,15 @@ public interface NaruTask extends NToElement {
     NaruTask releaseStepPermit();
 
 
-    NaruTask addInbox(NaruEvent event);
+    NaruTaskInbox inbox();
+//    NaruTask addInbox(NaruEvent event);
 
     Map<String, NaruEventSubscription> eventSubscriptions();
 
     NaruTask subscribe(String eventType, NaruEventSubscription subscription);
 
 
-    NaruEvent pollInbox();
+//    NaruEvent pollInbox();
 
     NaruTask acquireStepPermit();
 

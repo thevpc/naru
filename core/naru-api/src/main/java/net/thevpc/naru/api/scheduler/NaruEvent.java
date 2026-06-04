@@ -1,43 +1,137 @@
 package net.thevpc.naru.api.scheduler;
 
+import net.thevpc.naru.api.util.NaruLongHashSet;
 import net.thevpc.nuts.elem.NElement;
 
+import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
 public class NaruEvent {
-    private final String type;
-    private final Map<String,Object> args;
-    private final long sourceTid; // who emitted it
-    private final long sourcePid; // who emitted it
-    private final long timestamp;
-    private final Set<NaruEventRouting> routing;
-    private transient boolean marked = false;
-    public NaruEvent(String type, Map<String,Object> args, long sourceTid,long sourcePid,Set<NaruEventRouting> routing) {
-        this.type = type;
-        this.args = args;
+
+    private final long seq;
+    private final String name;
+    private final Map<String, Object> payload;
+    private final long sourceTid;
+    private final Instant firedAt;
+    private final NaruEventTarget target;
+    private final NaruRetentionPolicy retentionPolicy;
+
+    // stats — mutable, thread-safe via synchronized accessors
+    private final NaruLongHashSet visitedTids = new NaruLongHashSet(4);
+    private final NaruLongHashSet consumedTids = new NaruLongHashSet(4);
+
+    public NaruEvent(
+            long seq,
+            String name,
+            Map<String, Object> payload,
+            long sourceTid,
+            Instant firedAt,
+            NaruEventTarget target,
+            NaruRetentionPolicy retentionPolicy) {
+        this.seq = seq;
+        this.name = name;
+        this.payload = Collections.unmodifiableMap(new LinkedHashMap<>(payload));
         this.sourceTid = sourceTid;
-        this.sourcePid = sourcePid;
-        this.timestamp = System.currentTimeMillis();
-        this.routing = routing;
+        this.firedAt = firedAt;
+        this.target = target;
+        this.retentionPolicy = retentionPolicy;
     }
 
-    public Set<NaruEventRouting> routing() {
-        return routing;
+    // identity
+    public long seq() {
+        return seq;
     }
 
-    public boolean isMarked() {
-        return marked;
+    public String name() {
+        return name;
     }
 
-    public NaruEvent setMarked(boolean marked) {
-        this.marked = marked;
-        return this;
+    public Map<String, Object> payload() {
+        return payload;
     }
 
-    public String type() { return type; }
-    public Map<String, Object> args() { return args; }
-    public long sourceTid() { return sourceTid; }
-    public long sourcePid() { return sourcePid; }
-    public long timestamp() { return timestamp; }
+    public Object payload(String key) {
+        return payload.get(key);
+    }
+
+    // provenance
+    public long sourceTid() {
+        return sourceTid;
+    }
+
+    public Instant firedAt() {
+        return firedAt;
+    }
+
+    public NaruEventTarget target() {
+        return target;
+    }
+
+    public NaruRetentionPolicy retentionPolicy() {
+        return retentionPolicy;
+    }
+
+    // stats
+    public synchronized void markVisited(long tid) {
+        visitedTids.add(tid);
+    }
+
+    public synchronized void markConsumed(long tid) {
+        visitedTids.add(tid);
+        consumedTids.add(tid);
+    }
+
+    public synchronized boolean isVisitedBy(long tid) {
+        return visitedTids.contains(tid);
+    }
+
+    public synchronized boolean isConsumedBy(long tid) {
+        return consumedTids.contains(tid);
+    }
+
+    public synchronized int visitedCount() {
+        return visitedTids.size();
+    }
+
+    public synchronized int consumedCount() {
+        return consumedTids.size();
+    }
+
+    public synchronized long[] visitedTids() {
+        return visitedTids.toArray();
+    }
+
+    public synchronized long[] consumedTids() {
+        return consumedTids.toArray();
+    }
+
+    public synchronized boolean isVisitedTids(long id) {
+        return visitedTids.contains(id);
+    }
+
+    public synchronized boolean isConsumedTid(long id) {
+        return consumedTids.contains(id);
+    }
+
+    // retention
+    public boolean shouldDrop() {
+        return retentionPolicy.shouldDrop(this);
+    }
+
+    public long nextCheckMillis() {
+        return retentionPolicy.nextCheckMillis(this);
+    }
+
+    @Override
+    public String toString() {
+        return "NaruEvent{seq=" + seq
+                + ", name='" + name + "'"
+                + ", source=" + sourceTid
+                + ", firedAt=" + firedAt
+                + ", visited=" + visitedCount()
+                + ", consumed=" + consumedCount() + "}";
+    }
 }

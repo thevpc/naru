@@ -309,9 +309,9 @@ public class NaruEventFilters {
         }
 
         @Override
-        public boolean matches(NaruEvent event, List<NaruEvent> received) {
+        public boolean matches(NaruEvent event) {
             if (this.event != null) {
-                if (!Objects.equals(event.type(), this.event)) {
+                if (!Objects.equals(event.name(), this.event)) {
                     return false;
                 }
             }

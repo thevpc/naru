@@ -277,135 +277,134 @@ public class NaruSchedulerImpl implements NaruScheduler {
     // Event dispatch
     // -------------------------------------------------------------------------
 
-    @Override
-    public void dispatch(NaruEvent event) {
-        for (NaruTask task : resolveTargets(event)) {
-            dispatchToTask(task, event);
-        }
+    // NEW
+    public void fire(NaruEvent event) {
+        session.eventLog().append(event); // that's it
     }
 
 
-    private List<NaruTask> resolveTargets(NaruEvent event) {
-        List<NaruTask> targets = new ArrayList<>();
-        NaruTask source = session.findTask(event.sourceTid()).orNull();
-        Set<NaruEventRouting> routing1 = event.routing();
-        if(routing1.isEmpty() || routing1.contains(NaruEventRouting.all())){
-            routing1=new HashSet<>(Arrays.asList(NaruEventRouting.all()));
-        }
-        for (NaruEventRouting routing : routing1) {
-            switch (routing.type()) {
-                case SELF: {
-                    if (source != null) targets.add(source);
-                    break;
-                }
-                case PARENT: {
-                    if (source != null && source.parentId() >= 0) {
-                        NaruTask parent = session.findTask(source.parentId()).orNull();
-                        if (parent != null) targets.add(parent);
-                    }
-                    break;
-                }
-                case CHILDREN: {
-                    if (source != null) {
-                        for (long id : session.findTaskIdsByParent(source.id())) {
-                            NaruTask child = session.findTask(id).orNull();
-                            if (child != null) targets.add(child);
-                        }
-                    }
-                    break;
-                }
-                case SIBLINGS: {
-                    if (source != null && source.parentId() >= 0) {
-                        for (long id : session.findTaskIdsByParent(source.parentId())) {
-                            if (id != source.id()) {
-                                NaruTask sibling = session.findTask(id).orNull();
-                                if (sibling != null) targets.add(sibling);
-                            }
-                        }
-                    }
-                    break;
-                }
-                case TASK: {
-                    NaruTask task = session.findTask(routing.id()).orNull();
-                    if (task != null) targets.add(task);
-                    break;
-                }
-                case ALL: {
-                    targets.addAll(session.tasks());
-                    break;
-                }
-            }
-        }
-        // deduplicate — same task could appear via multiple routing rules
-        return targets.stream().distinct().collect(Collectors.toList());
-    }
+//    private List<NaruTask> resolveTargets(NaruEvent event) {
+//        List<NaruTask> targets = new ArrayList<>();
+//        NaruTask source = session.findTask(event.sourceTid()).orNull();
+//        Set<NaruEventRouting> routing1 = event.routing();
+//        if(routing1.isEmpty() || routing1.contains(NaruEventRouting.all())){
+//            routing1=new HashSet<>(Arrays.asList(NaruEventRouting.all()));
+//        }
+//        for (NaruEventRouting routing : routing1) {
+//            switch (routing.type()) {
+//                case SELF: {
+//                    if (source != null) targets.add(source);
+//                    break;
+//                }
+//                case PARENT: {
+//                    if (source != null && source.parentId() >= 0) {
+//                        NaruTask parent = session.findTask(source.parentId()).orNull();
+//                        if (parent != null) targets.add(parent);
+//                    }
+//                    break;
+//                }
+//                case CHILDREN: {
+//                    if (source != null) {
+//                        for (long id : session.findTaskIdsByParent(source.id())) {
+//                            NaruTask child = session.findTask(id).orNull();
+//                            if (child != null) targets.add(child);
+//                        }
+//                    }
+//                    break;
+//                }
+//                case SIBLINGS: {
+//                    if (source != null && source.parentId() >= 0) {
+//                        for (long id : session.findTaskIdsByParent(source.parentId())) {
+//                            if (id != source.id()) {
+//                                NaruTask sibling = session.findTask(id).orNull();
+//                                if (sibling != null) targets.add(sibling);
+//                            }
+//                        }
+//                    }
+//                    break;
+//                }
+//                case TASK: {
+//                    NaruTask task = session.findTask(routing.id()).orNull();
+//                    if (task != null) targets.add(task);
+//                    break;
+//                }
+//                case ALL: {
+//                    targets.addAll(session.tasks());
+//                    break;
+//                }
+//            }
+//        }
+//        // deduplicate — same task could appear via multiple routing rules
+//        return targets.stream().distinct().collect(Collectors.toList());
+//    }
 
-    private void dispatchToTask(NaruTask task, NaruEvent event) {
-        switch (task.status()) {
-            case BLOCKED_ON_EVENT: {
-                NaruEventFilter filter = task.awaitFilter();
-                if (filter != null
-                        && filter.matches(event, task.awaitReceived())) {
-                    task.addAwaitReceived(event);
-                    if (filter.satisfied(task.awaitReceived())) {
-                        // unblock
-                        task.addInbox(event);
-                        task.awaitFilter(null);
-                        task.awaitReceived().removeIf(NaruEvent::isMarked);
-                        ((NaruTaskImpl) task).status(NaruTaskStatus.READY);
-                        if (!task.isHeld()) {
-                            enqueue(task);
-                        }
-                    }
-                } else {
-                    // not matching await — queue for later
-                    task.addInbox(event);
-                }
-                break;
-            }
+//    private void dispatchToTask(NaruTask task, NaruEvent event) {
+//        switch (task.status()) {
+//            case BLOCKED_ON_EVENT: {
+//                NaruEventFilter filter = task.awaitFilter();
+//                if (filter != null
+//                        && filter.matches(event, task.awaitReceived())) {
+//                    task.addAwaitReceived(event);
+//                    if (filter.satisfied(task.awaitReceived())) {
+//                        // unblock
+//                        task.addInbox(event);
+//                        task.awaitFilter(null);
+//                        task.awaitReceived().removeIf(NaruEvent::isMarked);
+//                        ((NaruTaskImpl) task).status(NaruTaskStatus.READY);
+//                        if (!task.isHeld()) {
+//                            enqueue(task);
+//                        }
+//                    }
+//                } else {
+//                    // not matching await — queue for later
+//                    task.addInbox(event);
+//                }
+//                break;
+//            }
+//
+//            case READY:
+//            case RUNNING: {
+//                // check subscriptions
+//                NaruEventSubscription sub = findMatchingSubscription(task, event);
+//                if (sub != null) {
+//                    task.addInbox(event);
+//                    if (sub.once()) {
+//                        task.eventSubscriptions().remove(event.type());
+//                    }
+//                }
+//                // no subscription — silently discard
+//                break;
+//            }
+//
+//            case BLOCKED_ON_INPUT:{
+//                // queue — deliver on resume
+//                NaruEventSubscription sub = findMatchingSubscription(task, event);
+//                if (sub != null || task.awaitFilter() != null) {
+//                    task.addInbox(event);
+//                }
+//                break;
+//            }
+//
+//            case DONE:
+//            case FAILED:
+//            case KILLED: {
+//                // terminal — discard
+//                break;
+//            }
+//        }
+//    }
 
-            case READY:
-            case RUNNING: {
-                // check subscriptions
-                NaruEventSubscription sub = findMatchingSubscription(task, event);
-                if (sub != null) {
-                    task.addInbox(event);
-                    if (sub.once()) {
-                        task.eventSubscriptions().remove(event.type());
-                    }
-                }
-                // no subscription — silently discard
-                break;
-            }
-
-            case BLOCKED_ON_INPUT:{
-                // queue — deliver on resume
-                NaruEventSubscription sub = findMatchingSubscription(task, event);
-                if (sub != null || task.awaitFilter() != null) {
-                    task.addInbox(event);
-                }
-                break;
-            }
-
-            case DONE:
-            case FAILED:
-            case KILLED: {
-                // terminal — discard
-                break;
-            }
-        }
-    }
-
-    private NaruEventSubscription findMatchingSubscription(
+    private List<NaruEventSubscription> findMatchingSubscription(
             NaruTask task, NaruEvent event) {
+        List<NaruEventSubscription> matching = new ArrayList<>();
         for (Map.Entry<String, NaruEventSubscription> entry
                 : task.eventSubscriptions().entrySet()) {
             NaruEventSubscription sub = entry.getValue();
-            if (sub.filter().matches(event, new ArrayList<>())) {
-                return sub;
+            if (sub.filter().matches(event)) {
+                matching.add(sub);
             }
         }
-        return null;
+        return matching;
     }
 
     // -------------------------------------------------------------------------
@@ -461,26 +460,89 @@ public class NaruSchedulerImpl implements NaruScheduler {
     // -------------------------------------------------------------------------
 
     private void drainInbox(NaruTask task) {
-        NaruEvent event;
-        while ((event = task.pollInbox()) != null) {
-            NaruEventSubscription sub = findMatchingSubscription(task, event);
-            if (sub != null) {
-                NaruTaskFrame f = task.pushFrame(0, null, null, true);
-                f.setLocalVar("event", event);
-                task.addStatements(
-                        task.session().routineManager().routine(sub.routineName(),task).get().getIndexedLines()
-                                .stream().map(x -> task.parseStatement(x.command()).orNull())
-                                .filter(x -> x != null)
-                                .toArray(NaruStatement[]::new)
-                );
-                if (sub.once()) {
-                    task.eventSubscriptions().remove(event.type());
+
+        // PHASE 1: pull matching events from session log into task inbox
+        NaruSessionEventLog log = session.eventLog();
+        long watermark = task.inbox().watermark();
+
+        log.scan(watermark, new NaruEventFilter() {
+                    @Override
+                    public boolean matches(NaruEvent event) {
+                        return event.target().matches(task)
+                                && !event.isConsumedBy(task.id());
+                    }
+
+                    @Override
+                    public NElement toElement() {
+                        throw new IllegalArgumentException("unsupported")
+                    }
+                })
+                .forEach(event -> {
+                    event.markVisited(task.id());
+                    task.inbox().push(event.seq());
+                });
+
+        // PHASE 2: process inbox — run /on subscriptions
+        List<Long> toConsume = new ArrayList<>();
+
+        for (int i = task.inbox().tailIndex(watermark);
+             i < task.inbox().size(); i++) {
+
+            long seq = task.inbox().get(i);
+            NaruEvent event = log.get(seq);
+            if (event == null) continue; // dropped by GC
+
+            List<NaruEventSubscription> sub = findMatchingSubscription(task, event);
+            for (int j = sub.size() - 1; j >= 0; j--) {
+                injectRoutine(task, event, sub.get(j));
+                toConsume.add(seq);
+                if (sub.get(j).once()) {
+                    task.eventSubscriptions().remove(event.name());
                 }
             }
-            // no subscription — discard (already served its purpose
-            // for BLOCKED_ON_EVENT unblocking via dispatch)
+        }
+
+        // PHASE 3: consume matched events (after both /on and /wait had a chance)
+        for (long seq : toConsume) {
+            task.inbox().consume(seq);
+            NaruEvent event = log.get(seq);
+            if (event != null) event.markConsumed(task.id());
+        }
+
+        // PHASE 4: check /wait blocking condition
+        if (task.status() == NaruTaskStatus.BLOCKED_ON_EVENT) {
+            NaruEventFilter filter = task.awaitFilter();
+            if (filter != null) {
+                List<NaruEvent> candidates = task.inbox()
+                        .drainMatching(e -> filter.matches(e, task.awaitReceived()));
+                if (!candidates.isEmpty()) {
+                    candidates.forEach(e -> {
+                        task.addAwaitReceived(e);
+                        e.markConsumed(task.id());
+                    });
+                    if (filter.satisfied(task.awaitReceived())) {
+                        task.awaitFilter(null);
+                        ((NaruTaskSchedulerView) task).status(NaruTaskStatus.READY);
+                    }
+                }
+            }
         }
     }
+
+    private void injectRoutine(NaruTask task, NaruEvent event,
+                               NaruEventSubscription sub) {
+        NaruTaskFrame f = task.pushFrame(0, null, null, true);
+        f.setLocalVar("event", event);
+        task.addStatements(
+                session.routineManager()
+                        .routine(sub.routineName(), task).get()
+                        .getIndexedLines().stream()
+                        .map(x -> task.parseStatement(x.command()).orNull())
+                        .filter(x -> x != null)
+                        .toArray(NaruStatement[]::new)
+        );
+    }
+
 
     // -------------------------------------------------------------------------
     // Requeue

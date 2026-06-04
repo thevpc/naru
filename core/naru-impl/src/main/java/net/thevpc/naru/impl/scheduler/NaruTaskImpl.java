@@ -80,14 +80,14 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private final Map<String, NaruEventSubscription> eventSubscriptions = new ConcurrentHashMap<>();
     private final Map<String, NOptional<Object>> env = new ConcurrentHashMap<>();
     private final Map<String, String> eventHooks = new ConcurrentHashMap<>();
-    private final Queue<NaruEvent> inbox = new ConcurrentLinkedQueue<>();
+//    private final Queue<NaruEvent> inbox = new ConcurrentLinkedQueue<>();
     private final Semaphore stepPermit = new Semaphore(0);
     private NaruSchedulerMode schedulerMode = NaruSchedulerMode.AUTO;
     private final List<String> linesDelivered = new ArrayList<>();
     private NMsg pendingPrompt;
     private NaruIncrementalStmt pendingStatement;
     private String currentScriptName = "main";
-//    private NaruTaskInboxImpl inbox;
+    private NaruTaskInboxImpl inbox;
 
     public NaruTaskImpl(NElement element, NaruSession session) {
         this.session = session;

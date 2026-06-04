@@ -6,7 +6,7 @@ import java.util.List;
 
 public interface NaruEventFilter extends NToElement {
     // should this event be collected?
-    boolean matches(NaruEvent event, List<NaruEvent> received);
+    boolean matches(NaruEvent event);
     // should the task unblock now?
-    boolean satisfied(List<NaruEvent> received);
+//    boolean satisfied(List<NaruEvent> received);
 }
