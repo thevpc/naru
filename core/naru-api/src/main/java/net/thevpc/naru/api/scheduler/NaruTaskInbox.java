@@ -1,8 +1,10 @@
 package net.thevpc.naru.api.scheduler;
 
+import net.thevpc.nuts.elem.NToElement;
+
 import java.util.List;
 
-public interface NaruTaskInbox {
+public interface NaruTaskInbox extends NToElement {
     int size();
     void push(long seq);
 

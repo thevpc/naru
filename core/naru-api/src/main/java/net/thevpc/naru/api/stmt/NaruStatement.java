@@ -28,6 +28,7 @@ public abstract class NaruStatement implements NToElement, NCopiable, Cloneable 
         SOURCE,
         START,
         SET,
+        NOP,
     }
 
     public NaruStatement() {

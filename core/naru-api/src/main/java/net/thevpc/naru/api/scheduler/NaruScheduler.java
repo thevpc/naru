@@ -1,5 +1,7 @@
 package net.thevpc.naru.api.scheduler;
 
+import net.thevpc.naru.api.agent.NaruSession;
+
 public interface NaruScheduler {
     // --- lifecycle ---
     void start();
@@ -29,7 +31,6 @@ public interface NaruScheduler {
     // --- mode ---
     void throttleDelay(long ms);
 
-    void fire(NaruEvent event) ;
     // --- introspection ---
     NaruSchedulerStatus status();
 
@@ -39,4 +40,7 @@ public interface NaruScheduler {
 
     int readyCount();
 
+    void runRetention();
+
+    void runBlockedDrain();
 }

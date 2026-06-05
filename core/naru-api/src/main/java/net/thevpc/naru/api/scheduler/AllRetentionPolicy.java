@@ -1,5 +1,8 @@
 package net.thevpc.naru.api.scheduler;
 
+import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NOperatorSymbol;
+
 import java.util.Arrays;
 import java.util.List;
 
@@ -23,4 +26,26 @@ public class AllRetentionPolicy implements NaruRetentionPolicy {
                 .min()
                 .orElse(0);
     }
+
+    @Override
+    public NElement toElement() {
+        NElement e=null;
+        for (NaruRetentionPolicy policy : policies) {
+            if(e==null){
+                e=policy.toElement();
+            }else{
+                e=NElement.ofBinaryInfixOperator(NOperatorSymbol.AND, e, policy.toElement());
+            }
+        }
+        if(e==null){
+            return NElement.ofName("forget");
+        }
+        return e;
+    }
+
+    @Override
+    public String toString() {
+        return toElement().toString();
+    }
+
 }

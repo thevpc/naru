@@ -11,6 +11,7 @@ import java.util.Set;
 
 public class NaruEvent {
 
+    public static final String TASK_TERMINATED = "TaskTerminated";
     private final long seq;
     private final String name;
     private final Map<String, Object> payload;

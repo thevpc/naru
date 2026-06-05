@@ -3,22 +3,23 @@ package net.thevpc.naru.api.scheduler;
 import net.thevpc.nuts.elem.NElement;
 
 /**
- * Drop after exactly one consumption — unicast semantics.
+ * Never drop. Event lives until session ends.
  */
-public class OnceRetentionPolicy implements NaruRetentionPolicy {
-    public static final OnceRetentionPolicy INSTANCE = new OnceRetentionPolicy();
+public class ForeverRetentionPolicy implements NaruRetentionPolicy {
+    public static final ForeverRetentionPolicy INSTANCE = new ForeverRetentionPolicy();
 
     public boolean shouldDrop(NaruEvent event) {
-        return event.consumedCount() > 0;
+        return false;
     }
 
     public long nextCheckMillis(NaruEvent event) {
-        return 0;
+        return Long.MAX_VALUE; // never check again
     }
+
 
     @Override
     public NElement toElement() {
-        return NElement.ofName("once");
+        return NElement.ofName("forever");
     }
 
     @Override
@@ -29,12 +30,12 @@ public class OnceRetentionPolicy implements NaruRetentionPolicy {
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
-        OnceRetentionPolicy that = (OnceRetentionPolicy) o;
+        ForeverRetentionPolicy that = (ForeverRetentionPolicy) o;
         return true;
     }
 
     @Override
     public int hashCode() {
-        return 3;
+        return 41;
     }
 }

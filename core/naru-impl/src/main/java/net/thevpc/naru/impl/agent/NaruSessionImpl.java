@@ -15,6 +15,7 @@ import net.thevpc.naru.impl.budget.NaruMeteringServiceImpl;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.naru.impl.routine.NaruRoutineManagerImpl;
 import net.thevpc.naru.impl.scheduler.NaruSchedulerImpl;
+import net.thevpc.naru.impl.scheduler.NaruSessionEventLogImpl;
 import net.thevpc.naru.impl.scheduler.NaruTaskImpl;
 import net.thevpc.naru.impl.skill.NaruSkillManagerImpl;
 import net.thevpc.nuts.elem.*;
@@ -76,9 +77,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private boolean running = false;
     private final NaruRegistry registry;
     private String systemPrompt;
+    private final NaruSessionEventLog eventLog;
+    private final NaruSessionListener sessionListener;
+    private final List<NaruSessionListener> sessionListeners = new ArrayList<>();
+    private boolean stopped;
 
 
-    public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruMeteringService meteringService, boolean configureDefaults) {
+    public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruMeteringService meteringService, boolean configureDefaults, NaruSessionListener sessionListener) {
         this.agent = agent;
         this.projectDir = projectDir;
         this.workingDir = projectDir;
@@ -87,7 +92,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.routineManager = new NaruRoutineManagerImpl(this);
         this.skillManager = new NaruSkillManagerImpl(this);
         this.registry = new NaruRegistryImpl(this);
-
+        this.sessionListener = sessionListener;
         NaruModelConfig model0 = null;
         NaruModelConfig model = model0;
         if (model == null) {
@@ -115,12 +120,34 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         this.model = model;
         this.scheduler = new NaruSchedulerImpl(this, 1);
+        this.eventLog = new NaruSessionEventLogImpl(new NaruEventLogListener() {
+            @Override
+            public void onEventAppended(NaruEvent newEvent) {
+                NaruTask t = findTask(newEvent.sourceTid()).orNull();
+                if (t != null) {
+                    t.log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] fire %s", newEvent.sourceTid(), newEvent));
+                } else {
+                    log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s/dead] fire %s", newEvent.sourceTid(), newEvent));
+                }
+                sessionListener.onEventAppended(newEvent);
+                for (NaruSessionListener listener : sessionListeners) {
+                    listener.onEventAppended(newEvent);
+                }
+            }
+        });
         if (configureDefaults) {
             ((NaruRegistryImpl) registry).registerDefaults();
         }
     }
 
+    private void ensureNotStopped() {
+        if (stopped) {
+            throw new IllegalStateException("session is stopped");
+        }
+    }
+
     public NaruScheduler scheduler() {
+        ensureNotStopped();
         return scheduler;
     }
 
@@ -131,6 +158,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSession setVisibility(NAruVisibility visibility) {
+        ensureNotStopped();
         NAssert.requireNamedNonNull(visibility, "visibility");
         if (visibility != NAruVisibility.PUBLIC && visibility != NAruVisibility.PRIVATE) {
             NAssert.requireNamedTrue(false, "valid visibility");
@@ -140,7 +168,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     // Accessors
-    public NaruSession unsetSessionenv(String key) {
+    public NaruSession unsetSessionEnv(String key) {
+        ensureNotStopped();
         if (env.containsKey(key)) {
             env.remove(key);
             fireChanged();
@@ -150,11 +179,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public List<NaruTask> tasks() {
+        ensureNotStopped();
         return new ArrayList<>(tasks.values());
     }
 
     @Override
     public NaruTask newTask(NaruTaskSpec taskBuilder) {
+        ensureNotStopped();
         long parentId = taskBuilder.parentId();
         NPath cwd = taskBuilder.workingDirectory();
         NaruTask parent = tasks.get(parentId);
@@ -186,7 +217,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         natuTask._prependInitHooks();
         natuTask.addStatements(
                 taskBuilder.statements().stream().map(x -> natuTask.parseStatement(x).get().injected(true)).collect(Collectors.toList())
-                .stream().map(x -> x.injected(true)).toArray(NaruStatement[]::new));
+                        .stream().map(x -> x.injected(true)).toArray(NaruStatement[]::new));
         tasks.put(id, natuTask);
         return natuTask;
     }
@@ -219,10 +250,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NOptional<NaruTask> findTask(long tid) {
+        ensureNotStopped();
         return NOptional.ofNamed(tasks.get(tid), "task " + tid);
     }
 
     public NaruSession setSessionEnv(String key, Object value) {
+        ensureNotStopped();
         if (env.containsKey(key) && Objects.equals(env.get(key).orNull(), value)) {
             return this;
         }
@@ -233,6 +266,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public NOptional<Object> getSessionEnv(String key) {
+        ensureNotStopped();
         if (env.containsKey(key)) {
             Object u = env.get(key).get();
             return NOptional.ofNullable(u);
@@ -242,29 +276,28 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NOptional<NElement> getProjectEnv(String key) {
+        ensureNotStopped();
         NaruEnv a = agent.env();
         return a.get(key);
     }
 
     @Override
     public void setProjectEnv(String key, NElement value, NAruVisibility visibility) {
+        ensureNotStopped();
         NaruEnv a = agent.env();
         a.put(key, value, visibility);
     }
 
 
-    public Map<String, Object> getGlobalStateSnapshot() {
-        return new HashMap<>(env);
-    }
-
-
     @Override
     public String name() {
+        ensureNotStopped();
         return name;
     }
 
     @Override
     public NaruSession setName(String name) {
+        ensureNotStopped();
         this.name = NStringUtils.firstNonBlankTrimmed(name, "NO_NAME");
         this.fireChanged();
         return this;
@@ -273,12 +306,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public Map<String, NaruModelConfig> modelAliases() {
+        ensureNotStopped();
         return ((NaruAgentImpl) agent).getModelAliases().toMap();
     }
 
 
     @Override
     public Map<NaruModelConfig, List<String>> reversedModelAliases() {
+        ensureNotStopped();
         HashMap<NaruModelConfig, List<String>> m = new HashMap<>();
         for (Map.Entry<String, NaruModelConfig> e : modelAliases().entrySet()) {
             NaruModelConfig k = e.getValue();
@@ -289,6 +324,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public NOptional<NaruModelConfig> findModel(NaruModelConfig keyOrName) {
+        ensureNotStopped();
         if (keyOrName == null) {
             return NOptional.ofNamedEmpty(NMsg.ofC("model"));
         }
@@ -310,6 +346,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public NOptional<NaruModelConfig> findModel(String keyOrName) {
+        ensureNotStopped();
         List<NaruModelConfig> models = registry().modelsKeys(this).stream().map(NaruModelConfig::new).collect(Collectors.toList());
         NaruModelConfig a = findModelAlias(keyOrName).orNull();
         if (a != null) {
@@ -347,6 +384,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public void removeModelAlias(String alias) {
+        ensureNotStopped();
         alias = NStringUtils.trimToNull(alias);
         ((NaruAgentImpl) agent).getModelAliases().remove(alias);
         fireChanged();
@@ -354,6 +392,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public void addModelAlias(String alias, NaruModelConfig model) {
+        ensureNotStopped();
         alias = NStringUtils.trimToNull(alias);
         if (!NBlankable.isBlank(alias)) {
             if (model != null) {
@@ -365,16 +404,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NOptional<NaruModelConfig> findModelAlias(String alias) {
+        ensureNotStopped();
         return ((NaruAgentImpl) agent).getModelAliases().get(alias);
     }
 
     @Override
     public Instant creationDate() {
+        ensureNotStopped();
         return creationDate;
     }
 
     @Override
     public Instant modificationDate() {
+        ensureNotStopped();
         return modificationDate;
     }
 
@@ -385,30 +427,39 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSession save(NPath path) {
+        ensureNotStopped();
         NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
                 .write(toElement(), path.mkParentDirs());
         return this;
     }
 
     public void fireChanged() {
+        ensureNotStopped();
         this.modificationDate = Instant.now();
         sessionManager.saveSnapshot();
     }
 
     @Override
     public NaruSession load(NPath path) {
+        ensureNotStopped();
         load(NElementReader.ofTson().read(path));
         return this;
     }
 
     @Override
     public NaruSession copy() {
+        ensureNotStopped();
         this.uuid = UUID.randomUUID().toString();
+        sessionListener.onSessionReloaded(this);
+        for (NaruSessionListener listener : sessionListeners) {
+            listener.onSessionReloaded(this);
+        }
         return this;
     }
 
     @Override
     public NaruSession reset(boolean preserveIdentity) {
+        ensureNotStopped();
         if (!preserveIdentity) {
             this.uuid = UUID.randomUUID().toString();
             this.name = "NO_NAME";
@@ -418,12 +469,17 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         //clearHistory();
         maxTaskId.set(0);
         this.sessionManager.saveSnapshot();
+        sessionListener.onSessionReloaded(this);
+        for (NaruSessionListener listener : sessionListeners) {
+            listener.onSessionReloaded(this);
+        }
         return this;
     }
 
 
     @Override
     public NaruSession save() {
+        ensureNotStopped();
         NPath publicFile = projectDir.resolve(".naru/sessions/" + uuid() + ".tson");
         NPath privateFile = projectDir.resolve(".naru/local/sessions/" + uuid() + ".tson");
         if (getVisibility() == NAruVisibility.PUBLIC) {
@@ -442,6 +498,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSession load() {
+        ensureNotStopped();
         NPath publicFile = projectDir.resolve(".naru/sessions/" + uuid() + ".tson");
         NPath privateFile = projectDir.resolve(".naru/local/sessions/" + uuid() + ".tson");
         if (publicFile.isRegularFile()) {
@@ -450,6 +507,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         } else {
             load(privateFile);
             setVisibility(NAruVisibility.PRIVATE);
+        }
+        sessionListener.onSessionReloaded(this);
+        for (NaruSessionListener listener : sessionListeners) {
+            listener.onSessionReloaded(this);
         }
         return this;
     }
@@ -470,6 +531,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSession load(NElement element) {
+        ensureNotStopped();
         NObjectElement o = element.asObject().get();
         this.uuid = NStringUtils.firstNonBlankTrimmed(o.getStringValue("uuid").orElse(null), UUID.randomUUID().toString());
         this.name = NStringUtils.firstNonBlankTrimmed(o.getStringValue("name").orElse(null), "NO_NAME");
@@ -496,6 +558,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     // readline thread
     public void deliverInput(String line) {
+        ensureNotStopped();
         NaruTask fg = findTask(foregroundTaskId).orNull();
         if (fg == null) {
             handleSessionCommand(line);
@@ -509,27 +572,28 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     // called by scheduler when task becomes BLOCKED_ON_INPUT
     public void onInputRequested(NaruTask task) {
+        ensureNotStopped();
         inputRequests.add(task);
-//        // now we know the prompt
-//        NaruTaskSchedulerView t = (NaruTaskSchedulerView) task;
-//        NMsg prompt = t.pendingPrompt();
-//
-//        // read on THIS call — no separate thread needed
-//        String line = NTerminal.of().readLine(prompt);
-//
-//        // deliver and unblock
-//        t.deliverInput(line);
-//        t.status(NaruTaskStatus.READY);
-//        ((NaruSchedulerImpl)scheduler).enqueue(task);
     }
 
     private void handleSessionCommand(String line) {
+        ensureNotStopped();
         //
     }
 
     @Override
     public void log(NaruLogMode mode, NMsg s) {
-        agent.log(mode, s);
+        if (mode == NaruLogMode.SCHEDULER) {
+            if (isTrace()) {
+                agent.log(mode, s);
+            }
+        } else {
+            agent.log(mode, s);
+        }
+    }
+
+    private boolean isTrace() {
+        return getSessionEnv("trace").map(x -> NLiteral.of(x).asBoolean().orNull()).orElse(false);
     }
 
 
@@ -540,6 +604,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public List<NPath> listOverridablePaths(NPath publicPath, NPath privatePath, Predicate<String> nameFilter) {
+        ensureNotStopped();
         Map<String, NPath> publicFiles = publicPath.list().stream().filter(x -> x.isRegularFile() && nameFilter.test(x.name())).collect(Collectors.toMap(x -> x.name(), x -> x));
         Map<String, NPath> privateFiles = privatePath.list().stream().filter(x -> x.isRegularFile() && nameFilter.test(x.name())).collect(Collectors.toMap(x -> x.name(), x -> x));
         Map<String, NPath> all = new HashMap<>();
@@ -549,6 +614,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     private List<NaruMessage> loadAgentClassPath(String[] agentFileNames) {
+        ensureNotStopped();
         Set<ClassLoader> classLoaders = new LinkedHashSet<>(Arrays.asList(
                 getClass().getClassLoader(),
                 Thread.currentThread().getContextClassLoader()
@@ -587,10 +653,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
 
     public NPath workingDir() {
+        ensureNotStopped();
         return workingDir;
     }
 
     public NaruSession setWorkingDir(NPath workingDir) {
+        ensureNotStopped();
         NPath nf = workingDir.toAbsolute(this.workingDir);
         if (!nf.equals(this.workingDir)) {
             this.workingDir = nf;
@@ -602,21 +670,25 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NPath projectDir() {
+        ensureNotStopped();
         return projectDir;
     }
 
     @Override
     public NaruRoutineManager routineManager() {
+        ensureNotStopped();
         return routineManager;
     }
 
     @Override
     public NaruSkillManager skillManager() {
+        ensureNotStopped();
         return skillManager;
     }
 
     @Override
     public NaruSession terminate() {
+        ensureNotStopped();
         for (Map.Entry<Long, NaruTask> e : new HashMap<>(tasks).entrySet()) {
             e.getValue().kill();
         }
@@ -624,6 +696,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public boolean hasMoreStatements() {
+        ensureNotStopped();
         for (Map.Entry<Long, NaruTask> e : new HashMap<>(tasks).entrySet()) {
             if (e.getValue().hasMoreStatements()) {
                 return true;
@@ -634,30 +707,36 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruAgent agent() {
+        ensureNotStopped();
         return agent;
     }
 
     @Override
     public NaruSessionManager sessionManager() {
+        ensureNotStopped();
         return sessionManager;
     }
 
     @Override
     public NaruRegistry registry() {
+        ensureNotStopped();
         return registry;
     }
 
     public NaruMeteringService meteringService() {
+        ensureNotStopped();
         return meteringService;
     }
 
     @Override
     public long foregroundTaskId() {
+        ensureNotStopped();
         return foregroundTaskId;
     }
 
     @Override
     public NaruSession foregroundTaskId(long taskId) {
+        ensureNotStopped();
         this.foregroundTaskId = taskId;
         return this;
     }
@@ -665,6 +744,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     // readline thread loop
     private void readlineLoop() {
+        ensureNotStopped();
         while (readlineThreadRunning) {
             NaruTask task = null; // parks here until request arrives
             try {
@@ -687,6 +767,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public void start() {
+        ensureNotStopped();
         if (running) {
             return;
         }
@@ -698,6 +779,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
         // start scheduler (its workers)
         scheduler.start();
+        sessionListener.sessionStarted(this);
+        for (NaruSessionListener listener : sessionListeners) {
+            listener.sessionStarted(this);
+        }
     }
 
     @Override
@@ -714,10 +799,31 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         readlineThreadRunning = false;
         readlineThread.interrupt();
         running = false;
+        sessionListener.sessionStopped(this);
+        for (NaruSessionListener listener : sessionListeners) {
+            listener.sessionStopped(this);
+        }
+    }
+
+    @Override
+    public void addSessionListener(NaruSessionListener listener) {
+        ensureNotStopped();
+        if (listener != null) {
+            sessionListeners.add(listener);
+        }
+    }
+
+    @Override
+    public void removeSessionListener(NaruSessionListener listener) {
+        ensureNotStopped();
+        if (listener != null) {
+            sessionListeners.remove(listener);
+        }
     }
 
     @Override
     public void waitFor() {
+        ensureNotStopped();
         try {
             // wait for scheduler workers
             scheduler.awaitTermination();
@@ -735,22 +841,26 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSession systemPrompt(String systemPrompt) {
+        ensureNotStopped();
         this.systemPrompt = systemPrompt;
         return this;
     }
 
-    public void onKill(long tid) {
+    public void onTerminated(long tid) {
+        ensureNotStopped();
         if (foregroundTaskId() == tid) {
             foregroundTaskId(-1);
         }
         if (tasks.containsKey(tid)) {
             NaruTask i = tasks.remove(tid);
-            scheduler.dispatch(new NaruEvent("task.terminated",
-                    NMaps.of(
-                            "status", i.status().name(),
-                            "name", i.name()
-                    )
-                    , tid, i.parentId(), Set.of(NaruEventRouting.all())));
+            Map<String, Object> payload = NMaps.of(
+                    "status", i.status().name(),
+                    "name", i.name()
+            );
+            ((NaruSchedulerImpl) scheduler).onTerminated(tid);
+            eventLog.append(new NaruEvent(
+                    NaruEvent.TASK_TERMINATED,
+                    payload, tid, i.parentId(), Instant.now(), NaruEventTargets.ofEveryone(), NaruRetentionPolicies.ofDefault()));
             if (tasks.isEmpty()) {
                 stop();
             }
@@ -758,7 +868,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
+    public NaruSessionEventLog eventLog() {
+        ensureNotStopped();
+        return eventLog;
+    }
+
+    @Override
     public long[] findTaskIdsByParent(long taskId) {
+        ensureNotStopped();
         Set<Long> ids = new HashSet<>();
         for (NaruTask t : tasks.values()) {
             if (t.parentId() == taskId) {

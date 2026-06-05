@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.agent;
 
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.scheduler.NaruTaskMode;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruRegistry;
@@ -44,12 +45,75 @@ public class NaruAgentImpl implements NaruAgent {
     private NPath projectDirectory;
     private StoredStringMap<NaruModelConfig> modelAliases;
     private NaruProjectEnv projectEnv;
+    private final List<NaruSession> sessions = new ArrayList<>();
+    private final Object signal = new Object();
+    private volatile Thread maintenanceThread;
+    private final NaruSessionListener asSessionListener = new NaruSessionListener() {
 
+        @Override
+        public void sessionStarted(NaruSession session) {
+            sessions.add(session);
+            ensureGlobal();
+        }
+
+        @Override
+        public void sessionStopped(NaruSession session) {
+            sessions.remove(session);
+            ensureGlobal();
+        }
+
+        @Override
+        public void onSessionReloaded(NaruSession naruSession) {
+            ensureGlobal();
+        }
+
+        @Override
+        public void onEventAppended(NaruEvent newEvent) {
+            if (maintenanceThread != null) {
+                synchronized (signal) {
+                    signal.notifyAll();
+                }
+            }
+        }
+    };
 
     public NaruAgentImpl() {
         this.logger = NLogger.STDOUT;
     }
 
+    private void ensureGlobal() {
+        if (sessions.isEmpty()) {
+
+        } else {
+            if (maintenanceThread == null) {
+                Thread t = new Thread(this::maintenanceLoop, "naru-maintenance");
+                t.setDaemon(true);
+                t.start();
+                maintenanceThread = t;
+            }
+        }
+    }
+
+    private void maintenanceLoop() {
+        while (true) {
+            for (NaruSession session : new ArrayList<>(sessions)) {
+                session.scheduler().runRetention();
+                session.scheduler().runBlockedDrain();
+            }
+            sleepOrSignal(100);
+        }
+    }
+
+
+    private void sleepOrSignal(long ms) {
+        synchronized (signal) {
+            try {
+                signal.wait(ms <= 0 ? 50 : ms);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
 
     @Override
     public NPath getProjectDirectory() {
@@ -84,11 +148,7 @@ public class NaruAgentImpl implements NaruAgent {
     }
 
     public NaruSession startInteractiveSession(String... commands) {
-        NPath pwd = projectDirectory;
-        if (pwd == null) {
-            pwd = NPath.ofUserDirectory();
-        }
-        NaruSession session = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService,true);
+        NaruSession session = newSession(null);
         enableRichTerm(session);
         NOut.resetLine();
         log(NaruLogMode.RAW, NMsg.ofC(
@@ -105,15 +165,20 @@ public class NaruAgentImpl implements NaruAgent {
         return session;
     }
 
+    public NaruSession newSession(NPath dir) {
+        if (dir == null) {
+            dir = projectDirectory;
+        }
+        if (dir == null) {
+            dir = NPath.ofUserDirectory();
+        }
+        return new NaruSessionImpl(this, dir.toAbsolute(), meteringService, true, asSessionListener);
+    }
 
 
     @Override
     public NaruSession startSession(String... commands) {
-        NPath pwd = projectDirectory;
-        if (pwd == null) {
-            pwd = NPath.ofUserDirectory();
-        }
-        NaruSession session = new NaruSessionImpl(this, pwd.toAbsolute(), meteringService,true);
+        NaruSession session = newSession(null);
         session.newTask(NaruTaskSpec.of().statements(commands).resolveNameOr("naru"))
                 .fg()
                 .unhold();
@@ -233,6 +298,10 @@ public class NaruAgentImpl implements NaruAgent {
             }
             case DEBUG: {
                 logLines(message, 2, "\u258C", 8);
+                break;
+            }
+            case SCHEDULER: {
+                logLines(message, 0, "\u258C", 9);
                 break;
             }
             default: {

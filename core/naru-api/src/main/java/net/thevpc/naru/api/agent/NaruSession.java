@@ -93,7 +93,7 @@ public interface NaruSession {
 
     NOptional<Object> getSessionEnv(String key);
 
-    NaruSession unsetSessionenv(String key);
+    NaruSession unsetSessionEnv(String key);
 
     NaruSession setSessionEnv(String key, Object value);
 
@@ -122,4 +122,8 @@ public interface NaruSession {
     long[] findTaskIdsByParent(long taskId);
 
     NaruSessionEventLog eventLog();
+
+    void addSessionListener(NaruSessionListener listener);
+
+    void removeSessionListener(NaruSessionListener listener);
 }

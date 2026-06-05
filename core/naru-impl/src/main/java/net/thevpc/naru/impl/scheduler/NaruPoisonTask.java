@@ -249,7 +249,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NaruStatement popStatement() {
+    public NOptional<NaruStatement> nextStatement() {
         throw new NUnsupportedOperationException();
     }
 
@@ -409,17 +409,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NaruTask addInbox(NaruEvent event) {
-        throw new NUnsupportedOperationException();
-    }
-
-    @Override
     public Map<String, NaruEventSubscription> eventSubscriptions() {
-        throw new NUnsupportedOperationException();
-    }
-
-    @Override
-    public NaruEvent pollInbox() {
         throw new NUnsupportedOperationException();
     }
 
@@ -519,17 +509,17 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NaruStatement peekStatement() {
+    public NOptional<NaruStatement> peekStatement() {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public NaruStatement peekStatement(int pos) {
+    public NaruTaskInbox inbox() {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public NaruTask fireEvent(String eventType, Map<String, Object> args, NaruEventRouting... routing) {
+    public NaruTask fireEvent(String eventType, Map<String, Object> args, NaruEventTarget target, NaruRetentionPolicy retention) {
         throw new NUnsupportedOperationException();
     }
 

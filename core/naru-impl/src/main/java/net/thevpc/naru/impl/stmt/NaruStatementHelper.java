@@ -48,6 +48,10 @@ public class NaruStatementHelper {
                 return new NaruDirectiveCallStmt(element);
             case "RETURN":
                 return new NaruDirectiveReturn(element);
+            case "SET":
+                return new NaruSetStmt(element);
+            case "NOP":
+                return new NaruNopStmt(element);
         }
         throw new NIllegalArgumentException(NMsg.ofC("invalid element %s", element));
     }

@@ -131,11 +131,9 @@ public interface NaruTask extends NToElement {
 
     void invokeRoutine(String routineName);
 
-    NaruStatement popStatement();
+    NOptional<NaruStatement> nextStatement();
 
-    NaruStatement peekStatement();
-
-    NaruStatement peekStatement(int pos);
+    NOptional<NaruStatement> peekStatement();
 
     NaruTaskFrame peekFrame();
 
@@ -228,7 +226,7 @@ public interface NaruTask extends NToElement {
     // NaruTask — consumes delivered input
     String consumeInput();
 
-    NaruTask fireEvent(String eventType, Map<String, Object> args, NaruEventRouting... routing);
+    NaruTask fireEvent(String eventType, Map<String, Object> args, NaruEventTarget target, NaruRetentionPolicy retention);
 
     NaruTask sleep(NDuration duration);
 

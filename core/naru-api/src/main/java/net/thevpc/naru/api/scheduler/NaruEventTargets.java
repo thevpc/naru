@@ -3,26 +3,24 @@ package net.thevpc.naru.api.scheduler;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.expr.NExprContextBuilder;
+import net.thevpc.nuts.expr.NExprLiteralNode;
 import net.thevpc.nuts.expr.NExprNode;
 import net.thevpc.nuts.expr.NExprOpNode;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
 
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 public class NaruEventTargets {
 
     private static final NaruEventTarget ALL = new AlwaysNaruEventTarget();
     private static final NaruEventTarget NONE = new NeverNaruEventTarget();
 
-    public static NaruEventTarget always() {
+    public static NaruEventTarget ofEveryone() {
         return ALL;
     }
 
-    public static NaruEventTarget never() {
+    public static NaruEventTarget ofNone() {
         return NONE;
     }
 
@@ -82,7 +80,7 @@ public class NaruEventTargets {
         return new ChildrenNaruEventTarget(taskId);
     }
 
-    private static NaruEventTarget parse(NExprNode n, NaruTask candidate) {
+    private static NOptional<NaruEventTarget> parse(NExprNode n, NaruTask candidate) {
         switch (n.nodeType()) {
             case OPERATOR: {
                 NExprOpNode o = (NExprOpNode) n;
@@ -90,20 +88,30 @@ public class NaruEventTargets {
                     case "&":
                     case "&&":
                     case "and": {
-                        return new AndNaruEventTarget(
-                                new LinkedHashSet<>(
-                                        o.operands().stream().map(x -> parse(x, candidate)).toList()
-                                )
-                        );
+                        List<NaruEventTarget> ch = new ArrayList<>();
+                        for (NExprNode nn : o.operands()) {
+                            NOptional<NaruEventTarget> r = parse(nn, candidate);
+                            if (r.isPresent()) {
+                                ch.add(r.get());
+                            } else {
+                                return NOptional.ofError(r.getMessage());
+                            }
+                        }
+                        return NOptional.of(new AndNaruEventTarget(ch));
                     }
                     case "|":
                     case "||":
                     case "or": {
-                        return new OrNaruEventTarget(
-                                new LinkedHashSet<>(
-                                        o.operands().stream().map(x -> parse(x, candidate)).toList()
-                                )
-                        );
+                        List<NaruEventTarget> ch = new ArrayList<>();
+                        for (NExprNode nn : o.operands()) {
+                            NOptional<NaruEventTarget> r = parse(nn, candidate);
+                            if (r.isPresent()) {
+                                ch.add(r.get());
+                            } else {
+                                return NOptional.ofError(r.getMessage());
+                            }
+                        }
+                        return NOptional.of(new OrNaruEventTarget(ch));
                     }
                     default: {
                         throw new NIllegalArgumentException(NMsg.ofC("unknown node type %s", n.nodeType()));
@@ -111,42 +119,51 @@ public class NaruEventTargets {
                 }
             }
             case WORD: {
-                NExprNode w = (NExprNode) n;
-                switch (w.name().toLowerCase()) {
+                switch (n.name().toLowerCase()) {
+                    case "true":
+                    case "any":
                     case "all":
                     case "everyone": {
-                        return new AlwaysNaruEventTarget();
+                        return NOptional.of(ofEveryone());
                     }
+                    case "false":
                     case "none":
                     case "noone": {
-                        return new NeverNaruEventTarget();
+                        return NOptional.of(ofNone());
                     }
                     case "child":
                     case "children": {
-                        return new ChildrenNaruEventTarget(candidate.id());
+                        return NOptional.of(new ChildrenNaruEventTarget(candidate.id()));
                     }
                     case "sibling":
                     case "siblings": {
-                        return new SiblingNaruEventTarget(candidate.id(), candidate.parentId());
+                        return NOptional.of(new SiblingNaruEventTarget(candidate.id(), candidate.parentId()));
                     }
                     case "parent": {
                         if (candidate.parentId() < 0) {
-                            return new NeverNaruEventTarget();
+                            return NOptional.of(new NeverNaruEventTarget());
                         }
-                        return new TaskIdNaruEventTarget(candidate.parentId());
-                    }
-                    default: {
-                        throw new NIllegalArgumentException(NMsg.ofC("unknown node type %s", n.nodeType()));
+                        return NOptional.of(new TaskIdNaruEventTarget(candidate.parentId()));
                     }
                 }
+                break;
+            }
+            case LITERAL: {
+                NExprLiteralNode li = (NExprLiteralNode) n;
+                Object v = li.value();
+                Long nbr = NLiteral.of(v).asLong().orNull();
+                if (nbr != null) {
+                    return NOptional.of(new TaskIdNaruEventTarget(nbr));
+                }
+                break;
             }
         }
-        throw new NIllegalArgumentException(NMsg.ofC("unknown node type %s", n.nodeType()));
+        return NOptional.ofError(NMsg.ofC("unknown node type %s", n.nodeType()));
     }
 
-    public static NaruEventTarget parse(String tasks, NaruTask task) {
+    public static NOptional<NaruEventTarget> parse(String tasks, NaruTask task) {
         if (NBlankable.isBlank(tasks)) {
-            return ALL;
+            return NOptional.of(ofEveryone());
         }
         NExprNode n = NExprContextBuilder
                 .of()
@@ -158,46 +175,40 @@ public class NaruEventTargets {
 
 
     private static class AndNaruEventTarget implements NaruEventTarget {
-        private final LinkedHashSet<NaruEventTarget> validFilters;
-
-        public AndNaruEventTarget(LinkedHashSet<NaruEventTarget> validFilters) {
-            this.validFilters = validFilters;
-        }
-
-        @Override
-        public boolean test(NaruTask event) {
-            for (NaruEventTarget filter : validFilters) {
-                if (!filter.test(event)) {
-                    return false;
-                }
+            LinkedHashSet<NaruEventTarget> validFilters;
+            private AndNaruEventTarget(Collection<NaruEventTarget> validFilters) {
+                this.validFilters = new LinkedHashSet<>(validFilters);
             }
-            return true;
-        }
+
+            @Override
+            public boolean test(NaruTask event) {
+                for (NaruEventTarget filter : validFilters) {
+                    if (!filter.test(event)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public NElement toElement() {
+                return NElement.ofNamedUplet("and",
+                        validFilters.stream().map(NaruEventTarget::toElement).toArray(NElement[]::new)
+                );
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (o == null || getClass() != o.getClass()) return false;
+                AndNaruEventTarget that = (AndNaruEventTarget) o;
+                return Objects.equals(validFilters, that.validFilters);
+            }
 
         @Override
-        public NElement toElement() {
-            return NElement.ofNamedUplet("and",
-                    validFilters.stream().map(NaruEventTarget::toElement).toArray(NElement[]::new)
-            );
+            public String toString() {
+                return toElement().toString();
+            }
         }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o == null || getClass() != o.getClass()) return false;
-            AndNaruEventTarget that = (AndNaruEventTarget) o;
-            return Objects.equals(validFilters, that.validFilters);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hashCode(validFilters);
-        }
-
-        @Override
-        public String toString() {
-            return toElement().toString();
-        }
-    }
 
     private static class AlwaysNaruEventTarget implements NaruEventTarget {
         @Override
@@ -257,151 +268,110 @@ public class NaruEventTargets {
         }
     }
 
-    private static class TaskIdNaruEventTarget implements NaruEventTarget {
-        private final long tid;
+    private record TaskIdNaruEventTarget(long tid) implements NaruEventTarget {
+            private TaskIdNaruEventTarget(long tid) {
+                this.tid = tid < 0 ? -1 : tid;
+            }
 
-        public TaskIdNaruEventTarget(long tid) {
-            this.tid = tid < 0 ? -1 : tid;
+            public boolean test(NaruTask candidate) {
+                return candidate.id() == tid;
+            }
+
+            @Override
+            public NElement toElement() {
+                return NElement.ofNamedUplet("taskId",
+                        NElement.ofPair("id", tid)
+                );
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (o == null || getClass() != o.getClass()) return false;
+                TaskIdNaruEventTarget that = (TaskIdNaruEventTarget) o;
+                return tid == that.tid;
+            }
+
+        @Override
+            public String toString() {
+                return toElement().toString();
+            }
         }
+
+    private record ChildrenNaruEventTarget(long taskId) implements NaruEventTarget {
 
         public boolean test(NaruTask candidate) {
-            return candidate.id() == tid;
-        }
+                return candidate.parentId() == taskId;
+            }
+
+            @Override
+            public NElement toElement() {
+                return NElement.ofNamedUplet("children",
+                        NElement.ofPair("taskId", taskId)
+                );
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (o == null || getClass() != o.getClass()) return false;
+                ChildrenNaruEventTarget that = (ChildrenNaruEventTarget) o;
+                return taskId == that.taskId;
+            }
 
         @Override
-        public NElement toElement() {
-            return NElement.ofNamedUplet("taskId",
-                    NElement.ofPair("id", tid)
-            );
+            public String toString() {
+                return toElement().toString();
+            }
         }
 
-        @Override
-        public boolean equals(Object o) {
-            if (o == null || getClass() != o.getClass()) return false;
-            TaskIdNaruEventTarget that = (TaskIdNaruEventTarget) o;
-            return tid == that.tid;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(tid);
-        }
-
-        @Override
-        public String toString() {
-            return toElement().toString();
-        }
-    }
-
-    private static class ChildrenNaruEventTarget implements NaruEventTarget {
-        private final long taskId;
-
-        public ChildrenNaruEventTarget(long taskId) {
-            this.taskId = taskId;
-        }
+    private record SiblingNaruEventTarget(long taskId, long parentId) implements NaruEventTarget {
 
         public boolean test(NaruTask candidate) {
-            return candidate.parentId() == taskId;
-        }
+                return candidate.parentId() == parentId && candidate.id() != taskId;
+            }
+
+            @Override
+            public NElement toElement() {
+                return NElement.ofNamedUplet("sibling",
+                        NElement.ofPair("taskId", taskId),
+                        NElement.ofPair("parentId", parentId)
+                );
+            }
 
         @Override
-        public NElement toElement() {
-            return NElement.ofNamedUplet("children",
-                    NElement.ofPair("taskId", taskId)
-            );
+            public String toString() {
+                return toElement().toString();
+            }
         }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o == null || getClass() != o.getClass()) return false;
-            ChildrenNaruEventTarget that = (ChildrenNaruEventTarget) o;
-            return taskId == that.taskId;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(taskId);
-        }
-
-        @Override
-        public String toString() {
-            return toElement().toString();
-        }
-    }
-
-    private static class SiblingNaruEventTarget implements NaruEventTarget {
-        private final long parentId;
-        private final long taskId;
-
-        public SiblingNaruEventTarget(long taskId, long parentId) {
-            this.taskId = taskId;
-            this.parentId = parentId;
-        }
-
-        public boolean test(NaruTask candidate) {
-            return candidate.parentId() == parentId;
-        }
-
-        @Override
-        public NElement toElement() {
-            return NElement.ofNamedUplet("sibling",
-                    NElement.ofPair("taskId", taskId),
-                    NElement.ofPair("parentId", parentId)
-            );
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o == null || getClass() != o.getClass()) return false;
-            SiblingNaruEventTarget that = (SiblingNaruEventTarget) o;
-            return parentId == that.parentId && taskId == that.taskId;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(taskId, parentId);
-        }
-
-        @Override
-        public String toString() {
-            return toElement().toString();
-        }
-    }
 
     private static class OrNaruEventTarget implements NaruEventTarget {
-        private final LinkedHashSet<NaruEventTarget> validFilters;
-
-        public OrNaruEventTarget(LinkedHashSet<NaruEventTarget> validFilters) {
-            this.validFilters = validFilters;
-        }
-
-        @Override
-        public boolean test(NaruTask candidate) {
-            for (NaruEventTarget filter : validFilters) {
-                if (filter.test(candidate)) {
-                    return true;
-                }
+            private LinkedHashSet<NaruEventTarget> validFilters;
+            private OrNaruEventTarget(Collection<NaruEventTarget> validFilters) {
+                this.validFilters = new LinkedHashSet<>(validFilters);
             }
-            return false;
-        }
 
-        @Override
-        public NElement toElement() {
-            return NElement.ofNamedUplet("or",
-                    validFilters.stream().map(NaruEventTarget::toElement).toArray(NElement[]::new)
-            );
-        }
+            @Override
+            public boolean test(NaruTask candidate) {
+                for (NaruEventTarget filter : validFilters) {
+                    if (filter.test(candidate)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
 
-        @Override
-        public boolean equals(Object o) {
-            if (o == null || getClass() != o.getClass()) return false;
-            OrNaruEventTarget that = (OrNaruEventTarget) o;
-            return Objects.equals(validFilters, that.validFilters);
-        }
+            @Override
+            public NElement toElement() {
+                return NElement.ofNamedUplet("or",
+                        validFilters.stream().map(NaruEventTarget::toElement).toArray(NElement[]::new)
+                );
+            }
 
-        @Override
-        public int hashCode() {
-            return Objects.hashCode(validFilters);
-        }
+            @Override
+            public boolean equals(Object o) {
+                if (o == null || getClass() != o.getClass()) return false;
+                OrNaruEventTarget that = (OrNaruEventTarget) o;
+                return Objects.equals(validFilters, that.validFilters);
+            }
+
     }
 }

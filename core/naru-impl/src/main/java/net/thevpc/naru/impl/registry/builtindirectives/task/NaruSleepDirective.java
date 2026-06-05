@@ -11,7 +11,7 @@ import net.thevpc.nuts.time.NDuration;
 public class NaruSleepDirective extends AbstractDirective {
 
     public NaruSleepDirective() {
-        super("on", "task", "define and event inbox hook");
+        super("sleep", "task", "define and event inbox hook");
         register(new AbstractSubCommand(new SubCommandHelp("<event> <routine> <args>", "define an event inbox hook and the routine that shall be called when the event is received.\nevent args are accessible as a special 'event.<key>' vars")) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -22,7 +22,7 @@ public class NaruSleepDirective extends AbstractDirective {
                 }else{
                     NDuration d = NDuration.parse(a.image()).orNull();
                     if(d==null){
-                        task.throwError(NMsg.ofC("Error on sleep: invalid duration : %s", a.image()));
+                        task.throwError(NMsg.ofC("Error on sleep: invalid sleep duration : %s", a.image()));
                         return;
                     }
                     task.sleep(d);

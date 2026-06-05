@@ -1,20 +1,26 @@
-/routine use sender
-10 /print "sender: firing"
-20 /fire event.ping --to=siblings "message=hello from sender"
-30 /print "sender: done"
+/set --session trace=true
+/routine use coordinator
+10 /print "coordinator: waiting for ready signal..."
+20 /wait --for=event(ready)
+30 /print "coordinator: got ready, sending go..."
+40 /fire go --to=siblings "message=go ahead"
+50 /print "coordinator: waiting for done..."
+60 /wait --for=event(done)
+70 /print "coordinator: all done, result was ${event.payload.result}"
 
-/routine use handle-ping
-10 /print "receiver got: $event.message"
-20 /set --task last_message = event.message
+/routine use handle-go
+10 /print "worker: go signal intercepted by handler"
+20 /fire done --to=siblings result=42
 
-/routine use receiver
-10 /on event.ping handle-ping
-20 /print "start waiting for event.ping..."
-30 /wait event.ping
-40 /print "receiver done, message was $last_message"
+/routine use worker
+10 /print "worker: starting..."
+20 /on go handle-go
+30 /fire ready --to=siblings "message=worker is ready"
+40 /wait --for=event(go)
+50 /print "worker: received go, working..."
 
 /routine main
-/start sender
-/start receiver
+/start coordinator
+/start worker
 /wait --for=children
 /print "both tasks completed"
