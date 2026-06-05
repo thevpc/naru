@@ -9,7 +9,6 @@ public interface NaruTaskInbox {
     NaruEvent peek(NaruEventFilter filter);
 
     NaruEvent consume(long seq);
-    NaruEvent consume(NaruEventFilter filter);
 
     List<NaruEvent> drainMatching(NaruEventFilter filter);
 

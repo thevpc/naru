@@ -1,6 +1,5 @@
 package net.thevpc.naru.api.scheduler;
 
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.*;
@@ -186,19 +185,9 @@ public class NaruEventFilters {
         }
 
         @Override
-        public boolean matches(NaruEvent event, List<NaruEvent> received) {
+        public boolean test(NaruEvent event) {
             for (NaruEventFilter filter : validFilters) {
-                if (!filter.matches(event, received)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        @Override
-        public boolean satisfied(List<NaruEvent> received) {
-            for (NaruEventFilter filter : validFilters) {
-                if (!filter.satisfied(received)) {
+                if (!filter.test(event)) {
                     return false;
                 }
             }
@@ -232,13 +221,7 @@ public class NaruEventFilters {
 
     private static class AlwaysNaruEventFilter implements NaruEventFilter {
         @Override
-        public boolean matches(NaruEvent event, List<NaruEvent> received) {
-            return true;
-        }
-
-        @Override
-        public boolean satisfied(List<NaruEvent> received) {
-            received.clear();
+        public boolean test(NaruEvent event) {
             return true;
         }
 
@@ -267,12 +250,7 @@ public class NaruEventFilters {
 
     private static class NeverNaruEventFilter implements NaruEventFilter {
         @Override
-        public boolean matches(NaruEvent event, List<NaruEvent> received) {
-            return false;
-        }
-
-        @Override
-        public boolean satisfied(List<NaruEvent> received) {
+        public boolean test(NaruEvent event) {
             return false;
         }
 
@@ -309,7 +287,7 @@ public class NaruEventFilters {
         }
 
         @Override
-        public boolean matches(NaruEvent event) {
+        public boolean test(NaruEvent event) {
             if (this.event != null) {
                 if (!Objects.equals(event.name(), this.event)) {
                     return false;
@@ -317,16 +295,6 @@ public class NaruEventFilters {
             }
             if (tid >= 0) {
                 return event.sourceTid() == tid;
-            }
-            return true;
-        }
-
-        @Override
-        public boolean satisfied(List<NaruEvent> received) {
-            for (NaruEvent event : received) {
-                if(matches(event, received)){
-                    event.setMarked(true);
-                }
             }
             return true;
         }
@@ -371,35 +339,16 @@ public class NaruEventFilters {
         }
 
         @Override
-        public boolean matches(NaruEvent event, List<NaruEvent> received) {
+        public boolean test(NaruEvent event) {
             if (this.event != null) {
-                if (!Objects.equals(event.type(), this.event)) {
+                if (!Objects.equals(event.name(), this.event)) {
                     return false;
                 }
             }
             return (event.sourcePid() == parentId && event.sourceTid() != exceptTaskId);
         }
 
-        @Override
-        public boolean satisfied(List<NaruEvent> received) {
-            Set<String> ok = new HashSet<>();
-            List<NaruEvent> toMark = new ArrayList<>();
-            for (NaruEvent value : received) {
-                if (!value.isMarked()) {
-                    if(matches(value, received)){
-                        ok.add(String.valueOf(value.sourceTid()));
-                        toMark.add(value);
-                    }
-                }
-            }
-            if (ok.size() >= count) {
-                for (NaruEvent e : toMark) {
-                    e.setMarked(true);
-                }
-                return true;
-            }
-            return false;
-        }
+
 
         @Override
         public NElement toElement() {
@@ -437,19 +386,9 @@ public class NaruEventFilters {
         }
 
         @Override
-        public boolean matches(NaruEvent event, List<NaruEvent> received) {
+        public boolean test(NaruEvent event) {
             for (NaruEventFilter filter : validFilters) {
-                if (filter.matches(event, received)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        @Override
-        public boolean satisfied(List<NaruEvent> received) {
-            for (NaruEventFilter filter : validFilters) {
-                if (filter.satisfied(received)) {
+                if (filter.test(event)) {
                     return true;
                 }
             }

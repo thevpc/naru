@@ -15,6 +15,7 @@ public class NaruEvent {
     private final String name;
     private final Map<String, Object> payload;
     private final long sourceTid;
+    private final long sourcePid;
     private final Instant firedAt;
     private final NaruEventTarget target;
     private final NaruRetentionPolicy retentionPolicy;
@@ -28,6 +29,7 @@ public class NaruEvent {
             String name,
             Map<String, Object> payload,
             long sourceTid,
+            long sourcePid,
             Instant firedAt,
             NaruEventTarget target,
             NaruRetentionPolicy retentionPolicy) {
@@ -35,9 +37,32 @@ public class NaruEvent {
         this.name = name;
         this.payload = Collections.unmodifiableMap(new LinkedHashMap<>(payload));
         this.sourceTid = sourceTid;
+        this.sourcePid = sourcePid;
         this.firedAt = firedAt;
         this.target = target;
         this.retentionPolicy = retentionPolicy;
+    }
+
+    public NaruEvent(
+            String name,
+            Map<String, Object> payload,
+            long sourceTid,
+            long sourcePid,
+            Instant firedAt,
+            NaruEventTarget target,
+            NaruRetentionPolicy retentionPolicy) {
+        this.seq = -1; //will be set later
+        this.name = name;
+        this.payload = Collections.unmodifiableMap(new LinkedHashMap<>(payload));
+        this.sourceTid = sourceTid;
+        this.sourcePid = sourcePid;
+        this.firedAt = firedAt;
+        this.target = target;
+        this.retentionPolicy = retentionPolicy;
+    }
+
+    public NaruEvent withSeq(long newSeq) {
+        return new NaruEvent(newSeq, name, payload, sourceTid, sourcePid, firedAt, target, retentionPolicy);
     }
 
     // identity
@@ -60,6 +85,10 @@ public class NaruEvent {
     // provenance
     public long sourceTid() {
         return sourceTid;
+    }
+
+    public long sourcePid() {
+        return sourcePid;
     }
 
     public Instant firedAt() {
@@ -134,4 +163,5 @@ public class NaruEvent {
                 + ", visited=" + visitedCount()
                 + ", consumed=" + consumedCount() + "}";
     }
+
 }

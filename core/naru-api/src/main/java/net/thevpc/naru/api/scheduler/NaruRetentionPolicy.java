@@ -1,6 +1,8 @@
 package net.thevpc.naru.api.scheduler;
 
-public interface NaruRetentionPolicy {
+import net.thevpc.nuts.elem.NToElement;
+
+public interface NaruRetentionPolicy extends NToElement {
     boolean shouldDrop(NaruEvent event);
     long nextCheckMillis(NaruEvent event);
 }

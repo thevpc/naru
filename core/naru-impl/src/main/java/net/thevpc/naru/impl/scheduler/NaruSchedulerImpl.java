@@ -8,15 +8,12 @@ import net.thevpc.naru.api.scheduler.NaruTaskSchedulerView;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.agent.NaruSessionImpl;
-import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NCancelException;
-import net.thevpc.nuts.util.NOptional;
 
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 public class NaruSchedulerImpl implements NaruScheduler {
 
@@ -49,6 +46,8 @@ public class NaruSchedulerImpl implements NaruScheduler {
     private volatile NaruSchedulerStatus status;
 
     private final List<Thread> workerThreads;
+    private Thread retentionThread;
+    private long retentionCheckPeriod = 1000;
 
 
     // -------------------------------------------------------------------------
@@ -76,6 +75,9 @@ public class NaruSchedulerImpl implements NaruScheduler {
     @Override
     public void start() {
         status = NaruSchedulerStatus.RUNNING;
+        retentionThread = new Thread(this::retentionLoop, "naru-retention");
+        retentionThread.setDaemon(true);
+        retentionThread.start();
         for (int i = 0; i < threadCount; i++) {
             Thread t = new Thread(this::workerLoop, "naru-worker-" + i);
             t.setDaemon(true);
@@ -94,6 +96,11 @@ public class NaruSchedulerImpl implements NaruScheduler {
                 Thread.currentThread().interrupt();
                 break;
             }
+        }
+        try {
+            retentionThread.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -123,6 +130,9 @@ public class NaruSchedulerImpl implements NaruScheduler {
         for (int i = 0; i < threadCount; i++) {
             readyQueue.offer(NaruPoisonTask.INSTANCE);
         }
+        if (retentionThread != null) {
+            retentionThread.interrupt(); // wake it up immediately
+        }
     }
 
     @Override
@@ -130,6 +140,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
         stopped = true;
         status = NaruSchedulerStatus.KILLED;
         workerThreads.forEach(Thread::interrupt);
+        retentionThread.interrupt();
     }
 
     // -------------------------------------------------------------------------
@@ -176,7 +187,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
                 break;
             }
             case BLOCKED_ON_INPUT:
-            case BLOCKED_ON_EVENT:{
+            case BLOCKED_ON_EVENT: {
                 // can't resume a blocked task — it must be unblocked
                 // by its blocking condition (input arrives, event fires, child completes)
                 // just clear the held flag, which we already did above
@@ -394,13 +405,13 @@ public class NaruSchedulerImpl implements NaruScheduler {
 //        }
 //    }
 
-    private List<NaruEventSubscription> findMatchingSubscription(
+    private List<NaruEventSubscription> findMatchingSubscriptions(
             NaruTask task, NaruEvent event) {
         List<NaruEventSubscription> matching = new ArrayList<>();
         for (Map.Entry<String, NaruEventSubscription> entry
                 : task.eventSubscriptions().entrySet()) {
             NaruEventSubscription sub = entry.getValue();
-            if (sub.filter().matches(event)) {
+            if (sub.filter().test(event)) {
                 matching.add(sub);
             }
         }
@@ -411,6 +422,33 @@ public class NaruSchedulerImpl implements NaruScheduler {
     // Worker loop
     // -------------------------------------------------------------------------
 
+    private void retentionLoop() {
+        while (!stopped && !shutdownRequested) {
+            switch (status) {
+                case KILLED:
+                case STOPPING:
+                case STOPPED:
+                    return;
+                case HELD:
+                    sleepRetention();
+                    continue;
+            }
+            long now = System.currentTimeMillis();
+            for (NaruEvent e : session.eventLog().scan(0, null)) {
+                if (e.nextCheckMillis() <= now && e.shouldDrop()) {
+                    session.eventLog().drop(e.seq());
+                }
+            }
+            sleepRetention();
+        }
+    }
+    private void sleepRetention() {
+        try {
+            Thread.sleep(retentionCheckPeriod <= 0 ? 100 : retentionCheckPeriod);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
     private void workerLoop() {
         while (!stopped && !shutdownRequested) {
             NaruTask task = nextReadyTask();
@@ -461,71 +499,50 @@ public class NaruSchedulerImpl implements NaruScheduler {
 
     private void drainInbox(NaruTask task) {
 
-        // PHASE 1: pull matching events from session log into task inbox
-        NaruSessionEventLog log = session.eventLog();
-        long watermark = task.inbox().watermark();
-
-        log.scan(watermark, new NaruEventFilter() {
-                    @Override
-                    public boolean matches(NaruEvent event) {
-                        return event.target().matches(task)
-                                && !event.isConsumedBy(task.id());
-                    }
-
-                    @Override
-                    public NElement toElement() {
-                        throw new IllegalArgumentException("unsupported")
-                    }
-                })
+        // PHASE 1: pull from session log into inbox
+        session.eventLog()
+                .scan(task.inbox().watermark(),
+                        event -> event.target().test(task)
+                                && !event.isConsumedBy(task.id()))
                 .forEach(event -> {
                     event.markVisited(task.id());
                     task.inbox().push(event.seq());
                 });
+        Set<Long> toConsume = new LinkedHashSet<>();
 
-        // PHASE 2: process inbox — run /on subscriptions
-        List<Long> toConsume = new ArrayList<>();
-
-        for (int i = task.inbox().tailIndex(watermark);
-             i < task.inbox().size(); i++) {
-
-            long seq = task.inbox().get(i);
-            NaruEvent event = log.get(seq);
-            if (event == null) continue; // dropped by GC
-
-            List<NaruEventSubscription> sub = findMatchingSubscription(task, event);
-            for (int j = sub.size() - 1; j >= 0; j--) {
-                injectRoutine(task, event, sub.get(j));
-                toConsume.add(seq);
-                if (sub.get(j).once()) {
-                    task.eventSubscriptions().remove(event.name());
+        // PHASE 2: peek for /on subscriptions
+        NaruEvent onMatch = task.inbox().peek(null);
+        if (onMatch != null) {
+            List<NaruEventSubscription> subs = findMatchingSubscriptions(task, onMatch);
+            if (!subs.isEmpty()) {
+                for (NaruEventSubscription sub : subs) {
+                    injectRoutine(task, onMatch, sub);
+                    if (sub.once()) {
+                        task.eventSubscriptions().remove(onMatch.name());
+                    }
                 }
+                toConsume.add(onMatch.seq());
             }
         }
 
-        // PHASE 3: consume matched events (after both /on and /wait had a chance)
-        for (long seq : toConsume) {
-            task.inbox().consume(seq);
-            NaruEvent event = log.get(seq);
-            if (event != null) event.markConsumed(task.id());
-        }
-
-        // PHASE 4: check /wait blocking condition
+        // PHASE 3: peek for /wait condition
         if (task.status() == NaruTaskStatus.BLOCKED_ON_EVENT) {
             NaruEventFilter filter = task.awaitFilter();
             if (filter != null) {
-                List<NaruEvent> candidates = task.inbox()
-                        .drainMatching(e -> filter.matches(e, task.awaitReceived()));
-                if (!candidates.isEmpty()) {
-                    candidates.forEach(e -> {
-                        task.addAwaitReceived(e);
-                        e.markConsumed(task.id());
-                    });
-                    if (filter.satisfied(task.awaitReceived())) {
-                        task.awaitFilter(null);
-                        ((NaruTaskSchedulerView) task).status(NaruTaskStatus.READY);
-                    }
+                NaruEvent waitMatch = task.inbox().peek(filter);
+                if (waitMatch != null) {
+                    task.addAwaitReceived(waitMatch);
+                    task.awaitFilter(null);
+                    ((NaruTaskSchedulerView) task).status(NaruTaskStatus.READY);
+                    toConsume.add(waitMatch.seq());
                 }
             }
+        }
+
+// PHASE 4: consume
+        for (long seq : toConsume) {
+            task.inbox().consume(seq);  // remove from inbox
+            session.eventLog().markConsumed(seq, task.id());
         }
     }
 

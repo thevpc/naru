@@ -44,27 +44,7 @@ public class NaruTaskInboxImpl implements NaruTaskInbox {
                 advanceWatermark();
                 continue;
             }
-            if (filter == null || filter.matches(event)) {
-                return event;
-            }
-        }
-        return null;
-    }
-
-    @Override
-    public NaruEvent consume(NaruEventFilter filter) {
-        for (long seq : seqs.tailSet(watermark)) {
-            if (consumed.contains(seq)) continue;
-            NaruEvent event = sessionLog.get(seq);
-            if (event == null) {
-                consumed.add(seq);
-                advanceWatermark();
-                continue;
-            }
-            if (filter == null || filter.matches(event)) {
-                consumed.add(seq);
-                sessionLog.markConsumed(seq, taskId);
-                advanceWatermark();
+            if (filter == null || filter.test(event)) {
                 return event;
             }
         }
@@ -81,7 +61,6 @@ public class NaruTaskInboxImpl implements NaruTaskInbox {
             return event;
         }
         consumed.add(seq);
-        sessionLog.markConsumed(seq, taskId);
         advanceWatermark();
         return event;
     }
@@ -96,9 +75,8 @@ public class NaruTaskInboxImpl implements NaruTaskInbox {
                 consumed.add(seq);
                 continue;
             }
-            if (filter == null || filter.matches(event)) {
+            if (filter == null || filter.test(event)) {
                 consumed.add(seq);
-                sessionLog.markConsumed(seq, taskId);
                 result.add(event);
             }
         }

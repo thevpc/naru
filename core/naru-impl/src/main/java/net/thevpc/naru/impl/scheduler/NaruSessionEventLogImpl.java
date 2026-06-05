@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 
 public class NaruSessionEventLogImpl implements NaruSessionEventLog {
     private final Map<Long, NaruEvent> log = new ConcurrentSkipListMap<>();
@@ -23,26 +24,25 @@ public class NaruSessionEventLogImpl implements NaruSessionEventLog {
     }
 
     public void append(NaruEvent event) {
-        log.put(event.seq(), event);
+        log.put(event.seq(), event.withSeq(seqCounter.incrementAndGet()));
     }
 
-//    public NaruEvent append(String type, Map<String, Object> args, long sourceTid, long sourcePid, Set<NaruEventRouting> routing) {
-//        long n = seqCounter.incrementAndGet();
-//        NaruEvent e = new NaruEvent(
-//                type, args, sourceTid, sourcePid, routing
-//        );
-//        log.put(n, e);
-//        return e;
-//    }
+    @Override
+    public NaruEvent get(long seq) {
+        return log.get(seq);
+    }
 
     @Override
-    public List<NaruEvent> scan(long fromSeq, NaruEventFilter filter) {
+    public List<NaruEvent> scan(long fromSeq, Predicate<NaruEvent> filter) {
         return Collections.emptyList();
     }
 
     @Override
     public void markConsumed(long seq, long tid) {
-
+        NaruEvent u = log.get(seq);
+        if(u!=null){
+            u.markConsumed(tid);
+        }
     }
 
     @Override

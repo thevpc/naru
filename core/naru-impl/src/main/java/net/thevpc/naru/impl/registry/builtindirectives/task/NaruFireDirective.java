@@ -1,7 +1,11 @@
 package net.thevpc.naru.impl.registry.builtindirectives.task;
 
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
+import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.scheduler.NaruEventRouting;
+import net.thevpc.naru.api.scheduler.NaruEventTarget;
+import net.thevpc.naru.api.scheduler.NaruEventTargets;
+import net.thevpc.naru.api.scheduler.NaruRetentionPolicy;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
 import net.thevpc.nuts.cmdline.NArg;
@@ -12,6 +16,7 @@ import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NNameFormat;
 import net.thevpc.nuts.util.NStringUtils;
 
+import java.time.Instant;
 import java.util.*;
 
 public class NaruFireDirective extends AbstractDirective {
@@ -22,7 +27,7 @@ public class NaruFireDirective extends AbstractDirective {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                List<NaruEventRouting> li = new ArrayList<>();
+                NaruEventTarget target = null;
                 String event = null;
                 Map<String, Object> args = new HashMap<>();
                 while (!cmdLine.isEmpty()) {
@@ -32,34 +37,14 @@ public class NaruFireDirective extends AbstractDirective {
                         NArg a = cmdLine.nextEntry().get();
                         switch (a.key()) {
                             case "--to": {
-                                for (String s : NStringUtils.split(a.value(), ",;|")) {
-                                    String ss = NNameFormat.LOWER_KEBAB_CASE.format(s);
-                                    switch (ss) {
-                                        case "parent": {
-                                            li.add(NaruEventRouting.parent());
-                                            break;
-                                        }
-                                        case "self": {
-                                            li.add(NaruEventRouting.self());
-                                            break;
-                                        }
-                                        case "children": {
-                                            li.add(NaruEventRouting.children());
-                                            break;
-                                        }
-                                        case "siblings": {
-                                            li.add(NaruEventRouting.siblings());
-                                            break;
-                                        }
-                                        case "all": {
-                                            li.add(NaruEventRouting.all());
-                                            break;
-                                        }
-                                        default: {
-                                            li.add(NaruEventRouting.of(NLiteral.of(s).asLong().get()));
-                                        }
-                                    }
-                                }
+                                NaruEventTarget o = NaruEventTargets.parse(a.value(), task);
+                                target = NaruEventTargets.or(target,o);
+                                break;
+                            }
+                            case "--keep": {
+                                NaruRetentionPolicy o = NaruRetentionPolicies.parse(a.value(), task);
+                                target = NaruRetentionPolicies.or(target,o);
+                                break;
                             }
                             default: {
                                 if (!a.isOption()) {
@@ -74,7 +59,10 @@ public class NaruFireDirective extends AbstractDirective {
                     task.throwError(NMsg.ofC("Error on event: missing event %s", event));
                     return;
                 }
+                NaruEvent ne=new NaruEvent(
+                        event,args,task.id(),task.parentId(), Instant.now(),
 
+                )
                 task.fireEvent(event, args, li.toArray(new NaruEventRouting[0]));
             }
         });
