@@ -52,8 +52,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     private String uuid = UUID.randomUUID().toString();
     private String name = "NO_NAME";
-    private Instant creationDate = Instant.now();
-    private Instant modificationDate = creationDate;
+    private Instant creationInstant = Instant.now();
+    private Instant modificationInstant = creationInstant;
     // Add to NaruSessionImpl fields:
     //use NOptional because ConcurrentHashMap cannot support null
     private final Map<String, NOptional<Object>> env = new ConcurrentHashMap<>();
@@ -431,15 +431,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public Instant creationDate() {
+    public Instant creationInstant() {
         ensureNotStopped();
-        return creationDate;
+        return creationInstant;
     }
 
     @Override
-    public Instant modificationDate() {
+    public Instant modificationInstant() {
         ensureNotStopped();
-        return modificationDate;
+        return modificationInstant;
     }
 
     @Override
@@ -449,7 +449,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     public void fireChanged() {
 //        ensureNotStopped();
-        this.modificationDate = Instant.now();
+        this.modificationInstant = Instant.now();
         saveSnapshot();
     }
 
@@ -460,8 +460,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         NObjectElement o = element.asObject().get();
         this.uuid = NStringUtils.firstNonBlankTrimmed(o.getStringValue("uuid").orElse(null), UUID.randomUUID().toString());
         this.name = NStringUtils.firstNonBlankTrimmed(o.getStringValue("name").orElse(null), "NO_NAME");
-        this.creationDate = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
-        this.modificationDate = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationDate);
+        this.creationInstant = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
+        this.modificationInstant = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationInstant);
         this.visibility = NAruVisibility.parse(o.getStringValue("visibility").orElse(null)).orElse(NAruVisibility.PRIVATE);
         if (this.visibility != NAruVisibility.PRIVATE && this.visibility != NAruVisibility.PUBLIC) {
             this.visibility = NAruVisibility.PRIVATE;
@@ -507,8 +507,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (!preserveIdentity) {
             this.uuid = UUID.randomUUID().toString();
             this.name = "NO_NAME";
-            this.creationDate = Instant.now();
-            this.modificationDate = creationDate;
+            this.creationInstant = Instant.now();
+            this.modificationInstant = creationInstant;
         }
         //clearHistory();
         maxTaskId.set(0);
@@ -707,8 +707,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     private void _prepareInit() {
         this.name = "NO_NAME";
-        this.creationDate = Instant.now();
-        this.modificationDate = creationDate;
+        this.creationInstant = Instant.now();
+        this.modificationInstant = creationInstant;
         this.maxTaskId.set(0);
         this.loadTimeVisibility = NAruVisibility.PRIVATE;
     }
@@ -718,8 +718,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         NObjectElementBuilder o = NObjectElementBuilder.of();
         o.set("uuid", uuid());
         o.set("name", name());
-        o.set("creationDate", NElement.ofInstant(creationDate));
-        o.set("modificationDate", NElement.ofInstant(modificationDate));
+        o.set("creationDate", NElement.ofInstant(creationInstant));
+        o.set("modificationDate", NElement.ofInstant(modificationInstant));
         o.set("model", model == null ? null : model.toElement());
         o.set("projectDir", NElement.ofString(projectDir.toString()));
         o.set("workingDir", workingDir == null ? null : NElement.ofString(workingDir.toString()));
@@ -1113,11 +1113,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return routines.entrySet().stream().map(x->{
             return new NaruResourceInfo()
                     .setName(x.getKey())
-                    .setCreationDate(x.getValue().creationInstant())
-                    .setModificationDate(x.getValue().modificationInstant())
+                    .setCreationInstant(x.getValue().creationInstant())
+                    .setModificationInstant(x.getValue().modificationInstant())
                     .setVisibility(x.getValue().visibility())
                     .setUuid(x.getValue().uuid());
-        }).sorted((o1, o2) -> o2.getModificationDate().compareTo(o1.getModificationDate())).collect(Collectors.toList());
+        }).sorted((o1, o2) -> o2.getModificationInstant().compareTo(o1.getModificationInstant())).collect(Collectors.toList());
     }
 
 
@@ -1152,7 +1152,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             }
         }
         if(NaruUtils.isValidRoutineName(nameOrPath) && orCreate){
-            routines.computeIfAbsent(nameOrPath, x -> new NaruRoutineMem(x, getVisibility()));
+            return NOptional.of(routines.computeIfAbsent(nameOrPath, x -> new NaruRoutineMem(x, getVisibility()).setUuid(UUID.randomUUID().toString())));
         }
         return NOptional.ofEmpty(NMsg.ofC("Error statement: routine not found %s", nameOrPath));
     }

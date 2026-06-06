@@ -69,9 +69,9 @@ public interface NaruSession {
 
     NOptional<NaruModelConfig> findModelAlias(String alias);
 
-    Instant creationDate();
+    Instant creationInstant();
 
-    Instant modificationDate();
+    Instant modificationInstant();
 
     String name();
 

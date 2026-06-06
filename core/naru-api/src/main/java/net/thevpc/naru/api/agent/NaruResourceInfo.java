@@ -6,8 +6,8 @@ public class NaruResourceInfo {
     private String uuid;
     private String name;
     private NAruVisibility mode;
-    private Instant creationDate;
-    private Instant modificationDate;
+    private Instant creationInstant;
+    private Instant modificationInstant;
 
     public NAruVisibility getMode() {
         return mode;
@@ -37,21 +37,21 @@ public class NaruResourceInfo {
         return this;
     }
 
-    public Instant getCreationDate() {
-        return creationDate;
+    public Instant getCreationInstant() {
+        return creationInstant;
     }
 
-    public NaruResourceInfo setCreationDate(Instant creationDate) {
-        this.creationDate = creationDate;
+    public NaruResourceInfo setCreationInstant(Instant creationInstant) {
+        this.creationInstant = creationInstant;
         return this;
     }
 
-    public Instant getModificationDate() {
-        return modificationDate;
+    public Instant getModificationInstant() {
+        return modificationInstant;
     }
 
-    public NaruResourceInfo setModificationDate(Instant modificationDate) {
-        this.modificationDate = modificationDate;
+    public NaruResourceInfo setModificationInstant(Instant modificationInstant) {
+        this.modificationInstant = modificationInstant;
         return this;
     }
 }

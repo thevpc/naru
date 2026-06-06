@@ -4,7 +4,7 @@ import java.util.List;
 
 public interface NaruSessionManager {
     List<NaruResourceInfo> list();
-    int clear();
+    int purge();
     String findByUuidOrName(String uuidOrName);
     boolean delete(String uuidOrName);
 }

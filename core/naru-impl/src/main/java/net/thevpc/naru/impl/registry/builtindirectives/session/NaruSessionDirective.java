@@ -74,11 +74,11 @@ public class NaruSessionDirective extends AbstractDirective {
                 return candidates;
             }
         });
-        register(new AbstractSubCommand("clear", NText.ofPlain("clear all sessions")
+        register(new AbstractSubCommand("purge", NText.ofPlain("purge all sessions")
         ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeClear(context, cmdLine);
+                executePurge(context, cmdLine);
             }
         });
         register(new AbstractSubCommand("load", NText.ofPlain("load session by name (or path)")
@@ -162,9 +162,9 @@ public class NaruSessionDirective extends AbstractDirective {
         int index = 1;
         for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s (%s) %s %s %s", index,
-                    naruResourceInfo.getCreationDate(),
-                    naruResourceInfo.getModificationDate(),
-                    NaruUtils.timeAgo(naruResourceInfo.getModificationDate()),
+                    naruResourceInfo.getCreationInstant(),
+                    naruResourceInfo.getModificationInstant(),
+                    NaruUtils.timeAgo(naruResourceInfo.getModificationInstant()),
                     NMsg.ofStyledKeyword(naruResourceInfo.getMode().name().toLowerCase()),
                     NMsg.ofStyledPrimary3(naruResourceInfo.getUuid()),
                     NMsg.ofStyledString(naruResourceInfo.getName()))
@@ -174,10 +174,10 @@ public class NaruSessionDirective extends AbstractDirective {
     }
 
 
-    public void executeClear(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public void executePurge(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        int count = task.session().sessionManager().clear();
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s sessions", count));
+        int count = task.session().sessionManager().purge();
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("purged %s sessions", count));
     }
 
     public void executeDelete(NaruDirectiveCallContext context, NCmdLine cmdLine) {

@@ -2,7 +2,6 @@ package net.thevpc.naru.impl.registry.builtindirectives.ai;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.skills.NaruSkill;
@@ -10,10 +9,7 @@ import net.thevpc.naru.api.skills.NaruSkillManager;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
 import net.thevpc.naru.impl.util.NaruUtils;
-import net.thevpc.nuts.cmdline.NArg;
-import net.thevpc.nuts.cmdline.NArgCandidate;
 import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.cmdline.NCmdLineAutoCompleteResolver;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 
@@ -29,7 +25,7 @@ public class NaruSkillDirective extends AbstractDirective {
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 List<NaruResourceInfo> naruResourceInfos = task.skills();
-                naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
+                naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationInstant(), Comparator.reverseOrder()));
                 int index = 1;
                 if (naruResourceInfos.isEmpty()) {
                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("No skills loaded (%s available)", task.session().skillManager().available().size()));
@@ -77,7 +73,7 @@ public class NaruSkillDirective extends AbstractDirective {
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 List<NaruResourceInfo> naruResourceInfos = task.session().skillManager().available();
-                naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
+                naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationInstant(), Comparator.reverseOrder()));
                 int index = 1;
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s skills available", naruResourceInfos.size()));
                 for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {

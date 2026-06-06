@@ -26,7 +26,7 @@ public class NaruRoutineDirective extends AbstractDirective {
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 List<NaruResourceInfo> naruResourceInfos = task.session().routines();
-                naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
+                naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationInstant(), Comparator.reverseOrder()));
                 int index = 1;
                 for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s %s %s", index,

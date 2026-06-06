@@ -26,8 +26,8 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
         for (NPath p : skillsDir(NAruVisibility.PUBLIC).list().stream().filter(x -> isValidSkillName(x)).collect(Collectors.toList())) {
             String goodName = NNameFormat.LOWER_KEBAB_CASE.format(skillNamFromPath(p));
             NaruResourceInfo s = a.computeIfAbsent(goodName, x -> new NaruResourceInfo().setName(goodName));
-            s.setModificationDate(p.creationInstant());
-            s.setModificationDate(p.lastModifiedInstant());
+            s.setModificationInstant(p.creationInstant());
+            s.setModificationInstant(p.lastModifiedInstant());
             s.setVisibility(NAruVisibility.PUBLIC);
         }
         for (NPath p : skillsDir(NAruVisibility.PRIVATE).list().stream().filter(x -> isValidSkillName(x)).collect(Collectors.toList())) {
@@ -35,15 +35,15 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
             NaruResourceInfo s = a.computeIfAbsent(goodName, x -> new NaruResourceInfo().setName(goodName));
             //private wins
             if (conflictResolution == ConflictResolution.PRIVATE_WINS) {
-                s.setModificationDate(p.creationInstant());
-                s.setModificationDate(p.lastModifiedInstant());
+                s.setModificationInstant(p.creationInstant());
+                s.setModificationInstant(p.lastModifiedInstant());
                 s.setVisibility(NAruVisibility.PRIVATE);
             } else if (conflictResolution == ConflictResolution.MERGE) {
-                if (s.getCreationDate() == null || s.getCreationDate().isAfter(p.creationInstant())) {
-                    s.setModificationDate(p.creationInstant());
+                if (s.getCreationInstant() == null || s.getCreationInstant().isAfter(p.creationInstant())) {
+                    s.setModificationInstant(p.creationInstant());
                 }
-                if (s.getModificationDate() == null || s.getModificationDate().isBefore(p.lastModifiedInstant())) {
-                    s.setModificationDate(p.lastModifiedInstant());
+                if (s.getModificationInstant() == null || s.getModificationInstant().isBefore(p.lastModifiedInstant())) {
+                    s.setModificationInstant(p.lastModifiedInstant());
                 }
                 NAruVisibility mode = s.getMode();
                 if (mode == null) {
@@ -66,7 +66,7 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
             if (x != 0) {
                 return 0;
             }
-            return o2.getModificationDate().compareTo(o1.getModificationDate());
+            return o2.getModificationInstant().compareTo(o1.getModificationInstant());
         }).collect(Collectors.toList());
     }
 
@@ -146,25 +146,25 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
         if (sf.publicSkill != null && sf.privateSkill != null) {
             switch (conflictResolution){
                 case PRIVATE_WINS: {
-                    s.setCreationDate(sf.privateSkill.creationInstant());
-                    s.setModificationDate(sf.privateSkill.lastModifiedInstant());
+                    s.setCreationInstant(sf.privateSkill.creationInstant());
+                    s.setModificationInstant(sf.privateSkill.lastModifiedInstant());
                     s.setVisibility(NAruVisibility.PRIVATE);
                     break;
                 }
                 case MERGE: {
                     NPath p = sf.publicSkill;
-                    if (s.getCreationDate() == null || s.getCreationDate().isAfter(p.creationInstant())) {
-                        s.setCreationDate(p.creationInstant());
+                    if (s.getCreationInstant() == null || s.getCreationInstant().isAfter(p.creationInstant())) {
+                        s.setCreationInstant(p.creationInstant());
                     }
-                    if (s.getModificationDate() == null || s.getModificationDate().isBefore(p.lastModifiedInstant())) {
-                        s.setModificationDate(p.lastModifiedInstant());
+                    if (s.getModificationInstant() == null || s.getModificationInstant().isBefore(p.lastModifiedInstant())) {
+                        s.setModificationInstant(p.lastModifiedInstant());
                     }
                     p = sf.privateSkill;
-                    if (s.getCreationDate() == null || s.getCreationDate().isAfter(p.creationInstant())) {
-                        s.setModificationDate(p.creationInstant());
+                    if (s.getCreationInstant() == null || s.getCreationInstant().isAfter(p.creationInstant())) {
+                        s.setModificationInstant(p.creationInstant());
                     }
-                    if (s.getModificationDate() == null || s.getModificationDate().isBefore(p.lastModifiedInstant())) {
-                        s.setModificationDate(p.lastModifiedInstant());
+                    if (s.getModificationInstant() == null || s.getModificationInstant().isBefore(p.lastModifiedInstant())) {
+                        s.setModificationInstant(p.lastModifiedInstant());
                     }
                     s.setVisibility(NAruVisibility.MIXED);
                     break;
@@ -172,13 +172,13 @@ public class NaruSkillManagerImpl implements NaruSkillManager {
             }
         }else {
             if (sf.publicSkill != null) {
-                s.setCreationDate(sf.publicSkill.creationInstant());
-                s.setModificationDate(sf.publicSkill.lastModifiedInstant());
+                s.setCreationInstant(sf.publicSkill.creationInstant());
+                s.setModificationInstant(sf.publicSkill.lastModifiedInstant());
                 s.setVisibility(NAruVisibility.PUBLIC);
             }
             if (sf.privateSkill != null) {
-                s.setCreationDate(sf.privateSkill.creationInstant());
-                s.setModificationDate(sf.privateSkill.lastModifiedInstant());
+                s.setCreationInstant(sf.privateSkill.creationInstant());
+                s.setModificationInstant(sf.privateSkill.lastModifiedInstant());
                 s.setVisibility(NAruVisibility.PRIVATE);
             }
         }
