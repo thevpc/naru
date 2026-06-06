@@ -12,8 +12,6 @@ public interface NaruScheduler {
 
     void shutdown();            // graceful — finish current tick then stop
 
-    void kill();                // immediate — interrupt all workers
-
     // --- scheduler-level hold ---
     void hold();                // synchronous — blocks until all workers idle
 
@@ -28,9 +26,6 @@ public interface NaruScheduler {
 
     void stepAll();
 
-    // --- mode ---
-    void throttleDelay(long ms);
-
     // --- introspection ---
     NaruSchedulerStatus status();
 
@@ -43,4 +38,6 @@ public interface NaruScheduler {
     void runRetention();
 
     void runBlockedDrain();
+
+    boolean isHeld();
 }

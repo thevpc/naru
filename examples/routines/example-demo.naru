@@ -1,7 +1,7 @@
 /model
 # we select model by name or by index
 # let's select qwen2.5-coder:14b (index 6)
-/model set 6
+/model use 6
 # we check the model we selected
 /model
 # we list all available skills

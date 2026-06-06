@@ -238,5 +238,5 @@ public interface NaruTask extends NToElement {
 
     NaruRoutine useRoutine(String name);
 
-    void saveRoutineLine(int index, String name);
+    void setRoutineLine(int index, String name);
 }

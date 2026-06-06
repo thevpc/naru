@@ -1,9 +1,9 @@
 ---
 emulate_tool_calls: true
-tool_call_start: <|tool_call|>
-tool_call_end: <|tool_end|>
-tool_result_start: <|tool_result_call|>
-tool_result_end: <|tool_result_end|>
+tool_call_start: "<|tool_call|>"
+tool_call_end: "<|tool_end|>"
+tool_result_start: "<|tool_result_call|>"
+tool_result_end: "<|tool_result_end|>"
 ---
 
 When you need to use a tool, output ONLY this exact format:

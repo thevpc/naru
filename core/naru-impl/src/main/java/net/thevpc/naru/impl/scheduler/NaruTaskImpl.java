@@ -6,7 +6,6 @@ import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
-import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.skills.NaruSkill;
@@ -204,7 +203,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 if (routineName == null) {
                     u = "<empty>";
                 } else {
-                    NaruRoutine r = session().routineManager().routine(routineName, this).orNull();
+                    NaruRoutine r = session().routine(routineName, this,false).orNull();
                     index = frame.pc();
                     if (r != null) {
                         u = r.lineCommandAt(index);
@@ -244,7 +243,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 if (routineName == null) {
                     u = "<empty>";
                 } else {
-                    NaruRoutine r = session().routineManager().routine(routineName, this).orNull();
+                    NaruRoutine r = session().routine(routineName, this,false).orNull();
                     index = frame.pc();
                     if (r != null) {
                         u = r.lineCommandAt(index);
@@ -276,7 +275,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (c != null) {
             String r = c.routine();
             if (!NBlankable.isBlank(r)) {
-                NaruRoutine routine = session().routineManager().routine(r, this).orNull();
+                NaruRoutine routine = session().routine(r, this,false).orNull();
                 if (routine != null) {
                     int a = routine.nextPc(c.pc());
                     if (a < 0) {
@@ -629,11 +628,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public void log(NaruLogMode mode, NMsg s) {
-        if(mode == NaruLogMode.SCHEDULER) {
+        if (mode == NaruLogMode.SCHEDULER) {
             if (isTrace()) {
                 session().log(mode, s);
             }
-        }else{
+        } else {
             session().log(mode, s);
         }
     }
@@ -1134,8 +1133,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             }
 
             NaruRoutine routine = session()
-                    .routineManager()
-                    .routine(routineName, this).orNull();
+                    .routine(routineName, this,false).orNull();
             if (routine == null) {
                 //still pending
                 return;
@@ -1224,8 +1222,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public void invokeRoutine(String routineName) {
-        NaruRoutineManager sm = session().routineManager();
-        NaruRoutine routine = sm.routine(routineName, this).orNull();
+        NaruRoutine routine = session().routine(routineName, this,false).orNull();
         if (routine.isEmpty()) {
             log(NaruLogMode.TRACE, NMsg.ofC("Routine '%s' is empty. Nothing to execute.", NMsg.ofStyledPrimary1(routineName)));
             return;
@@ -1259,8 +1256,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             return null; // anonymous frame, exhausted
         }
         NaruRoutine routine = session()
-                .routineManager()
-                .routine(routineName, this).orNull();
+                .routine(routineName, this,false).orNull();
         if (routine == null) {
             return null;
         }
@@ -1869,7 +1865,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NOptional<NaruRoutine> currentRoutine() {
-        return session.routineManager().routine(currentScriptName, this);
+        return session.routine(currentScriptName, this, true);
     }
 
     @Override
@@ -1880,13 +1876,12 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public NaruRoutine useRoutine(String name) {
         this.currentScriptName = NStringUtils.firstNonBlankTrimmed(name, "main");
-        return session.routineManager().ensureRoutineExists(currentScriptName, null, this);
+        return session.routine(currentScriptName, this, true).get();
     }
 
     @Override
-    public void saveRoutineLine(int index, String name) {
+    public void setRoutineLine(int index, String name) {
         NaruRoutine r = currentRoutine().get();
         r.putLine(index, name);
-        r.flush();
     }
 }

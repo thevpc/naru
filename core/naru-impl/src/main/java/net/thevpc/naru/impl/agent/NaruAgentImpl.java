@@ -11,6 +11,7 @@ import net.thevpc.naru.impl.cmd.NaruTerminalFormatter;
 import net.thevpc.naru.impl.cmd.NaruNCmdLineAutoCompleteResolver;
 import net.thevpc.naru.impl.util.StoredStringMap;
 import net.thevpc.nuts.artifact.NVersion;
+import net.thevpc.nuts.concurrent.NCallable;
 import net.thevpc.nuts.io.*;
 import net.thevpc.nuts.log.NLogger;
 import net.thevpc.nuts.text.NMsg;
@@ -19,6 +20,7 @@ import net.thevpc.nuts.text.NTextStyle;
 import net.thevpc.nuts.util.*;
 
 import java.util.*;
+import java.util.concurrent.*;
 
 /**
  * The core agent loop.
@@ -48,6 +50,14 @@ public class NaruAgentImpl implements NaruAgent {
     private final List<NaruSession> sessions = new ArrayList<>();
     private final Object signal = new Object();
     private volatile Thread maintenanceThread;
+    private final ExecutorService STOP_THE_WORLD_EXECUTOR =
+            Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r, "naru-action");
+                t.setDaemon(true);
+                return t;
+            });
+    private final ConcurrentLinkedQueue<Runnable> pendingActions = new ConcurrentLinkedQueue<>();
+
     private final NaruSessionListener asSessionListener = new NaruSessionListener() {
 
         @Override
@@ -81,6 +91,19 @@ public class NaruAgentImpl implements NaruAgent {
         this.logger = NLogger.STDOUT;
     }
 
+    public <T> Future<T> postAction(NCallable<T> action) {
+        CompletableFuture<T> future = new CompletableFuture<>();
+        pendingActions.add(() -> {
+            try {
+                future.complete(action.call());
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+        });
+        //signal.;
+        return future;
+    }
+
     private void ensureGlobal() {
         if (sessions.isEmpty()) {
 
@@ -97,8 +120,14 @@ public class NaruAgentImpl implements NaruAgent {
     private void maintenanceLoop() {
         while (true) {
             for (NaruSession session : new ArrayList<>(sessions)) {
-                session.scheduler().runRetention();
-                session.scheduler().runBlockedDrain();
+                if(session.isRunning()) {
+                    session.scheduler().runRetention();
+                    session.scheduler().runBlockedDrain();
+                }
+            }
+            Runnable action;
+            while ((action = pendingActions.poll()) != null) {
+                STOP_THE_WORLD_EXECUTOR.submit(action); // non-blocking
             }
             sleepOrSignal(100);
         }
@@ -148,13 +177,13 @@ public class NaruAgentImpl implements NaruAgent {
     }
 
     public NaruSession startInteractiveSession(String... commands) {
-        NaruSession session = newSession(null);
-        enableRichTerm(session);
-        NOut.resetLine();
         log(NaruLogMode.RAW, NMsg.ofC(
                 "╭╮╷╭─╮╭─╮╷ ╷\n" +
                         "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
                         "╵ ╵╵ ╵╵╰╴╰─╯ v%s", NVersion.of("0.8.9.0")));
+        NaruSession session = newSession(null);
+        enableRichTerm(session);
+        NOut.resetLine();
         session.newTask(NaruTaskSpec.of().statements(commands).resolveNameOr("naru"))
                 .taskMode(NaruTaskMode.INTERACTIVE)
                 .fg()

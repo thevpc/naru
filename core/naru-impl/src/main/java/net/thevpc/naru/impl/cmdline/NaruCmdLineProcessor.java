@@ -106,8 +106,8 @@ public class NaruCmdLineProcessor {
                         "  --help, -h             Show this help\n\n" +
                         "Examples:\n" +
                         "  naru --task \"What files are in the project?\"\n" +
-                        "  naru -t \"/model set qwen2.5-coder:7b\"  -t \"Fix the bug in MyApp.java\" --project ./my-app" +
-                        "  naru -t \"/model set qwen2.5-coder:7b\"  -f \"myscript.naru\" --project ./my-app" +
+                        "  naru -t \"/model use qwen2.5-coder:7b\"  -t \"Fix the bug in MyApp.java\" --project ./my-app" +
+                        "  naru -t \"/model use qwen2.5-coder:7b\"  -f \"myscript.naru\" --project ./my-app" +
                         "  naru --task \"Verify the output.png matches input.tson\" --project ./my-app\n"
         );
     }

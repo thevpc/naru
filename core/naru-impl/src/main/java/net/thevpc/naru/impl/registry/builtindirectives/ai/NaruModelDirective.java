@@ -179,7 +179,7 @@ public class NaruModelDirective extends AbstractDirective {
                 }
             }
         });
-        register(new AbstractSubCommand("set-global", NText.ofPlain("set model as default globally")
+        register(new AbstractSubCommand("use-global", NText.ofPlain("use model as default globally")
                 , new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name to set as default globally"))
         ) {
             @Override

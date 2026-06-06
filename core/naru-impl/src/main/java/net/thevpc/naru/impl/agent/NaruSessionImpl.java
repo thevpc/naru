@@ -4,7 +4,7 @@ import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.routine.NaruRoutineManager;
+import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.skills.NaruSkillManager;
 import net.thevpc.naru.api.stmt.NaruStatement;
@@ -13,16 +13,15 @@ import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.naru.impl.budget.NaruMeteringServiceImpl;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
-import net.thevpc.naru.impl.routine.NaruRoutineManagerImpl;
+import net.thevpc.naru.impl.routine.NaruRoutineMem;
 import net.thevpc.naru.impl.scheduler.NaruSchedulerImpl;
 import net.thevpc.naru.impl.scheduler.NaruSessionEventLogImpl;
 import net.thevpc.naru.impl.scheduler.NaruTaskImpl;
 import net.thevpc.naru.impl.skill.NaruSkillManagerImpl;
+import net.thevpc.naru.impl.util.NaruUtils;
+import net.thevpc.nuts.concurrent.NCallable;
 import net.thevpc.nuts.elem.*;
-import net.thevpc.nuts.io.NIOUtils;
-import net.thevpc.nuts.io.NOut;
-import net.thevpc.nuts.io.NPath;
-import net.thevpc.nuts.io.NTerminal;
+import net.thevpc.nuts.io.*;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
 
@@ -30,9 +29,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -49,7 +46,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     /**
      * Optional: additional context the user wants to share with every tool.
      */
-    private final NaruRoutineManager routineManager;
     private final NaruSkillManager skillManager;
     private final NaruMeteringService meteringService;
     private final NaruSessionManagerImpl sessionManager;
@@ -81,6 +77,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final NaruSessionListener sessionListener;
     private final List<NaruSessionListener> sessionListeners = new ArrayList<>();
     private boolean stopped;
+    private final Map<String, NaruRoutine> routines = new ConcurrentHashMap<>();
+    private NAruVisibility loadTimeVisibility;
+    private int schedulerThreadCount = 1;
+    private volatile long schedulerThrottleDelayMs = 500;
 
 
     public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruMeteringService meteringService, boolean configureDefaults, NaruSessionListener sessionListener) {
@@ -89,7 +89,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.workingDir = projectDir;
         this.meteringService = meteringService == null ? new NaruMeteringServiceImpl() : meteringService;
         this.sessionManager = new NaruSessionManagerImpl(this);
-        this.routineManager = new NaruRoutineManagerImpl(this);
         this.skillManager = new NaruSkillManagerImpl(this);
         this.registry = new NaruRegistryImpl(this);
         this.sessionListener = sessionListener;
@@ -119,7 +118,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             }
         }
         this.model = model;
-        this.scheduler = new NaruSchedulerImpl(this, 1);
+        this.scheduler = new NaruSchedulerImpl(this);
         this.eventLog = new NaruSessionEventLogImpl(new NaruEventLogListener() {
             @Override
             public void onEventAppended(NaruEvent newEvent) {
@@ -138,6 +137,30 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (configureDefaults) {
             ((NaruRegistryImpl) registry).registerDefaults();
         }
+    }
+
+    @Override
+    public NaruSession throttleDelay(long ms) {
+        this.schedulerThrottleDelayMs = ms;
+        return this;
+    }
+
+    public int getSchedulerThreadCount() {
+        return schedulerThreadCount;
+    }
+
+    public NaruSessionImpl setSchedulerThreadCount(int schedulerThreadCount) {
+        this.schedulerThreadCount = schedulerThreadCount;
+        return this;
+    }
+
+    public long getSchedulerThrottleDelayMs() {
+        return schedulerThrottleDelayMs;
+    }
+
+    public NaruSessionImpl setSchedulerThrottleDelayMs(long schedulerThrottleDelayMs) {
+        this.schedulerThrottleDelayMs = schedulerThrottleDelayMs;
+        return this;
     }
 
     private void ensureNotStopped() {
@@ -266,7 +289,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public NOptional<Object> getSessionEnv(String key) {
-        ensureNotStopped();
         if (env.containsKey(key)) {
             Object u = env.get(key).get();
             return NOptional.ofNullable(u);
@@ -425,24 +447,46 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return uuid;
     }
 
-    @Override
-    public NaruSession save(NPath path) {
-        ensureNotStopped();
-        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
-                .write(toElement(), path.mkParentDirs());
-        return this;
-    }
-
     public void fireChanged() {
-        ensureNotStopped();
+//        ensureNotStopped();
         this.modificationDate = Instant.now();
-        sessionManager.saveSnapshot();
+        saveSnapshot();
     }
 
-    @Override
-    public NaruSession load(NPath path) {
+    private NaruSession loadPath(NPath path) {
         ensureNotStopped();
-        load(NElementReader.ofTson().read(path));
+        NElement element = NElementReader.ofTson().read(path);
+        ensureNotStopped();
+        NObjectElement o = element.asObject().get();
+        this.uuid = NStringUtils.firstNonBlankTrimmed(o.getStringValue("uuid").orElse(null), UUID.randomUUID().toString());
+        this.name = NStringUtils.firstNonBlankTrimmed(o.getStringValue("name").orElse(null), "NO_NAME");
+        this.creationDate = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
+        this.modificationDate = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationDate);
+        this.visibility = NAruVisibility.parse(o.getStringValue("visibility").orElse(null)).orElse(NAruVisibility.PRIVATE);
+        if (this.visibility != NAruVisibility.PRIVATE && this.visibility != NAruVisibility.PUBLIC) {
+            this.visibility = NAruVisibility.PRIVATE;
+        }
+        NElement mv = o.get("model").orElse(null);
+        this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
+        this.projectDir = o.getStringValue("projectDir").map(x -> NPath.of(x)).orElse(projectDir);
+        this.workingDir = o.getStringValue("workingDir").map(x -> NPath.of(x)).orElse(workingDir);
+        NArrayElement todo1 = o.get("tasks").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
+        tasks.clear();
+        long maxLong = 0;
+        if (todo1 != null) {
+            for (NElement nElement : todo1) {
+                NaruTaskImpl t = new NaruTaskImpl(nElement, this);
+                maxLong = Math.max(0, t.id());
+                tasks.put(t.id(), t);
+            }
+        }
+        long finalMaxLong = maxLong == 0 ? 0 : maxLong + 1;
+        maxTaskId.updateAndGet(current -> Math.max(current, finalMaxLong));
+
+        routines.clear();
+        path.resolveSibling("routines").list().stream().filter(x -> x.name().endsWith(".naru")).forEach(x -> {
+            routines.put(x.name().substring(0, x.name().length() - 5), new NaruRoutineMem(x.name(), NAruVisibility.PRIVATE).load(x));
+        });
         return this;
     }
 
@@ -450,7 +494,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     public NaruSession copy() {
         ensureNotStopped();
         this.uuid = UUID.randomUUID().toString();
-        sessionListener.onSessionReloaded(this);
+        this.sessionListener.onSessionReloaded(this);
         for (NaruSessionListener listener : sessionListeners) {
             listener.onSessionReloaded(this);
         }
@@ -468,7 +512,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         //clearHistory();
         maxTaskId.set(0);
-        this.sessionManager.saveSnapshot();
+        saveSnapshot();
         sessionListener.onSessionReloaded(this);
         for (NaruSessionListener listener : sessionListeners) {
             listener.onSessionReloaded(this);
@@ -476,43 +520,197 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return this;
     }
 
+    private <T> Future<T> stopTheWorldAndDo(NCallable<T> e) {
+//        ensureNotStopped();
+        return ((NaruAgentImpl)agent).postAction(
+                ()->{
+                    if (!scheduler.isHeld()) {
+                        log(NaruLogMode.SCHEDULER, NMsg.ofC("Stop the world..."));
+                        scheduler.hold();
+                        T a = e.call();
+                        scheduler.resume();
+                        log(NaruLogMode.SCHEDULER, NMsg.ofC("Resume the world..."));
+                        return a;
+                    } else {
+                        return e.call();
+                    }
+                }
+        );
+    }
+
+    public NaruSession saveSnapshot() {
+        stopTheWorldAndDo(() -> {
+            NPath snapshotFolder = projectDir().resolve(".naru/local/sessions/snapshot");
+            save(snapshotFolder);
+            return null;
+        });
+        return this;
+    }
 
     @Override
     public NaruSession save() {
-        ensureNotStopped();
-        NPath publicFile = projectDir.resolve(".naru/sessions/" + uuid() + ".tson");
-        NPath privateFile = projectDir.resolve(".naru/local/sessions/" + uuid() + ".tson");
-        if (getVisibility() == NAruVisibility.PUBLIC) {
-            save(publicFile);
-            if (privateFile.isRegularFile()) {
-                privateFile.delete();
+        Future<Object> f = stopTheWorldAndDo(() -> {
+            NPath publicFolder = projectDir.resolve(".naru/sessions/" + uuid());
+            NPath privateFolder = projectDir.resolve(".naru/local/sessions/" + uuid());
+            if (getVisibility() == NAruVisibility.PUBLIC) {
+                save(publicFolder);
+                if (privateFolder.exists()) {
+                    privateFolder.deleteTree();
+                }
+            } else {
+                save(privateFolder);
+                if (publicFolder.exists()) {
+                    publicFolder.deleteTree();
+                }
             }
-        } else {
-            save(privateFile);
-            if (publicFile.isRegularFile()) {
-                publicFile.delete();
-            }
+            return null;
+        });
+        try {
+            f.get();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
         }
         return this;
     }
 
-    @Override
-    public NaruSession load() {
-        ensureNotStopped();
-        NPath publicFile = projectDir.resolve(".naru/sessions/" + uuid() + ".tson");
-        NPath privateFile = projectDir.resolve(".naru/local/sessions/" + uuid() + ".tson");
-        if (publicFile.isRegularFile()) {
-            load(publicFile);
-            setVisibility(NAruVisibility.PUBLIC);
-        } else {
-            load(privateFile);
-            setVisibility(NAruVisibility.PRIVATE);
+    private void save(NPath folder) {
+        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
+                .write(toElement(), folder.mkdirs().resolve("session.tson"));
+        NPath r = folder.resolve("routines");
+        r.mkdirs();
+        r.list().stream().filter(x -> x.name().endsWith(".naru")).forEach(x -> x.delete());
+        for (Map.Entry<String, NaruRoutine> e : routines.entrySet()) {
+            e.getValue().write(r.resolve(e.getKey() + ".naru"));
+        }
+    }
+
+    public NaruSession load(String otherUuid) {
+        Future<Object> f = stopTheWorldAndDo(() -> {
+            NPath publicFile = projectDir.resolve(".naru/sessions/" + uuid() + ".tson");
+            NPath privateFile = projectDir.resolve(".naru/local/sessions/" + uuid() + ".tson");
+
+            if (privateFile.isRegularFile()) {
+                loadPath(privateFile);
+                setVisibility(NAruVisibility.PRIVATE);
+                this.loadTimeVisibility = NAruVisibility.PRIVATE;
+            } else {
+                if (publicFile.isRegularFile()) {
+                    loadPath(publicFile);
+                    setVisibility(NAruVisibility.PUBLIC);
+                    this.loadTimeVisibility = NAruVisibility.PUBLIC;
+                } else {
+                    throw new NIllegalArgumentException(NMsg.ofC("Session '%s' not found", otherUuid));
+                }
+            }
+            ((NaruSchedulerImpl) scheduler).reloadState();
+            return null;
+        });
+        try {
+            f.get();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
         }
         sessionListener.onSessionReloaded(this);
         for (NaruSessionListener listener : sessionListeners) {
             listener.onSessionReloaded(this);
         }
         return this;
+    }
+
+
+    @Override
+    public NaruSession reload() {
+        Future<Object> f = stopTheWorldAndDo(() -> {
+            NPath publicFile = projectDir.resolve(".naru/sessions/" + uuid() + ".tson");
+            NPath privateFile = projectDir.resolve(".naru/local/sessions/" + uuid() + ".tson");
+            if (loadTimeVisibility == null) {
+                if (privateFile.isRegularFile()) {
+                    loadPath(privateFile);
+                    setVisibility(NAruVisibility.PRIVATE);
+                    this.loadTimeVisibility = NAruVisibility.PRIVATE;
+                } else {
+                    if (publicFile.isRegularFile()) {
+                        loadPath(publicFile);
+                        setVisibility(NAruVisibility.PUBLIC);
+                        this.loadTimeVisibility = NAruVisibility.PUBLIC;
+                    } else {
+                        this.uuid = UUID.randomUUID().toString();
+                        this._prepareInit();
+                    }
+                }
+            } else if (loadTimeVisibility == NAruVisibility.PUBLIC) {
+                if (publicFile.isRegularFile()) {
+                    loadPath(publicFile);
+                    setVisibility(NAruVisibility.PUBLIC);
+                    this.loadTimeVisibility = NAruVisibility.PUBLIC;
+                } else {
+                    this.uuid = UUID.randomUUID().toString();
+                    this._prepareInit();
+                }
+            } else {
+                if (privateFile.isRegularFile()) {
+                    loadPath(privateFile);
+                    setVisibility(NAruVisibility.PRIVATE);
+                    this.loadTimeVisibility = NAruVisibility.PRIVATE;
+                } else {
+                    this.uuid = UUID.randomUUID().toString();
+                    this._prepareInit();
+                }
+            }
+            ((NaruSchedulerImpl) scheduler).reloadState();
+            return null;
+        });
+        try {
+            f.get();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        }
+        sessionListener.onSessionReloaded(this);
+        for (NaruSessionListener listener : sessionListeners) {
+            listener.onSessionReloaded(this);
+        }
+        return this;
+    }
+
+    public NaruSession restoreSnapshot() {
+        Future<Boolean> f = stopTheWorldAndDo(() -> {
+            NPath snapshotFolder = projectDir().resolve(".naru/local/sessions/snapshot");
+            if (snapshotFolder.resolve("session.tson").isFile()) {
+                loadPath(snapshotFolder.resolve("session.tson"));
+                ((NaruSchedulerImpl) scheduler).reloadState();
+                return true;
+            }
+            return false;
+        });
+        Boolean b = null;
+        try {
+            b = f.get();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e);
+        }
+        if (b) {
+            sessionListener.onSessionReloaded(this);
+            for (NaruSessionListener listener : sessionListeners) {
+                listener.onSessionReloaded(this);
+            }
+        }
+        return this;
+    }
+
+    private void _prepareInit() {
+        this.name = "NO_NAME";
+        this.creationDate = Instant.now();
+        this.modificationDate = creationDate;
+        this.maxTaskId.set(0);
+        this.loadTimeVisibility = NAruVisibility.PRIVATE;
     }
 
     @Override
@@ -527,33 +725,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         o.set("workingDir", workingDir == null ? null : NElement.ofString(workingDir.toString()));
         o.set("tasks", NElement.ofArray(tasks.values().stream().map(NToElement::toElement).toArray(NElement[]::new)));
         return o.build();
-    }
-
-    @Override
-    public NaruSession load(NElement element) {
-        ensureNotStopped();
-        NObjectElement o = element.asObject().get();
-        this.uuid = NStringUtils.firstNonBlankTrimmed(o.getStringValue("uuid").orElse(null), UUID.randomUUID().toString());
-        this.name = NStringUtils.firstNonBlankTrimmed(o.getStringValue("name").orElse(null), "NO_NAME");
-        this.creationDate = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
-        this.modificationDate = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationDate);
-        NElement mv = o.get("model").orElse(null);
-        this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
-        this.projectDir = o.getStringValue("projectDir").map(x -> NPath.of(x)).orElse(projectDir);
-        this.workingDir = o.getStringValue("workingDir").map(x -> NPath.of(x)).orElse(workingDir);
-        NArrayElement todo1 = o.get("tasks").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
-        tasks.clear();
-        long maxLong = 0;
-        if (todo1 != null) {
-            for (NElement nElement : todo1) {
-                NaruTaskImpl t = new NaruTaskImpl(nElement, this);
-                maxLong = Math.max(0, t.id());
-                tasks.put(t.id(), t);
-            }
-        }
-        long finalMaxLong = maxLong == 0 ? 0 : maxLong + 1;
-        maxTaskId.updateAndGet(current -> Math.max(current, finalMaxLong));
-        return this;
     }
 
     // readline thread
@@ -675,12 +846,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NaruRoutineManager routineManager() {
-        ensureNotStopped();
-        return routineManager;
-    }
-
-    @Override
     public NaruSkillManager skillManager() {
         ensureNotStopped();
         return skillManager;
@@ -787,7 +952,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public boolean isRunning() {
-        return running;
+        return running && !stopped;
     }
 
     @Override
@@ -795,6 +960,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (!running) {
             return;
         }
+        if (stopped) {
+            return;
+        }
+        stopped = true;
         scheduler.shutdown();
         readlineThreadRunning = false;
         readlineThread.interrupt();
@@ -883,5 +1052,108 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             }
         }
         return ids.stream().mapToLong(x -> x).toArray();
+    }
+
+
+
+
+//    public String resolveRoutineUuid(String uuidOrName) {
+//        List<NaruResourceInfo> list = routines();
+//        for (NaruResourceInfo s : list) {
+//            if (Objects.equals(s.getUuid(), uuidOrName)) {
+//                return s.getUuid();
+//            }
+//        }
+//        for (NaruResourceInfo s : list) {
+//            if (Objects.equals(NStringUtils.trim(s.getName()), NStringUtils.trim(uuidOrName))) {
+//                return s.getUuid();
+//            }
+//        }
+//        if (Objects.equals(session.name(), uuidOrName)) {
+//            return session.uuid();
+//        }
+//        Integer index = NLiteral.of(uuidOrName).asInt().orNull();
+//        if (index != null) {
+//            if (index - 1 >= 0 && index - 1 < list.size()) {
+//                return list.get(index - 1).getUuid();
+//            }
+//        }
+//        return null;
+//    }
+
+//    @Override
+//    public NaruRoutine ensureRoutineExists(String routineName, NAruVisibility visibilityOnCreate, NaruTask naruTask) {
+//        routineName = NStringUtils.firstNonBlankTrimmed(routineName, "main");
+//        NaruRoutine rt = routine(routineName, naruTask).orNull();
+//        if (rt != null) {
+//            return rt;
+//        }
+//        if (NaruUtils.isPath(routineName) || NBlankable.isBlank(routineName)) {
+//            throw new NIllegalArgumentException(NMsg.ofC("Invalid routine name: %s", routineName));
+//        } else {
+//            return session.ensureRoutineExists(routineName);
+//        }
+//    }
+
+//    @Override
+//    public NaruRoutine newRoutine(String routineName, NaruTask naruTask) {
+//        if (NaruUtils.isPath(routineName) || NBlankable.isBlank(routineName)) {
+//            throw new NIllegalArgumentException(NMsg.ofC("Invalid routine name: %s", routineName));
+//        } else {
+//            NaruRoutine rt = routine(routineName, naruTask).orNull();
+//            if (rt != null) {
+//                throw new NIllegalArgumentException(NMsg.ofC("Routine already exist name: %s", routineName));
+//            }
+//            return session.ensureRoutineExists(routineName);
+//        }
+//    }
+
+    @Override
+    public List<NaruResourceInfo> routines() {
+        return routines.entrySet().stream().map(x->{
+            return new NaruResourceInfo()
+                    .setName(x.getKey())
+                    .setCreationDate(x.getValue().creationInstant())
+                    .setModificationDate(x.getValue().modificationInstant())
+                    .setVisibility(x.getValue().visibility())
+                    .setUuid(x.getValue().uuid());
+        }).sorted((o1, o2) -> o2.getModificationDate().compareTo(o1.getModificationDate())).collect(Collectors.toList());
+    }
+
+
+
+    @Override
+    public NOptional<NaruRoutine> routine(String nameOrPath, NaruTask task, boolean orCreate) {
+        if (NaruUtils.isPath(nameOrPath)) {
+            NPath path = NPath.of(nameOrPath).toAbsolute(task.workingDir());
+            if (path.exists()) {
+                return NOptional.of(new NaruRoutineMem(path.toString(), NAruVisibility.PUBLIC).load(path));
+            }
+            if (!path.name().endsWith(".naru") && !path.name().endsWith(".")) {
+                path = NPath.of(nameOrPath + ".naru").toAbsolute(task.workingDir());
+                if (path.exists()) {
+                    return NOptional.of(new NaruRoutineMem(path.toString(), NAruVisibility.PUBLIC).load(path));
+                }
+            }
+        } else if (NaruUtils.isValidRoutineName(nameOrPath)) {
+            NaruRoutine r = routines.get(nameOrPath);
+            if(r!=null){
+                return NOptional.of(r);
+            }
+        }
+        NPath path = NPath.of(nameOrPath).toAbsolute(task.workingDir());
+        if (path.exists()) {
+            return NOptional.of(new NaruRoutineMem(path.toString(), NAruVisibility.PUBLIC).load(path));
+        }
+        if (!path.name().endsWith(".naru") && !path.name().endsWith(".")) {
+            path = NPath.of(nameOrPath + ".naru").toAbsolute(task.workingDir());
+            if (path.exists()) {
+                return NOptional.of(new NaruRoutineMem(path.toString(),NAruVisibility.PUBLIC).load(path));
+            }
+        }
+        if(NaruUtils.isValidRoutineName(nameOrPath) && orCreate){
+            routines.computeIfAbsent(nameOrPath, x -> new NaruRoutineMem(x, getVisibility()));
+        }
+        return NOptional.ofEmpty(NMsg.ofC("Error statement: routine not found %s", nameOrPath));
     }
 }

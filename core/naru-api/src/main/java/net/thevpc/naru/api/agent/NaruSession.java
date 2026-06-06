@@ -2,7 +2,7 @@ package net.thevpc.naru.api.agent;
 
 import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.routine.NaruRoutineManager;
+import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.NaruScheduler;
 import net.thevpc.naru.api.scheduler.NaruSessionEventLog;
 import net.thevpc.naru.api.skills.NaruSkillManager;
@@ -21,6 +21,7 @@ import java.util.Map;
 public interface NaruSession {
     NAruVisibility getVisibility();
 
+    NaruSession throttleDelay(long ms);
     NaruScheduler scheduler();
 
     NaruSession setVisibility(NAruVisibility visibility);
@@ -30,8 +31,6 @@ public interface NaruSession {
     boolean hasMoreStatements();
 
     NPath projectDir();
-
-    NaruRoutineManager routineManager();
 
     NaruSkillManager skillManager();
 
@@ -43,19 +42,22 @@ public interface NaruSession {
 
     NaruSession setWorkingDir(NPath workingDir);
 
-    NaruSession load(NElement element);
+//    NaruSession load(NElement element);
 
-    NaruSession load(NPath path);
+//    NaruSession load(NPath path);
 
     NElement toElement();
 
     String uuid();
 
-    NaruSession load();
+    NaruSession restoreSnapshot();
+
+    NaruSession load(String otherUuid);
+    NaruSession reload();
 
     NaruSession save();
 
-    NaruSession save(NPath path);
+    NaruSession saveSnapshot();
 
     NaruSession copy();
 
@@ -126,4 +128,8 @@ public interface NaruSession {
     void addSessionListener(NaruSessionListener listener);
 
     void removeSessionListener(NaruSessionListener listener);
+
+    List<NaruResourceInfo> routines();
+
+    NOptional<NaruRoutine> routine(String nameOrPath, NaruTask task, boolean orCreate);
 }

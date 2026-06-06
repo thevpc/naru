@@ -3,6 +3,7 @@ package net.thevpc.naru.api.routine;
 import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
+import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
 
 import java.time.Instant;
@@ -42,12 +43,14 @@ public interface NaruRoutine {
 
     boolean isEmpty();
 
+    NaruRoutine load(NPath path);
+
+    NaruRoutine write(NPath path);
+
     Map<String, SubroutineDef> getSubroutines();
 
     String lineCommandAt(int n);
 
     NOptional<List<NaruStatement>> parseStatements(NaruTask task);
-
-    void flush();
 
 }

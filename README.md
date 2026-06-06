@@ -12,7 +12,7 @@ Supports single-task execution, interactive REPL, multi-task parallel agents, an
 Currently supports local models via **Ollama**. Cloud LLM support
 (Claude, OpenAI, Gemini) is on the roadmap.
 
-![Naru in action](documentation/term-cast/naru-install-demo.webp)
+![Naru in action](documentation/term-cast/demo-install/naru-install-demo.webp)
 
 ---
 
@@ -234,10 +234,10 @@ NARU supports any model available through Ollama. Use the `/model` directive to 
 /model list
 
 # Switch the active model for this session
-/model set qwen2.5-coder:7b
+/model use qwen2.5-coder:7b
 
 # Set a persistent default model
-/model set-global qwen3-coder:30b
+/model use-global qwen3-coder:30b
 
 # Pull a new model from Ollama (will take a while)
 /model install deepseek-2.5
@@ -288,7 +288,7 @@ Directives are REPL commands prefixed with `/`. They control session state, flow
 
 | Directive                                                                                            | Description                                    |
 |------------------------------------------------------------------------------------------------------|------------------------------------------------|
-| `/model (list\|get\|set\|install\|uninstall\|unload\|ps\|set-global\|alias\|unalias\|update)`        | Manage Ollama models                           |
+| `/model (list\|current\|use\|install\|uninstall\|unload\|ps\|use-global\|alias\|unalias\|update)`    | Manage Ollama models                           |
 | `/session (name\|list\|public\|private\|drop\|clear\|load\|reload\|restore\|save\|new\|reset\|copy)` | Manage named sessions                          |
 | `/skills (show\|list\|available\|load\|unload)`                                                      | Manage skill modules                           |
 | `/routine (name\|show\|list\|drop\|clear\|load\|unload\|run)`                                        | Manage and execute routines                    |
@@ -507,7 +507,7 @@ This routine illustrates a multi-phase agentic loop: a lightweight model identif
 10  /print "=== Starting Agentic Bug-Fix Workflow ==="
 20  /set TARGET_FILE = src/main/java/com/project/core/OrderProcessor.java
 30  /skills load java
-40  /model set qwen3-coder:7b
+40  /model use qwen3-coder:7b
 50  /print "=== $TARGET_FILE content ==="
 60  /cat $TARGET_FILE
 70  /print "=== end of file ==="
@@ -519,7 +519,7 @@ This routine illustrates a multi-phase agentic loop: a lightweight model identif
 130 /history delete 0..-2
 140 /skills unload java
 150 # Switch to a heavier reasoning model for patch generation
-160 /model set deepseek-2.5
+160 /model use deepseek-2.5
 170 You are an expert architect. Given these problematic lines [${BUG_LINES}] in ${TARGET_FILE}, generate a precise patch. To apply it, call the file-writer tool using JSON formatting.
 210 /print "Workflow completed successfully."
 ```
@@ -625,14 +625,14 @@ Custom agent files (Markdown with optional front-matter) can be bundled on the c
 
 ```bash
 nuts -y naru
-> /model set qwen2.5-coder:7b
+> /model use qwen2.5-coder:7b
 > Can you assess the current directory as a senior architect?
 ```
 
 ### Delegate an image analysis subtask to a vision model
 
 ```bash
-> /model set qwen3-coder:30b
+> /model use qwen3-coder:30b
 > Analyze the project structure and then use delegate_to_model to inspect the architecture diagram at docs/arch.png
 ```
 
@@ -640,7 +640,7 @@ nuts -y naru
 
 ```bash
 nuts -y naru
-> /model set qwen2.5-coder:14b
+> /model use qwen2.5-coder:14b
 > 10 /set FILE = src/main/java/net/thevpc/naru/api/agent/NaruAgent.java
 > 20 list the public methods of $FILE, one per line, no explanation
 > /routine run
@@ -669,7 +669,7 @@ nuts -y naru
 ```bash
 # First session
 nuts -y naru
-> /model set qwen2.5-coder:30b
+> /model use qwen2.5-coder:30b
 > /skills load java
 > /session save refactor-session
 
@@ -688,10 +688,10 @@ Example:
 ```markdown
 ---
 emulate_tool_calls: true
-tool_call_start: <|tool_call|>
-tool_call_end: <|tool_end|>
-tool_result_start: <|tool_result_call|>
-tool_result_end: <|tool_result_end|>
+tool_call_start: "<|tool_call|>"
+tool_call_end: "<|tool_end|>"
+tool_result_start: "<|tool_result_call|>"
+tool_result_end: "<|tool_result_end|>"
 ---
 
 When you need to use a tool, output ONLY this exact format:
@@ -714,7 +714,7 @@ Example:
 file: `.naru/init.naru`
 ```bash
 # current public directives live here
-/model set ollama/qwen2.5-coder:14b
+/model use ollama/qwen2.5-coder:14b
 /skill load javadoc
 ```
 

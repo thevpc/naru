@@ -22,7 +22,6 @@ public class NaruSchedulerImpl implements NaruScheduler {
     // -------------------------------------------------------------------------
 
     private final NaruSession session;
-    private final int threadCount;
 
     // ready queues
     private final BlockingQueue<NaruTask> readyQueue;
@@ -36,49 +35,81 @@ public class NaruSchedulerImpl implements NaruScheduler {
     // latch to synchronize hold() caller with workers
     private volatile CountDownLatch holdLatch;
 
-    // mode state
-//    private volatile NaruSchedulerMode mode;
-    private volatile long throttleDelayMs;
-
     // lifecycle
-    private volatile boolean stopped;
+    private final boolean stopped;
     private volatile boolean shutdownRequested;
-    private volatile NaruSchedulerStatus status;
 
-    private final List<Thread> workerThreads;
+    private final Map<Integer, ThreadInfo> workerThreadInfos = new HashMap<>();
     private volatile boolean runningRetention;
     private volatile boolean runningBlockedDrain;
+    private volatile NaruSchedulerStatus schedulerStatus;
+    private volatile boolean held;
 
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
 
-    public NaruSchedulerImpl(NaruSession session, int threadCount) {
+    public NaruSchedulerImpl(NaruSession session) {
         this.session = session;
-        this.threadCount = threadCount;
         this.readyQueue = new LinkedBlockingQueue<>();
         this.holdGate = new Semaphore(Integer.MAX_VALUE);
         this.activeWorkers = new AtomicInteger(0);
-        this.throttleDelayMs = 500;
         this.stopped = false;
         this.shutdownRequested = false;
-        this.status = NaruSchedulerStatus.IDLE;
-        this.workerThreads = new CopyOnWriteArrayList<>();
+        this.schedulerStatus = NaruSchedulerStatus.IDLE;
     }
 
     // -------------------------------------------------------------------------
     // Lifecycle
     // -------------------------------------------------------------------------
 
+    private static class ThreadInfo {
+        int index;
+        boolean stopped;
+        Thread thread;
+
+        public ThreadInfo(int index) {
+            this.index = index;
+        }
+    }
+
     @Override
     public void start() {
-        status = NaruSchedulerStatus.RUNNING;
-        for (int i = 0; i < threadCount; i++) {
-            Thread t = new Thread(this::workerLoop, "naru-session[" + System.identityHashCode(session) + "]-worker-" + i);
-            t.setDaemon(true);
-            workerThreads.add(t);
-            t.start();
+        schedulerStatus = NaruSchedulerStatus.RUNNING;
+        _ensureThreads();
+    }
+
+    private void _ensureThreads() {
+        int schedulerThreadCount = ((NaruSessionImpl) session).getSchedulerThreadCount();
+        for (int i = 0; i < schedulerThreadCount; i++) {
+            int idx = i + 1;
+            ThreadInfo ti = workerThreadInfos.get(idx);
+            if (ti == null) {
+                ti = new ThreadInfo(idx);
+                ThreadInfo finalTi = ti;
+                Thread t = new Thread(() -> workerLoop(finalTi), "naru-session[" + System.identityHashCode(session) + "]-worker-" + i);
+                t.setDaemon(true);
+                ti.thread = t;
+                workerThreadInfos.put(idx, ti);
+                t.start();
+            }
         }
+        for (ThreadInfo ti : getThreadInfos()) {
+            if (ti.index <= 0 || ti.index > schedulerThreadCount) {
+                ti.stopped = true;
+
+            }
+        }
+    }
+
+    public void reloadState() {
+        if (schedulerStatus == NaruSchedulerStatus.RUNNING) {
+            _ensureThreads();
+        }
+    }
+
+    private ArrayList<ThreadInfo> getThreadInfos() {
+        return new ArrayList<>(workerThreadInfos.values());
     }
 
 
@@ -86,9 +117,9 @@ public class NaruSchedulerImpl implements NaruScheduler {
     public void awaitTermination() {
         runRetention();
         runBlockedDrain();
-        for (Thread t : workerThreads) {
+        for (ThreadInfo t : getThreadInfos()) {
             try {
-                t.join();
+                t.thread.join();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -100,9 +131,9 @@ public class NaruSchedulerImpl implements NaruScheduler {
     public void awaitTermination(long timeout) {
         long now = System.currentTimeMillis();
         long remain = timeout;
-        for (Thread t : workerThreads) {
+        for (ThreadInfo t : getThreadInfos()) {
             try {
-                t.join(remain);
+                t.thread.join(remain);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
@@ -117,18 +148,12 @@ public class NaruSchedulerImpl implements NaruScheduler {
     @Override
     public void shutdown() {
         shutdownRequested = true;
-        status = NaruSchedulerStatus.STOPPING;
+        schedulerStatus = NaruSchedulerStatus.STOPPING;
         // unblock idle workers so they see shutdownRequested and exit
-        for (int i = 0; i < threadCount; i++) {
+        int schedulerThreadCount = ((NaruSessionImpl) session).getSchedulerThreadCount();
+        for (int i = 0; i < schedulerThreadCount; i++) {
             readyQueue.offer(NaruPoisonTask.INSTANCE);
         }
-    }
-
-    @Override
-    public void kill() {
-        stopped = true;
-        status = NaruSchedulerStatus.KILLED;
-        workerThreads.forEach(Thread::interrupt);
     }
 
     // -------------------------------------------------------------------------
@@ -137,9 +162,12 @@ public class NaruSchedulerImpl implements NaruScheduler {
 
     @Override
     public void hold() {
+        if (held) {
+            return;
+        }
         // drain permits — workers block after finishing current tick
         holdGate.drainPermits();
-        status = NaruSchedulerStatus.HELD;
+        this.held = true;
         // wait synchronously until all active workers finish current tick
         int active = activeWorkers.get();
         if (active > 0) {
@@ -156,7 +184,10 @@ public class NaruSchedulerImpl implements NaruScheduler {
 
     @Override
     public void resume() {
-        status = NaruSchedulerStatus.RUNNING;
+        if (!held) {
+            return;
+        }
+        this.held = false;
         holdGate.release(Integer.MAX_VALUE);
     }
 
@@ -194,6 +225,10 @@ public class NaruSchedulerImpl implements NaruScheduler {
         }
     }
 
+    public boolean isHeld() {
+        return held;
+    }
+
     public void onTerminated(long tid) {
         NaruTask task = session.findTask(tid).orNull();
         if (task == null) return;
@@ -205,7 +240,9 @@ public class NaruSchedulerImpl implements NaruScheduler {
         NaruTask task = session.findTask(tid).orNull();
         if (task == null) return;
         //manual tick only works in help mode
-        if (!task.isHeld() && status != NaruSchedulerStatus.HELD) return;
+        if (!task.isHeld() && !isHeld()) {
+            return;
+        }
         tick(task);
     }
 
@@ -264,10 +301,6 @@ public class NaruSchedulerImpl implements NaruScheduler {
         allReadyTasks().forEach(NaruTask::releaseStepPermit);
     }
 
-    @Override
-    public void throttleDelay(long ms) {
-        this.throttleDelayMs = ms;
-    }
 
     // -------------------------------------------------------------------------
     // Event dispatch
@@ -299,12 +332,13 @@ public class NaruSchedulerImpl implements NaruScheduler {
         try {
             runningRetention = true;
             if (!stopped && !shutdownRequested) {
-                switch (status) {
+                if (isHeld()) {
+                    return;
+                }
+                switch (schedulerStatus) {
                     case KILLED:
                     case STOPPING:
                     case STOPPED:
-                        return;
-                    case HELD:
                         return;
                 }
                 long now = System.currentTimeMillis();
@@ -327,12 +361,13 @@ public class NaruSchedulerImpl implements NaruScheduler {
         try {
             runningBlockedDrain = true;
             if (!stopped && !shutdownRequested) {
-                switch (status) {
+                if (isHeld()) {
+                    return;
+                }
+                switch (schedulerStatus) {
                     case KILLED:
                     case STOPPING:
                     case STOPPED:
-                        return;
-                    case HELD:
                         return;
                 }
                 for (NaruTask task : session.tasks()) {
@@ -350,48 +385,54 @@ public class NaruSchedulerImpl implements NaruScheduler {
     }
 
 
-    private void workerLoop() {
-        while (!stopped && !shutdownRequested) {
-            NaruTask task = nextReadyTask();
+    private void workerLoop(ThreadInfo ti) {
+        try {
+            while (!stopped && !shutdownRequested && !ti.stopped) {
+                NaruTask task = nextReadyTask();
 
-            // poison pill or null means exit
-            if (task == null || task == NaruPoisonTask.INSTANCE) break;
+                // poison pill or null means exit
+                if (task == null || task == NaruPoisonTask.INSTANCE) break;
 
-            activeWorkers.incrementAndGet();
-            try {
-                // 1. scheduler-level hold gate
-                holdGate.acquire();
-                if (stopped || shutdownRequested) break;
+                activeWorkers.incrementAndGet();
+                try {
+                    // 1. scheduler-level hold gate
+                    holdGate.acquire();
+                    if (stopped || shutdownRequested) break;
 
-                // 2. mode-dependent clearance (step/throttle)
-                awaitClearance(task);
-                if (stopped) break;
+                    // 2. mode-dependent clearance (step/throttle)
+                    awaitClearance(task);
+                    if (stopped) break;
 
-                // 3. drain inbox before tick
-                this.tick(task);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            } finally {
-                int remaining = activeWorkers.decrementAndGet();
-                // signal hold() caller if waiting
-                CountDownLatch latch = holdLatch;
-                if (latch != null) {
-                    latch.countDown();
+                    // 3. drain inbox before tick
+                    this.tick(task);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } finally {
+                    int remaining = activeWorkers.decrementAndGet();
+                    // signal hold() caller if waiting
+                    CountDownLatch latch = holdLatch;
+                    if (latch != null) {
+                        latch.countDown();
+                    }
+                    // restore hold gate permit if not held
+                    if (!isHeld()) {
+                        holdGate.release();
+                    }
+
+                    // if last worker done and stopping
+                    if (remaining == 0 && shutdownRequested) {
+                        schedulerStatus = NaruSchedulerStatus.STOPPED;
+                    }
                 }
-                // restore hold gate permit if not held
-                if (status != NaruSchedulerStatus.HELD) {
-                    holdGate.release();
-                }
-                // if last worker done and stopping
-                if (remaining == 0 && shutdownRequested) {
-                    status = NaruSchedulerStatus.STOPPED;
-                }
+                notifyTickDone(task);
             }
-            notifyTickDone(task);
+        } finally {
+            workerThreadInfos.remove(ti.index);
+            if (workerThreadInfos.isEmpty()) {
+                schedulerStatus = NaruSchedulerStatus.STOPPED;
+            }
         }
-
-        onWorkerExit();
     }
 
     // -------------------------------------------------------------------------
@@ -460,8 +501,8 @@ public class NaruSchedulerImpl implements NaruScheduler {
         NaruTaskFrame f = task.pushFrame(0, null, null, false);
         f.setLocalVar("event", event);
         task.addStatements(
-                session.routineManager()
-                        .routine(sub.routineName(), task).get()
+                session
+                        .routine(sub.routineName(), task,true).get()
                         .getIndexedLines().stream()
                         .map(x -> task.parseStatement(x.command()).orNull())
                         .filter(x -> x != null)
@@ -522,7 +563,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
                 task.acquireStepPermit();
                 break;
             case THROTTLED:
-                Thread.sleep(throttleDelayMs);
+                Thread.sleep(((NaruSessionImpl) session).getSchedulerThrottleDelayMs());
                 break;
         }
     }
@@ -561,13 +602,6 @@ public class NaruSchedulerImpl implements NaruScheduler {
         return all;
     }
 
-    private void onWorkerExit() {
-        workerThreads.remove(Thread.currentThread());
-        if (workerThreads.isEmpty()) {
-            status = NaruSchedulerStatus.STOPPED;
-        }
-    }
-
     public void ready(long id) {
         NaruTask task = session.findTask(id).orNull();
         if (task == null) return;
@@ -582,12 +616,12 @@ public class NaruSchedulerImpl implements NaruScheduler {
 
     @Override
     public NaruSchedulerStatus status() {
-        return status;
+        return schedulerStatus;
     }
 
     @Override
     public int workerCount() {
-        return threadCount;
+        return getThreadInfos().size();
     }
 
     @Override

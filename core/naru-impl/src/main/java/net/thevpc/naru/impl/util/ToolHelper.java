@@ -5,7 +5,6 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruResponse;
-import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
@@ -113,10 +112,9 @@ public class ToolHelper {
             return "Error: command is required";
         }
 
-        NaruRoutineManager sm = task.session().routineManager();
         String oldName = task.currentRoutineName();
         task.useRoutine(scriptName);
-        task.saveRoutineLine(lineNum, command);
+        task.setRoutineLine(lineNum, command);
         task.useRoutine(oldName);
 
         return "Successfully wrote line " + lineNum + " to script '" + scriptName + "'";

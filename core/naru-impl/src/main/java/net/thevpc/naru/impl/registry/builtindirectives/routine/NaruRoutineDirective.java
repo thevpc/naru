@@ -2,7 +2,6 @@ package net.thevpc.naru.impl.registry.builtindirectives.routine;
 
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
-import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
@@ -10,7 +9,6 @@ import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
-import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.text.DecimalFormat;
@@ -27,7 +25,7 @@ public class NaruRoutineDirective extends AbstractDirective {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                List<NaruResourceInfo> naruResourceInfos = task.session().routineManager().routines();
+                List<NaruResourceInfo> naruResourceInfos = task.session().routines();
                 naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationDate(), Comparator.reverseOrder()));
                 int index = 1;
                 for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {

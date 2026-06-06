@@ -21,7 +21,7 @@ public class NaruReloadDirective extends AbstractDirective {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                task.session().sessionManager().reload();
+                task.session().reload();
                 context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("reloaded session."));
             }
         });

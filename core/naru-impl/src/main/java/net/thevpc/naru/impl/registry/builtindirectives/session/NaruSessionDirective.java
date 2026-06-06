@@ -211,7 +211,7 @@ public class NaruSessionDirective extends AbstractDirective {
 
     public void executeReload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        task.session().sessionManager().reload();
+        task.session().reload();
         context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("Reloaded session."));
     }
 
@@ -227,14 +227,13 @@ public class NaruSessionDirective extends AbstractDirective {
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("session not found %s", name));
             return;
         }
-        sm.load(a);
+        task.session().load(a);
         context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded session: %s", task.session().name()));
     }
 
     public void executeRestore(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        NaruSessionManager sm = task.session().sessionManager();
-        sm.restoreSnapshot();
+        task.session().restoreSnapshot();
         context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", task.session().name()));
     }
 
@@ -276,7 +275,7 @@ public class NaruSessionDirective extends AbstractDirective {
 
     public void executeCopy(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        task.session().sessionManager().copyCurrent();
+        task.session().copy();
         context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded session copy : %s", task.session().name()));
     }
 

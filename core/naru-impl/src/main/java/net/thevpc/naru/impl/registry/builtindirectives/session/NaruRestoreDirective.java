@@ -22,8 +22,7 @@ public class NaruRestoreDirective extends AbstractDirective {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                NaruSessionManager sm = task.session().sessionManager();
-                sm.restoreSnapshot();
+                task.session().restoreSnapshot();
                 context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", task.session().name()));
             }
         });

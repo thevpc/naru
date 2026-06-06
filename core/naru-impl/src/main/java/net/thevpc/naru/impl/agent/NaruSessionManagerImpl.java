@@ -63,21 +63,14 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
         return count;
     }
 
-    public synchronized NaruSessionManager saveSnapshot() {
-        NPath snapshotFile = adapter.projectDir().resolve(".naru/local/sessions/snapshot.tson");
-        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
-                .write(adapter.toElement(), snapshotFile.mkParentDirs());
-        return this;
-    }
-
-    @Override
-    public NaruSessionManager restoreSnapshot() {
-        NPath snapshotFile = adapter.projectDir().resolve(".naru/local/sessions/snapshot.tson");
-        if (snapshotFile.isRegularFile()) {
-            adapter.load(NElementReader.ofTson().read(snapshotFile));
-        }
-        return this;
-    }
+//    @Override
+//    public NaruSessionManager restoreSnapshot() {
+//        NPath snapshotFile = adapter.projectDir().resolve(".naru/local/sessions/snapshot.tson");
+//        if (snapshotFile.isRegularFile()) {
+//            adapter.load(NElementReader.ofTson().read(snapshotFile));
+//        }
+//        return this;
+//    }
 
     private NPath sessionDir(boolean publicSession) {
         if (publicSession) {
@@ -86,42 +79,37 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
         return adapter.projectDir().resolve(".naru/local/sessions/");
     }
 
-    @Override
-    public NaruSessionManager reload() {
-        load(adapter.uuid());
-        return this;
-    }
 
-    public NaruSessionManager load(String uuid) {
-        NPath s = sessionFile(uuid, true);
-        if (s.isRegularFile()) {
-            adapter.load(NElementReader.ofTson().read(s));
-            adapter.setVisibility(NAruVisibility.PUBLIC);
-            return this;
-        }
-        s = sessionFile(uuid, false);
-        if (s.isRegularFile()) {
-            adapter.load(NElementReader.ofTson().read(s));
-            adapter.setVisibility(NAruVisibility.PRIVATE);
-        }
-        return this;
-    }
+//    public NaruSessionManager load(String uuid) {
+//        NPath s = sessionFile(uuid, true);
+//        if (s.isRegularFile()) {
+//            adapter.load(NElementReader.ofTson().read(s));
+//            adapter.setVisibility(NAruVisibility.PUBLIC);
+//            return this;
+//        }
+//        s = sessionFile(uuid, false);
+//        if (s.isRegularFile()) {
+//            adapter.load(NElementReader.ofTson().read(s));
+//            adapter.setVisibility(NAruVisibility.PRIVATE);
+//        }
+//        return this;
+//    }
 
-    public NaruSessionManager copyCurrent() {
-        adapter.copy();
-        return this;
-    }
-
-    public NaruSessionManager saveCurrent() {
-        NPath pathOk = sessionFile(adapter.uuid(), adapter.getVisibility()==NAruVisibility.PUBLIC);
-        NPath pathKo = sessionFile(adapter.uuid(), adapter.getVisibility()==NAruVisibility.PRIVATE);
-        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
-                .write(adapter.toElement(), pathOk.mkParentDirs());
-        if (pathKo.isRegularFile()) {
-            pathKo.delete();
-        }
-        return this;
-    }
+//    public NaruSessionManager copyCurrent() {
+//        adapter.copy();
+//        return this;
+//    }
+//
+//    public NaruSessionManager saveCurrent() {
+//        NPath pathOk = sessionFile(adapter.uuid(), adapter.getVisibility()==NAruVisibility.PUBLIC);
+//        NPath pathKo = sessionFile(adapter.uuid(), adapter.getVisibility()==NAruVisibility.PRIVATE);
+//        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
+//                .write(adapter.toElement(), pathOk.mkParentDirs());
+//        if (pathKo.isRegularFile()) {
+//            pathKo.delete();
+//        }
+//        return this;
+//    }
 
     public void dropCurrent() {
         delete(adapter.uuid());

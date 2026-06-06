@@ -104,7 +104,7 @@ Type "# we select model by name or by index"
 Enter
 Type "# let's select qwen2.5-coder:14b (index 6)"
 Enter
-Type "/model set 6"
+Type "/model use 6"
 Enter
 Sleep 2s
 

@@ -1,7 +1,6 @@
 package net.thevpc.naru.impl.registry.builtintools;
 
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.routine.NaruRoutineManager;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.registry.NaruTool;

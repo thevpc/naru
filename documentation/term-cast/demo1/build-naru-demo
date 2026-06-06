@@ -1,0 +1,23 @@
+#!/bin/bash
+doit(){
+  ## CLEANUP CURRENT
+  rm -Rf .naru
+  rm -Rf ~/.nuts
+  rm -Rf ~/.config/nuts
+  rm -Rf ~/.local/share/nuts
+  rm -Rf ~/.local/log/nuts
+  rm -Rf ./nuts.jar
+  pkill -9 ollama
+  nuts-dev -Zy -w=
+  . ~/.bashrc
+  nuts -y naru --version
+  export PROMPT='>'
+  ollama serve >/dev/null 2>&1 &
+  echo "------------------------------------------------------------------"
+
+  vhs < naru-demo.tape
+  rm -Rf naru-demo.webp
+  ffmpeg -i naru-install-demo.gif -c:v libwebp_anim  -loop 0  -compression_level 6  -quality 80  -lossless 0  naru-demo.webp
+}
+
+time doit

@@ -2,7 +2,7 @@
 /set iteration = 1
 /while iteration <= 3
     /print "the iteration is $iteration"
-    /model set qwen-2.5:14b
+    /model use qwen-2.5:14b
     you are a software engineer, say YES ...
     /if _.contains("YES")
         /print

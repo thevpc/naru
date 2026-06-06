@@ -26,7 +26,7 @@ public class NaruStartDirective extends AbstractDirective {
                         .withNonOption().matchAny(a -> {
                             String s = a.image();
                             NaruRoutine rtn;
-                            rtn = task.session().routineManager().routine(s, task).orNull();
+                            rtn = task.session().routine(s, task,false).orNull();
                             if (rtn == null) {
                                 task.throwError(NMsg.ofC("Error statement: routine not found %s", s));
                                 return;

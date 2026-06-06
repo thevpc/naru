@@ -35,7 +35,7 @@ public class NaruDefRoutineLineStmt extends NaruStatement implements Cloneable{
 
     @Override
     public void exec(NaruTask task) {
-        task.saveRoutineLine(number, command);
+        task.setRoutineLine(number, command);
         task.defaultAdvance(this);
     }
 }
