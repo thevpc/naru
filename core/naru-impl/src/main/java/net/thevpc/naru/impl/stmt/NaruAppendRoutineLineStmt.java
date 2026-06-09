@@ -1,32 +1,32 @@
 package net.thevpc.naru.impl.stmt;
 
-import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 
-public class NaruDefRoutineLineStmt extends NaruStatement implements Cloneable{
-    public int number;
+public class NaruAppendRoutineLineStmt extends NaruStatement implements Cloneable{
+    public int increment;
     public String command;
 
-    public NaruDefRoutineLineStmt(int number, String command) {
-        super(Type.DEF_ROUTINE_LINE);
-        this.number = number;
+    public NaruAppendRoutineLineStmt(int increment, String command) {
+        super(Type.APPEND_ROUTINE_LINE);
+        this.increment = increment;
         this.command = command;
     }
 
-    public NaruDefRoutineLineStmt(NElement element) {
-        super(Type.DEF_ROUTINE_LINE,element);
+    public NaruAppendRoutineLineStmt(NElement element) {
+        super(Type.APPEND_ROUTINE_LINE,element);
         NListContainerElement lc = element.asListContainer().get();
-        this.number = lc.getIntValue("number").get();
+        this.increment = lc.getIntValue("number").get();
         this.command = lc.getStringValue("command").orNull();
     }
 
     @Override
     public NElement toElement() {
         NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
-        a.set("number", number);
+        a.set("number", increment);
         if(command!=null){
             a.set("command", command);
         }
@@ -35,7 +35,7 @@ public class NaruDefRoutineLineStmt extends NaruStatement implements Cloneable{
 
     @Override
     public void exec(NaruTask task) {
-        task.setRoutineLine(number, command);
+        task.appendRoutineLine(increment, command);
         task.defaultAdvance(this);
     }
 }

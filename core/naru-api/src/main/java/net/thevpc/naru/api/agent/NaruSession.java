@@ -22,6 +22,7 @@ public interface NaruSession {
     NAruVisibility getVisibility();
 
     NaruSession throttleDelay(long ms);
+
     NaruScheduler scheduler();
 
     NaruSession setVisibility(NAruVisibility visibility);
@@ -53,6 +54,7 @@ public interface NaruSession {
     NaruSession restoreSnapshot();
 
     NaruSession load(String otherUuid);
+
     NaruSession reload();
 
     NaruSession save();
@@ -132,4 +134,6 @@ public interface NaruSession {
     List<NaruResourceInfo> routines();
 
     NOptional<NaruRoutine> routine(String nameOrPath, NaruTask task, boolean orCreate);
+
+    Map<String, Object> getSessionEnv();
 }

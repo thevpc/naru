@@ -144,7 +144,7 @@ public abstract class AbstractDirective implements NaruDirective {
                 ,NMsg.ofStyledPrimary4("--help")
                 ,NMsg.ofStyledSeparator("]")
         ));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show this help"));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show %s help",name()));
     }
 
     @Override

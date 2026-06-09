@@ -165,6 +165,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
         if (held) {
             return;
         }
+        session.log(NaruLogMode.SCHEDULER, NMsg.ofC(">> HOLD"));
         // drain permits — workers block after finishing current tick
         holdGate.drainPermits();
         this.held = true;
@@ -187,6 +188,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
         if (!held) {
             return;
         }
+        session.log(NaruLogMode.SCHEDULER, NMsg.ofC(">> UNHOLD"));
         this.held = false;
         holdGate.release(Integer.MAX_VALUE);
     }
@@ -254,8 +256,9 @@ public class NaruSchedulerImpl implements NaruScheduler {
         }
         drainInbox(task);
         NaruTaskStatus os = task.status();
+        NaruTaskSchedulerView taskv = (NaruTaskSchedulerView) task;
         try {
-            ((NaruTaskSchedulerView) task).status(NaruTaskStatus.RUNNING);
+            taskv.status(NaruTaskStatus.RUNNING);
             try {
                 task.tick();
             } catch (NCancelException exit) {
@@ -267,7 +270,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
         } finally {
             NaruTaskStatus ns = task.status();
             if (ns == NaruTaskStatus.RUNNING) {
-                ((NaruTaskSchedulerView) task).status(os);
+                taskv.status(os);
             }
         }
         requeue(task);
@@ -417,7 +420,11 @@ public class NaruSchedulerImpl implements NaruScheduler {
                     }
                     // restore hold gate permit if not held
                     if (!isHeld()) {
-                        holdGate.release();
+                        try {
+                            holdGate.release();
+                        } catch (Throwable ex) {
+                            session.log(NaruLogMode.SCHEDULER, NMsg.ofC("unexpected : %s", ex));
+                        }
                     }
 
                     // if last worker done and stopping
@@ -502,7 +509,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
         f.setLocalVar("event", event);
         task.addStatements(
                 session
-                        .routine(sub.routineName(), task,true).get()
+                        .routine(sub.routineName(), task, true).get()
                         .getIndexedLines().stream()
                         .map(x -> task.parseStatement(x.command()).orNull())
                         .filter(x -> x != null)

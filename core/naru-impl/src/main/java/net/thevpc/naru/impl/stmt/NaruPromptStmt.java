@@ -63,7 +63,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             response = task.chat(task.model(),
                     task.context(NaruSource.values())
             );
-            task.frame().setLastResult(NaruStmtResult.ofSuccess(response.getMessage()==null?"":response.getMessage().getContent()));
+            task.frame().lastResult(NaruStmtResult.ofSuccess(response.getMessage()==null?"":response.getMessage().getContent()));
         } catch (Exception e) {
             String err = "ERROR calling model: " + e.getMessage();
             task.log(NaruLogMode.PROGRESS, NMsg.ofC("%s", err).asError());

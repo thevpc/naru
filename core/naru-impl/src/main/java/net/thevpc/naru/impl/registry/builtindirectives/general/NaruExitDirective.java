@@ -14,7 +14,7 @@ public class NaruExitDirective extends AbstractDirective {
         register(new AbstractSubCommand("", NText.ofPlain("exit agent")) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                context.task().log(NaruLogMode.TRACE,NMsg.ofC("Exiting agent."));
+                context.task().log(NaruLogMode.TRACE,NMsg.ofC("Exiting Naru."));
                 throw new NCancelException();
             }
         });

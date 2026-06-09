@@ -22,7 +22,7 @@ import java.util.Map;
 public class NaruOnDirective extends AbstractDirective {
 
     public NaruOnDirective() {
-        super("on", "task", "define and event inbox hook");
+        super("on", "task", "define an event inbox hook");
         register(new AbstractSubCommand(new SubCommandHelp("<event> <routine> --from=<from-expression> <args>",
                 "define an event inbox hook and the routine that shall be called when the event is received."
                         + "\nevent args are accessible as a special 'event.<key>' vars"

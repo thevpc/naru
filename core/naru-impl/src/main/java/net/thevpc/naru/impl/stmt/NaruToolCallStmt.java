@@ -63,6 +63,6 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
                 NaruUtils.abbreviate(result, 300)));
         task.addHistory(NaruMessage.tool(call.getName(), call.getId(), result));
         task.defaultAdvance(this);
-        task.frame().setLastResult(NaruStmtResult.ofSuccess(result));
+        task.frame().lastResult(NaruStmtResult.ofSuccess(result));
     }
 }

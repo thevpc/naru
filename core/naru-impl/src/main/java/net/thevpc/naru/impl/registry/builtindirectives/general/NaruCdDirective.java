@@ -26,7 +26,7 @@ public class NaruCdDirective extends AbstractDirective {
                 task.setWorkingDir(NBlankable.isBlank(context.argument()) ? context.task().projectDir() : NPath.of(context.argument()));
                 context.task().addHistory(NaruMessage.user(NMsg.ofC("change working directory to %s", task.workingDir()).toString()));
                 context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("change directory to : %s", task.workingDir()));
-                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(task.workingDir().toString()));
+                context.task().frame().lastResult(NaruStmtResult.ofSuccess(task.workingDir().toString()));
             }
         });
     }

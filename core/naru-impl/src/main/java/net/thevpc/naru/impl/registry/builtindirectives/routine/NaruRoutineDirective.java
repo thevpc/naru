@@ -5,10 +5,12 @@ import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
+import net.thevpc.naru.impl.routine.RoutineHelper;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.util.NRef;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.text.DecimalFormat;
@@ -39,21 +41,21 @@ public class NaruRoutineDirective extends AbstractDirective {
             }
         });
         register(new AbstractSubCommand("show", NText.ofPlain("show current routine lines"),
-                new SubCommandHelp("[<n1>-<n2>]", "show current routine lines.\nwhen filter is provided, only selected files are shown.\nex:"+
+                new SubCommandHelp("[<n1>-<n2>]", "show current routine lines.\nwhen filter is provided, only selected files are shown.\nex:" +
                         "\n /routine show -2..-1" +
-                                "\n show last two lines" +
-                                "\n /routine show 1-2" +
-                                "\n show first two lines" +
-                                "\n /routine show 1-2,4,-1" +
-                                "\n show first two lines, 4th line and last line"
+                        "\n show last two lines" +
+                        "\n /routine show 1-2" +
+                        "\n show first two lines" +
+                        "\n /routine show 1-2,4,-1" +
+                        "\n show first two lines, 4th line and last line"
 
                 )
-                ) {
+        ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
 
-                NaruRoutine currentRoutine = task.currentRoutine().get();
+                NaruRoutine currentRoutine = task.editRoutine().get();
 
                 Set<Integer> toShow = new HashSet<>();
                 int historySize = task.context(NaruSource.USER).messages().size();
@@ -110,7 +112,7 @@ public class NaruRoutineDirective extends AbstractDirective {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                NaruRoutine cs = task.currentRoutine().get();
+                NaruRoutine cs = task.editRoutine().get();
                 int count = cs.clear();
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s lines", count));
             }
@@ -118,14 +120,14 @@ public class NaruRoutineDirective extends AbstractDirective {
 
         register(new AbstractSubCommand("delete", NText.ofPlain("delete current routine lines"),
                 new SubCommandHelp("<n1>-<n2>", "filter routine content lines to delete")
-                ) {
+        ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 if (cmdLine.isEmpty()) {
                     return;
                 }
                 NaruTask task = context.task();
-                NaruRoutine cs = task.currentRoutine().get();
+                NaruRoutine cs = task.editRoutine().get();
 
                 Set<Integer> toRemove = new HashSet<>();
                 int historySize = task.context(NaruSource.USER).messages().size();
@@ -170,29 +172,58 @@ public class NaruRoutineDirective extends AbstractDirective {
 
         register(new AbstractSubCommand("use", NText.ofPlain("select current routine by name"),
                 new SubCommandHelp("<name>", "routine name (or path) to load")
-                ) {
+        ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                String n = task.useRoutine(cmdLine.next().map(NArg::image).orNull()).name();
-                context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("Loaded routine context: %s", n));
+                String a = NStringUtils.trimToNull(cmdLine.next().map(NArg::image).orNull());
+                if ("self".equalsIgnoreCase(a)) {
+                    a = null;
+                }
+                String n = task.useRoutine(a).map(x -> x.name()).orNull();
+                if (n != null) {
+                    context.task().log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] Use routine : %s", task.id(), n));
+                }
             }
         });
-        register(new AbstractSubCommand("main", NText.ofPlain("select 'main' current routine")
-                ) {
+        register(new AbstractSubCommand("self", NText.ofPlain("select <self> routine")
+        ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                task.useRoutine("main");
-                context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("Unloaded routine context. Back to main."));
+                task.useRoutine(null);
+                context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("Unloaded routine context. Back to self routine."));
             }
         });
         register(new AbstractSubCommand("current", NText.ofPlain("shows current routine name")
-                ) {
+        ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current routine: %s", task.currentRoutineName()));
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current routine: %s", task.editRoutineName()));
+            }
+        });
+        register(new AbstractSubCommand("renum", NText.ofPlain("re-index routine lines"),
+                new SubCommandHelp("[<routine>] [--start=<n>] [--inc=<n>] ",
+                        "re-index routine <routine> (or current)"
+                                + "\n--inc    :  define inter lines index gap (defaults to 10)"
+                                + "\n--start  :  define first index (defaults to inc, aka 10)"
+                )
+        ) {
+            @Override
+            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NRef<Integer> start = NRef.of(0);
+                NRef<Integer> increment = NRef.of(0);
+                NRef<NaruRoutine> r = NRef.of(task.editRoutine().get());
+                cmdLine.matcher()
+                        .with("--start").matchEntry(a -> start.set(a.intValue()))
+                        .with("--inc").matchEntry(a -> increment.set(a.intValue()))
+                        .with("--routine").matchEntry(a -> r.set(context.task().session().routine(a.stringValue(), context.task(), true).get()))
+                        .withNonOption().matchAny(a -> r.set(context.task().session().routine(a.image(), context.task(), true).get()))
+                        .requireAll();
+                RoutineHelper.renum(start.get(), increment.get(), r.get());
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Renum routine: %s", r.get().name()));
             }
         });
     }

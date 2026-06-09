@@ -7,9 +7,11 @@ import net.thevpc.naru.api.routine.SubroutineDef;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.impl.util.NaruUtils;
+import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NStringUtils;
 
@@ -25,173 +27,69 @@ public class NaruRoutineMem implements NaruRoutine {
     private NAruVisibility visibility;
     private Instant creationInstant;
     private Instant modificationInstant;
-    private final TreeMap<Integer, String> lines = new TreeMap<>();
-    private static final Pattern NUMBEDRED_LINE_PATTERN = Pattern.compile("^(\\d+)(?:\\s+(.*))?$");
-    private static final Pattern METADATA = Pattern.compile("^([a-z]+)\\s*:(\\s*(.*))?$");
+    private TreeMap<Integer, String> lines = new TreeMap<>();
 
-    public NaruRoutineMem(String name,NAruVisibility visibility) {
+    public NaruRoutineMem(String uuid, String name, NAruVisibility visibility) {
+        this.uuid = uuid;
         this.name = name;
         this.visibility = visibility;
+        this.creationInstant = Instant.now();
+        this.modificationInstant = creationInstant;
     }
 
-    private boolean isNumberedLine(String line) {
-        return NUMBEDRED_LINE_PATTERN.matcher(line.trim()).matches();
+    public NaruRoutineMem(NElement element) {
+        load(element);
     }
 
-    private boolean isRuler(String line) {
-        char[] cc = line.trim().toCharArray();
-        if (cc.length < 3) {
-            return false;
-        }
-        for (char c : cc) {
-            if (c != '-') {
-                return false;
+    private void load(NElement element) {
+        if (element.isListContainer()) {
+            NListContainerElement c = element.asListContainer().get();
+            name = c.getStringValue("name").orNull();
+            uuid = c.getStringValue("uuid").orNull();
+            visibility = NAruVisibility.parse(c.getStringValue("visibility").orNull()).orElse(NAruVisibility.PRIVATE);
+            if (visibility == NAruVisibility.MIXED) {
+                visibility = NAruVisibility.PRIVATE;
             }
-        }
-        return true;
-    }
-
-    private synchronized void fill(NPath path, boolean numbered, boolean loadContent) {
-        if (!path.exists()) {
-            return;
-        }
-        String text = path.readString();
-        final int EXPECT_START_METADATA = 1;
-        final int EXPECT_END_METADATA = 2;
-        final int EXPECT_CMD = 3;
-        int status = EXPECT_START_METADATA;
-        int goodIndex = 10;
-        for (String line : text.split("\n")) {
-            line = line.trim();
-            switch (status) {
-                case EXPECT_START_METADATA: {
-                    if (line.isEmpty()) {
-
-                    } else if (isRuler(line)) {
-                        status = EXPECT_END_METADATA;
-                    } else {
-                        status = EXPECT_CMD;
-                        if (!loadContent) {
-                            if (creationInstant == null) {
-                                creationInstant = path.creationInstant();
-                            }
-                            if (modificationInstant == null) {
-                                modificationInstant = creationInstant;
-                            }
-                            if(uuid==null){
-                                uuid=UUID.randomUUID().toString();
-                            }
-                            return;
-                        }
-                        if (numbered) {
-                            Matcher m = NUMBEDRED_LINE_PATTERN.matcher(line);
-                            if (m.matches()) {
-                                int num = Integer.parseInt(m.group(1));
-                                String content = m.group(2) != null ? m.group(2) : "";
-                                lines.put(num, content);
-                            }else{
-                                lines.put(goodIndex, line);
-                                goodIndex += 10;
-                            }
-                        } else {
-                            lines.put(goodIndex, line);
-                            goodIndex += 10;
-                        }
-                    }
-                    break;
-                }
-                case EXPECT_END_METADATA: {
-                    if (line.isEmpty()) {
-
-                    } else if (isRuler(line)) {
-                        status = EXPECT_CMD;
-                    } else {
-                        Matcher m0 = METADATA.matcher(line);
-                        if (m0.matches()) {
-                            String n = m0.group(1);
-                            String content = m0.group(2);
-                            switch (n) {
-//                                case "name": {
-//                                    if (NBlankable.isBlank(content)) {
-//                                        this.name = content.trim();
-//                                    }
-//                                    break;
-//                                }
-                                case "uuid": {
-                                    if (!NBlankable.isBlank(content)) {
-                                        this.uuid = content.trim();
-                                    }
-                                    break;
-                                }
-                                case "creationInstant": {
-                                    if (!NBlankable.isBlank(content)) {
-                                        try {
-                                            this.creationInstant = Instant.parse(content.trim());
-                                        } catch (Exception ex) {
-                                            this.creationInstant = path.creationInstant();
-                                        }
-                                    }
-                                    break;
-                                }
-                                case "modificationInstant": {
-                                    if (!NBlankable.isBlank(content)) {
-                                        try {
-                                            this.creationInstant = Instant.parse(content.trim());
-                                        } catch (Exception ex) {
-                                            this.modificationInstant = path.lastModifiedInstant();
-                                        }
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                        break;
-                    }
-                    break;
-                }
-                default: {
-                    if (!loadContent) {
-                        if (creationInstant == null) {
-                            creationInstant = path.creationInstant();
-                        }
-                        if (modificationInstant == null) {
-                            modificationInstant = creationInstant;
-                        }
-                        if(uuid==null){
-                            uuid=UUID.randomUUID().toString();
-                        }
-                        return;
-                    }
-                    if (line.isEmpty()) {
-                        if (!numbered) {
-                            goodIndex += 10;
-                        }
-                    } else {
-                        if (numbered) {
-                            Matcher m = NUMBEDRED_LINE_PATTERN.matcher(line);
-                            if (m.matches()) {
-                                int num = Integer.parseInt(m.group(1));
-                                String content = m.group(2) != null ? m.group(2) : "";
-                                lines.put(num, content);
-                            }
-                        } else {
-                            lines.put(goodIndex, line);
-                            goodIndex += 10;
+            creationInstant = c.getInstantValue("creationInstant").orNull();
+            modificationInstant = c.getInstantValue("modificationInstant").orNull();
+            if (creationInstant == null) {
+                creationInstant = Instant.now();
+            }
+            if (modificationInstant == null) {
+                modificationInstant = Instant.now();
+            }
+            NObjectElement lines1 = c.getObject("lines").orNull();
+            this.lines.clear();
+            if (lines1 != null) {
+                for (NElement p : lines1) {
+                    if (p.isPair()) {
+                        NPairElement pp = p.asPair().get();
+                        Integer n = pp.key().asIntValue().orNull();
+                        String s = pp.key().asStringValue().orNull();
+                        if (n != null && s != null) {
+                            lines.put(n, s);
                         }
                     }
                 }
             }
-        }
-        if (creationInstant == null) {
-            creationInstant = path.creationInstant();
-        }
-        if (modificationInstant == null) {
-            modificationInstant = creationInstant;
-        }
-        if(uuid==null){
-            uuid=UUID.randomUUID().toString();
+        } else {
+            throw new NIllegalArgumentException(NMsg.ofC("invalid routine", element));
         }
     }
+
+    @Override
+    public NElement toElement() {
+        NObjectElementBuilder b = NElement.ofObjectBuilder();
+        b.add("uuid", name);
+        b.add("name", name);
+        b.add("visibility", visibility == null ? "private" : visibility.name().toLowerCase());
+        b.add("creationInstant", NElement.ofInstant(creationInstant == null ? Instant.now() : creationInstant));
+        b.add("modificationInstant", NElement.ofInstant(modificationInstant == null ? Instant.now() : modificationInstant));
+        b.add("lines", NElements.of().toElement(lines));
+        return b.build();
+    }
+
+
 
     public NAruVisibility visibility() {
         return visibility;
@@ -235,6 +133,23 @@ public class NaruRoutineMem implements NaruRoutine {
     @Override
     public void putLine(int lineNumber, String text) {
         lines.put(lineNumber, text);
+    }
+
+    @Override
+    public void appendLine(String text) {
+        appendLine(10, text);
+    }
+
+    @Override
+    public void appendLine(int increment, String text) {
+        if (increment <= 0) {
+            increment = 10;
+        }
+        Integer lineNumber = lines.lastKey();
+        if (lineNumber == null) {
+            lineNumber = 0;
+        }
+        putLine(lineNumber + increment, text);
     }
 
     @Override
@@ -338,65 +253,65 @@ public class NaruRoutineMem implements NaruRoutine {
         return NOptional.of(curr);
     }
 
-    @Override
-    public Map<String, SubroutineDef> getSubroutines() {
-        Map<String, SubroutineDef> subs = new HashMap<>();
-        NavigableMap<Integer, String> lines = getLinesSet();
-
-        Integer subStart = null;
-        String subName = null;
-        List<String> subParams = null;
-
-        for (Map.Entry<Integer, String> entry : lines.entrySet()) {
-            String raw = entry.getValue().trim();
-            int lineNum = entry.getKey();
-
-            if (raw.startsWith("/sub ")) {
-                // Parse: /sub name param1 param2
-                String[] parts = raw.substring(5).trim().split("\\s+");
-                subName = parts[0];
-                subParams = Arrays.asList(Arrays.copyOfRange(parts, 1, parts.length));
-                subStart = lineNum;
-            } else if (raw.equals("/endsub") && subStart != null) {
-                subs.put(subName, new SubroutineDefImpl(subStart, lineNum, subParams));
-                subStart = null;
-                subName = null;
-                subParams = null;
-            }
-        }
-        return subs;
-    }
-
-    public NaruRoutine load(NPath path) {
-        lines.clear();
-        fill(path, true, true);
-        return this;
-    }
-
-    public NaruRoutine write(NPath path) {
-        _write(path.mkParentDirs());
-//        if (NBlankable.isBlank(uuid())) {
-//            setUuid(UUID.randomUUID().toString());
-//        }
-//        if (preferredPath != null) {
-//            _write(preferredPath.mkParentDirs());
-//        } else {
-//            String pathName = NStringUtils.firstNonBlankTrimmed(name(),"noname") + ".naru";
-//            NPath pub = publicDir.resolve(pathName);
-//            NPath priv = privateDir.resolve(pathName);
-//            if (visibility() == NAruVisibility.PUBLIC) {
-//                if (priv.isRegularFile()) {
-//                    priv.delete();
-//                }
-//            } else {
-//                if (pub.isRegularFile()) {
-//                    pub.delete();
-//                }
-//                _write(priv.mkParentDirs());
+//    @Override
+//    public Map<String, SubroutineDef> getSubroutines() {
+//        Map<String, SubroutineDef> subs = new HashMap<>();
+//        NavigableMap<Integer, String> lines = getLinesSet();
+//
+//        Integer subStart = null;
+//        String subName = null;
+//        List<String> subParams = null;
+//
+//        for (Map.Entry<Integer, String> entry : lines.entrySet()) {
+//            String raw = entry.getValue().trim();
+//            int lineNum = entry.getKey();
+//
+//            if (raw.startsWith("/sub ")) {
+//                // Parse: /sub name param1 param2
+//                String[] parts = raw.substring(5).trim().split("\\s+");
+//                subName = parts[0];
+//                subParams = Arrays.asList(Arrays.copyOfRange(parts, 1, parts.length));
+//                subStart = lineNum;
+//            } else if (raw.equals("/endsub") && subStart != null) {
+//                subs.put(subName, new SubroutineDefImpl(subStart, lineNum, subParams));
+//                subStart = null;
+//                subName = null;
+//                subParams = null;
 //            }
 //        }
-        return this;
-    }
+//        return subs;
+//    }
+
+//    public NaruRoutine load(NPath path) {
+//        lines.clear();
+//        fill(path, true, true);
+//        return this;
+//    }
+
+//    public NaruRoutine write(NPath path) {
+//        _write(path.mkParentDirs());
+////        if (NBlankable.isBlank(uuid())) {
+////            setUuid(UUID.randomUUID().toString());
+////        }
+////        if (preferredPath != null) {
+////            _write(preferredPath.mkParentDirs());
+////        } else {
+////            String pathName = NStringUtils.firstNonBlankTrimmed(name(),"noname") + ".naru";
+////            NPath pub = publicDir.resolve(pathName);
+////            NPath priv = privateDir.resolve(pathName);
+////            if (visibility() == NAruVisibility.PUBLIC) {
+////                if (priv.isRegularFile()) {
+////                    priv.delete();
+////                }
+////            } else {
+////                if (pub.isRegularFile()) {
+////                    pub.delete();
+////                }
+////                _write(priv.mkParentDirs());
+////            }
+////        }
+//        return this;
+//    }
 
 //    private String effectiveName() {
 //        if (preferredPath != null) {
@@ -409,16 +324,37 @@ public class NaruRoutineMem implements NaruRoutine {
 //        return name();
 //    }
 
-    private void _write(NPath pub) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("------- ").append("\n");
-        sb.append("uuid : ").append(NStringUtils.firstNonBlankTrimmed(uuid(), "NO_UUID")).append("\n");
-        sb.append("creationInstant : ").append(creationInstant == null ? Instant.now() : creationInstant).append("\n");
-        sb.append("modificationInstant : ").append(modificationInstant == null ? Instant.now() : modificationInstant).append("\n");
-        sb.append("------- ").append("\n");
-        for (Map.Entry<Integer, String> e : getLinesSet().entrySet()) {
-            sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
-        }
-        pub.mkParentDirs().writeString(sb.toString());
+//    private void _write(NPath pub) {
+//        StringBuilder sb = new StringBuilder();
+//        sb.append("------- ").append("\n");
+//        sb.append("uuid : ").append(NStringUtils.firstNonBlankTrimmed(uuid(), "NO_UUID")).append("\n");
+//        sb.append("creationInstant : ").append(creationInstant == null ? Instant.now() : creationInstant).append("\n");
+//        sb.append("modificationInstant : ").append(modificationInstant == null ? Instant.now() : modificationInstant).append("\n");
+//        sb.append("------- ").append("\n");
+//        for (Map.Entry<Integer, String> e : getLinesSet().entrySet()) {
+//            sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
+//        }
+//        pub.mkParentDirs().writeString(sb.toString());
+//    }
+
+
+    public NaruRoutineMem setVisibility(NAruVisibility visibility) {
+        this.visibility = visibility;
+        return this;
+    }
+
+    public NaruRoutineMem setCreationInstant(Instant creationInstant) {
+        this.creationInstant = creationInstant;
+        return this;
+    }
+
+    public NaruRoutineMem setModificationInstant(Instant modificationInstant) {
+        this.modificationInstant = modificationInstant;
+        return this;
+    }
+
+    public NaruRoutineMem setLines(Map<Integer, String> lines) {
+        this.lines.putAll(lines);
+        return this;
     }
 }

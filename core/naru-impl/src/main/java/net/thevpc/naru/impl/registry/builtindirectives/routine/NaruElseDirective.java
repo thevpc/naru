@@ -10,7 +10,7 @@ import net.thevpc.nuts.cmdline.NCmdLine;
 
 public class NaruElseDirective extends AbstractDirective implements NaruStructuralDirective {
     public NaruElseDirective() {
-        super("else","routine", "else statement to close /if, /while and /for statements.\n it takes to arguments/options");
+        super("else","routine", "else statement");
         register(new AbstractSubCommand() {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {

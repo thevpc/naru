@@ -24,9 +24,16 @@ public class NaruHelpDirective extends AbstractDirective {
     public void execute(NaruDirectiveCallContext context) {
         NaruTask task = context.task();
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("You can interact with %s by issuing a command that can be on one the three forms :", NMsg.ofStyledPrimary1("Naru")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("- Directives (start by %s like '%s%s')", NMsg.ofStyledString("'/'"), NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary8("help")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("- Routine lines (start by numbers like '%s %s')", NMsg.ofStyledNumber("10"), NMsg.ofStyledNumber("could you check the file readme.md")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("- Prompt (any other string, like in %s)", NMsg.ofStyledItalic("'could you check the file readme.md'")));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("- Directives (start by %s)", NMsg.ofStyledString("'/'"), NMsg.ofStyledSeparator("/")));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("    ex:"));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("       %s%s %s", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("print"), NMsg.ofStyledString("'could you check the file readme.md'")));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("- Routine lines (start by %s or '%s') to patch or append to routine", NMsg.ofStyledNumber("<number>"), NMsg.ofStyledNumber("+")));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("    ex:"));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("       %s %s", NMsg.ofStyledNumber("10"), NMsg.ofStyledNumber("could you check the file readme.md")));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("       %s %s %s", NMsg.ofStyledNumber("+"), NMsg.ofStyledPrimary1("print"), NMsg.ofStyledNumber("'hello'")));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("- Prompt (any other string) to send to AI model"));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("    ex:"));
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("       %s", NMsg.ofStyledItalic("could you check the file readme.md")));
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Available directives are : "));
         List<NaruDirective> values = new ArrayList<>(context.task().session().registry().directives().values());
         Map<String, List<NaruDirective>> collected = values.stream().collect(Collectors.groupingBy(x -> x.group()));

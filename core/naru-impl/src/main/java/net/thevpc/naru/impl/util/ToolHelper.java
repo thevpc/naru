@@ -79,17 +79,17 @@ public class ToolHelper {
 
     public static String listLines(NaruTask task, String scriptName, Number startNumObj, Number endNumObj) {
         if (NBlankable.isBlank(scriptName)) {
-            scriptName = task.currentRoutineName();
+            scriptName = task.editRoutineName();
         }
 
         // Temporarily switch context, put line, switch back
-        String oldName = task.currentRoutineName();
-        task.useRoutine(scriptName);
-        TreeMap<Integer, String> lines = task.currentRoutine().get().getLinesSet(x -> {
+        String oldName = task.editRoutineName();
+        task.useRoutine(scriptName).get();
+        TreeMap<Integer, String> lines = task.editRoutine().get().getLinesSet(x -> {
             if (startNumObj != null && x < startNumObj.intValue()) return false;
             return endNumObj == null || x <= endNumObj.intValue();
         });
-        task.useRoutine(oldName);
+        task.useRoutine(oldName).get();
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<Integer, String> e : lines.entrySet()) {
             sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
@@ -100,7 +100,7 @@ public class ToolHelper {
 
     public static String routineAddLine(NaruTask task, String scriptName, Number lineNumObj, String command) {
         if (NBlankable.isBlank(scriptName)) {
-            scriptName = task.currentRoutineName();
+            scriptName = task.editRoutineName();
         }
 
         if (lineNumObj == null) {
@@ -112,10 +112,10 @@ public class ToolHelper {
             return "Error: command is required";
         }
 
-        String oldName = task.currentRoutineName();
-        task.useRoutine(scriptName);
+        String oldName = task.editRoutineName();
+        task.useRoutine(scriptName).get();
         task.setRoutineLine(lineNum, command);
-        task.useRoutine(oldName);
+        task.useRoutine(oldName).orNull();
 
         return "Successfully wrote line " + lineNum + " to script '" + scriptName + "'";
     }

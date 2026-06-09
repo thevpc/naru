@@ -11,8 +11,8 @@ import net.thevpc.nuts.time.NDuration;
 public class NaruSleepDirective extends AbstractDirective {
 
     public NaruSleepDirective() {
-        super("sleep", "task", "define and event inbox hook");
-        register(new AbstractSubCommand(new SubCommandHelp("<event> <routine> <args>", "define an event inbox hook and the routine that shall be called when the event is received.\nevent args are accessible as a special 'event.<key>' vars")) {
+        super("sleep", "task", "sleep current task");
+        register(new AbstractSubCommand(new SubCommandHelp("<duration>", "sleep current task for the given duration")) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();

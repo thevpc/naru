@@ -539,22 +539,32 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NOptional<NaruRoutine> currentRoutine() {
+    public NOptional<NaruRoutine> editRoutine() {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public String currentRoutineName() {
+    public String editRoutineName() {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public NaruRoutine useRoutine(String name) {
+    public NOptional<NaruRoutine> useRoutine(String name) {
         throw new NUnsupportedOperationException();
     }
 
     @Override
     public void setRoutineLine(int index, String name) {
+        throw new NUnsupportedOperationException();
+    }
 
+    @Override
+    public Map<String, Object> getTaskEnv() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public void appendRoutineLine(int increment, String name) {
+        throw new NUnsupportedOperationException();
     }
 }

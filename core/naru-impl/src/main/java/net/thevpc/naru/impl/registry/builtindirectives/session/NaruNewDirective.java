@@ -16,8 +16,10 @@ import java.util.List;
 
 public class NaruNewDirective extends AbstractDirective {
     public NaruNewDirective() {
-        super("new","session", "start a new session.\ncurrent session will terminate but not saved.");
-        register(new AbstractSubCommand() {
+        super("new","session", "start a new session.");
+        register(new AbstractSubCommand(new SubCommandHelp(
+                "","start a new session\ncurrent session will terminate but not saved."
+        )) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 executeNew(context, cmdLine);

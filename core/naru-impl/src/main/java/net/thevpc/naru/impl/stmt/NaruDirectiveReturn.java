@@ -38,6 +38,6 @@ public class NaruDirectiveReturn extends NaruStatement implements Cloneable {
         }
         NaruTask f = task.popFrame();
         f.setReturnResult(ret);
-        f.frame().setLastResult(NaruStmtResult.ofSuccess(ret));
+        f.frame().lastResult(NaruStmtResult.ofSuccess(ret));
     }
 }

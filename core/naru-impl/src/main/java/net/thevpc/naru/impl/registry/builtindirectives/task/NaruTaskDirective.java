@@ -8,10 +8,7 @@ import net.thevpc.naru.api.task.NaruTaskStackFrame;
 import net.thevpc.naru.api.task.NaruTaskStackItem;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
 import net.thevpc.naru.impl.util.NaruUtils;
-import net.thevpc.nuts.cmdline.NArg;
-import net.thevpc.nuts.cmdline.NArgCandidate;
 import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.cmdline.NCmdLineAutoCompleteResolver;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NLiteral;
@@ -41,7 +38,7 @@ public class NaruTaskDirective extends AbstractDirective {
                         task.schedulerMode(),
                         task.name()
                 ));
-                task.frame().setLastResult(NaruStmtResult.ofSuccess(task.id()));
+                task.frame().lastResult(NaruStmtResult.ofSuccess(task.id()));
             }
         });
         register(new AbstractSubCommand("list", NText.ofPlain("list current tasks")) {
@@ -65,7 +62,7 @@ public class NaruTaskDirective extends AbstractDirective {
                     ));
                     index++;
                 }
-                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(
+                context.task().frame().lastResult(NaruStmtResult.ofSuccess(
                         session.tasks().stream().mapToLong(x -> x.id()).toArray()
                 ));
             }
@@ -93,7 +90,7 @@ public class NaruTaskDirective extends AbstractDirective {
                         }
                     }
                 }
-                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(
+                context.task().frame().lastResult(NaruStmtResult.ofSuccess(
                         collected.stream().mapToLong(x -> x).toArray()
                 ));
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("killed %s " + (collected.size() == 1 ? "task" : "tasks"), collected.size()));
@@ -128,7 +125,7 @@ public class NaruTaskDirective extends AbstractDirective {
                     }
                 }
 
-                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(collected.stream().mapToLong(x -> x).toArray()));
+                context.task().frame().lastResult(NaruStmtResult.ofSuccess(collected.stream().mapToLong(x -> x).toArray()));
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("killed %s " + (collected.size() == 1 ? "task" : "tasks"), collected.size()));
             }
         });
@@ -160,7 +157,7 @@ public class NaruTaskDirective extends AbstractDirective {
                     }
                 }
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("unhold %s " + (collected.size() == 1 ? "task" : "tasks"), collected.size()));
-                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(collected.stream().mapToLong(x -> x).toArray()));
+                context.task().frame().lastResult(NaruStmtResult.ofSuccess(collected.stream().mapToLong(x -> x).toArray()));
             }
         });
 
@@ -202,7 +199,7 @@ public class NaruTaskDirective extends AbstractDirective {
                         }
                     }
                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("stacks of %s " + (count == 1 ? "task" : "tasks"), count));
-                    context.task().frame().setLastResult(NaruStmtResult.ofSuccess(collected.stream().toArray(String[]::new)));
+                    context.task().frame().lastResult(NaruStmtResult.ofSuccess(collected.stream().toArray(String[]::new)));
                 }
             }
         });
@@ -264,7 +261,7 @@ public class NaruTaskDirective extends AbstractDirective {
                         }
                     }
                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("frames of %s " + (count == 1 ? "task" : "tasks"), count));
-                    context.task().frame().setLastResult(NaruStmtResult.ofSuccess(collected.stream().toArray(String[]::new)));
+                    context.task().frame().lastResult(NaruStmtResult.ofSuccess(collected.stream().toArray(String[]::new)));
                 }
             }
         });

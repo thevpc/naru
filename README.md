@@ -1,16 +1,20 @@
 # NARU — Nuts AI Reasoning Unit
 
-> Durable AI agents for the JVM — multi-task, actor-based, 
-> self-modifying, built entirely on Nuts.
+> **LangChain4j** gives you tools.
+> **LangGraph** gives you a graph.
+> **NARU** gives your agent a durable routine it rewrites itself.
 
-NARU is a **Java-native**, durable multi-model AI agent and 
-orchestration runtime. Unlike most agentic frameworks which are Python-first,
-NARU runs entirely on the JVM — no bridge, no subprocess, no
-glue code. The REPL **is** the script, and a routine is just a named, persistable snapshot of that live script buffer
-Supports single-task execution, interactive REPL, multi-task parallel agents, and self-modifying workflows via named routines.
+NARU is a **Java-native** durable multi-model AI agent runtime built on an
+actor model — tasks are isolated, communicate via events, and run in parallel
+without shared state. No Python, no bridge, no subprocess, no glue code.
 
-Currently supports local models via **Ollama**. Cloud LLM support
-(Claude, OpenAI, Gemini) is on the roadmap.
+The REPL is the script. A routine is live, named, and rewritable
+at runtime — by you, or by the agent itself.
+
+Supports single-task execution, interactive REPL, multi-task parallel agents,
+and self-modifying workflows. Currently runs local models via **Ollama**;
+cloud LLM support (Claude, OpenAI, Gemini) is on the roadmap.
+
 
 ![Naru in action](documentation/term-cast/demo-install/naru-install-demo.webp)
 
@@ -728,3 +732,26 @@ file: `.naru/init.naru`
 - [ ] Document ingestion (Tika)
 - [ ] MCP CLI (zero-lib, testable)
 - [ ] Output parsers (JSON → POJO)
+
+
+---
+
+## Citation
+
+If you are referencing this architecture in academic papers, technical reports, or system designs, please cite it as follows:
+
+```text
+BEN SALAH, Taha (2026). NARU : A Durable Actor-Based AI Agent Runtime for the JVM. Available at: [https://github.com/thevpc/naru](https://github.com/thevpc/naru)
+```
+
+
+```text
+@software{bensalah2026naru,
+author       = {Ben Salah, Taha},
+title        = {NARU : A Durable Actor-Based AI Agent Runtime for the JVM},
+year         = {2026},
+publisher    = {GitHub},
+journal      = {GitHub Repository},
+howpublished = {\url{[https://github.com/thevpc/naru](https://github.com/thevpc/naru)}}
+}
+```

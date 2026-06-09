@@ -3,6 +3,7 @@ package net.thevpc.naru.api.routine;
 import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
+import net.thevpc.nuts.elem.NToElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
 
@@ -12,7 +13,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.IntPredicate;
 
-public interface NaruRoutine {
+public interface NaruRoutine extends NToElement {
     Instant creationInstant();
 
     Instant modificationInstant();
@@ -24,6 +25,10 @@ public interface NaruRoutine {
     String name();
 
     void putLine(int lineNumber, String text);
+
+    void appendLine(int increment, String text);
+
+    void appendLine(String text);
 
     boolean removeLine(int lineNumber);
 
@@ -43,11 +48,11 @@ public interface NaruRoutine {
 
     boolean isEmpty();
 
-    NaruRoutine load(NPath path);
-
-    NaruRoutine write(NPath path);
-
-    Map<String, SubroutineDef> getSubroutines();
+//    NaruRoutine load(NPath path);
+//
+//    NaruRoutine write(NPath path);
+//
+//    Map<String, SubroutineDef> getSubroutines();
 
     String lineCommandAt(int n);
 

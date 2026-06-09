@@ -42,8 +42,10 @@ public class NaruStatementHelper {
                 return new NaruWhileStmt(element);
             case "FOR":
                 return new NaruForStmt(element);
-            case "DEF_ROUTINE_LINE":
-                return new NaruDefRoutineLineStmt(element);
+            case "SET_ROUTINE_LINE":
+                return new NaruSetRoutineLineStmt(element);
+            case "APPEND_ROUTINE_LINE":
+                return new NaruAppendRoutineLineStmt(element);
             case "CALL":
                 return new NaruDirectiveCallStmt(element);
             case "RETURN":

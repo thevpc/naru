@@ -1,7 +1,6 @@
 package net.thevpc.naru.impl.registry.builtindirectives.ai;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
-import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.mode.NaruPromptMode;
@@ -26,19 +25,29 @@ public class NaruModeDirective extends AbstractDirective {
     public NaruModeDirective() {
         super("mode", "ai", "manage AI modes", "modes");
         noCommand("list");
-        register(new AbstractSubCommand("list", NText.ofPlain("list loaded skills")) {
+        register(new AbstractSubCommand("list", NText.ofPlain("list loaded modes"),
+                new SubCommandHelp("","list available modes."
+                        +"\ndefault modes include :"
+                        +"\n  ask"
+                        +"\n  planning"
+                        +"\n  implement"
+                        +"\n  audi"
+                        +"\n  debug"
+                        +"\n  debug"
+                )
+                ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 executeList(context, cmdLine);
             }
         });
-        register(new AbstractSubCommand("show", NText.ofPlain("show loaded skills")) {
+        register(new AbstractSubCommand("current", NText.ofPlain("show active mode")) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeShow(context, cmdLine);
+                executeCurrent(context, cmdLine);
             }
         });
-        register(new AbstractSubCommand("set", NText.ofPlain("show loaded skills")) {
+        register(new AbstractSubCommand("set", NText.ofPlain("set active mode")) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 executeSet(context, cmdLine);
@@ -62,7 +71,9 @@ public class NaruModeDirective extends AbstractDirective {
                 return candidates;
             }
         });
-        register(new AbstractSubCommand("", NText.ofPlain("special")) {
+        register(new AbstractSubCommand("", NText.ofPlain("change active mode by name"),
+                new SubCommandHelp("<name>","change active mode by name.")
+                ) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
@@ -108,7 +119,7 @@ public class NaruModeDirective extends AbstractDirective {
         }
     }
 
-    public void executeShow(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public void executeCurrent(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask session = context.task();
         context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("current mode : %s", session.promptMode()).asError());
     }

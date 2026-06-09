@@ -19,9 +19,8 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     private NaruStmtResult lastResult = null;          // to resume after /return
     private final Map<String, Object> params = new HashMap<>(); // local param frame
     private final Map<String, Object> localVars = new HashMap<>(); // Local mutable state
-    private final Map<String, Object> internalState = new HashMap<>(); // used by while etc...
-    private String routine;
     private String runningRoutine;
+    private String editRoutine;
     private boolean inheritVars;
 
     public NaruTaskFrameImpl() {
@@ -35,11 +34,8 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
         for (NPairElement p : o.getObject("params").orElse(NObjectElement.ofEmpty()).namedPairs()) {
             this.params.put(p.key().asStringValue().orNull(), NElements.of().toSimple(p.value())); // NEW
         }
-        for (NPairElement p : o.getObject("state").orElse(NObjectElement.ofEmpty()).namedPairs()) {
+        for (NPairElement p : o.getObject("localVars").orElse(NObjectElement.ofEmpty()).namedPairs()) {
             this.localVars.put(p.key().asStringValue().orNull(), NElements.of().toSimple(p.value())); // NEW
-        }
-        for (NPairElement p : o.getObject("internalState").orElse(NObjectElement.ofEmpty()).namedPairs()) {
-            this.internalState.put(p.key().asStringValue().orNull(), NElements.of().toSimple(p.value())); // NEW
         }
         for (NElement item : o.getArray("todo").get().children()) {
             this.todo.add(NaruStatementHelper.of(item));
@@ -57,7 +53,7 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     }
 
     @Override
-    public String getRunningRoutine() {
+    public String runningRoutine() {
         return runningRoutine;
     }
 
@@ -67,12 +63,12 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     }
 
 
-    public String routine() {
-        return routine;
+    public String editRoutine() {
+        return editRoutine;
     }
 
-    public NaruTaskFrameImpl setRoutine(String routine) {
-        this.routine = routine;
+    public NaruTaskFrameImpl editRoutine(String routine) {
+        this.editRoutine = routine;
         return this;
     }
 
@@ -124,34 +120,24 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     }
 
     @Override
-    public NaruTaskFrame setLastResult(NaruStmtResult lastResult) {
+    public NaruTaskFrame lastResult(NaruStmtResult lastResult) {
         this.lastResult = NaruStmtResult.nonNull(lastResult);
         return this;
     }
 
     @Override
-    public void setInternalState(String key, Object value) {
-        internalState.put(key, value);
+    public Map<String, Object> getAllVars() {
+        HashMap<String, Object> e = new HashMap<>();
+        e.putAll(params);
+        e.putAll(localVars);
+        return e;
     }
 
-    @Override
-    public NaruTaskFrame unsetInternalState(String key) {
-        internalState.remove(key);
-        return this;
-    }
 
     @Override
-    public NaruTaskFrame unsetState(String key) {
+    public NaruTaskFrame unsetLocalVar(String key) {
         localVars.remove(key);
         return this;
-    }
-
-    @Override
-    public NOptional<Object> getInternalState(String name) {
-        if (internalState.containsKey(name)) {
-            return NOptional.ofNullable(internalState.get(name));
-        }
-        return NOptional.ofNamedEmpty(name);
     }
 
     @Override
@@ -178,20 +164,16 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
         for (Map.Entry<String, Object> e : localVars.entrySet()) {
             ps.set(e.getKey(), ee.toElement(e.getValue()));
         }
-        NObjectElementBuilder ips = NObjectElementBuilder.of();
-        for (Map.Entry<String, Object> e : internalState.entrySet()) {
-            ips.set(e.getKey(), ee.toElement(e.getValue()));
-        }
         return NElement.ofObjectBuilder()
                 .set("pc", pc)
                 .set("returnPc", returnPc)
                 .set("lastResult", ee.toElement(lastResult))
                 .set("inheritVars", inheritVars)
                 .set("params", pb.build())
-                .set("state", ps.build())
-                .set("internalState", ips.build())
+                .set("localVars", ps.build())
                 .set("todo", NElement.ofArray(
                         todo.stream().map(x -> x.toElement()).toArray(NElement[]::new)
-                )).build();
+                ))
+                .build();
     }
 }

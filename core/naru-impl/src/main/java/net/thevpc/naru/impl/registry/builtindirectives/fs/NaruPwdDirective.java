@@ -18,7 +18,7 @@ public class NaruPwdDirective extends AbstractDirective {
                 NaruTask task = context.task();
                 context.task().addHistory(NaruMessage.user(NMsg.ofC("current working directory is %s", task.workingDir()).toString()));
                 context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", task.workingDir()));
-                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(task.workingDir().toString()));
+                context.task().frame().lastResult(NaruStmtResult.ofSuccess(task.workingDir().toString()));
             }
         });
     }

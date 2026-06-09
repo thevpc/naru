@@ -232,11 +232,14 @@ public interface NaruTask extends NToElement {
 
     NaruTask addAwaitReceived(NaruEvent event);
 
-    NOptional<NaruRoutine> currentRoutine();
+    NOptional<NaruRoutine> editRoutine();
 
-    String currentRoutineName();
+    String editRoutineName();
 
-    NaruRoutine useRoutine(String name);
+    NOptional<NaruRoutine> useRoutine(String name);
 
     void setRoutineLine(int index, String name);
+
+    void appendRoutineLine(int increment,String name);
+    Map<String, Object> getTaskEnv();
 }

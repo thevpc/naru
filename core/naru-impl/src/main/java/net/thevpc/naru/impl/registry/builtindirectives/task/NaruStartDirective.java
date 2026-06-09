@@ -42,7 +42,7 @@ public class NaruStartDirective extends AbstractDirective {
                         )
                         .bg()
                         .unhold();
-                context.task().frame().setLastResult(NaruStmtResult.ofSuccess(tt.id()));
+                context.task().frame().lastResult(NaruStmtResult.ofSuccess(tt.id()));
             }
         });
     }

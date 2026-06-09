@@ -7,18 +7,14 @@ import java.util.Map;
 
 public interface NaruTaskFrame extends NToElement {
     boolean isInheritVars();
+
     void setLocalVar(String key, Object value);
 
     Object getLastResult();
+
     NOptional<Object> getLocalVar(String key);
 
-    void setInternalState(String key, Object value);
-
-    NaruTaskFrame unsetInternalState(String key);
-
-    NaruTaskFrame unsetState(String key);
-
-    NOptional<Object> getInternalState(String key);
+    NaruTaskFrame unsetLocalVar(String key);
 
     void setParam(String name, Object value);
 
@@ -34,9 +30,13 @@ public interface NaruTaskFrame extends NToElement {
 
     int pc();
 
-    String routine();
+    NaruTaskFrame lastResult(NaruStmtResult ret);
 
-    String getRunningRoutine();
+    Map<String, Object> getAllVars();
 
-    NaruTaskFrame setLastResult(NaruStmtResult ret);
+    String runningRoutine();
+
+    NaruTaskFrame editRoutine(String name);
+
+    String editRoutine();
 }
