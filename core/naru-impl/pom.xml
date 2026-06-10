@@ -13,7 +13,6 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <github.global.server>github</github.global.server>
-        <nuts.application>true</nuts.application>
         <nuts.gui>false</nuts.gui>
         <nuts.genericName>NARU - Nuts AI Reasoning Unit</nuts.genericName>
         <nuts.categories>/AI/Development</nuts.categories>
