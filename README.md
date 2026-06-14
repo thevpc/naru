@@ -25,6 +25,7 @@ The agent can rewrite its own script while it runs.
 ---
 
 ## Install
+NARU is distributed as a **package inside Nuts** — a fast, lightweight JVM package manager (similar to how `npm` or `cargo` work, but for Java/JVM tools).
 
 ![NARU install](documentation/term-cast/demo-install/naru-install-demo.webp)
 
