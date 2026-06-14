@@ -3,6 +3,7 @@
 > A durable, actor-based AI agent runtime for the JVM.  
 > No Python. No bridge. No subprocess.
 
+[![Install](https://img.shields.io/badge/install-nuts-blue)](https://thevpc.net/nuts)
 [![License](https://img.shields.io/badge/license-LGPLv3-blue)](https://www.gnu.org/licenses/lgpl-3.0.html)
 
 Most agent frameworks are stateless processes wrapped around an LLM.
