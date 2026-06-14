@@ -86,7 +86,7 @@ Save it. Run it. Let the agent rewrite it at runtime if it needs to.
 /call bug-fix
 ```
 
-Spawn parallel tasks that communicate via typed events:
+Spawn parallel tasks, react to incremental updates, and block only when you need to:
 
 ```bash
 /start review-security
