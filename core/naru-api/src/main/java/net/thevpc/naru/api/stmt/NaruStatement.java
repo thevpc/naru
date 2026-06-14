@@ -22,14 +22,17 @@ public abstract class NaruStatement implements NToElement, NCopiable, Cloneable 
         END,
         WHILE,
         FOR,
-        CALL,
+        DIRECTIVE,
         SET_ROUTINE_LINE,
         APPEND_ROUTINE_LINE,
-        DIRECTIVE_RETURN,
         SOURCE,
         START,
         SET,
         NOP,
+        LABEL,
+        GOTO,
+        CALL,
+        RETURN,
     }
 
     public NaruStatement() {

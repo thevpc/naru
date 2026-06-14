@@ -139,7 +139,7 @@ public interface NaruTask extends NToElement {
 
     NaruTask popFrame();
 
-    NaruTaskFrame pushFrame(int pc, Integer returnTo, String routine, boolean inheritVars);
+    NaruTaskFrame pushFrame(String routine, boolean inheritVars);
 
     NaruTaskFrame frame();
 
@@ -168,8 +168,6 @@ public interface NaruTask extends NToElement {
     String expandString(String condition);
 
     NOptional<List<NaruStatement>> parseFile(NPath path);
-
-    NOptional<NaruStatement> parseAsDirectiveStatement(String line);
 
     NOptional<NaruStatement> parseStatement(String line);
 
@@ -242,4 +240,6 @@ public interface NaruTask extends NToElement {
 
     void appendRoutineLine(int increment,String name);
     Map<String, Object> getTaskEnv();
+
+    void call(String cmdline);
 }

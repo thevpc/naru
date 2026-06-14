@@ -1,0 +1,3 @@
+/for iteration : 1..3
+    /print "the iteration is $iteration"
+/end

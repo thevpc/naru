@@ -10,7 +10,7 @@ public interface NaruTaskFrame extends NToElement {
 
     void setLocalVar(String key, Object value);
 
-    Object getLastResult();
+    NaruStmtResult getLastResult();
 
     NOptional<Object> getLocalVar(String key);
 

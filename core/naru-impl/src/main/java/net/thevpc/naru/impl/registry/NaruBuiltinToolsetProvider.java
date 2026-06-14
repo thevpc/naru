@@ -28,8 +28,7 @@ public class NaruBuiltinToolsetProvider implements NaruToolsetProvider {
 
     @Override
     public NaruToolset createToolset(String id, NObjectElement config) {
-        String type = NNameFormat.LOWER_KEBAB_CASE.format(
-                config.getStringValue("type").orElse(""));
+        String type = NNameFormat.LOWER_KEBAB_CASE.format(id);
         switch (type) {
             case "builtin-fs":
                 return new StaticToolset(id, fsTools());

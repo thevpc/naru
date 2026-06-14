@@ -1,0 +1,21 @@
+/use researcher
+10 /print "researcher: searching..."
+20 /set reliable=no
+30 /while reliable == "no"
+40   Find the most spoken language in the world using available tools
+50   Is this answer reliable and complete? Reply yes or no only: ${_}
+60   /set reliable=_
+70 /done
+80 /fire fact --to=siblings value=_
+
+/use writer
+10 /wait --for=event(fact)
+20 Write a one-line tweet about this: ${event.payload.value}
+30 /print "writer: ${_}"
+
+/use main
+10 /start researcher
+20 /start writer
+30 /wait --for=children
+
+Act as a Senior developer, analyze the routines and execute main using '/start main'

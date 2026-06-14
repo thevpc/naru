@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.cmdline;
 
 import net.thevpc.naru.api.agent.*;
-import net.thevpc.naru.impl.agent.NaruAgentImpl;
+import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.io.NOut;
 import net.thevpc.nuts.io.NPath;

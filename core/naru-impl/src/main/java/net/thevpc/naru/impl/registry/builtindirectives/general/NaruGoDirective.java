@@ -3,7 +3,7 @@ package net.thevpc.naru.impl.registry.builtindirectives.general;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
-import net.thevpc.naru.impl.stmt.NaruStatementHelper;
+import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
 import net.thevpc.nuts.cmdline.NCmdLine;
 
 public class NaruGoDirective extends AbstractDirective {

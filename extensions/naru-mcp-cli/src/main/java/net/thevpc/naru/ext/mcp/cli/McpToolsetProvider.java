@@ -23,7 +23,7 @@ public class McpToolsetProvider implements NaruToolsetProvider {
     }
 
     @Override
-    public boolean accept(NObjectElement config) {
+    public boolean accept(String id, NObjectElement config) {
         String type = config.getStringValue("type").orElse("");
         switch (NNameFormat.LOWER_KEBAB_CASE.format(type)){
             case "mcp-stdio":{
@@ -33,7 +33,7 @@ public class McpToolsetProvider implements NaruToolsetProvider {
                 return config.getStringValue("url").isPresent();
             }
         }
-        return NaruToolsetProvider.super.accept(config);
+        return NaruToolsetProvider.super.accept(id, config);
     }
 
     @Override

@@ -2,7 +2,7 @@ package net.thevpc.naru.impl.util;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.impl.cmd.NaruTerminalFormatter;
+import net.thevpc.naru.impl.cmdline.NaruTerminalFormatter;
 import net.thevpc.nuts.artifact.NId;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.core.NStoreKey;

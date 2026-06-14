@@ -2,17 +2,14 @@ package net.thevpc.naru.impl.registry.builtindirectives.ai;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.agent.NaruLogMode;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
-import net.thevpc.naru.impl.agent.NaruAgentImpl;
+import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
 import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NArg;
-import net.thevpc.nuts.cmdline.NArgCandidate;
 import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.cmdline.NCmdLineAutoCompleteResolver;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextBuilder;

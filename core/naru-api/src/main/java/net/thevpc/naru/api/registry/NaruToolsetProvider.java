@@ -12,9 +12,8 @@ public interface NaruToolsetProvider {
 
     // dynamic: can I actually create this right now?
     // default checks supportedTypes(), override for runtime conditions
-    default boolean accept(NObjectElement config) {
-        String type = config.getStringValue("type").orElse("");
-        return supportedTypes().contains(NNameFormat.LOWER_KEBAB_CASE.format(type));
+    default boolean accept(String id, NObjectElement config) {
+        return supportedTypes().contains(NNameFormat.LOWER_KEBAB_CASE.format(id));
     }
 
     NaruToolset createToolset(String id, NObjectElement config);

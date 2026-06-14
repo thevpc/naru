@@ -69,7 +69,7 @@ Sleep 2s
 
 Type "nuts -y install naru"
 Enter
-Sleep 5s
+Sleep 10s
 
 Enter
 Type "# ────────────────────────────────────"

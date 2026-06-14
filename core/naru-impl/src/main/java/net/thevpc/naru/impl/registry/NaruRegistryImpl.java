@@ -7,10 +7,9 @@ import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.*;
-import net.thevpc.naru.impl.registry.builtindirectives.*;
-import net.thevpc.naru.impl.mode.NAruModeRegistry;
-import net.thevpc.naru.impl.model.gemini.NaruGeminiProvider;
-import net.thevpc.naru.impl.model.ollama.NaruOllamaProvider;
+import net.thevpc.naru.impl.ia.mode.NAruModeRegistry;
+import net.thevpc.naru.impl.ia.model.gemini.NaruGeminiProvider;
+import net.thevpc.naru.impl.ia.model.ollama.NaruOllamaProvider;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NPairElement;
 import net.thevpc.nuts.text.NMsg;
@@ -103,14 +102,15 @@ public class NaruRegistryImpl implements NaruRegistry {
         List<NPairElement> pairs = e.namedPairs();
         for (NPairElement p : pairs) {
             NObjectElement config = p.value().asObject().orElse(NObjectElement.ofEmpty());
-            if (tool.accept(config)) {
-                registerToolset(tool.createToolset(p.key().asStringValue().orNull(), config));
+            String id = p.key().asStringValue().orNull();
+            if (tool.accept(id, config)) {
+                registerToolset(tool.createToolset(id, config));
             }
         }
         if (pairs.isEmpty()) {
             for (String t : tool.supportedTypes()) {
                 NObjectElement config = e.get(t).map(x -> x.asObject().orElse(NObjectElement.ofEmpty())).orElse(NObjectElement.ofEmpty());
-                if (tool.accept(config)) {
+                if (tool.accept(t, config)) {
                     registerToolset(tool.createToolset(t, config));
                 }
             }
