@@ -12,7 +12,7 @@
 ▌   Control Flow syntax blocks (use /if, /while, or /for for structural scopes)
 ▌   /goto: Jumps processing to target label identifier <label>
 ▌   /return: Gracefully breaks execution frame runtime path [<expr>]
-▌   ai Application Framework Extension Components:
+▌   ai Directives:
 ▌     /context : show AI context
 ▌     | Detailed Specification :
 ▌ /context  [options...]
@@ -181,7 +181,7 @@
 ▌   /tools  [ help | --help ]
 ▌            show tools help
 ▌     -----------------------------------------
-▌   fs Application Framework Extension Components:
+▌   fs Directives:
 ▌     /cat : show file content with optional syntax highlighting
 ▌     | Detailed Specification :
 ▌ /cat  [options...]
@@ -247,7 +247,7 @@
 ▌   /pwd  [ help | --help ]
 ▌            show pwd help
 ▌     -----------------------------------------
-▌   general Application Framework Extension Components:
+▌   general Directives:
 ▌     /buffer : switch input mode (line <> buffer)
 ▌     | Detailed Specification :
 ▌ /buffer  [options...]
@@ -305,11 +305,11 @@
 ▌   /system  [ help | --help ]
 ▌            show system help
 ▌     -----------------------------------------
-▌   routine Application Framework Extension Components:
-▌     /routine : create, update , list and run  routines
+▌   routine Directives:
+▌     /routine : create, update , list routines
 ▌     | Detailed Specification :
 ▌ /routine  [options...]
-▌     create, update , list and run  routines
+▌     create, update , list routines
 ▌   /routine  clear
 ▌            clear current routine lines
 ▌   /routine  current
@@ -374,7 +374,7 @@
 ▌   /use  [ help | --help ]
 ▌            show use help
 ▌     -----------------------------------------
-▌   session Application Framework Extension Components:
+▌   session Directives:
 ▌     /new : start a new session.
 ▌     | Detailed Specification :
 ▌ /new  [options...]
@@ -459,7 +459,7 @@
 ▌   /session  [ help | --help ]
 ▌            show session help
 ▌     -----------------------------------------
-▌   task Application Framework Extension Components:
+▌   task Directives:
 ▌     /fire : fire an event to self or another task
 ▌     | Detailed Specification :
 ▌ /fire  [options...]
@@ -576,5 +576,8 @@
 ▌   /wait  [ help | --help ]
 ▌            show wait help
 ▌     -----------------------------------------
-▌ For targeted sub-command parameter layouts, type: /help <directive_name> [subcommand]
+▌ For targeted sub-command parameter layouts, type: /help <directive_name> [<subcommand>]
+▌ For detailed help, type: /help --full
+▌ For source examples, type: /help --examples
+▌ For source indexed example, type: /help -e <number>
 ▌ To safely close out active environment processing stream session: /exit

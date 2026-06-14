@@ -6,6 +6,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
+import net.thevpc.naru.impl.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NArgCandidate;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.cmdline.NCmdLineAutoCompleteResolver;
@@ -228,7 +229,7 @@ public class NaruHelpDirective extends AbstractDirective {
         for (String groupName : new TreeSet<>(groups.keySet())) {
             if (groupName.equals("help")) continue;
             w.log(NMsg.ofC(""));
-            w.log(NMsg.ofC("  %s Application Framework Extension Components:", NMsg.ofStyledPrimary5(groupName)));
+            w.log(NMsg.ofC("  %s Directives:", NMsg.ofStyledPrimary5(groupName)));
 
             List<NaruDirective> sortedDirectives = groups.get(groupName).stream()
                     .sorted(Comparator.comparing(NaruDirective::name))
@@ -249,7 +250,10 @@ public class NaruHelpDirective extends AbstractDirective {
         }
 
         w.log(NMsg.ofC(""));
-        w.log(NMsg.ofC("For targeted sub-command parameter layouts, type: %s", NMsg.ofStyledString("/help <directive_name> [subcommand]")));
+        w.log(NMsg.ofC("For targeted sub-command parameter layouts, type: %s %s [%s]", NaruUtils.formatDirective("help"), NMsg.ofStyledPlaceholder("<directive_name>"), NMsg.ofStyledPlaceholder("<subcommand>")));
+        w.log(NMsg.ofC("For detailed help, type: %s %s",NaruUtils.formatDirective("help"), NMsg.ofStyledOption("--full") ));
+        w.log(NMsg.ofC("For source examples, type: %s %s",NaruUtils.formatDirective("help") , NMsg.ofStyledOption("--examples") ));
+        w.log(NMsg.ofC("For source indexed example, type: %s %s %s",NaruUtils.formatDirective("help"), NMsg.ofStyledOption("-e") , NMsg.ofStyledNumber("<number>") ));
         w.log(NMsg.ofC("To safely close out active environment processing stream session: %s", formatDirective("exit")));
     }
 

@@ -28,6 +28,11 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class NaruUtils {
+
+    public static NMsg formatDirective(String name) {
+        return NMsg.ofC("%s%s",NMsg.ofStyledSeparator("/"),NMsg.ofStyledPrimary1(name));
+    }
+
     public static void checkValidRoutineName(String text) {
         if (!isValidRoutineName(text)) {
             throw new NIllegalArgumentException(NMsg.ofC("invalid routine name %s", text));
