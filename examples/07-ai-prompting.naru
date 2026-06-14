@@ -1,0 +1,46 @@
+# ============================================================
+# 07 — AI Prompting & Model Management
+# ============================================================
+
+# --- List and select a model ---
+/model list
+/model use 1
+
+# --- Check current model ---
+/model current
+
+# --- AI Modes ---
+# Modes change how the AI processes your prompt
+/mode list
+/mode current
+
+# --- Skills ---
+# Skills inject domain-specific instructions into the AI context
+/skills available
+# /skills load javadoc
+
+# --- Context inspection ---
+# See what the AI "sees" when you send a prompt
+/context files
+/context all 1-3
+
+# --- Simple prompt ---
+Explain what a Java interface is in one sentence.
+
+# --- Use the last response ---
+/print "AI said: $_"
+
+# --- /go: re-invoke the model with no new prompt ---
+# Useful after adding context or changing settings
+/context system
+/go
+
+# --- History management ---
+/history list
+# /history trim 5
+
+# --- Stats ---
+/stat
+
+/exit
+

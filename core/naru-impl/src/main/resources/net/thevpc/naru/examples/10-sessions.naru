@@ -1,0 +1,33 @@
+# ============================================================
+# 10 — Session Management
+# ============================================================
+
+# --- Start fresh ---
+/session new
+
+# --- Set some state ---
+/set --session project = "naru"
+/set --session author = "thevpc"
+/print "Working on $project by $author"
+
+# --- Save a named checkpoint ---
+/save my-checkpoint
+
+# --- List saved sessions ---
+/session list
+
+# --- Show current session info ---
+/session current
+
+# --- Restore from checkpoint ---
+# (uncomment to test)
+# /session load my-checkpoint
+
+# --- Reset current session (wipe state, keep name) ---
+# /session reset
+
+# --- Cleanup ---
+# /session delete my-checkpoint
+
+/exit
+

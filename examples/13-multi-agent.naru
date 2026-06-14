@@ -1,0 +1,35 @@
+# ============================================================
+# 13 — Multi-Agent Pipeline
+# ============================================================
+# Pattern: Coordinator → Researcher → Writer
+# The researcher gathers information, validates it, then signals
+# the writer to produce final output.
+
+/use researcher
+10 /print "researcher: gathering information..."
+20 What is the tallest mountain in the world? Reply with just the name and height.
+30 /set fact = _
+40 /print "researcher: found fact: $fact"
+50 /fire fact-ready --to=siblings value="$fact"
+
+/use writer
+10 /print "writer: waiting for facts..."
+20 /wait --for=event(fact-ready)
+30 /set fact = event.payload.value
+40 /print "writer: composing output for: $fact"
+50 Write a haiku about ${fact}. Reply with only the haiku.
+60 /print "writer: === OUTPUT ==="
+70 /print "$_"
+
+/use coordinator
+10 /print "coordinator: launching pipeline..."
+20 /start researcher
+30 /start writer
+40 /wait --for=children
+50 /print "coordinator: pipeline complete."
+
+/routine main
+/call coordinator
+
+/exit
+

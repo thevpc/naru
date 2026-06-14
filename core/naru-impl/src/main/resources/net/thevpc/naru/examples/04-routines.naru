@@ -1,0 +1,44 @@
+# ============================================================
+# 04 — Routines (Editing Mode)
+# ============================================================
+# Routines are named sequences of commands stored in memory.
+# Lines prefixed with a NUMBER are added to the current routine.
+# Lines WITHOUT a number are executed immediately.
+
+# --- Select (or create) a routine ---
+/use greet
+
+# --- Add lines to the routine ---
+10 /print "Good morning!"
+20 /print "Today we will review code."
+30 /print "Let's get started."
+
+# --- View the routine ---
+/routine show
+
+# --- Insert a line between 10 and 20 ---
+15 /print "Coffee is ready."
+
+# --- View again — note the insertion ---
+/routine show
+
+# --- Append a line with '+' ---
++ /print "Routine complete."
+
+# --- Renumber the routine (clean gaps) ---
+/routine renum --start=10 --inc=10
+
+# --- View the clean result ---
+/routine show
+
+# --- Switch back to main and run the routine ---
+/routine main
+/call greet
+
+# --- Delete a specific line range ---
+/use greet
+/routine delete 20-30
+/routine show
+
+/exit
+

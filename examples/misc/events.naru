@@ -1,5 +1,5 @@
 /set --session trace=true
-/routine use coordinator
+/use coordinator
 10 /print "coordinator: waiting for ready signal..."
 20 /wait --for=event(ready)
 30 /print "coordinator: got ready, sending go..."
@@ -8,11 +8,11 @@
 60 /wait --for=event(done)
 70 /print "coordinator: all done, result was ${event.payload.result}"
 
-/routine use handle-go
+/use handle-go
 10 /print "worker: go signal intercepted by handler"
 20 /fire done --to=siblings result=42
 
-/routine use worker
+/use worker
 10 /print "worker: starting..."
 20 /on go handle-go
 30 /fire ready --to=siblings "message=worker is ready"

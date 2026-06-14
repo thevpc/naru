@@ -1,0 +1,39 @@
+# ============================================================
+# 02 — Variables & Expressions
+# ============================================================
+
+# --- Basic assignment ---
+/set greeting = "Hello"
+/set count = 5
+/set pi = 3.14159
+
+# --- Expressions ---
+/set doubled = count * 2
+/set message = "$greeting, NARU! Count is $count, doubled is $doubled"
+/print "$message"
+
+# --- The magic '_' variable ---
+# '_' always holds the last AI response or the last evaluated result.
+What is 2 + 2? Reply with just the number.
+/print "The AI said: $_"
+/set answer = _
+
+# --- Variable scoping ---
+# Local variables (default): visible only in the current frame
+/set local_var = "I am local"
+
+# Task variables: visible across all frames in the current task
+/set --task task_var = "I am task-wide"
+
+# Session variables: visible across ALL tasks in the session
+/set --session session_var = "I am session-wide"
+
+# --- List variables ---
+/print "--- Local vars ---"
+/set
+/print "--- Task vars ---"
+/set --task
+/print "--- Session vars ---"
+/set --session
+
+/exit

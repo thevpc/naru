@@ -1,0 +1,22 @@
+# ============================================================
+# 01 — Hello World
+# ============================================================
+# NARU understands four kinds of input:
+#
+#   1. Comments     — lines starting with '#' (like this one)
+#   2. Directives   — lines starting with '/' (commands to NARU)
+#   3. AI Prompts   — plain text (sent to the AI model)
+#   4. Routine edits — lines starting with a number or '+'
+
+# --- Directive: print a message ---
+/print "Hello from NARU!"
+
+# --- AI Prompt: ask the model a question ---
+What is the capital of Tunisia?
+
+# --- Check what model we're using ---
+/model current
+
+# --- Done ---
+/print "That's it! Type /help for the full command reference."
+/exit

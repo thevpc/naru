@@ -180,7 +180,7 @@ public class NaruAgentImpl implements NaruAgent {
         log(NaruLogMode.RAW, NMsg.ofC(
                 "╭╮╷╭─╮╭─╮╷ ╷\n" +
                         "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
-                        "╵ ╵╵ ╵╵╰╴╰─╯ v%s", NVersion.of("0.8.9.0")));
+                        "╵ ╵╵ ╵╵╰╴╰─╯ v%s", NVersion.of("1.0.0.0")));
         NaruSession session = newSession(null);
         enableRichTerm(session);
         NOut.resetLine();

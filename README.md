@@ -606,7 +606,7 @@ Add the repository and dependency to your `pom.xml`:
     <dependency>
         <groupId>net.thevpc.naru</groupId>
         <artifactId>naru-impl</artifactId>
-        <version>0.8.9.0</version>
+        <version>1.0.0.0</version>
     </dependency>
 </dependencies>
 ```
@@ -722,6 +722,8 @@ file: `.naru/init.naru`
 /skill load javadoc
 ```
 
+→ [See the full help](HELP.md) for more examples including databases, IDEs, security tools, and games.
+→ [See Examples](examples/README.md) for more examples including databases, IDEs, security tools, and games.
 
 
 ## 🔮 Roadmap

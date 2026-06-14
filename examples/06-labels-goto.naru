@@ -1,0 +1,34 @@
+# ============================================================
+# 06 — Labels and Goto
+# ============================================================
+# Labels are defined with a trailing colon: "name:"
+# /goto jumps to a label within the current routine.
+
+/use menu-loop
+10 /set choice = ""
+20 menu:
+30   /print "=== Menu ==="
+40   /print "  1) Say hello"
+50   /print "  2) Count to 3"
+60   /print "  3) Quit"
+70   /readline choice "Your choice: "
+80   /if choice == "1"
+90       /print "Hello, user!"
+100      /goto menu
+110  /elseif choice == "2"
+120      /for i : 1..3
+130          /print "  $i"
+140      /end
+150      /goto menu
+160  /elseif choice == "3"
+170      /print "Goodbye!"
+180  /else
+190      /print "Invalid choice: $choice"
+200      /goto menu
+210  /end
+
+/routine main
+/call menu-loop
+
+/exit
+

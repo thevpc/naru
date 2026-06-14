@@ -1,0 +1,37 @@
+# ============================================================
+# 12 — Event Bus
+# ============================================================
+# NARU tasks communicate via named events.
+#   /fire  — send an event (with payload) to other tasks
+#   /on    — register a handler routine for an event
+#   /wait  — block until an event arrives
+
+# --- Define a handler routine ---
+/use on-data-ready
+10 /print "Handler: received data-ready event!"
+20 /print "  payload: result=${event.payload.result}"
+
+# --- Define a producer ---
+/use producer
+10 /print "producer: computing..."
+20 /sleep 1s
+30 /print "producer: firing data-ready event"
+40 /fire data-ready --to=siblings result=42
+
+# --- Define a consumer ---
+/use consumer
+10 /print "consumer: registering handler..."
+20 /on data-ready on-data-ready
+30 /print "consumer: waiting for data..."
+40 /wait --for=event(data-ready)
+50 /print "consumer: done"
+
+# --- Main: start both ---
+/routine main
+/start producer
+/start consumer
+/wait --for=children
+/print "All tasks complete."
+
+/exit
+

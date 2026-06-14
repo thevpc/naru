@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 
 public class NaruRoutineDirective extends AbstractDirective {
     public NaruRoutineDirective() {
-        super("routine", "routine", "create, update , list and run  routines", "routines");
+        super("routine", "routine", "create, update , list routines", "routines");
         noCommand("list");
         register(new AbstractSubCommand("list", NText.ofPlain("list routines"),
                 new SubCommandHelp("", "list routines")

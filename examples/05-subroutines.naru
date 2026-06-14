@@ -1,0 +1,47 @@
+# ============================================================
+# 05 — Subroutines: call vs source vs start
+# ============================================================
+# NARU has three ways to invoke a routine:
+#
+#  /call   — push a new frame (like a function call). Returns here when done.
+#  /source — inline the routine into the current frame (like bash 'source').
+#  /start  — run the routine as a separate background task.
+
+# --- Define helper routines ---
+/use say-hello
+10 /print "Hello from say-hello! name=$name"
+20 /return
+
+/use count-down
+10 /set n = 3
+20 /while n > 0
+30     /print "  tick $n"
+40     /set n = n - 1
+50 /end
+
+/use slow-worker
+10 /print "slow-worker: starting..."
+20 /sleep 2s
+30 /print "slow-worker: done!"
+
+# --- Back to main ---
+/routine main
+
+# --- /call: synchronous, new frame, with parameters ---
+/print "=== /call ==="
+/call say-hello name="World"
+/print "Back from /call"
+
+# --- /source: synchronous, inlined into current frame ---
+/print "=== /source ==="
+/source count-down
+/print "Back from /source"
+
+# --- /start: asynchronous, new task ---
+/print "=== /start ==="
+/start slow-worker
+/print "Main continues immediately (slow-worker runs in background)"
+/wait --for=children
+/print "All background tasks finished"
+
+/exit

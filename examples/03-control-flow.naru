@@ -1,0 +1,53 @@
+# ============================================================
+# 03 — Control Flow
+# ============================================================
+
+# --- if / elseif / else ---
+/set score = 85
+
+/if score >= 90
+    /print "Grade: A"
+/elseif score >= 80
+    /print "Grade: B"
+/elseif score >= 70
+    /print "Grade: C"
+/else
+    /print "Grade: F"
+/end
+
+# --- for loop (numeric range) ---
+/print "--- Counting 1 to 5 ---"
+/for i : 1..5
+    /print "  i = $i"
+/end
+
+# --- for loop with step ---
+/print "--- Even numbers 2 to 10 ---"
+/for n : 2..10:2
+    /print "  n = $n"
+/end
+
+# --- while loop ---
+/print "--- Countdown ---"
+/set countdown = 5
+/while countdown > 0
+    /print "  $countdown..."
+    /set countdown = countdown - 1
+/end
+/print "  Liftoff!"
+
+# --- Nested: for + if ---
+/print "--- FizzBuzz 1..15 ---"
+/for i : 1..15
+    /if i % 15 == 0
+        /print "  $i: FizzBuzz"
+    /elseif i % 3 == 0
+        /print "  $i: Fizz"
+    /elseif i % 5 == 0
+        /print "  $i: Buzz"
+    /else
+        /print "  $i"
+    /end
+/end
+
+/exit

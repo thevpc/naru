@@ -1,0 +1,38 @@
+# ============================================================
+# 11 — Background Tasks
+# ============================================================
+
+# --- Define a long-running routine ---
+/use ticker
+10 /for i : 1..5
+20     /print "ticker: tick $i"
+30     /sleep 1s
+40 /end
+50 /print "ticker: finished"
+
+/routine main
+
+# --- Start it as a background task ---
+/start ticker
+
+# --- List running tasks ---
+/task list
+
+# --- Inspect the task's stack ---
+/task stacktrace
+/task frames
+
+# --- Hold (pause) the task ---
+/task hold 2
+/print "Task paused. Doing foreground work..."
+/sleep 2s
+
+# --- Resume ---
+/task unhold 2
+/print "Task resumed."
+
+# --- Wait for all children to finish ---
+/wait --for=children
+/print "All background tasks completed."
+
+/exit

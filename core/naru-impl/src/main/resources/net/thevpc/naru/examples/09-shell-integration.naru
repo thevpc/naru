@@ -1,0 +1,21 @@
+# ============================================================
+# 09 — Shell Integration
+# ============================================================
+
+# --- /sys: run a system command, output goes to context ---
+/sys uname -a
+/print "OS info captured: $_"
+
+# --- /sh: run a shell command that is OS agnostic bash portable---
+/sh echo "Hello from bash"
+
+# --- Combine shell output with AI, use sys for native system commands ---
+/sys find . -name "*.java" -type f | head -5
+Based on these file names, what does this project do? Reply in one sentence.
+
+# --- Use shell to generate data, then loop over it ---
+/sys ls -1 *.naru 2>/dev/null | head -3
+/print "Found files: $_"
+
+/exit
+

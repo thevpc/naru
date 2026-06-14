@@ -7,7 +7,7 @@
 #    are added to the currently selected routine.
 # 2. EXECUTION MODE: Lines WITHOUT a number are executed
 #    immediately in the REPL.
-# 3. CONTEXT: Use `/routine use <name>` to select a routine to edit.
+# 3. CONTEXT: Use `/use <name>` to select a routine to edit.
 #    Use `/routine main` to switch back to the main routine.
 # 4. VARIABLES: No '$' unless interpolating inside a string/prompt.
 # ============================================================
@@ -74,29 +74,29 @@ Based on the files found, describe what NARU does in one sentence. Do not call a
 # ============================================================
 
 # --- summarize-file: reads and summarizes a source file ---
-/routine use summarize-file
+/use summarize-file
 10 /file read $file_path --from=1 --to=60
 20 Summarize what this Java class does in 2 sentences. Be concise.
 
 # --- add-javadoc: generates and patches javadoc into a file ---
-/routine use add-javadoc
+/use add-javadoc
 10 /file read $file_path
 20 As a senior architect, generate complete Javadoc for all public methods in the file above.
 30 /file edit $file_path --from=1 --to=1 --content="// [javadoc pass applied by NARU]" --dry
 
 # --- classify-complexity: rates a file's complexity ---
-/routine use classify-complexity
+/use classify-complexity
 10 /file grep $file_path --pattern="(implements|extends|throws|catch)" --regex --max-matches=50
 20 Based on the code patterns above, classify the complexity of this file as LOW, MEDIUM, or HIGH. Return only one word.
 
 # --- escalate: logs a high-complexity finding ---
-/routine use escalate
+/use escalate
 10 /print "⚠  High complexity detected in: $file_path"
 20 /file append ./naru-review.log --content="HIGH COMPLEXITY: $file_path"
 30 Draft a one-paragraph code review note for a senior engineer about this file.
 
 # --- analyze-file: full pipeline — read, summarize, classify, escalate if needed ---
-/routine use analyze-file
+/use analyze-file
 10  /call summarize-file file_path=$file_path
 20  /call classify-complexity file_path=$file_path
 30  /set complexity = _
@@ -109,7 +109,7 @@ Based on the files found, describe what NARU does in one sentence. Do not call a
 100 /end
 
 # --- handle-review-event: event handler for review completions ---
-/routine use handle-review-event
+/use handle-review-event
 10 /print "Event received: review done for $event.file_path (complexity=$event.complexity)"
 20 /if event.complexity == "HIGH"
 30   /print "⚠  Triggering escalation from event bus."
@@ -117,7 +117,7 @@ Based on the files found, describe what NARU does in one sentence. Do not call a
 50 /end
 
 # --- batch-review: iterate over a list of files ---
-/routine use batch-review
+/use batch-review
 10 /for file_path : files
 20   /print "--- Reviewing: $file_path ---"
 30   /call analyze-file file_path=$file_path
@@ -174,7 +174,7 @@ Based on the files found, describe what NARU does in one sentence. Do not call a
 # 10. BACKGROUND TASKS & LIFECYCLE
 # ============================================================
 # Start a long-running research task in background
-/routine use deep-research
+/use deep-research
 10 Research and compile a 500-word technical brief on the state of JVM-based AI agent frameworks in 2025.
 20 Compare with NARU's approach: durable sessions, actor model, zero external dependencies.
 

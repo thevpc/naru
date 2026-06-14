@@ -25,7 +25,7 @@ Type "# define two concurrent tasks that coordinate via events"
 Enter
 Sleep 1s
 
-Type "/routine use analyze"
+Type "/use analyze"
 Enter
 Sleep 500ms
 Type "10 /print ""analyzer: scanning project..."""
@@ -44,7 +44,7 @@ Type "50 /print ""analyzer: done"""
 Enter
 Sleep 1s
 
-Type "/routine use reporter"
+Type "/use reporter"
 Enter
 Sleep 500ms
 Type "10 /print ""reporter: waiting for analysis..."""

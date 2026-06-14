@@ -18,7 +18,7 @@ import java.util.List;
 
 public class NaruCdDirective extends AbstractDirective {
     public NaruCdDirective() {
-        super("cd", "general", "change directory");
+        super("cd", "fs", "change directory");
         register(new AbstractSubCommand(new SubCommandHelp("<dir>", "change directory to <dir>")) {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
