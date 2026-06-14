@@ -91,8 +91,8 @@ Spawn parallel tasks that communicate via typed events:
 ```bash
 /start review-security
 /start review-performance
-/task await review-security
-/task await review-performance
+/on --event=review-performance --from=child --call=another-task 
+/wait --for=event(review-performance)
 ```
 
 One task blocked on a 3-minute LLM call never blocks the others.
