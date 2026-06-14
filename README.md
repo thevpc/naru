@@ -13,12 +13,14 @@ The agent can rewrite its own script while it runs.
 ---
 
 ## Features
-- Durable sessions — survive crashes, resume mid-call
-- Actor-based multi-task — concurrent tasks, typed events
-- REPL = script = routine — no translation layer
-- Self-modifying routines — agent rewrites its own script at runtime
-- Model override — per-task formatting and tool-call emulation
-- MCP support — MCP tools are first-class, same as built-ins
+- **Full Interpreter Durability** — NARU persists the *entire* execution state (tasks & stack frames, local/task/session variables, event queues, routine definitions, pending LLM prompts, and scheduler state). Sessions survive crashes, support stop-the-world, and resume exactly where they left off.
+- **Dynamic Prompt Pipeline** — The prompt sent to the LLM is built dynamically per call. It intelligently combines history, loaded skills, model-specific formatting (e.g. tool calling instructions), per-task overrides, and folder-specific context (changing directory can inject prompts or auto-run routines).
+- **TSON Persistence** — All state uses a lenient, typed JSON extension (TSON) designed for graceful evolution and partial updates.
+- **Actor-based multi-tasking** — Concurrent tasks with typed, durable events (retention policies: TTL, once, max-count). Events can be fired before receivers exist.
+- **REPL = Script = Routine** — The interactive shell *is* the program. Routines are live, self-modifying, and resilient to changes.
+- **NxP Scheduler** — Efficient N-threads / P-tasks model per session. Multiple isolated sessions can run in one process.
+- **Model & Tool Flexibility** — Per-task formatting, tool-call emulation, and first-class support for MCP tools (same level as built-ins).
+- **Self-modifying agents** — The agent can rewrite its own routines and behavior at runtime.
 
 ---
 
@@ -51,6 +53,7 @@ nuts -y naru
 ```
 
 Come back tomorrow. Resume exactly where you stopped.
+Each session is an isolated durable unit containing routines, tasks, variables, events, and the full prompt pipeline.
 
 ```bash
 nuts -y naru
