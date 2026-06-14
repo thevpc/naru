@@ -90,7 +90,7 @@ Spawn parallel tasks that communicate via typed events:
 
 ```bash
 /start review-security
-/start review-performance
+/start review-progress
 /on --event=review-performance --from=child --call=another-task 
 /wait --for=event(review-performance)
 ```
