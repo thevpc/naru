@@ -31,7 +31,7 @@ public class NaruModeDirective extends AbstractDirective {
                         +"\n  ask"
                         +"\n  planning"
                         +"\n  implement"
-                        +"\n  audi"
+                        +"\n  audit"
                         +"\n  debug"
                         +"\n  debug"
                 )
@@ -134,22 +134,13 @@ public class NaruModeDirective extends AbstractDirective {
         }
         NOptional<NaruPromptMode> m = session.session().registry().mode(name);
         if (!m.isEmpty()) {
-            if (m.get().equals(session.promptMode())) {
+            if (!m.get().equals(session.promptMode())) {
                 session.promptMode(m.get());
                 context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Changed mode : %s", name));
                 session.addHistory(NaruMessage.user(NMsg.ofC("Changed mode : %s", name)));
             }
         } else {
             context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("not found mode : %s", name));
-        }
-        if (session.loadSkill(name)) {
-            context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded skill : %s", name));
-//            session.addHistory(NaruMessage.user(NMsg.ofC("Loaded skill : %s", name)));
-        } else {
-            if (session.session().skillManager().findSkill(name) == null) {
-                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("skill not found : %s", name).asError());
-                session.addHistory(NaruMessage.user(NMsg.ofC("Error : skill not found : %s", name)));
-            }
         }
     }
 
