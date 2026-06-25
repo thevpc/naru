@@ -75,18 +75,18 @@ Based on the files found, describe what NARU does in one sentence. Do not call a
 
 # --- summarize-file: reads and summarizes a source file ---
 /use summarize-file
-10 /file read $file_path --from=1 --to=60
+10 /file read "$file_path" --from=1 --to=60
 20 Summarize what this Java class does in 2 sentences. Be concise.
 
 # --- add-javadoc: generates and patches javadoc into a file ---
 /use add-javadoc
-10 /file read $file_path
+10 /file read "$file_path"
 20 As a senior architect, generate complete Javadoc for all public methods in the file above.
-30 /file edit $file_path --from=1 --to=1 --content="// [javadoc pass applied by NARU]" --dry
+30 /file edit "$file_path" --from=1 --to=1 --content="// [javadoc pass applied by NARU]" --dry
 
 # --- classify-complexity: rates a file's complexity ---
 /use classify-complexity
-10 /file grep $file_path --pattern="(implements|extends|throws|catch)" --regex --max-matches=50
+10 /file grep "$file_path" --pattern="(implements|extends|throws|catch)" --regex --max-matches=50
 20 Based on the code patterns above, classify the complexity of this file as LOW, MEDIUM, or HIGH. Return only one word.
 
 # --- escalate: logs a high-complexity finding ---
@@ -97,13 +97,13 @@ Based on the files found, describe what NARU does in one sentence. Do not call a
 
 # --- analyze-file: full pipeline — read, summarize, classify, escalate if needed ---
 /use analyze-file
-10  /call summarize-file file_path=$file_path
-20  /call classify-complexity file_path=$file_path
+10  /call summarize-file file_path="$file_path"
+20  /call classify-complexity file_path="$file_path"
 30  /set complexity = _
 40  /print "=== Analysis: $file_path ==="
 50  /print "Complexity : $complexity"
 60  /if complexity == "HIGH"
-70    /call escalate file_path=$file_path
+70    /call escalate file_path="$file_path"
 80  /else
 90    /print "✓ Complexity acceptable."
 100 /end
@@ -120,8 +120,8 @@ Based on the files found, describe what NARU does in one sentence. Do not call a
 /use batch-review
 10 /for file_path : files
 20   /print "--- Reviewing: $file_path ---"
-30   /call analyze-file file_path=$file_path
-40   /fire event.review.done file_path=$file_path complexity=$complexity
+30   /call analyze-file file_path="$file_path"
+40   /fire event.review.done file_path="$file_path" complexity=$complexity
 50 /end
 
 /routine main
