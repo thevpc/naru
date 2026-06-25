@@ -25,7 +25,7 @@
 30 /print "slow-worker: done!"
 
 # --- Back to main ---
-/routine main
+/use main
 
 # --- /call: synchronous, new frame, with parameters ---
 /print "=== /call ==="

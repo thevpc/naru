@@ -28,7 +28,7 @@
 40 /wait --for=children
 50 /print "coordinator: pipeline complete."
 
-/routine main
+/use main
 /call coordinator
 
 /exit

@@ -27,7 +27,7 @@
 200      /goto menu
 210  /end
 
-/routine main
+/use main
 /call menu-loop
 
 /exit

@@ -27,7 +27,7 @@
 50 /print "consumer: done"
 
 # --- Main: start both ---
-/routine main
+/use main
 /start producer
 /start consumer
 /wait --for=children

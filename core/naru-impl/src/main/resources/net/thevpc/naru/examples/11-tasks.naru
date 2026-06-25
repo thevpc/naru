@@ -10,7 +10,7 @@
 40 /end
 50 /print "ticker: finished"
 
-/routine main
+/use main
 
 # --- Start it as a background task ---
 /start ticker
