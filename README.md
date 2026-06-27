@@ -69,7 +69,7 @@ A multi-phase bug-fix routine: a lightweight model locates problems,
 history is pruned to save tokens, a heavier model generates the patch,
 the agent applies it.
 
-```naru
+```vb
 /use bug-fix
 10  /set TARGET = src/main/java/com/project/OrderProcessor.java
 20  /model use qwen2.5-coder:7b
@@ -92,7 +92,7 @@ Save it. Run it. Let the agent rewrite it at runtime if it needs to.
 
 Spawn parallel tasks, react to incremental updates, and block only when you need to:
 
-```bash
+```vb
 /start review-security
 /start review-progress
 /on --event=some-progress --from=child --call=another-task 

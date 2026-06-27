@@ -22,8 +22,7 @@ public class NaruPrintDirective extends AbstractDirective {
                 NaruTask task = context.task();
                 Object e = context.task().evalExpression(context.argument());
                 String line = String.valueOf(e);
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", line));
-                task.addHistory(NaruMessage.user(NMsg.ofC("%s", line)));
+                task.addResultMessage(NMsg.ofC("%s", line));
             }
         });
     }

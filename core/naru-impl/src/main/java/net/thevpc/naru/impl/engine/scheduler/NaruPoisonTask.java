@@ -567,4 +567,9 @@ public class NaruPoisonTask implements NaruTask {
     public void call(String cmdline) {
         throw new NUnsupportedOperationException();
     }
+
+    @Override
+    public void addResultMessage(NMsg msg) {
+        throw new NUnsupportedOperationException();
+    }
 }

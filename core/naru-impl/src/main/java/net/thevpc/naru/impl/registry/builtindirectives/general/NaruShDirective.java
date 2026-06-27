@@ -26,11 +26,10 @@ public class NaruShDirective extends AbstractDirective {
                         NExec e = NExec.of("nsh","--progress=none", "-c", context.argument()).directory(task.workingDir()).failFast(false);
                         String result = e
                                 .grabbedAll();
-                        task.addHistory(NaruMessage.user(NMsg.ofC("call   : nsh -c %s", context.argument()).toString()));
-                        task.addHistory(NaruMessage.user(NMsg.ofC("exit code %s", e.exitCode()).toString()));
-                        task.addHistory(NaruMessage.user(NMsg.ofC("result : \n%s", NaruUtils.stripAnsi(result)).toString()));
-                        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
-                        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
+                        task.addResultMessage(
+                                NMsg.ofC("call   : nsh -c %s\nexit code %s\nresult : \n%s", context.argument(),e.exitCode(), NaruUtils.stripAnsi(result))
+                                        .withLevel(e.exitCode()!=0?Level.SEVERE : Level.INFO)
+                        );
                     });
                 }
             }

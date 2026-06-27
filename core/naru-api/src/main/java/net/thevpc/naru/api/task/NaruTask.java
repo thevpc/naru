@@ -242,4 +242,6 @@ public interface NaruTask extends NToElement {
     Map<String, Object> getTaskEnv();
 
     void call(String cmdline);
+
+    void addResultMessage(NMsg msg);
 }

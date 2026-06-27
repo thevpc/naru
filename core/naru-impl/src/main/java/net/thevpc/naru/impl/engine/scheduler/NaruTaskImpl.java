@@ -2029,4 +2029,17 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
 //        this.prependStatement(this.parseStatement(this.session().routine(cc, this, false).get().lineCommandAt(ff.pc())).get());
     }
+
+    @Override
+    public void addResultMessage(NMsg msg) {
+        if(msg.isError()){
+            this.addHistory(NaruMessage.user(msg.toString()));
+            this.log(NaruLogMode.AGENT_RESPONSE, msg);
+            this.frame().lastResult(NaruStmtResult.ofError(msg.toString()));
+        }else {
+            this.addHistory(NaruMessage.user(msg.toString()));
+            this.log(NaruLogMode.AGENT_RESPONSE, msg);
+            this.frame().lastResult(NaruStmtResult.ofSuccess(msg));
+        }
+    }
 }

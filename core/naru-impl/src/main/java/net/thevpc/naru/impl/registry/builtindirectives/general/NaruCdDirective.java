@@ -23,10 +23,13 @@ public class NaruCdDirective extends AbstractDirective {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                task.setWorkingDir(NBlankable.isBlank(context.argument()) ? context.task().projectDir() : NPath.of(context.argument()));
-                context.task().addHistory(NaruMessage.user(NMsg.ofC("change working directory to %s", task.workingDir()).toString()));
-                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("change directory to : %s", task.workingDir()));
-                context.task().frame().lastResult(NaruStmtResult.ofSuccess(task.workingDir().toString()));
+                NPath p2 = NBlankable.isBlank(context.argument()) ? context.task().projectDir() : NPath.of(context.argument());
+                if (p2.isDirectory()) {
+                    task.setWorkingDir(p2);
+                    context.task().addResultMessage(NMsg.ofC("change working directory to %s", task.workingDir()));
+                }else{
+                    context.task().addResultMessage(NMsg.ofC("directory not found: %s", task.workingDir()).asError());
+                }
             }
         });
     }
