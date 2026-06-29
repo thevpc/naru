@@ -2,17 +2,15 @@ package net.thevpc.naru.ext.mcp.cli;
 
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.api.registry.NaruToolTags;
+import net.thevpc.naru.api.task.NaruTask;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class McpBackedTool implements NaruTool {
@@ -26,13 +24,18 @@ public class McpBackedTool implements NaruTool {
     }
 
     @Override
+    public Set<String> tags() {
+        return Set.of(NaruToolTags.MCP);
+    }
+
+    @Override
     public String name() { return mcpTool.name(); }
 
     @Override
-    public String getDescription(NaruSession session) { return mcpTool.description(); }
+    public String getDescription(NaruTask task) { return mcpTool.description(); }
 
     @Override
-    public NaruToolDefinition getDefinition(NaruSession session) {
+    public NaruToolDefinition getDefinition(NaruTask task) {
         // bridge MCP inputSchema → NaruToolDefinition
         List<NaruToolParameter> params = parseProperties(
                 mcpTool.inputSchema().properties(),
