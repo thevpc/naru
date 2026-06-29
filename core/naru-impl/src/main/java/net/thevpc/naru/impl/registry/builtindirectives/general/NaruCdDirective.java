@@ -28,7 +28,7 @@ public class NaruCdDirective extends AbstractDirective {
                     task.setWorkingDir(p2);
                     context.task().addResultMessage(NMsg.ofC("change working directory to %s", task.workingDir()));
                 }else{
-                    context.task().addResultMessage(NMsg.ofC("directory not found: %s", task.workingDir()).asError());
+                    context.task().addResultMessage(NMsg.ofC("directory not found: %s", p2).asError());
                 }
             }
         });

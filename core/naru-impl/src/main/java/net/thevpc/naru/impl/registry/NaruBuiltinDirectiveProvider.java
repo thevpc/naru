@@ -24,7 +24,7 @@ public class NaruBuiltinDirectiveProvider implements NaruDirectiveProvider {
         this.registerDirective(new NaruPrintDirective());
         this.registerDirective(new NaruHelpDirective());
         this.registerDirective(new NaruToolsDirective());
-        this.registerDirective(new NaruStatDirective());
+        this.registerDirective(new NaruStatsDirective());
         this.registerDirective(new NaruModelDirective());
         this.registerDirective(new NaruModeDirective());
         this.registerDirective(new NaruPwdDirective());

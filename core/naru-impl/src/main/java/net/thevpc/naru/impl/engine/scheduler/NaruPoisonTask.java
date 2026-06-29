@@ -2,10 +2,8 @@ package net.thevpc.naru.impl.engine.scheduler;
 
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.mode.NaruPromptMode;
-import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.model.NaruModelConfig;
-import net.thevpc.naru.api.model.NaruModelRequest;
-import net.thevpc.naru.api.model.NaruResponse;
+import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.scheduler.*;
@@ -26,6 +24,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 public class NaruPoisonTask implements NaruTask {
     public static final NaruPoisonTask INSTANCE = new NaruPoisonTask();
@@ -570,6 +569,46 @@ public class NaruPoisonTask implements NaruTask {
 
     @Override
     public void addResultMessage(NMsg msg) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask addToolExclusion(String toolName) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask removeToolExclusion(String toolName) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public Set<String> findToolExclusions() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask removeToolTag(String toolTag) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask addToolTag(String toolTag) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public List<NaruToolTag> findToolTags() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public List<NaruToolDefinition> findTools() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public void addSystemHistory(Function<NaruTask, NaruMessage> sysHistory) {
         throw new NUnsupportedOperationException();
     }
 }

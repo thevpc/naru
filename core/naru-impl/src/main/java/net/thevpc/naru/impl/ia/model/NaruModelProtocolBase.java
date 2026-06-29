@@ -24,13 +24,15 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     protected final String configPrefix;
     protected final String chatPath;
     protected final NaruModelRequestSerializer serializer;
+    protected final NaruModelProvider provider;
 
 
-    public NaruModelProtocolBase(NaruModelConfig model, String configPrefix,
+    public NaruModelProtocolBase(NaruModelProvider provider,NaruModelConfig model, String configPrefix,
                                  String chatPath,
                                  NaruModelCapabilities capabilities,
                                  NaruModelRequestSerializer serializer,
                                  NElementDeserializer<NaruResponse> responseParser) {
+        this.provider = provider;
         this.model = model;
         this.capabilities = capabilities;
         this.configPrefix = configPrefix;
@@ -38,6 +40,10 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         this.nElementReader = NElementReader.ofJson();
         this.serializer = serializer;
         this.nElementReader.mapperStore().setDeserializer(NaruResponse.class, responseParser);
+    }
+
+    public NaruModelProvider provider() {
+        return provider;
     }
 
     private String prepareUrlPrefix(String urlPrefix) {

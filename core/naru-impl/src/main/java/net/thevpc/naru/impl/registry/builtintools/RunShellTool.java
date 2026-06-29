@@ -1,13 +1,12 @@
 package net.thevpc.naru.impl.registry.builtintools;
 
-import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.mode.NaruPromptMode;
-import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.api.registry.NaruToolTags;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.impl.registry.DefaultNaruTool;
 import net.thevpc.nuts.command.NExec;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NBlankable;
@@ -17,27 +16,24 @@ import net.thevpc.nuts.util.NBlankable;
  *
  * <p>Output is capped at 8 KB to avoid flooding the model context.
  */
-public class RunShellTool implements NaruTool {
+public class RunShellTool extends DefaultNaruTool {
 
     private static final int MAX_OUTPUT_CHARS = 8_000;
 
     public RunShellTool() {
+        super("run_shell", new String[]{NaruToolTags.NETWORK});
     }
 
-    @Override
-    public String name() {
-        return "run_shell";
-    }
 
     @Override
-    public String getDescription(NaruSession session) {
+    public String getDescription(NaruTask task) {
         return "Execute a shell command and return its output (stdout + stderr). Use sparingly; prefer specialised tools like maven_compile when available.";
     }
 
     @Override
-    public NaruToolDefinition getDefinition(NaruSession session) {
+    public NaruToolDefinition getDefinition(NaruTask task) {
         return new NaruToolDefinitionFunction(
-                name(), getDescription(session),
+                name(), getDescription(task),
                 NaruToolParameter.string("command", "Shell command to execute", true).build(),
                 NaruToolParameter.string("working_dir", "Directory to run the command in (defaults to project dir)", false).build(),
                 NaruToolParameter.integer("timeout_seconds", "Max seconds to wait (default: 60)", false).build()
@@ -68,14 +64,5 @@ public class RunShellTool implements NaruTool {
         }
     }
 
-    public boolean acceptMode(NaruPromptMode mode) {
-        NaruStandardMode m = mode.asStandardMode().orNull();
-        if (m != null) {
-            switch (m) {
-                case IMPLEMENT:
-                    return true;
-            }
-        }
-        return false;
-    }
+
 }

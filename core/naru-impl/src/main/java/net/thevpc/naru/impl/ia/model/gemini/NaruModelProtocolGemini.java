@@ -16,8 +16,8 @@ import java.util.Map;
 
 public class NaruModelProtocolGemini extends NaruModelProtocolOpenAICompat {
 
-    public NaruModelProtocolGemini(NaruModelConfig model, String baseUrl, NaruModelCapabilities capabilities) {
-        super(model, baseUrl, "chat/completions", capabilities);
+    public NaruModelProtocolGemini(NaruModelProvider provider,NaruModelConfig model, String baseUrl, NaruModelCapabilities capabilities) {
+        super(provider,model, baseUrl, "chat/completions", capabilities);
     }
 
     @Override

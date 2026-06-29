@@ -5,6 +5,7 @@ import net.thevpc.naru.api.budget.NaruTokenTransaction;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
@@ -39,6 +40,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -48,9 +50,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private long id;
     private String name;
     private long parentId;
-    private final List<NaruMessage> systemHistory = new ArrayList<>();
+    private final List<Function<NaruTask, NaruMessage>> systemHistory = new ArrayList<>();
     private final List<NaruMessage> history = new ArrayList<>();
     private final Set<String> skills = new TreeSet<>();
+    private final Set<String> taskToolTags = new TreeSet<>();
+    private final Set<String> excludedTools = new TreeSet<>();
     private NAruInputMode inputMode = NAruInputMode.LINE;
     private NPath workingDir;
     private int userQueriesCount;
@@ -277,7 +281,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         NaruTaskFrame c = frame();
         if (c != null) {
-            if(!((NaruTaskFrameImpl)c).todo.isEmpty()){
+            if (!((NaruTaskFrameImpl) c).todo.isEmpty()) {
                 return this;
             }
             String r = c.runningRoutine();
@@ -425,6 +429,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         frames.clear();
         env.clear();
         skills.clear();
+        taskToolTags.clear();
         ((NaruSessionImpl) session).fireChanged();
     }
 
@@ -543,6 +548,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         return this;
     }
 
+    public NaruTaskImpl _setTaskTags(Set<String> taskTags) {
+        this.taskToolTags.clear();
+        this.taskToolTags.addAll(taskTags);
+        return this;
+    }
+
+
     public NaruTaskImpl _setInputMode(NAruInputMode inputMode) {
         this.inputMode = inputMode;
         return this;
@@ -655,15 +667,62 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
     }
 
-    @Override
-    public NaruModelRequest context(NaruSource... sources) {
-        List<NaruToolDefinition> defs = new ArrayList<>();
+    public List<NaruToolTag> findToolTags() {
+        return taskToolTags.stream().map(x -> session().registry().findAvailableTag(x).get()).collect(Collectors.toList());
+    }
+
+    public NaruTask addToolTag(String toolTag) {
+        taskToolTags.add(
+                NNameFormat.LOWER_KEBAB_CASE.format(session().registry().findAvailableTag(toolTag).get().name())
+        );
+        return this;
+    }
+
+    public NaruTask removeToolTag(String toolTag) {
+        taskToolTags.remove(NNameFormat.LOWER_KEBAB_CASE.format(NStringUtils.trim(toolTag)));
+        return this;
+    }
+
+    public NaruTask addToolExclusion(String toolName) {
+        excludedTools.add(toolName);
+        return this;
+    }
+
+    public NaruTask removeToolExclusion(String toolName) {
+        excludedTools.add(toolName);
+        return this;
+    }
+
+    public Set<String> findToolExclusions() {
+        return Collections.unmodifiableSet(excludedTools);
+    }
+
+    public List<NaruToolDefinition> findTools() {
+        List<NaruToolDefinition> toolDefinitions = new ArrayList<>();
         NaruPromptMode mode = promptMode();
         for (NaruTool t : session().registry().tools().values()) {
-            if (t.acceptMode(mode)) {
-                defs.add(t.getDefinition(session()));
+            if (!mode.acceptToolTags(t.tags())) {
+                continue;
+            }
+            Set<String> tt = t.tags();
+            if (!excludedTools.contains(t.name())) {
+                if (tt.isEmpty()) {
+                    toolDefinitions.add(t.getDefinition(this));
+                } else {
+                    if (tt.stream().anyMatch(
+                            x -> taskToolTags.contains(NNameFormat.LOWER_KEBAB_CASE.format(x))
+                    )) {
+                        toolDefinitions.add(t.getDefinition(this));
+                    }
+                }
             }
         }
+        return toolDefinitions;
+    }
+
+    @Override
+    public NaruModelRequest context(NaruSource... sources) {
+        List<NaruToolDefinition> toolDefinitions = findTools();
         List<MarkdownWithHeader> headerAndTexts = loadLoadModelAgentInfos(sources);
         Set<NaruSource> sourcesOk = new HashSet<>();
         if (sources != null) {
@@ -675,7 +734,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         List<NaruMessage> all = new ArrayList<>();
         if (sourcesOk.contains(NaruSource.SYSTEM)) {
-            all.addAll(systemHistory.stream().map(x -> x.copy().setSource(NaruSource.SYSTEM).setSourceName("system")).collect(Collectors.toList()));
+            all.addAll(systemHistory.stream().map(x ->
+                            {
+                                NaruMessage m = x.apply(NaruTaskImpl.this);
+                                return m.copy().setSource(NaruSource.SYSTEM).setSourceName("system");
+                            }
+                    ).collect(Collectors.toList())
+            );
         }
         all.add(NaruMessage.system(promptMode().systemPrompt()).setSource(NaruSource.MODE).setSourceName(NNameFormat.LOWER_KEBAB_CASE.format(promptMode().name())));
         HashMap<String, NElement> env = new HashMap<>();
@@ -833,7 +898,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         return new NaruModelRequest(
                 all,
-                defs,
+                toolDefinitions,
                 env
         );
     }
@@ -1043,9 +1108,16 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
+    public void addSystemHistory(Function<NaruTask, NaruMessage> sysHistory) {
+        if (sysHistory != null) {
+            systemHistory.add(sysHistory);
+        }
+    }
+
+    @Override
     public void addHistory(NaruMessage assistantMsg) {
         if (assistantMsg.getRole().equals(NaruRole.system)) {
-            systemHistory.add(assistantMsg);
+            systemHistory.add(s -> assistantMsg);
         } else {
             if (assistantMsg.getRole().equals(NaruRole.user)) {
                 userQueriesCount++;
@@ -1213,7 +1285,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (op == null) {
             if (taskMode() == NaruTaskMode.INTERACTIVE) {
                 new NaruReadlineStmt().injected(true).exec(this);
-            }else {
+            } else {
                 status(NaruTaskStatus.DONE);
             }
         } else {
@@ -1305,6 +1377,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         return NOptional.ofNamedEmpty(NMsg.ofC("directive : %s", line));
     }
+
     @Override
     public void invokeRoutine(String routineName) {
         NaruRoutine routine = session().routine(routineName, this, false).orNull();
@@ -1388,9 +1461,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             NaruTaskFrame f2 = frame();
             NaruStmtResult lr = f2.getLastResult();
             frames.pop();
-            if(!frames.isEmpty()) {
+            if (!frames.isEmpty()) {
                 NaruTaskFrameImpl p = frames.peek();
-                if(p!=null){
+                if (p != null) {
                     p.lastResult(lr);
                 }
             }
@@ -1666,7 +1739,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         return NOptional.of(list);
     }
-
 
 
     @Override
@@ -2032,11 +2104,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public void addResultMessage(NMsg msg) {
-        if(msg.isError()){
+        if (msg.isError()) {
             this.addHistory(NaruMessage.user(msg.toString()));
             this.log(NaruLogMode.AGENT_RESPONSE, msg);
             this.frame().lastResult(NaruStmtResult.ofError(msg.toString()));
-        }else {
+        } else {
             this.addHistory(NaruMessage.user(msg.toString()));
             this.log(NaruLogMode.AGENT_RESPONSE, msg);
             this.frame().lastResult(NaruStmtResult.ofSuccess(msg));

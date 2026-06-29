@@ -40,7 +40,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     /**
      * public|private
      */
-    private NAruVisibility visibility=NAruVisibility.PRIVATE;
+    private NAruVisibility visibility = NAruVisibility.PRIVATE;
     private NaruModelConfig model;
     private final Set<NPath> alreadyLoadedFiles = new HashSet<>();
 
@@ -237,7 +237,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setModel(parent.model());
             natuTask._setSkills(parent.skillNames());
         }
-        natuTask.addHistory(NaruMessage.system(buildSystemPrompt(this)));
+        natuTask.addSystemHistory(s->NaruMessage.system(buildSystemPrompt(s)));
         natuTask._prependInitHooks();
         natuTask.addStatements(
                 taskBuilder.statements().stream().map(x -> natuTask.parseStatement(x).get().injected(true)).collect(Collectors.toList())
@@ -247,24 +247,16 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-    private String buildSystemPrompt(NaruSession session) {
+    private String buildSystemPrompt(NaruTask task) {
         String s = systemPrompt();
         if (NBlankable.isBlank(s)) {
             StringBuilder sb = new StringBuilder();
-            sb.append("You are NARU (Nuts AI Reasoning Unit), an expert software engineering agent.\n");
-            sb.append("You have access to tools that let you read/write files, run shell commands, ");
-            sb.append("compile Maven projects, and inspect images using a vision model.\n\n");
-            sb.append("Guidelines:\n");
-            sb.append("- Always read the relevant files before modifying them.\n");
-            sb.append("- After modifying Java files, always compile to check for errors.\n");
-            sb.append("- Use inspect_image to verify that generated images match expectations.\n");
-            sb.append("- Be concise in your final answer. Summarise what you changed and why.\n");
-
-            if (session.projectDir() != null) {
-                sb.append("\nProject directory: ").append(session.projectDir()).append('\n');
+            sb.append("You are NARU (Nuts AI Reasoning Unit), a durable actor-model based multi-task agent.\n");
+            if (task.projectDir() != null) {
+                sb.append("Project directory: ").append(task.projectDir()).append('\n');
             }
             if (!registry().isEmpty()) {
-                sb.append("\nAvailable tools: ").append(registry().toolNames()).append('\n');
+                sb.append("Available tools: ").append(task.findTools().stream().map(NaruToolDefinition::getName).toList()).append('\n');
             }
             return sb.toString();
         }
@@ -486,7 +478,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         path.resolveSibling("routines").list().stream().filter(x -> x.name().endsWith(".tson")).forEach(x -> {
             String n = x.name().substring(0, x.name().length() - 5);
             NaruRoutineMem r = loadRoutineTson(x);
-            if(r!=null){
+            if (r != null) {
                 routines.put(n, r);
             }
         });
@@ -506,20 +498,20 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     private static NaruRoutineMem loadRoutineTson(NPath x) {
-        NaruRoutineMem r=null;
+        NaruRoutineMem r = null;
         try {
             r = new NaruRoutineMem(NElementReader.ofTson().ntf(false).read(x));
-        }catch (Exception ex) {
+        } catch (Exception ex) {
             //
         }
         return r;
     }
 
     private static NaruRoutineMem loadRoutineText(NPath x) {
-        NaruRoutineMem r=null;
+        NaruRoutineMem r = null;
         try {
             r = new NaruRoutineMem(NElementReader.ofTson().ntf(false).read(x));
-        }catch (Exception ex) {
+        } catch (Exception ex) {
             //
         }
         return r;
@@ -805,13 +797,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public void log(NaruLogMode mode, NMsg s) {
-        if (mode == NaruLogMode.SCHEDULER) {
-            if (isTrace()) {
-                agent.log(mode, s);
-            }
-        } else {
-            agent.log(mode, s);
+        if (mode == NaruLogMode.SCHEDULER && !isTrace()) {
+            return;
         }
+        agent.log(mode, s);
     }
 
     private boolean isTrace() {
@@ -970,7 +959,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             }
             NaruTaskSchedulerView t = (NaruTaskSchedulerView) task;
             NMsg prompt = t.pendingPrompt();
-            String line = NTerminal.of().readLine(prompt); // blocks until user types
+            String line = null;
+            try {
+                line = NTerminal.of().readLine(prompt); // blocks until user types
+            } catch (Exception ex) {
+                //
+            }
             if (line == null) {
                 continue;
             }
@@ -1180,12 +1174,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (NaruUtils.isPath(nameOrPath)) {
             NPath path = NPath.of(nameOrPath).toAbsolute(task.workingDir());
             if (path.exists()) {
-                return RoutineHelper.loadFileRoutine(path,true);
+                return RoutineHelper.loadFileRoutine(path, true);
             }
             if (!path.name().endsWith(".naru") && !path.name().endsWith(".")) {
                 path = NPath.of(nameOrPath + ".naru").toAbsolute(task.workingDir());
                 if (path.exists()) {
-                    return RoutineHelper.loadFileRoutine(path,true);
+                    return RoutineHelper.loadFileRoutine(path, true);
                 }
             }
         } else if (NaruUtils.isValidRoutineName(nameOrPath)) {
@@ -1196,17 +1190,17 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         NPath path = NPath.of(nameOrPath).toAbsolute(task.workingDir());
         if (path.exists()) {
-            return RoutineHelper.loadFileRoutine(path,true);
+            return RoutineHelper.loadFileRoutine(path, true);
         }
         if (!path.name().endsWith(".naru") && !path.name().endsWith(".")) {
             path = NPath.of(nameOrPath + ".naru").toAbsolute(task.workingDir());
             if (path.exists()) {
-                return RoutineHelper.loadFileRoutine(path,true);
+                return RoutineHelper.loadFileRoutine(path, true);
             }
         }
         if (NaruUtils.isValidRoutineName(nameOrPath) && orCreate) {
             return NOptional.of(routines.computeIfAbsent(nameOrPath, x ->
-                    new NaruRoutineMem(UUID.randomUUID().toString(),x, getVisibility())));
+                    new NaruRoutineMem(UUID.randomUUID().toString(), x, getVisibility())));
         }
         return NOptional.ofEmpty(NMsg.ofC("Error statement: routine not found %s", nameOrPath));
     }

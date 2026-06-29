@@ -12,30 +12,30 @@ import java.util.*;
 
 /**
  * {
- *   "choices" : [ {
- *     "finish_reason" : "tool_calls",
- *     "index" : 0,
- *     "message" : {
- *       "role" : "assistant",
- *       "tool_calls" : [ {
- *         "function" : {
- *           "arguments" : "{\"path\":\"core/nut-api\",\"include\":\"*.java\",\"recursive\":true}",
- *           "name" : "folder_find"
- *         },
- *         "id" : "function-call-11464485064754065774",
- *         "type" : "function"
- *       } ]
- *     }
- *   } ],
- *   "created" : 1779459950,
- *   "id" : "bWcQau20G9n2nsEPs9z20Qw",
- *   "model" : "gemini-2.5-flash",
- *   "object" : "chat.completion",
- *   "usage" : {
- *     "completion_tokens" : 28,
- *     "prompt_tokens" : 4500,
- *     "total_tokens" : 4592
- *   }
+ * "choices" : [ {
+ * "finish_reason" : "tool_calls",
+ * "index" : 0,
+ * "message" : {
+ * "role" : "assistant",
+ * "tool_calls" : [ {
+ * "function" : {
+ * "arguments" : "{\"path\":\"core/nut-api\",\"include\":\"*.java\",\"recursive\":true}",
+ * "name" : "folder_find"
+ * },
+ * "id" : "function-call-11464485064754065774",
+ * "type" : "function"
+ * } ]
+ * }
+ * } ],
+ * "created" : 1779459950,
+ * "id" : "bWcQau20G9n2nsEPs9z20Qw",
+ * "model" : "gemini-2.5-flash",
+ * "object" : "chat.completion",
+ * "usage" : {
+ * "completion_tokens" : 28,
+ * "prompt_tokens" : 4500,
+ * "total_tokens" : 4592
+ * }
  * }
  */
 public class NaruOpenApiResponseParser implements NElementDeserializer<NaruResponse> {
@@ -86,42 +86,43 @@ public class NaruOpenApiResponseParser implements NElementDeserializer<NaruRespo
             // 3. Check for standard OpenAI tool_calls structure
             NOptional<NElement> toolCallsOpt = msg.get("tool_calls");
             if (toolCallsOpt.isPresent() && !toolCallsOpt.isNull()) {
-                NArrayElement toolCallsArr = msg.getArray("tool_calls").get();
+                NArrayElement toolCallsArr = msg.getArray("tool_calls").orNull();
                 List<NaruToolCall> calls = new ArrayList<>();
+                if (toolCallsArr != null) {
+                    for (NElement el : toolCallsArr) {
+                        NObjectElement tcObj = el.asObject().get();
+                        String id = tcObj.getStringValue("id").orElseGet(() -> UUID.randomUUID().toString());
 
-                for (NElement el : toolCallsArr) {
-                    NObjectElement tcObj = el.asObject().get();
-                    String id = tcObj.getStringValue("id").orElseGet(() -> UUID.randomUUID().toString());
+                        NObjectElement fn = tcObj.getObject("function").orElse(tcObj);
+                        String name = fn.getStringValue("name").orElse("unknown");
 
-                    NObjectElement fn = tcObj.getObject("function").orElse(tcObj);
-                    String name = fn.getStringValue("name").orElse("unknown");
-
-                    Map<String, Object> args = new LinkedHashMap<>();
-                    if (fn.get("arguments").isPresent()) {
-                        NElement argsEl = fn.get("arguments").get();
-                        if (argsEl.isAnyObject()) {
-                            // Safe fallback mapping loop over NObjectElement entries instead of abstract Map.class unmarshalling
-                            for (NPairElement entry : argsEl.asObject().get().namedPairs()) {
-                                String k = entry.key().asStringValue().orNull();
-                                if(!NBlankable.isBlank(k)) {
-                                    args.put(k, NElements.of().toSimple(entry.value()));
+                        Map<String, Object> args = new LinkedHashMap<>();
+                        if (fn.get("arguments").isPresent()) {
+                            NElement argsEl = fn.get("arguments").get();
+                            if (argsEl.isAnyObject()) {
+                                // Safe fallback mapping loop over NObjectElement entries instead of abstract Map.class unmarshalling
+                                for (NPairElement entry : argsEl.asObject().get().namedPairs()) {
+                                    String k = entry.key().asStringValue().orNull();
+                                    if (!NBlankable.isBlank(k)) {
+                                        args.put(k, NElements.of().toSimple(entry.value()));
+                                    }
                                 }
-                            }
-                        } else if (argsEl.isPrimitive()) {
-                            // Safely handle raw escaped JSON argument string blocks
-                            String argsStr = argsEl.asStringValue().get();
-                            try {
-                                // Direct string-to-map conversion using plain json engine
-                                Map<?, ?> readMap = NElementReader.ofJson().read(argsStr, Map.class);
-                                for (Map.Entry<?, ?> entry : readMap.entrySet()) {
-                                    args.put(String.valueOf(entry.getKey()), entry.getValue());
+                            } else if (argsEl.isPrimitive()) {
+                                // Safely handle raw escaped JSON argument string blocks
+                                String argsStr = argsEl.asStringValue().get();
+                                try {
+                                    // Direct string-to-map conversion using plain json engine
+                                    Map<?, ?> readMap = NElementReader.ofJson().read(argsStr, Map.class);
+                                    for (Map.Entry<?, ?> entry : readMap.entrySet()) {
+                                        args.put(String.valueOf(entry.getKey()), entry.getValue());
+                                    }
+                                } catch (Exception ignored) {
+                                    args.put("raw", argsStr);
                                 }
-                            } catch (Exception ignored) {
-                                args.put("raw", argsStr);
                             }
                         }
+                        calls.add(new NaruToolCall(id, name, args));
                     }
-                    calls.add(new NaruToolCall(id, name, args));
                 }
 
                 response.setMessage(NaruMessage.assistantWithToolCalls(content, calls));

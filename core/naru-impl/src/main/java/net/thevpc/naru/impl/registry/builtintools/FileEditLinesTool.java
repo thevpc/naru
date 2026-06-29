@@ -1,40 +1,34 @@
 package net.thevpc.naru.impl.registry.builtintools;
 
-import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.mode.NaruPromptMode;
-import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.api.registry.NaruToolTags;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.impl.registry.DefaultNaruTool;
 import net.thevpc.naru.impl.util.ToolHelper;
 
 /**
  * Reads a text file from disk and returns its content.
  */
-public class FileEditLinesTool implements NaruTool {
-
+public class FileEditLinesTool extends DefaultNaruTool {
 
     public FileEditLinesTool() {
+        super("file_edit_lines", new String[]{NaruToolTags.FILE_SYSTEM,NaruToolTags.WRITE});
     }
 
     @Override
-    public String name() {
-        return "file_edit_lines";
-    }
-
-    @Override
-    public String getDescription(NaruSession session) {
+    public String getDescription(NaruTask task) {
         return "Insert, replace, or delete lines in a text file. " +
                 "Supports 0-based indexing and negative indices (-1 = last line, -2 = second-to-last). " +
                 "Use dry=true to preview changes without writing.";
     }
 
     @Override
-    public NaruToolDefinition getDefinition(NaruSession session) {
+    public NaruToolDefinition getDefinition(NaruTask task) {
         return new NaruToolDefinitionFunction(
-                name(), getDescription(session),
+                name(), getDescription(task),
                 NaruToolParameter.string("path", "File path to edit", true).build(),
                 NaruToolParameter.integer("from", "Start line index (0-based inclusive, supports negatives)", true).build(),
                 NaruToolParameter.integer("to", "End line index (0-based exclusive). Omit or equal to 'from' to insert.", false).build(),
@@ -53,17 +47,5 @@ public class FileEditLinesTool implements NaruTool {
                 );
 
     }
-
-    public boolean acceptMode(NaruPromptMode mode) {
-        NaruStandardMode m = mode.asStandardMode().orNull();
-        if (m != null) {
-            switch (m) {
-                case IMPLEMENT:
-                    return true;
-            }
-        }
-        return false;
-    }
-
 
 }

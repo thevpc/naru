@@ -2,12 +2,14 @@ package net.thevpc.naru.impl.ia.mode;
 
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
+import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 
 public class NaruStandardPromptModeImpl implements NaruPromptMode {
     public static final NaruPromptMode ASK = new NaruStandardPromptModeImpl(
@@ -17,7 +19,10 @@ public class NaruStandardPromptModeImpl implements NaruPromptMode {
                     "[Goal]: Answer questions and discuss technical concepts.\n" +
                     "[Rules]:\n" +
                     "1. READ-ONLY: Discuss design or explain code. Do not write changes.\n" +
-                    "2. Clarify requirements before suggesting structural execution plans."
+                    "2. Clarify requirements before suggesting structural execution plans.",
+            t ->
+                    !NaruToolTags.EXECUTE.equals(t)
+                            && !NaruToolTags.WRITE.equals(t)
     );
 
     public static final NaruPromptMode PLANNING = new NaruStandardPromptModeImpl(
@@ -28,7 +33,10 @@ public class NaruStandardPromptModeImpl implements NaruPromptMode {
                     "[Rules]:\n" +
                     "1. READ-ONLY: Use only file/directory view tools. No file edits or code execution.\n" +
                     "2. FAIL-NEVER: Proactively identify state, dependency, and runtime edge cases.\n" +
-                    "[Output]: Context Constraints -> Risk Analysis -> Step-by-Step Milestones."
+                    "[Output]: Context Constraints -> Risk Analysis -> Step-by-Step Milestones.",
+            t ->
+                    !NaruToolTags.EXECUTE.equals(t)
+                            && !NaruToolTags.WRITE.equals(t)
     );
 
     public static final NaruPromptMode IMPLEMENT = new NaruStandardPromptModeImpl(
@@ -39,7 +47,8 @@ public class NaruStandardPromptModeImpl implements NaruPromptMode {
                     "[Rules]:\n" +
                     "1. Change exactly one milestone step at a time.\n" +
                     "2. Run test/compile tools immediately after editing any file.\n" +
-                    "3. If exit code != 0, stop and fix before moving to the next step."
+                    "3. If exit code != 0, stop and fix before moving to the next step.",
+            t ->true
     );
 
     public static final NaruPromptMode REVIEW = new NaruStandardPromptModeImpl(
@@ -49,7 +58,11 @@ public class NaruStandardPromptModeImpl implements NaruPromptMode {
                     "[Goal]: Explore the directory structure to map and understand user context.\n" +
                     "[Rules]:\n" +
                     "1. READ-ONLY: Catalog modules, dependencies, and main entry points.\n" +
-                    "[Output]: Summary of directory architecture and primary technology stacks found."
+                    "[Output]: Summary of directory architecture and primary technology stacks found.",
+            t ->
+                    !NaruToolTags.EXECUTE.equals(t)
+                            && !NaruToolTags.WRITE.equals(t)
+
     );
 
     public static final NaruPromptMode AUDIT = new NaruStandardPromptModeImpl(
@@ -60,7 +73,11 @@ public class NaruStandardPromptModeImpl implements NaruPromptMode {
                     "[Rules]:\n" +
                     "1. Scrutinize input validation, edge cases, thread safety, and resource leaks.\n" +
                     "2. Act as a pedantic code critic. Do not implement features.\n" +
-                    "[Output]: List of security risks, logical gaps, or optimization targets."
+                    "[Output]: List of security risks, logical gaps, or optimization targets.",
+            t ->
+                    !NaruToolTags.EXECUTE.equals(t)
+                            && !NaruToolTags.WRITE.equals(t)
+
     );
 
     public static final NaruPromptMode DEBUG = new NaruStandardPromptModeImpl(
@@ -71,17 +88,21 @@ public class NaruStandardPromptModeImpl implements NaruPromptMode {
                     "[Rules]:\n" +
                     "1. Trace execution flows via stack traces. Do not blindly append code.\n" +
                     "2. Isolate variables through targeted runtime/test execution scripts.\n" +
-                    "[Output]: Root cause analysis followed by the exact, minimal surgical fix."
+                    "[Output]: Root cause analysis followed by the exact, minimal surgical fix.",
+            t -> !NaruToolTags.WRITE.equals(t)
+
     );
 
     private final NaruStandardMode standardMode;
     private final String prompt;
     private final Set<String> alias;
+    private final Predicate<Set<String>> acceptableToolTags;
 
-    public NaruStandardPromptModeImpl(NaruStandardMode standardMode, String[] alias, String prompt) {
+    public NaruStandardPromptModeImpl(NaruStandardMode standardMode, String[] alias, String prompt, Predicate<Set<String>> acceptableToolTags) {
         this.standardMode = standardMode;
         this.prompt = prompt;
         this.alias = new HashSet<>();
+        this.acceptableToolTags = acceptableToolTags;
         if (alias != null) {
             for (String s : alias) {
                 // Assuming NBlankable is part of your local framework utilities
@@ -90,6 +111,11 @@ public class NaruStandardPromptModeImpl implements NaruPromptMode {
                 }
             }
         }
+    }
+
+    @Override
+    public boolean acceptToolTags(Set<String> tag) {
+        return acceptableToolTags.test(tag);
     }
 
     @Override

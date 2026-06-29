@@ -81,11 +81,11 @@ public class NaruOpenApiRequestSerializer implements NaruModelRequestSerializer 
         }
 
         paramsObj.set("properties", propertiesObj.build());
-        paramsObj.set("required", requiredArr.build());
-
-        if (!propertiesObj.children().isEmpty()) {
-            functionBlock.set("parameters", paramsObj.build());
+        if (!requiredArr.children().isEmpty()) {
+            paramsObj.set("required", requiredArr.build());
         }
+
+        functionBlock.set("parameters", paramsObj.build());
 
         return NElement.ofObjectBuilder()
                 .set("type", "function")

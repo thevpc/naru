@@ -44,7 +44,7 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
             return NOptional.ofNamedEmpty(NMsg.ofC("protocol for %s", model));
         }
         NaruModelCapabilities capabilities = getCapabilities(model.model(), session);
-        return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOllamaNative(model, name(), capabilities)));
+        return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOllamaNative(NaruOllamaProvider.this,model, name(), capabilities)));
     }
 
 

@@ -5,8 +5,8 @@ import net.thevpc.naru.impl.ia.model.NaruModelProtocolBase;
 
 public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
 
-    public NaruModelProtocolOpenAICompat(NaruModelConfig model, String baseUrl, String chatPath, NaruModelCapabilities capabilities) {
-        super(model, baseUrl, chatPath, capabilities,
+    public NaruModelProtocolOpenAICompat(NaruModelProvider provider,NaruModelConfig model, String baseUrl, String chatPath, NaruModelCapabilities capabilities) {
+        super(provider,model, baseUrl, chatPath, capabilities,
                 new NaruOpenApiRequestSerializer(),
                 new NaruOpenApiResponseParser()
         );

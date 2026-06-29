@@ -4,9 +4,7 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.budget.NaruModelStats;
 import net.thevpc.naru.api.budget.NaruTokenTransaction;
-import net.thevpc.naru.api.model.NaruModelConfig;
-import net.thevpc.naru.api.model.NaruModelKey;
-import net.thevpc.naru.api.model.NaruModelProtocol;
+import net.thevpc.naru.api.model.*;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NStringUtils;
@@ -17,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class NaruMeteringServiceImpl implements NaruMeteringService {
     Map<NaruModelKeyAndUser, NaruModelStatsAccumulator> statsByAndUser = new ConcurrentHashMap<>();
+    Map<String, Nfo2> latesetInfoByProvider = new ConcurrentHashMap<>();
 
     public NaruMeteringServiceImpl() {
     }
@@ -150,5 +149,25 @@ public class NaruMeteringServiceImpl implements NaruMeteringService {
             value = BigDecimal.ZERO;
         }
         m.setUnitBudget(value);
+    }
+
+    private static class Nfo2 {
+        String key;
+        NaruProviderRateLimitInfo stats;
+    }
+
+    @Override
+    public void trackProviderStats(NaruProviderRateLimitInfo stats, NaruSession session) {
+        if (stats != null) {
+            Nfo2 i = new Nfo2();
+            i.key = stats.sessionId() + "/" + stats.providerName();
+            i.stats = stats;
+            latesetInfoByProvider.put(i.key, i);
+        }
+    }
+
+    @Override
+    public List<NaruProviderRateLimitInfo> findProviderRateLimitInfos(NaruSession session) {
+        return latesetInfoByProvider.values().stream().filter(x -> x.stats.sessionId().equals(session.uuid())).map(x -> x.stats).toList();
     }
 }

@@ -56,10 +56,6 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             task.addHistory(NaruMessage.user(prompt));
         }
         NaruResponse response;
-        List<NaruToolDefinition> defs = new ArrayList<>();
-        for (NaruTool t : task.session().registry().tools().values()) {
-            defs.add(t.getDefinition(task.session()));
-        }
         try {
             response = task.chat(task.model(),
                     task.context(NaruSource.values())

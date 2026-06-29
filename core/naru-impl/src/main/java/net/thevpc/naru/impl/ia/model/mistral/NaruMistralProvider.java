@@ -1,4 +1,5 @@
-package net.thevpc.naru.impl.ia.model.gemini;
+package net.thevpc.naru.impl.ia.model.mistral;
+
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.AbstractNaruModelProvider;
@@ -6,31 +7,24 @@ import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.impl.ia.model.NaruModelCapabilitiesImpl;
-import net.thevpc.naru.impl.ia.model.mistral.NaruMistralProvider;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.*;
 
-/**
- * Ollama provider — talks to a local (or remote) Ollama server via REST.
- *
- * <p>Endpoint: POST {baseUrl}/api/chat
- * <p>Compatible with Ollama 0.2.8+ tool-calling format.
- */
-public class NaruGeminiProvider extends AbstractNaruModelProvider {
+public class NaruMistralProvider extends AbstractNaruModelProvider {
 
     private final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
     private final List<String> supportedModels = new ArrayList<>();
 
-    public NaruGeminiProvider() {
-        super("gemini");
-        // Populating common production-tier Gemini models available in 2026
-        supportedModels.add("gemini-2.5-flash");
-        supportedModels.add("gemini-3.5-flash");
-        supportedModels.add("gemini-1.5-pro");
-        supportedModels.add("gemini-2.5-pro");
+    public NaruMistralProvider() {
+        super("mistral");
+        // Populating common production-tier Mistral models available in 2026
+        supportedModels.add("mistral-medium-3.5");
+        supportedModels.add("mistral-small-4");
+        supportedModels.add("mistral-large-latest");
+        supportedModels.add("codestral-latest");
     }
 
     @Override
@@ -41,10 +35,11 @@ public class NaruGeminiProvider extends AbstractNaruModelProvider {
 
         NaruModelCapabilities capabilities = getStaticCapabilities(model.model());
         return NOptional.of(protocols.computeIfAbsent(model,
-                k -> new NaruModelProtocolGemini(NaruGeminiProvider.this,model, name(), capabilities)
+                k -> new NaruModelProtocolMistral(NaruMistralProvider.this,model, name(), capabilities)
         ));
     }
-    private String apiKeyConfigKey(){
+
+    private String apiKeyConfigKey() {
         return name() + ".apiKey";
     }
 
@@ -53,7 +48,7 @@ public class NaruGeminiProvider extends AbstractNaruModelProvider {
         String apiKey = session.agent().env().get(apiKeyConfigKey())
                 .flatMap(x -> x.asStringValue())
                 .orNull();
-        if(NBlankable.isBlank(apiKey)){
+        if (NBlankable.isBlank(apiKey)) {
             return Collections.emptyList();
         }
         return new ArrayList<>(supportedModels);
@@ -63,14 +58,16 @@ public class NaruGeminiProvider extends AbstractNaruModelProvider {
      * Statically maps model limits since cloud-hosted capabilities cannot be polled natively.
      */
     private NaruModelCapabilities getStaticCapabilities(String modelName) {
-        boolean vision = true;
+        boolean vision = modelName.contains("small-4") || modelName.contains("medium-3.5");
         boolean tools = true;
-        boolean thinking = modelName.contains("pro");
+        boolean thinking = modelName.contains("medium");
         boolean embedding = false;
-        long contextLength = 1048576L; // 1M tokens standard fallback for Flash lines
 
-        if (modelName.contains("1.5-pro") || modelName.contains("2.5-pro")) {
-            contextLength = 2097152L; // 2M tokens context window for Pro tiers
+        // 2026 standard context limits for modern Mistral architectures
+        long contextLength = 262144L; // Default 262K context window (e.g. Large 3 / Medium 3.5)
+
+        if (modelName.contains("small-4")) {
+            contextLength = 256000L; // 256K for the unified small lines
         }
 
         return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength);

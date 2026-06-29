@@ -9,6 +9,7 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.impl.ia.mode.NAruModeRegistry;
 import net.thevpc.naru.impl.ia.model.gemini.NaruGeminiProvider;
+import net.thevpc.naru.impl.ia.model.mistral.NaruMistralProvider;
 import net.thevpc.naru.impl.ia.model.ollama.NaruOllamaProvider;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NPairElement;
@@ -28,9 +29,11 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     private final Map<String, NaruToolsetProvider> toolsetProviders = new LinkedHashMap<>();
     private final Map<String, NaruDirectiveProvider> directiveProviders = new LinkedHashMap<>();
+    private final Map<String, NaruToolTagProvider> toolTagProviders = new LinkedHashMap<>();
     private final List<NaruToolset> activeToolsets = new ArrayList<>();
     //    private final Map<String, NaruTool> tools = new LinkedHashMap<>();
     private final Map<String, NaruDirective> availableDirectives = new LinkedHashMap<>();
+    private final Map<String, NaruToolTag> availableToolTags = new LinkedHashMap<>();
     private final Map<String, String> directiveAliases = new LinkedHashMap<>();
     private final Map<String, NaruModelProvider> modelProviders = new HashMap<>();
     private final NAruModeRegistry modeRegistry = new NAruModeRegistry();
@@ -80,8 +83,8 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public NaruRegistry registerDirectiveProvider(NaruDirectiveProvider directiveProvider) {
-        if(directiveProviders.containsKey(directiveProvider.name())){
-            throw new IllegalArgumentException("directive provider "+directiveProvider.name()+" already registered");
+        if (directiveProviders.containsKey(directiveProvider.name())) {
+            throw new IllegalArgumentException("directive provider " + directiveProvider.name() + " already registered");
         }
         directiveProviders.put(directiveProvider.name(), directiveProvider);
         for (NaruDirective directive : directiveProvider.directives()) {
@@ -89,6 +92,20 @@ public class NaruRegistryImpl implements NaruRegistry {
         }
         return this;
     }
+
+    @Override
+    public NaruRegistry registerToolTagProvider(NaruToolTagProvider toolTagProvider) {
+        String n = NNameFormat.LOWER_KEBAB_CASE.format(toolTagProvider.name());
+        if (toolTagProviders.containsKey(n)) {
+            throw new IllegalArgumentException("tool tag provider " + n + " already registered");
+        }
+        toolTagProviders.put(n, toolTagProvider);
+        for (NaruToolTag directive : toolTagProvider.tags()) {
+            registerToolTag(directive);
+        }
+        return this;
+    }
+
 
     @Override
     public NaruRegistry registerToolsetProvider(NaruToolsetProvider tool) {
@@ -160,6 +177,16 @@ public class NaruRegistryImpl implements NaruRegistry {
                 throw new IllegalArgumentException("alias " + alias + " is already used by " + old);
             }
             directiveAliases.put(alias, tool.name());
+        }
+        return this;
+    }
+
+    private NaruRegistry registerToolTag(NaruToolTag tool) {
+        String n = NNameFormat.LOWER_KEBAB_CASE.format(tool.name());
+        if (!availableToolTags.containsKey(n)) {
+            availableToolTags.put(n, tool);
+        } else {
+            //just ignore?
         }
         return this;
     }
@@ -320,15 +347,28 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     @Override
+    public Map<String, NaruToolTag> availableTags() {
+        return new HashMap<>(availableToolTags);
+    }
+
+    @Override
+    public NOptional<NaruToolTag> findAvailableTag(String name) {
+                return NOptional.ofNamed(availableToolTags.get(NNameFormat.LOWER_KEBAB_CASE.format(name)), name);
+    }
+
+    @Override
     public Set<String> toolNames() {
         return Collections.unmodifiableSet(tools().keySet());
     }
 
     public NaruRegistry registerDefaults() {
         this.registerToolsetProvider(new NaruBuiltinToolsetProvider());
+        this.registerToolsetProvider(new NaruCommonToolsetProvider());
         this.registerDirectiveProvider(new NaruBuiltinDirectiveProvider());
+        this.registerToolTagProvider(new NaruBuiltinToolTagProvider());
         this.registerModelProvider(new NaruOllamaProvider());
         this.registerModelProvider(new NaruGeminiProvider());
+        this.registerModelProvider(new NaruMistralProvider());
         return this;
     }
 

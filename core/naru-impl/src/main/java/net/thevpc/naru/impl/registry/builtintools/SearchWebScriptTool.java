@@ -1,30 +1,30 @@
 package net.thevpc.naru.impl.registry.builtintools;
 
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.api.registry.NaruToolTags;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.impl.registry.DefaultNaruTool;
 import net.thevpc.naru.impl.util.ToolHelper;
 
-public class SearchWebScriptTool implements NaruTool {
+public class SearchWebScriptTool extends DefaultNaruTool {
 
-    @Override
-    public String name() {
-        return "search_web";
+    public SearchWebScriptTool() {
+        super("search_web", new String[]{NaruToolTags.NETWORK});
     }
 
     @Override
-    public String getDescription(NaruSession session) {
+    public String getDescription(NaruTask task) {
         return "search the web for the provided query";
     }
 
     @Override
-    public NaruToolDefinition getDefinition(NaruSession session) {
+    public NaruToolDefinition getDefinition(NaruTask task) {
         return new NaruToolDefinitionFunction(
                 name(),
-                getDescription(session),
+                getDescription(task),
                 NaruToolParameter.string("query", "query to look for", true).build()
         );
     }

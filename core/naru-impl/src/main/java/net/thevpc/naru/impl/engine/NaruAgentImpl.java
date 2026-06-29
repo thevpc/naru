@@ -120,9 +120,17 @@ public class NaruAgentImpl implements NaruAgent {
     private void maintenanceLoop() {
         while (true) {
             for (NaruSession session : new ArrayList<>(sessions)) {
-                if(session.isRunning()) {
-                    session.scheduler().runRetention();
-                    session.scheduler().runBlockedDrain();
+                if (session.isRunning()) {
+                    try {
+                        session.scheduler().runRetention();
+                        session.scheduler().runBlockedDrain();
+                    } catch (Exception e) {
+                        if (!session.isRunning()) {
+                            //just ignore
+                        } else {
+                            NErr.println(NMsg.ofC("maintenanceLoop error: %s", e));
+                        }
+                    }
                 }
             }
             Runnable action;
@@ -180,12 +188,12 @@ public class NaruAgentImpl implements NaruAgent {
         log(NaruLogMode.RAW, NMsg.ofC(
                 "╭╮╷╭─╮╭─╮╷ ╷\n" +
                         "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
-                        "╵ ╵╵ ╵╵╰╴╰─╯ v%s\n"+
+                        "╵ ╵╵ ╵╵╰╴╰─╯ v%s\n" +
                         "Type %s%s (or %s%s) for help and %s%s to exit.\n"
                 , NVersion.of("1.0.0.0")
-                , NMsg.ofStyledSeparator("/"),NMsg.ofStyledPrimary1("help")
-                , NMsg.ofStyledSeparator("/"),NMsg.ofStyledPrimary1("?")
-                , NMsg.ofStyledSeparator("/"),NMsg.ofStyledPrimary1("exit")
+                , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("help")
+                , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("?")
+                , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("exit")
         ));
         NaruSession session = newSession(null);
         enableRichTerm(session);

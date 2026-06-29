@@ -2,11 +2,9 @@ package net.thevpc.naru.impl.registry.builtindirectives.ai;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSource;
+import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.budget.NaruModelStats;
-import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.model.NaruModelRequest;
-import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.impl.registry.builtindirectives.AbstractDirective;
 import net.thevpc.naru.impl.util.NaruUtils;
@@ -18,8 +16,8 @@ import java.text.DecimalFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class NaruStatDirective extends AbstractDirective {
-    public NaruStatDirective() {
+public class NaruStatsDirective extends AbstractDirective {
+    public NaruStatsDirective() {
         super("stat", "ai", "show and manage stats", "stats");
         register(new AbstractSubCommand() {
             @Override
@@ -41,6 +39,45 @@ public class NaruStatDirective extends AbstractDirective {
                         .thenComparing(a -> a.getModel().model())
                 )
                 .collect(Collectors.toList());
+
+        for (NaruProviderRateLimitInfo s : context.task().session().meteringService().findProviderRateLimitInfos(context.task().session())) {
+            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s (%s)%s%s",
+                            NMsg.ofStyledPrimary9(s.providerName()),
+                            s.serverTime(),
+                            s.retryAfter().isPresent() ? ", retry after  : " : "",
+                            s.retryAfter().orNull()
+                    )
+            );
+            for (NaruRateLimitBucket requestBucket : s.requestBuckets()) {
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("      request limits / %s : %s %s, %s %s, %s %s, %s %s",
+                                NMsg.ofStyledPrimary2(requestBucket.getWindow().name().toLowerCase()),
+                                "limit",
+                                requestBucket.getLimit().orNull(),
+                                "used",
+                                (requestBucket.getLimit().orNull() != null && requestBucket.getRemaining().orNull() != null) ? (requestBucket.getLimit().orNull() - requestBucket.getRemaining().orNull()) : null,
+                                "remaining",
+                                requestBucket.getRemaining().orNull(),
+                                requestBucket.getResetTime().orNull() == null ? "" : "resetTime",
+                                requestBucket.getResetTime().orNull()
+                        )
+                );
+            }
+            for (NaruRateLimitBucket requestBucket : s.tokenBuckets()) {
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("      token   limits / %s : %s %s, %s %s, %s %s, %s %s",
+                                NMsg.ofStyledPrimary2(requestBucket.getWindow().name().toLowerCase()),
+                                "limit",
+                                requestBucket.getLimit().orNull(),
+                                "used",
+                                (requestBucket.getLimit().orNull() != null && requestBucket.getRemaining().orNull() != null) ? (requestBucket.getLimit().orNull() - requestBucket.getRemaining().orNull()) : null,
+                                "remaining",
+                                requestBucket.getRemaining().orNull(),
+                                requestBucket.getResetTime().orNull() == null ? "" : "resetTime",
+                                requestBucket.getResetTime().orNull()
+                        )
+                );
+            }
+        }
+
         for (NaruModelStats modelStat : modelStats) {
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", modelStat.getModel().toMsg()).asError());
             double userPercent = modelStat.getContextUsage() * 1.0 / modelStat.getContextSize();
@@ -87,12 +124,12 @@ public class NaruStatDirective extends AbstractDirective {
                 )
         );
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  tokens : %s | system : %s | user : %s | tools : %s | assistant : %s | agent : %s",
-                promptStats.tokens,
-                NMsg.ofStyledNumber(percent(promptStats.systemTokens, promptStats.tokens)),
-                NMsg.ofStyledNumber(percent(promptStats.userTokens, promptStats.tokens)),
-                NMsg.ofStyledNumber(percent(promptStats.toolsTokens, promptStats.tokens)),
-                NMsg.ofStyledNumber(percent(promptStats.assistantTokens, promptStats.tokens)),
-                NMsg.ofStyledNumber(percent(promptStats.agentTokens, promptStats.tokens))
+                        promptStats.tokens,
+                        NMsg.ofStyledNumber(percent(promptStats.systemTokens, promptStats.tokens)),
+                        NMsg.ofStyledNumber(percent(promptStats.userTokens, promptStats.tokens)),
+                        NMsg.ofStyledNumber(percent(promptStats.toolsTokens, promptStats.tokens)),
+                        NMsg.ofStyledNumber(percent(promptStats.assistantTokens, promptStats.tokens)),
+                        NMsg.ofStyledNumber(percent(promptStats.agentTokens, promptStats.tokens))
                 )
         );
     }

@@ -1,6 +1,5 @@
 package net.thevpc.naru.impl.registry.builtintools;
 
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
@@ -8,24 +7,26 @@ import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.api.registry.NaruToolTags;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.impl.registry.DefaultNaruTool;
 
-public class RoutineRunTool implements NaruTool {
+public class RoutineRunTool extends DefaultNaruTool {
 
-    @Override
-    public String name() {
-        return "routine_run";
+    public RoutineRunTool() {
+        super("routine_run", new String[]{NaruToolTags.EXECUTE, NaruToolTags.ROUTINE});
     }
 
     @Override
-    public String getDescription(NaruSession session) {
+    public String getDescription(NaruTask task) {
         return "Requests the agent to start executing a specified script. The script will run sequentially line by line.";
     }
 
     @Override
-    public NaruToolDefinition getDefinition(NaruSession session) {
+    public NaruToolDefinition getDefinition(NaruTask task) {
         return new NaruToolDefinitionFunction(
                 name(),
-                getDescription(session),
+                getDescription(task),
                 NaruToolParameter.string("routine_name", "Name of the routine to run.", true).build()
         );
     }
@@ -37,19 +38,10 @@ public class RoutineRunTool implements NaruTool {
             return "Error: routine_name is required";
         }
 
-        String r= "running routine " + scriptName;
+        String r = "running routine " + scriptName;
         context.task().invokeRoutine(scriptName);
         return r;
     }
 
-    public boolean acceptMode(NaruPromptMode mode) {
-        NaruStandardMode m = mode.asStandardMode().orNull();
-        if (m != null) {
-            switch (m) {
-                case IMPLEMENT:
-                    return true;
-            }
-        }
-        return false;
-    }
+
 }

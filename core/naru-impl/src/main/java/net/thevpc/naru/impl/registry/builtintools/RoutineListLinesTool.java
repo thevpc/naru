@@ -1,23 +1,30 @@
 package net.thevpc.naru.impl.registry.builtintools;
 
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.api.registry.NaruToolTags;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.impl.registry.DefaultNaruTool;
 import net.thevpc.naru.impl.util.ToolHelper;
 
 
-public class RoutineListLinesTool implements NaruTool {
+public class RoutineListLinesTool extends DefaultNaruTool {
 
     @Override
     public String name() {
         return "routine_list_lines";
     }
 
+    public RoutineListLinesTool() {
+        super("routine_list_lines", new String[]{NaruToolTags.ROUTINE});
+    }
+
+
     @Override
-    public String getDescription(NaruSession session) {
+    public String getDescription(NaruTask task) {
         return "Lists the numbered lines of a naru routine (internal REPL buffer). " +
                 "This is NOT a filesystem directory listing or shell command output. " +
                 "Returns lines sorted by line_number in 'NN content' format. " +
@@ -26,10 +33,10 @@ public class RoutineListLinesTool implements NaruTool {
     }
 
     @Override
-    public NaruToolDefinition getDefinition(NaruSession session) {
+    public NaruToolDefinition getDefinition(NaruTask task) {
         return new NaruToolDefinitionFunction(
                 name(),
-                getDescription(session),
+                getDescription(task),
                 // ✅ Optional: target a specific routine by name
                 NaruToolParameter.string("routine_name",
                         "Name of the routine to list. If empty, uses the currently active routine.",

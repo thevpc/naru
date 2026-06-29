@@ -1,22 +1,22 @@
 package net.thevpc.naru.impl.registry.builtintools;
 
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
-import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.api.registry.NaruToolTags;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.impl.registry.DefaultNaruTool;
 import net.thevpc.naru.impl.util.ToolHelper;
 
-public class RoutineAddLineTool implements NaruTool {
+public class RoutineAddLineTool extends DefaultNaruTool {
 
-    @Override
-    public String name() {
-        return "routine_add_line";
+    public RoutineAddLineTool() {
+        super("routine_add_line", new String[]{NaruToolTags.ROUTINE,NaruToolTags.WRITE});
     }
 
     @Override
-    public String getDescription(NaruSession session) {
+    public String getDescription(NaruTask task) {
         return "Adds or updates a numbered line in a naru routine (internal REPL buffer). " +
                 "This is NOT a shell command or external script. " +
                 "Supports comments: use '#', '//', or 'REM' at the start (e.g., line=15, content='# Validate input'). " +
@@ -25,10 +25,10 @@ public class RoutineAddLineTool implements NaruTool {
     }
 
     @Override
-    public NaruToolDefinition getDefinition(NaruSession session) {
+    public NaruToolDefinition getDefinition(NaruTask task) {
         return new NaruToolDefinitionFunction(
                 name(),
-                getDescription(session),
+                getDescription(task),
                 NaruToolParameter.string("routine_name", "Name of the routine to modify. If empty, uses the currently active routine.", false).build(),
                 NaruToolParameter.integer("line_number", "Line number to write (e.g. 10, 20,100). Supports gaps for easy insertion.", true).build(),
                 NaruToolParameter.string("command", "The instruction, condition, or loop directive to store at this line.", true).build()

@@ -15,8 +15,8 @@ public class NaruGoDirective extends AbstractDirective {
                 NaruTask task = context.task();
                 String prompt = task.inputBuffer();
                 task.inputBuffer("");
-                task.addStatement(NaruStatementHelper.ofModelCall(prompt));
-                task.tick();
+                task.prependStatement(NaruStatementHelper.ofModelCall(prompt));
+                //task.tick();
             }
         });
     }

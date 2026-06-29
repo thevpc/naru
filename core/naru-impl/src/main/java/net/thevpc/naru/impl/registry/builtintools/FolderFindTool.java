@@ -1,36 +1,23 @@
 package net.thevpc.naru.impl.registry.builtintools;
 
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.api.registry.NaruToolTags;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.impl.registry.DefaultNaruTool;
 import net.thevpc.naru.impl.util.ToolHelper;
-import net.thevpc.nuts.io.NPath;
-import net.thevpc.nuts.io.NPathPermission;
-import net.thevpc.nuts.util.NBlankable;
-import net.thevpc.nuts.util.NBooleanRef;
-import net.thevpc.nuts.util.NIntRef;
-import net.thevpc.nuts.util.NIterator;
 
-import java.time.Instant;
-import java.time.format.DateTimeParseException;
-import java.util.*;
-import java.util.function.Predicate;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
-
-public class FolderFindTool implements NaruTool {
+public class FolderFindTool extends DefaultNaruTool {
 
 
-    @Override
-    public String name() {
-        return "folder_find";
+    public FolderFindTool() {
+        super("folder_find", new String[]{NaruToolTags.FILE_SYSTEM});
     }
 
     @Override
-    public String getDescription(NaruSession session) {
+    public String getDescription(NaruTask task) {
         return "Find files by name/glob patterns and optionally search their contents. " +
                 "CRITICAL: A strict logical 'AND' is performed across ALL filters. " +
                 "Files must simultaneously match: Location Path AND Glob Filters (include/exclude) " +
@@ -39,9 +26,9 @@ public class FolderFindTool implements NaruTool {
     }
 
     @Override
-    public NaruToolDefinition getDefinition(NaruSession session) {
+    public NaruToolDefinition getDefinition(NaruTask task) {
         return new NaruToolDefinitionFunction(
-                name(), getDescription(session),
+                name(), getDescription(task),
                 NaruToolParameter.string("path", "Directory to search", true).build(),
                 NaruToolParameter.string("content_pattern", "Search text pattern inside file contents (optional)", false).build(),
                 NaruToolParameter.bool("regex", "Treat pattern as regex", false, false).build(),
