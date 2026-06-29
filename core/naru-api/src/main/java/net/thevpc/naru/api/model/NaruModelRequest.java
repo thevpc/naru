@@ -2,9 +2,7 @@ package net.thevpc.naru.api.model;
 
 import net.thevpc.nuts.elem.NElement;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class NaruModelRequest {
     private List<NaruMessage> messages;
@@ -33,5 +31,12 @@ public class NaruModelRequest {
 
     public List<NaruToolDefinition> tools() {
         return tools;
+    }
+
+    public NaruModelRequest withMessages(List<NaruMessage> finalMessages) {
+        return new NaruModelRequest(finalMessages,
+                new ArrayList<>(tools)
+                ,new HashMap<>(env)
+        );
     }
 }

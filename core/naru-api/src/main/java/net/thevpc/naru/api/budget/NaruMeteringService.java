@@ -2,7 +2,8 @@ package net.thevpc.naru.api.budget;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelKey;
-import net.thevpc.nuts.util.NOptional;
+import net.thevpc.naru.api.model.NaruModelProvider;
+import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -23,4 +24,7 @@ public interface NaruMeteringService {
     void setUnitPrice(NaruModelKey model, BigDecimal value, NaruSession session);
 
     BigDecimal getUnitPrice(NaruModelKey model, NaruSession session);
+
+    void trackProviderStats(NaruProviderRateLimitInfo stats,NaruSession session);
+    List<NaruProviderRateLimitInfo> findProviderRateLimitInfos(NaruSession session);
 }

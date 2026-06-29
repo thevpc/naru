@@ -1,8 +1,10 @@
 package net.thevpc.naru.api.registry;
 
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.task.NaruTask;
+
+import java.util.Set;
 
 /**
  * A tool that can be called by the agent's reasoning model.
@@ -20,12 +22,18 @@ public interface NaruTool {
     /**
      * Human-readable description sent to the model.
      */
-    String getDescription(NaruSession session);
+    String getDescription(NaruTask task);
+
+    Set<String> tags();
+
+    default boolean isRelevant(NaruTask task){
+        return true;
+    }
 
     /**
      * Returns the full OpenAI-compatible JSON tool definition.
      */
-    NaruToolDefinition getDefinition(NaruSession session);
+    NaruToolDefinition getDefinition(NaruTask task);
 
     /**
      * Execute the tool and return a string result that will be sent back

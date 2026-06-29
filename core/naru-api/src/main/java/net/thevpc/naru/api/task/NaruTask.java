@@ -1,13 +1,11 @@
 package net.thevpc.naru.api.task;
 
 import net.thevpc.naru.api.agent.*;
+import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.mode.NaruPromptMode;
-import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.model.NaruModelConfig;
-import net.thevpc.naru.api.model.NaruModelRequest;
-import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NElement;
@@ -20,9 +18,11 @@ import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NOptional;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 public interface NaruTask extends NToElement {
     boolean isFg();
@@ -67,6 +67,20 @@ public interface NaruTask extends NToElement {
 
     void log(NaruLogMode mode, NMsg s);
 
+
+    public NaruTask addToolExclusion(String toolName) ;
+
+    public NaruTask removeToolExclusion(String toolName) ;
+
+    public Set<String> findToolExclusions() ;
+    NaruTask removeToolTag(String toolTag);
+
+    NaruTask addToolTag(String toolTag);
+
+    List<NaruToolTag> findToolTags();
+
+    List<NaruToolDefinition> findTools();
+
     NaruModelRequest context(NaruSource... sources);
 
     boolean removeHistoryAt(int index);
@@ -107,6 +121,7 @@ public interface NaruTask extends NToElement {
 
     boolean addHistory(String m);
 
+    void addSystemHistory(Function<NaruTask,NaruMessage> sysHistory);
     void addHistory(NaruMessage assistantMsg);
 
     void setLastResult(NaruMessage lastResult);
@@ -238,7 +253,8 @@ public interface NaruTask extends NToElement {
 
     void setRoutineLine(int index, String name);
 
-    void appendRoutineLine(int increment,String name);
+    void appendRoutineLine(int increment, String name);
+
     Map<String, Object> getTaskEnv();
 
     void call(String cmdline);

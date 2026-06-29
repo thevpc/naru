@@ -2,6 +2,7 @@ package net.thevpc.naru.api.agent;
 
 import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.NaruScheduler;
 import net.thevpc.naru.api.scheduler.NaruSessionEventLog;

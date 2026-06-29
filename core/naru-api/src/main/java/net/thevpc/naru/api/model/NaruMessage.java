@@ -50,6 +50,11 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         this.toolName = toolName;
         this.toolCalls = toolCalls;
     }
+    public NaruMessage withContent(String content){
+        return new NaruMessage(sourceName, source, role, content, images==null?null:new ArrayList<>(images),
+                toolCallId,
+                toolName, toolCalls==null?null:new ArrayList<>(toolCalls));
+    }
 
     public String getSourceName() {
         return sourceName;

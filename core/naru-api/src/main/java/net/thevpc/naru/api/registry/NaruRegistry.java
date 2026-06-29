@@ -13,11 +13,14 @@ public interface NaruRegistry {
 
 
     NOptional<NaruTool> findTool(String name);
+
     Map<String, NaruTool> tools();
 
     Map<String, NaruDirective> directives();
 
     NaruRegistry registerToolsetProvider(NaruToolsetProvider tool);
+
+    NaruRegistry registerToolTagProvider(NaruToolTagProvider toolTagProvider);
     NaruRegistry registerDirectiveProvider(NaruDirectiveProvider naruDirectiveProvider);
 
 //    NaruRegistry registerDirective(NaruDirective tool);
@@ -51,6 +54,7 @@ public interface NaruRegistry {
     List<NaruPromptMode> modes();
 
     List<String> modeNames();
+
     List<String> modeNamesAndAliases();
 
     void declareMode(NaruPromptMode mode);
@@ -58,4 +62,7 @@ public interface NaruRegistry {
     NOptional<NaruPromptMode> mode(NaruStandardMode mode);
 
     NOptional<NaruPromptMode> mode(String mode);
+
+    NOptional<NaruToolTag> findAvailableTag(String name);
+    Map<String,NaruToolTag> availableTags();
 }

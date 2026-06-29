@@ -6,5 +6,5 @@ public enum NaruStandardMode {
     IMPLEMENT,
     REVIEW,
     AUDIT,
-    DEBUG,
+    DEBUG;
 }
