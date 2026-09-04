@@ -49,3 +49,4 @@ documentation/.naru
 /extensions/naru-tools-git/target/
 /extensions/naru-tools-semantic/target/
 /extensions/naru-tools-ollama/target/
+/extensions/naru-tools-plan/target/
