@@ -4,10 +4,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.ext.models.util.NaruModelUtils;
 import net.thevpc.nuts.elem.*;
-import net.thevpc.nuts.net.NHttpCode;
-import net.thevpc.nuts.net.NWebCli;
-import net.thevpc.nuts.net.NWebRequest;
-import net.thevpc.nuts.net.NWebResponse;
+import net.thevpc.nuts.net.*;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.mon.NChronometer;
 import net.thevpc.nuts.time.NDuration;
@@ -124,11 +121,11 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return mrequest;
     }
 
-    protected void prepareRequest(NWebRequest request, NElement body, NaruTask task) {
+    protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
         // Subclasses can inject headers, auth, etc.
     }
 
-    protected void onResponseReceived(NWebResponse response, NaruTask task) {
+    protected void onResponseReceived(NHttpResponse response, NaruTask task) {
         // Subclasses can inspect headers, track telemetry, etc.
     }
 
@@ -183,10 +180,10 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
 
         NaruModelRequest preparedModelRequest = preprocessRequest(mrequest, task);
         NElement body = serializer.serialize(preparedModelRequest, model, task.session());
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(task, env))
                 .baseUri(url(task, env));
-        NWebRequest request = http.POST(chatPath)
+        NHttpRequest request = http.POST(chatPath)
                 .timeout(readTimeout(task, env))
                 .jsonRequestBody(body);
         prepareRequest(request, body, task);
@@ -201,7 +198,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
             int attempt = attemptCounter.incrementAndGet();
             NChronometer chrono = NChronometer.of();
             java.time.Instant reqTime = java.time.Instant.now();
-            NWebResponse response = null;
+            NHttpResponse response = null;
             String responseString = null;
             Throwable error = null;
             try {
@@ -215,7 +212,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                         dynamicRetryAfter.set(retryAfter);
                     }
                     responseString = response.contentAsString();
-                    throw new net.thevpc.nuts.net.NWebResponseException(
+                    throw new NHttpResponseException(
                             NMsg.ofC("Rate limit exceeded (HTTP 429) from %s: %s", provider().name(), response.statusMessage()),
                             null,
                             response.statusCode()
@@ -223,7 +220,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 } else if (response.isClientError()) {
                     // Fatal 4xx error (e.g. 400, 401, 403, 404) -> Do not retry
                     responseString = response.contentAsString();
-                    throw new NonRetryableWebException(new net.thevpc.nuts.net.NWebResponseException(
+                    throw new NonRetryableWebException(new NHttpResponseException(
                             NMsg.ofC("Client error (HTTP %s) from %s: %s", code, provider().name(), response.statusMessage()),
                             null,
                             response.statusCode()

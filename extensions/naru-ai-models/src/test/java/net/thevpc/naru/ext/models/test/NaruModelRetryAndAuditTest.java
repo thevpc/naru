@@ -1,6 +1,5 @@
 package net.thevpc.naru.ext.models.test;
 
-import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
@@ -12,9 +11,9 @@ import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.io.NInputSource;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.net.NHttpCode;
-import net.thevpc.nuts.net.NWebCookie;
-import net.thevpc.nuts.net.NWebResponse;
-import net.thevpc.nuts.net.NWebResponseException;
+import net.thevpc.nuts.net.NHttpCookie;
+import net.thevpc.nuts.net.NHttpResponse;
+import net.thevpc.nuts.net.NHttpResponseException;
 import net.thevpc.nuts.text.NContentType;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NMsgCode;
@@ -54,26 +53,26 @@ public class NaruModelRetryAndAuditTest {
     @Test
     public void testParseRetryAfterHeaders() {
         // 1. Integer seconds
-        NWebResponse respSec = new MockWebResponse(429, Map.of("retry-after", List.of("60")));
+        NHttpResponse respSec = new MockHttpResponse(429, Map.of("retry-after", List.of("60")));
         NDuration d1 = NaruModelUtils.parseRetryAfter(respSec);
         Assertions.assertNotNull(d1);
         Assertions.assertEquals(60, d1.toSeconds());
 
         // 2. Decimal seconds
-        NWebResponse respDec = new MockWebResponse(429, Map.of("Retry-After", List.of("2.5")));
+        NHttpResponse respDec = new MockHttpResponse(429, Map.of("Retry-After", List.of("2.5")));
         NDuration d2 = NaruModelUtils.parseRetryAfter(respDec);
         Assertions.assertNotNull(d2);
         Assertions.assertEquals(2500, d2.toMillis());
 
         // 3. Milliseconds header
-        NWebResponse respMs = new MockWebResponse(429, Map.of("retry-after-ms", List.of("1500")));
+        NHttpResponse respMs = new MockHttpResponse(429, Map.of("retry-after-ms", List.of("1500")));
         NDuration d3 = NaruModelUtils.parseRetryAfter(respMs);
         Assertions.assertNotNull(d3);
         Assertions.assertEquals(1500, d3.toMillis());
 
         // 4. RFC 1123 HTTP Date
         String httpDate = DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now().plusSeconds(10));
-        NWebResponse respDate = new MockWebResponse(429, Map.of("retry-after", List.of(httpDate)));
+        NHttpResponse respDate = new MockHttpResponse(429, Map.of("retry-after", List.of(httpDate)));
         NDuration d4 = NaruModelUtils.parseRetryAfter(respDate);
         Assertions.assertNotNull(d4);
         Assertions.assertTrue(d4.toSeconds() >= 8 && d4.toSeconds() <= 12);
@@ -192,7 +191,7 @@ public class NaruModelRetryAndAuditTest {
             int attempt = attempts.incrementAndGet();
             if (attempt < 3) {
                 dynamicRetryAfter.set(NDuration.ofMillis(10));
-                throw new NWebResponseException(NMsg.ofC("Rate limit"), null, NHttpCode.of(429));
+                throw new NHttpResponseException(NMsg.ofC("Rate limit"), null, NHttpCode.of(429));
             }
             return "SUCCESS";
         });
@@ -212,7 +211,7 @@ public class NaruModelRetryAndAuditTest {
         NRetryCall<String> nonRetryCall = NRetryCall.of("test-401", () -> {
             nonRetryAttempts.incrementAndGet();
             throw new NaruModelProtocolBase.NonRetryableWebException(
-                    new NWebResponseException(NMsg.ofC("Unauthorized"), null, NHttpCode.of(401)),
+                    new NHttpResponseException(NMsg.ofC("Unauthorized"), null, NHttpCode.of(401)),
                     "{\"error\":\"invalid_api_key\"}"
             );
         });
@@ -224,11 +223,11 @@ public class NaruModelRetryAndAuditTest {
     }
 
     // Helper Mock class
-    private static class MockWebResponse implements NWebResponse {
+    private static class MockHttpResponse implements NHttpResponse {
         private final int statusCode;
         private final Map<String, List<String>> headers;
 
-        public MockWebResponse(int statusCode, Map<String, List<String>> headers) {
+        public MockHttpResponse(int statusCode, Map<String, List<String>> headers) {
             this.statusCode = statusCode;
             this.headers = headers;
         }
@@ -314,7 +313,7 @@ public class NaruModelRetryAndAuditTest {
         }
 
         @Override
-        public List<NWebCookie> cookies() {
+        public List<NHttpCookie> cookies() {
             return Collections.emptyList();
         }
 
@@ -324,8 +323,8 @@ public class NaruModelRetryAndAuditTest {
         }
 
         @Override
-        public NWebResponse ifErrorThrow() {
-            if (isError()) throw new NWebResponseException(statusMessage(), null, statusCode());
+        public NHttpResponse ifErrorThrow() {
+            if (isError()) throw new NHttpResponseException(statusMessage(), null, statusCode());
             return this;
         }
 
@@ -381,7 +380,7 @@ public class NaruModelRetryAndAuditTest {
         }
 
         @Override
-        public NWebResponse userMessage(NMsgCode msgCode) {
+        public NHttpResponse userMessage(NMsgCode msgCode) {
             return this;
         }
     }

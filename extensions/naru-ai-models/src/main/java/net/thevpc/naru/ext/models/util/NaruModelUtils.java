@@ -1,6 +1,5 @@
 package net.thevpc.naru.ext.models.util;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.artifact.NId;
 import net.thevpc.nuts.cmdline.NCmdLine;
@@ -12,21 +11,18 @@ import net.thevpc.nuts.elem.NPairElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.io.NPathOption;
 import net.thevpc.nuts.mon.NChronometer;
-import net.thevpc.nuts.net.NWebRequest;
-import net.thevpc.nuts.net.NWebResponse;
+import net.thevpc.nuts.net.NHttpRequest;
+import net.thevpc.nuts.net.NHttpResponse;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.platform.NStoreScope;
 import net.thevpc.nuts.platform.NStoreType;
 import net.thevpc.nuts.text.*;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NIllegalArgumentException;
-import net.thevpc.nuts.util.NStringUtils;
 
-import java.text.DecimalFormat;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class NaruModelUtils {
 
@@ -107,7 +103,7 @@ public class NaruModelUtils {
         return s.length() <= max ? s : s.substring(0, max) + "…";
     }
 
-    public static void logWebRequest(NWebRequest request, NMsg text, Object input) {
+    public static void logWebRequest(NHttpRequest request, NMsg text, Object input) {
         NTextBuilder sb = NTextBuilder.of();
         sb.append(NMsg.ofStyledPath(request.effectiveUri()));
         sb.append(" : ");
@@ -120,7 +116,7 @@ public class NaruModelUtils {
         log(NMsg.ofC("%s", sb.build()));
     }
 
-    public static void logWebResponse(NWebRequest request, NMsg text, Object input, Object output, NChronometer chronometer) {
+    public static void logWebResponse(NHttpRequest request, NMsg text, Object input, Object output, NChronometer chronometer) {
         NTextBuilder sb = NTextBuilder.of();
         sb.append(NMsg.ofStyledPath(request.effectiveUri()));
         sb.append(" : ");
@@ -137,7 +133,7 @@ public class NaruModelUtils {
         log(NMsg.ofC("%s", sb.build()).withDuration(chronometer.duration()));
     }
 
-    public static NDuration parseRetryAfter(NWebResponse response) {
+    public static NDuration parseRetryAfter(NHttpResponse response) {
         if (response == null) return null;
         String header = response.header("retry-after").orNull();
         if (NBlankable.isBlank(header)) {
@@ -236,9 +232,9 @@ public class NaruModelUtils {
                                 net.thevpc.naru.api.agent.NaruSession session,
                                 String provider,
                                 String model,
-                                NWebRequest request,
+                                NHttpRequest request,
                                 Object requestBody,
-                                net.thevpc.nuts.net.NWebResponse response,
+                                NHttpResponse response,
                                 Object responseBody,
                                 Throwable error,
                                 int attempt,

@@ -10,9 +10,9 @@ import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.mon.NChronometer;
-import net.thevpc.nuts.net.NWebCli;
-import net.thevpc.nuts.net.NWebRequest;
-import net.thevpc.nuts.net.NWebResponse;
+import net.thevpc.nuts.net.NHttpClient;
+import net.thevpc.nuts.net.NHttpRequest;
+import net.thevpc.nuts.net.NHttpResponse;
 import net.thevpc.nuts.platform.NArchFamily;
 import net.thevpc.nuts.platform.NEnv;
 import net.thevpc.nuts.platform.NOsFamily;
@@ -147,11 +147,11 @@ public class OllamaService {
     public boolean isRunning(NaruSession session) {
         String baseUrl = getOllamaUrl(session);
         try {
-            NWebCli http = NWebCli.of()
+            NHttpClient http = NHttpClient.of()
                     .connectTimeout(NDuration.ofSeconds(2))
                     .baseUri(baseUrl);
-            NWebRequest req = http.GET("").timeout(NDuration.ofSeconds(2));
-            NWebResponse resp = req.run();
+            NHttpRequest req = http.GET("").timeout(NDuration.ofSeconds(2));
+            NHttpResponse resp = req.run();
             return (resp.statusCode() != null && resp.statusCode().isOk()) || resp.contentAsString().contains("Ollama is running");
         } catch (Exception e) {
             return false;
@@ -170,11 +170,11 @@ public class OllamaService {
 
         NChronometer chrono = NChronometer.of();
         try {
-            NWebCli http = NWebCli.of()
+            NHttpClient http = NHttpClient.of()
                     .connectTimeout(NDuration.ofSeconds(2))
                     .baseUri(baseUrl);
-            NWebRequest req = http.GET("api/version").timeout(NDuration.ofSeconds(2));
-            NWebResponse resp = req.run();
+            NHttpRequest req = http.GET("api/version").timeout(NDuration.ofSeconds(2));
+            NHttpResponse resp = req.run();
             if (resp.statusCode() != null && resp.statusCode().isOk()) {
                 running = true;
                 responseTimeMs = chrono.stop().durationMs();
@@ -190,11 +190,11 @@ public class OllamaService {
             // Check root endpoint as fallback
             try {
                 chrono = NChronometer.of();
-                NWebCli http = NWebCli.of()
+                NHttpClient http = NHttpClient.of()
                         .connectTimeout(NDuration.ofSeconds(2))
                         .baseUri(baseUrl);
-                NWebRequest req = http.GET("").timeout(NDuration.ofSeconds(2));
-                NWebResponse resp = req.run();
+                NHttpRequest req = http.GET("").timeout(NDuration.ofSeconds(2));
+                NHttpResponse resp = req.run();
                 if ((resp.statusCode() != null && resp.statusCode().isOk()) || resp.contentAsString().contains("Ollama is running")) {
                     running = true;
                     responseTimeMs = chrono.stop().durationMs();
@@ -228,11 +228,11 @@ public class OllamaService {
         String baseUrl = getOllamaUrl(session);
         List<String> models = new ArrayList<>();
         try {
-            NWebCli http = NWebCli.of()
+            NHttpClient http = NHttpClient.of()
                     .connectTimeout(NDuration.ofSeconds(5))
                     .baseUri(baseUrl);
-            NWebRequest req = http.GET("api/tags").timeout(NDuration.ofSeconds(5));
-            NWebResponse resp = req.run();
+            NHttpRequest req = http.GET("api/tags").timeout(NDuration.ofSeconds(5));
+            NHttpResponse resp = req.run();
             if (resp.statusCode() != null && resp.statusCode().isOk()) {
                 NElement root = elementReader().read(resp.contentAsString());
                 if (root.isAnyObject()) {
@@ -255,11 +255,11 @@ public class OllamaService {
         String baseUrl = getOllamaUrl(session);
         List<NaruModelPsResult> results = new ArrayList<>();
         try {
-            NWebCli http = NWebCli.of()
+            NHttpClient http = NHttpClient.of()
                     .connectTimeout(NDuration.ofSeconds(5))
                     .baseUri(baseUrl);
-            NWebRequest req = http.GET("api/ps").timeout(NDuration.ofSeconds(5));
-            NWebResponse resp = req.run();
+            NHttpRequest req = http.GET("api/ps").timeout(NDuration.ofSeconds(5));
+            NHttpResponse resp = req.run();
             if (resp.statusCode() != null && resp.statusCode().isOk()) {
                 NElement json = resp.contentAsJson();
                 if (json.isAnyObject()) {
@@ -440,10 +440,10 @@ public class OllamaService {
             logger.accept(NMsg.ofC("Pulling model %s from Ollama registry...", NMsg.ofStyledPrimary1(model)));
         }
 
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(30))
                 .baseUri(baseUrl);
-        NWebRequest request = http.POST("api/pull")
+        NHttpRequest request = http.POST("api/pull")
                 .timeout(NDuration.ofMinutes(30))
                 .jsonRequestBody(body);
         request.run().ifErrorThrow();
@@ -462,10 +462,10 @@ public class OllamaService {
             logger.accept(NMsg.ofC("Deleting model %s...", NMsg.ofStyledPrimary1(model)));
         }
 
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(10))
                 .baseUri(baseUrl);
-        NWebRequest request = http.POST("api/delete")
+        NHttpRequest request = http.POST("api/delete")
                 .timeout(NDuration.ofSeconds(30))
                 .jsonRequestBody(body);
         request.run().ifErrorThrow();

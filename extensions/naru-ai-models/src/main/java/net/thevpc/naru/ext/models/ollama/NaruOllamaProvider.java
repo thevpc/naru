@@ -5,9 +5,9 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.util.NaruModelUtils;
 import net.thevpc.nuts.elem.*;
-import net.thevpc.nuts.net.NWebCli;
-import net.thevpc.nuts.net.NWebRequest;
-import net.thevpc.nuts.net.NWebResponse;
+import net.thevpc.nuts.net.NHttpClient;
+import net.thevpc.nuts.net.NHttpRequest;
+import net.thevpc.nuts.net.NHttpResponse;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.mon.NChronometer;
 import net.thevpc.nuts.time.NDuration;
@@ -81,16 +81,16 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
 
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(session))
                 .baseUri(ollamaUrl(session));
-        NWebRequest request = http.POST("api/show")
+        NHttpRequest request = http.POST("api/show")
                 .timeout(readTimeout(session))
                 .jsonRequestBody(body);
         try {
             NChronometer chrono = NChronometer.of();
             NaruModelUtils.logWebRequest(request, NMsg.ofC("checking capabilities of %s", model), body);
-            NWebResponse response = request.run().ifErrorThrow();
+            NHttpResponse response = request.run().ifErrorThrow();
             String json = response.contentAsString();
             NElement root = nElementReader.read(json);
             NaruModelCapabilities naruModelCapabilities = parseCapabilities(root);
@@ -127,15 +127,15 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
     public void installModel(NaruModelKey key, NaruSession session) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", key.model());
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(session))
                 .baseUri(ollamaUrl(session));
-        NWebRequest request = http.POST("api/pull")
+        NHttpRequest request = http.POST("api/pull")
                 .timeout(readTimeout(session))
                 .jsonRequestBody(body);
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("install of %s", key), body);
-        NWebResponse response = request.run().ifErrorThrow();
+        NHttpResponse response = request.run().ifErrorThrow();
         String json = response.contentAsString();
         NaruModelUtils.logWebResponse(request, NMsg.ofC("install of %s", key), body, json, chrono);
     }
@@ -144,15 +144,15 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
     public void uninstallModel(NaruModelKey key, NaruSession session) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", key.model());
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(session))
                 .baseUri(ollamaUrl(session));
-        NWebRequest request = http.POST("api/delete")
+        NHttpRequest request = http.POST("api/delete")
                 .timeout(readTimeout(session))
                 .jsonRequestBody(body);
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("uninstall of %s", key), body);
-        NWebResponse response = request.run().ifErrorThrow();
+        NHttpResponse response = request.run().ifErrorThrow();
         NElement json = response.contentAsJson();
         NaruModelUtils.logWebResponse(request, NMsg.ofC("uninstall of %s", json), body, json, chrono);
     }
@@ -162,29 +162,29 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", key.model());
         body.put("keep_alive", 0);
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(session))
                 .baseUri(ollamaUrl(session));
-        NWebRequest request = http.POST("api/generate")
+        NHttpRequest request = http.POST("api/generate")
                 .timeout(readTimeout(session))
                 .jsonRequestBody(body);
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("uninstall of %s", key), body);
-        NWebResponse response = request.run().ifErrorThrow();
+        NHttpResponse response = request.run().ifErrorThrow();
         NElement json = response.contentAsJson();
         NaruModelUtils.logWebResponse(request, NMsg.ofC("uninstall of %s", name()), body, json, chrono);
     }
 
     @Override
     public List<NaruModelPsResult> psModel(NaruSession session) {
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(session))
                 .baseUri(ollamaUrl(session));
-        NWebRequest request = http.GET("api/ps")
+        NHttpRequest request = http.GET("api/ps")
                 .timeout(readTimeout(session));
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("ps of %s", name()), null);
-        NWebResponse response = request.run().ifErrorThrow();
+        NHttpResponse response = request.run().ifErrorThrow();
         NElement json = response.contentAsJson();
         List<NaruModelPsResult> results = new ArrayList<>();
         if (json.isAnyObject()) {
@@ -274,14 +274,14 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
 
     @Override
     public List<String> findModelIds(NaruSession session) {
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(30))
                 .baseUri(ollamaUrl(session));
-        NWebRequest request = http.GET("api/tags")
+        NHttpRequest request = http.GET("api/tags")
                 .connectTimeout(NDuration.ofSeconds(10))
                 .readTimeout(NDuration.ofSeconds(10));
         try {
-            NWebResponse response = request.run().ifErrorThrow();
+            NHttpResponse response = request.run().ifErrorThrow();
             String json = response.contentAsString();
             NElement root = nElementReader.read(json);
             List<String> models = new ArrayList<>();

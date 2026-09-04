@@ -1,8 +1,8 @@
 package net.thevpc.naru.ext.tools.web;
 
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.nuts.net.NWebCli;
-import net.thevpc.nuts.net.NWebResponse;
+import net.thevpc.nuts.net.NHttpClient;
+import net.thevpc.nuts.net.NHttpResponse;
 import net.thevpc.nuts.time.NDuration;
 
 import java.util.*;
@@ -17,9 +17,9 @@ public class WebToolHelper {
 
         String r = "searching for " + query;
 
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(30));
-        NWebResponse response = http.GET("https://html.duckduckgo.com/html/")
+        NHttpResponse response = http.GET("https://html.duckduckgo.com/html/")
                 .parameter("q", query)
                 .header("User-Agent", "Mozilla/5.0")
                 .run();

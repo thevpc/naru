@@ -5,16 +5,10 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
-import net.thevpc.nuts.log.NLog;
-import net.thevpc.nuts.net.NWebCli;
-import net.thevpc.nuts.net.NWebRequest;
-import net.thevpc.nuts.net.NWebResponse;
-import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.net.NHttpResponse;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
-import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NLiteral;
 
 import java.time.Instant;
@@ -39,7 +33,7 @@ public class NaruModelProtocolMistral extends NaruModelProtocolOpenAICompat {
     }
 
     @Override
-    protected void onResponseReceived(NWebResponse response, NaruTask task) {
+    protected void onResponseReceived(NHttpResponse response, NaruTask task) {
         if (task == null || task.session() == null || task.session().meteringService() == null) {
             return;
         }

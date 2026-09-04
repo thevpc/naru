@@ -9,9 +9,9 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.elem.*;
-import net.thevpc.nuts.net.NWebCli;
-import net.thevpc.nuts.net.NWebRequest;
-import net.thevpc.nuts.net.NWebResponse;
+import net.thevpc.nuts.net.NHttpClient;
+import net.thevpc.nuts.net.NHttpRequest;
+import net.thevpc.nuts.net.NHttpResponse;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
@@ -64,15 +64,15 @@ public class NaruOpenRouterProvider extends AbstractNaruModelProvider {
             return Collections.emptyList();
         }
 
-        NWebCli http = NWebCli.of()
+        NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(10))
                 .baseUri(baseUrl(session));
-        NWebRequest request = http.GET("models")
+        NHttpRequest request = http.GET("models")
                 .readTimeout(NDuration.ofSeconds(30));
         request.header("Authorization", "Bearer " + apiKey);
 
         try {
-            NWebResponse response = request.run().ifErrorThrow();
+            NHttpResponse response = request.run().ifErrorThrow();
             NElement root = elementReader().read(response.contentAsString());
 
             boolean freeOnly = isFreeOnlyConfigured(session);
@@ -289,7 +289,7 @@ public class NaruOpenRouterProvider extends AbstractNaruModelProvider {
         }
 
         @Override
-        protected void prepareRequest(NWebRequest request, NElement body, NaruTask task) {
+        protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
             super.prepareRequest(request, body, task);
             // Recommended attribution headers (optional, configurable)
             task.session().agent().env().get(configPrefix + ".httpReferer").flatMap(x -> x.asStringValue())

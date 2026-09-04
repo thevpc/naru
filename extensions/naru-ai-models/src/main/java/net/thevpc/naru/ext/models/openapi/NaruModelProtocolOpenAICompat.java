@@ -4,14 +4,8 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.elem.NElementWriter;
-import net.thevpc.nuts.log.NLog;
-import net.thevpc.nuts.net.NWebCli;
-import net.thevpc.nuts.net.NWebRequest;
-import net.thevpc.nuts.net.NWebResponse;
-import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.net.NHttpRequest;
 import net.thevpc.nuts.util.NBlankable;
-import net.thevpc.nuts.util.NIllegalArgumentException;
 
 import java.util.Map;
 
@@ -55,7 +49,7 @@ public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
     }
 
     @Override
-    protected void prepareRequest(NWebRequest request, NElement body, NaruTask task) {
+    protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
         String apiKey = apiKey(task);
         if (!NBlankable.isBlank(apiKey)) {
             request.header("Authorization", "Bearer " + apiKey);
