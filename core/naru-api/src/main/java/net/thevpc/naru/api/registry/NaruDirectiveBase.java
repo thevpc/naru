@@ -105,13 +105,15 @@ public abstract class NaruDirectiveBase implements NaruDirective {
                 }
             }
         } else {
-            NArg a = cmdLine.next().get();
+            NArg a = cmdLine.peek().get();
             SubCommand s = subCommand(a.image()).orNull();
             if (s != null) {
+                cmdLine.next().get();
                 s.execute(context, cmdLine);
                 return;
             }
             if (a.image().equals("help") || a.image().equals("--help")) {
+                cmdLine.next().get();
                 executeHelp(context, cmdLine);
             } else {
                 s = subCommand("").orNull();

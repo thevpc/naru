@@ -23,6 +23,7 @@ public interface NaruModelProvider extends NComponent {
      */
     String name();
 
+    NOptional<String> apiKey(NaruSession session);
     /**
      * Fetch the list of available models from this provider.
      *

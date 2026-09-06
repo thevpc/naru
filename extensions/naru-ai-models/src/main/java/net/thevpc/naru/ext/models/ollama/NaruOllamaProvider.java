@@ -3,6 +3,8 @@ package net.thevpc.naru.ext.models.ollama;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
+import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
+import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.naru.ext.models.util.NaruModelUtils;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.net.NHttpClient;
@@ -21,59 +23,32 @@ import java.util.*;
  * <p>Endpoint: POST {baseUrl}/api/chat
  * <p>Compatible with Ollama 0.2.8+ tool-calling format.
  */
-public class NaruOllamaProvider extends AbstractNaruModelProvider {
+public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
 
-    //    private NWebCli http;
     private final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
     private final Map<String, NaruModelCapabilities> cachedCapabilities = new HashMap<>();
-    private final NElementReader nElementReader;
 
     public NaruOllamaProvider() {
         this("ollama");
     }
 
     public NaruOllamaProvider(String name) {
-        super(name);
-        nElementReader = NElementReader.ofJson();
+        super(name, new String[]{});
     }
 
 
-    @Override
-    public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
-        if (!model.provider().equals(name())) {
-            return NOptional.ofNamedEmpty(NMsg.ofC("protocol for %s", model));
-        }
-        NaruModelCapabilities capabilities = getCapabilities(model.model(), session);
-        return NOptional.of(protocols.computeIfAbsent(model, k -> new NaruModelProtocolOllamaNative(NaruOllamaProvider.this,model, name(), capabilities)));
+    protected NaruModelProtocol createProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+        return new NaruModelProtocolOllamaNative(this, model, name(), capabilities);
     }
 
-
-    private String ollamaUrl(NaruSession session) {
-        String url = session.agent().env().get(name() + ".url").flatMap(x -> x.asStringValue()).orElse("http://localhost:11434");
+    public String baseUrl(NaruSession session) {
+        String url = session.agent().env().get(name() + ".url").flatMap(NElement::asStringValue).orElse("http://localhost:11434");
         return url.replaceAll("/$", "");
     }
 
-    private NDuration connectTimeout(NaruSession session) {
-        return session.agent().env().get(name() + ".connectTimeout").flatMap(x -> x.asStringValue())
-                .flatMap(x -> NDuration.of(x))
-                .orElseGetOptionalFrom(
-                        () -> session.agent().env().get(name() + ".timeout").flatMap(x -> x.asStringValue())
-                                .flatMap(x -> NDuration.of(x))
-                )
-                .orElse(NDuration.ofSeconds(120));
-    }
 
-    private NDuration readTimeout(NaruSession session) {
-        return session.agent().env().get(name() + ".readTimeout").flatMap(x -> x.asStringValue())
-                .flatMap(x -> NDuration.of(x))
-                .orElseGetOptionalFrom(
-                        () -> session.agent().env().get(name() + ".timeout").flatMap(x -> x.asStringValue())
-                                .flatMap(x -> NDuration.of(x))
-                )
-                .orElse(NDuration.ofSeconds(120));
-    }
 
-    public NaruModelCapabilities getCapabilities(String model, NaruSession session) {
+    public NaruModelCapabilities resolveCapabilities(String model, NaruSession session) {
         NaruModelCapabilities c = cachedCapabilities.get(model);
         if (c != null) {
             return c;
@@ -83,7 +58,7 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
 
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(session))
-                .baseUri(ollamaUrl(session));
+                .baseUri(baseUrl(session));
         NHttpRequest request = http.POST("api/show")
                 .timeout(readTimeout(session))
                 .jsonRequestBody(body);
@@ -92,7 +67,7 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
             NaruModelUtils.logWebRequest(request, NMsg.ofC("checking capabilities of %s", model), body);
             NHttpResponse response = request.run().ifErrorThrow();
             String json = response.contentAsString();
-            NElement root = nElementReader.read(json);
+            NElement root = NElementReader.ofJson().read(json);
             NaruModelCapabilities naruModelCapabilities = parseCapabilities(root);
             cachedCapabilities.put(model, naruModelCapabilities);
             NaruModelUtils.logWebResponse(request, NMsg.ofC("checking capabilities of %s", name()), body, json, chrono);
@@ -129,7 +104,7 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
         body.put("model", key.model());
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(session))
-                .baseUri(ollamaUrl(session));
+                .baseUri(baseUrl(session));
         NHttpRequest request = http.POST("api/pull")
                 .timeout(readTimeout(session))
                 .jsonRequestBody(body);
@@ -146,7 +121,7 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
         body.put("model", key.model());
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(session))
-                .baseUri(ollamaUrl(session));
+                .baseUri(baseUrl(session));
         NHttpRequest request = http.POST("api/delete")
                 .timeout(readTimeout(session))
                 .jsonRequestBody(body);
@@ -164,7 +139,7 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
         body.put("keep_alive", 0);
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(session))
-                .baseUri(ollamaUrl(session));
+                .baseUri(baseUrl(session));
         NHttpRequest request = http.POST("api/generate")
                 .timeout(readTimeout(session))
                 .jsonRequestBody(body);
@@ -179,7 +154,7 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
     public List<NaruModelPsResult> psModel(NaruSession session) {
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(session))
-                .baseUri(ollamaUrl(session));
+                .baseUri(baseUrl(session));
         NHttpRequest request = http.GET("api/ps")
                 .timeout(readTimeout(session));
         NChronometer chrono = NChronometer.of();
@@ -276,14 +251,14 @@ public class NaruOllamaProvider extends AbstractNaruModelProvider {
     public List<String> findModelIds(NaruSession session) {
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(30))
-                .baseUri(ollamaUrl(session));
+                .baseUri(baseUrl(session));
         NHttpRequest request = http.GET("api/tags")
                 .connectTimeout(NDuration.ofSeconds(10))
                 .readTimeout(NDuration.ofSeconds(10));
         try {
             NHttpResponse response = request.run().ifErrorThrow();
             String json = response.contentAsString();
-            NElement root = nElementReader.read(json);
+            NElement root = NElementReader.ofJson().read(json);
             List<String> models = new ArrayList<>();
             if (root.isAnyObject()) {
                 NArrayElement modelsArr = root.asObject().get().getArray("models").orNull();

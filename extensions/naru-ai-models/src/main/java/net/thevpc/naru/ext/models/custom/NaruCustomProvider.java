@@ -6,6 +6,7 @@ import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
+import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
 import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
@@ -30,14 +31,14 @@ import java.util.*;
  *
  * <p>Models are addressed as {@code custom/&lt;endpoint&gt;/&lt;model&gt;}.
  */
-public class NaruCustomProvider extends AbstractNaruModelProvider {
+public class NaruCustomProvider extends AbstractOpenAICompatProvider {
 
     private static final String PREFIX = "custom.endpoints.";
 
     private final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
 
     public NaruCustomProvider() {
-        super("custom");
+        super("custom",new String[0]);
     }
 
     /**
@@ -81,7 +82,7 @@ public class NaruCustomProvider extends AbstractNaruModelProvider {
                     "missing %s.url configuration for custom endpoint '%s'", prefix, endpoint));
         }
 
-        NaruModelCapabilities capabilities = resolveCapabilities(model, session);
+        NaruModelCapabilities capabilities = resolveCapabilities(model.model(), session);
         String chatPath = session.agent().env().get(prefix + ".chatPath").flatMap(x -> x.asStringValue())
                 .map(p -> {
                     while (p.startsWith("/")) p = p.substring(1);
@@ -95,6 +96,7 @@ public class NaruCustomProvider extends AbstractNaruModelProvider {
                 k -> new CustomProtocol(this, wireModel, prefix, chatPath, capabilities, url)
         ));
     }
+
 
     @Override
     public List<String> findModelIds(NaruSession session) {
@@ -112,9 +114,13 @@ public class NaruCustomProvider extends AbstractNaruModelProvider {
         }
         return all;
     }
+    @Override
+    protected String baseUrl(NaruSession session) {
+        return "";
+    }
 
-    private NaruModelCapabilities resolveCapabilities(NaruModelConfig model, NaruSession session) {
-        String[] parts = split(model.model());
+    protected NaruModelCapabilities resolveCapabilities(String model, NaruSession session) {
+        String[] parts = split(model);
         String prefix = PREFIX + parts[0];
         long contextLength = session.agent().env().get(prefix + ".contextLength")
                 .flatMap(x -> x.asLongValue()).orElse(-1L);

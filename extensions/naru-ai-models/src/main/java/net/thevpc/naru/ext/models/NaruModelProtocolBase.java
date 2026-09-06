@@ -3,7 +3,9 @@ package net.thevpc.naru.ext.models;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.ext.models.util.NaruModelUtils;
+import net.thevpc.nuts.concurrent.NRetryCall;
 import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.log.NLog;
 import net.thevpc.nuts.net.*;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.mon.NChronometer;
@@ -11,9 +13,12 @@ import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NOptional;
+import net.thevpc.nuts.util.NStringUtils;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,7 +32,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     protected final NaruModelProvider provider;
 
 
-    public NaruModelProtocolBase(NaruModelProvider provider,NaruModelConfig model, String configPrefix,
+    public NaruModelProtocolBase(NaruModelProvider provider, NaruModelConfig model, String configPrefix,
                                  String chatPath,
                                  NaruModelCapabilities capabilities,
                                  NaruModelRequestSerializer serializer,
@@ -44,6 +49,19 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
 
     public NaruModelProvider provider() {
         return provider;
+    }
+
+    protected String apiKey(NaruTask task) {
+        String k = task.session().agent().env().get(apiKeyConfigKey())
+                .flatMap(NElement::asStringValue).orNull();
+        if (k != null) {
+            return k.trim();
+        }
+        return provider.apiKey(task.session()).map(NStringUtils::stripToNull).orNull();
+    }
+
+    protected String apiKeyConfigKey() {
+        return configPrefix + ".apiKey";
     }
 
     private String prepareUrlPrefix(String urlPrefix) {
@@ -190,11 +208,10 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
 
         int maxRetries = maxRetries(task, env);
         NDuration baseDelay = retryPeriod(task, env);
-        java.util.concurrent.atomic.AtomicReference<NDuration> dynamicRetryAfter = new java.util.concurrent.atomic.AtomicReference<>();
-        java.util.concurrent.atomic.AtomicInteger attemptCounter = new java.util.concurrent.atomic.AtomicInteger(0);
-
-        try(net.thevpc.nuts.concurrent.NRetryCall<NaruResponse> retryCall = net.thevpc.nuts.concurrent.NRetryCall
-                .of("llm-" + provider().name()+"-"+ UUID.randomUUID(), () -> {
+        AtomicReference<NDuration> dynamicRetryAfter = new AtomicReference<>();
+        AtomicInteger attemptCounter = new AtomicInteger(0);
+        NElement headersElements = NElement.of(request.headers());
+        try (NRetryCall<NaruResponse> retryCall = NRetryCall.of("llm-" + provider().name() + "-" + UUID.randomUUID(), () -> {
             int attempt = attemptCounter.incrementAndGet();
             NChronometer chrono = NChronometer.of();
             java.time.Instant reqTime = java.time.Instant.now();
@@ -206,7 +223,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 response = request.run();
                 NHttpCode code = response.statusCode();
 
-                if (code.equals(NHttpCode.TOO_MANY_REQUESTS) ) {
+                if (code.equals(NHttpCode.TOO_MANY_REQUESTS)) {
                     NDuration retryAfter = NaruModelUtils.parseRetryAfter(response);
                     if (retryAfter != null) {
                         dynamicRetryAfter.set(retryAfter);
@@ -249,7 +266,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 }
                 return naruResponse;
             } catch (Throwable t) {
-                error = t instanceof NonRetryableWebException ? ((NonRetryableWebException) t).getCause() : t;
+                error = t instanceof NonRetryableWebException ? t.getCause() : t;
                 throw t;
             } finally {
                 NaruModelUtils.logAudit(
@@ -267,7 +284,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                         reqTime
                 );
             }
-        })){
+        })) {
             retryCall.maxRetries(maxRetries)
                     .retryPeriod(attempt -> {
                         NDuration custom = dynamicRetryAfter.getAndSet(null);
@@ -282,15 +299,17 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 return retryCall.call();
             } catch (NonRetryableWebException nre) {
                 Throwable cause = nre.getCause();
-                net.thevpc.nuts.log.NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s\n-----BODY\n%s\n-----BODY\n-----RESPONSE\n%s\n-----RESPONSE",
+                NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s\n-----HEADERS\n%s\n-----HEADERS\n-----BODY\n%s\n-----BODY\n-----RESPONSE\n%s\n-----RESPONSE",
                         provider().name(), request.effectiveUri(), cause.getMessage(),
+                        NElementWriter.ofTson().formatPlain(headersElements),
                         NElementWriter.ofTson().formatPlain(body),
                         nre.getResponseString()
                 ).asError());
                 throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with %s at %s: %s", provider().name(), request.effectiveUri(), cause.getMessage(), cause));
             } catch (Exception e) {
-                net.thevpc.nuts.log.NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s\n-----BODY\n%s\n-----BODY",
+                NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s\n-----HEADERS\n%s\n-----HEADERS\n-----BODY\n%s\n-----BODY",
                         provider().name(), request.effectiveUri(), e.getMessage(),
+                        NElementWriter.ofTson().formatPlain(headersElements),
                         NElementWriter.ofTson().formatPlain(body)
                 ).asError());
                 throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with %s at %s: %s", provider().name(), request.effectiveUri(), e.getMessage(), e));

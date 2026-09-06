@@ -1,18 +1,17 @@
 package net.thevpc.naru.ext.models.openrouter;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.model.AbstractNaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
+import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
 import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.net.NHttpClient;
 import net.thevpc.nuts.net.NHttpRequest;
 import net.thevpc.nuts.net.NHttpResponse;
-import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
@@ -27,15 +26,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Endpoint: POST {baseUrl}/chat/completions
  * <p>Default baseUrl: https://openrouter.ai/api/v1
  */
-public class NaruOpenRouterProvider extends AbstractNaruModelProvider {
+public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
 
     private static final String DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
-    private final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
     private final Map<String, NaruModelCapabilities> cachedCapabilities = new ConcurrentHashMap<>();
 
     public NaruOpenRouterProvider() {
-        super("openrouter");
+        super("openrouter",new String[]{"OPENROUTER_API_KEY"});
     }
 
     private NElementReader elementReader() {
@@ -43,23 +41,16 @@ public class NaruOpenRouterProvider extends AbstractNaruModelProvider {
     }
 
     @Override
-    public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
-        if (!model.provider().equals(name())) {
-            return NOptional.ofNamedEmpty(NMsg.ofC("protocol for %s", model));
-        }
-        NaruModelCapabilities capabilities = resolveCapabilities(model.model());
-        return NOptional.of(protocols.computeIfAbsent(model,
-                k -> new NaruOpenRouterProtocol(this, model, name(), capabilities)
-        ));
+    protected NaruModelProtocol createProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+        return new NaruOpenRouterProtocol(this, model, name(), capabilities);
     }
 
-    /**
-     * Model list is dynamic: fetched live from GET /models when an API key is provided.
-     * If no API key is provided, returns empty list because OpenRouter models cannot be used.
-     */
     @Override
     public List<String> findModelIds(NaruSession session) {
-        String apiKey = apiKey(session);
+        if (!isApiKeySet(session)) {
+            return Collections.emptyList();
+        }
+        String apiKey = apiKey(session).orNull();
         if (NBlankable.isBlank(apiKey)) {
             return Collections.emptyList();
         }
@@ -174,28 +165,12 @@ public class NaruOpenRouterProvider extends AbstractNaruModelProvider {
         }
     }
 
+    @Override
     protected String baseUrl(NaruSession session) {
         return session.agent().env().get(name() + ".url")
-                .flatMap(x -> x.asStringValue())
+                .flatMap(NElement::asStringValue)
                 .map(x -> x.replaceAll("/$", ""))
                 .orElse(DEFAULT_BASE_URL);
-    }
-
-    protected String apiKey(NaruSession session) {
-        String key = session.agent().env().get(name() + ".apiKey")
-                .flatMap(x -> x.asStringValue()).orNull();
-        if (NBlankable.isBlank(key)) {
-            key = session.agent().env().get(name() + ".apikey")
-                    .flatMap(x -> x.asStringValue()).orNull();
-        }
-        if (NBlankable.isBlank(key)) {
-            key = session.agent().env().get(name() + ".key")
-                    .flatMap(x -> x.asStringValue()).orNull();
-        }
-        if (NBlankable.isBlank(key)) {
-            key = System.getenv("OPENROUTER_API_KEY");
-        }
-        return key;
     }
 
     private NOptional<NElement> getEnv(NaruSession session, String... keys) {
@@ -265,7 +240,7 @@ public class NaruOpenRouterProvider extends AbstractNaruModelProvider {
         return false;
     }
 
-    private NaruModelCapabilities resolveCapabilities(String modelName) {
+    public NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
         NaruModelCapabilities cached = cachedCapabilities.get(modelName);
         if (cached != null) {
             return cached;

@@ -1,18 +1,49 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
+import net.thevpc.nuts.util.NStringUtils;
 
 import java.util.*;
 
 public abstract class AbstractNaruModelProvider implements NaruModelProvider {
     private final String name;
     private final Map<String, String> params = new HashMap<>();
+    private final String[] defaultEnvKeys;
 
-    public AbstractNaruModelProvider(String name) {
+    public AbstractNaruModelProvider(String name,String[] defaultEnvKeys) {
         this.name = name;
+        this.defaultEnvKeys = defaultEnvKeys;
     }
+
+    public String[] defaultEnvKey() {
+        return defaultEnvKeys;
+    }
+
+    public NOptional<String> apiKey(NaruSession session) {
+        for (String s : new String[]{"apiKey","apikey","key"}) {
+            String key = session.agent().env().get(name() + "."+s).flatMap(NElement::asStringValue).orNull();
+            if (!NBlankable.isBlank(key)) {
+                return NOptional.of(NStringUtils.strip(key));
+            }
+        }
+        String[] de = defaultEnvKey();
+        if (de != null) {
+            for (String d : de) {
+                if(!NBlankable.isBlank(d)){
+                    NOptional<String> z = NOptional.of(NStringUtils.stripToNull(System.getenv(d)));
+                    if(z.isPresent()){
+                        return z;
+                    }
+                }
+            }
+        }
+        return NOptional.ofNamedEmpty("api key for "+name());
+    }
+
 
     @Override
     public String name() {

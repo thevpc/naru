@@ -39,14 +39,7 @@ public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
         return super.url(task, env);
     }
 
-    protected String apiKeyConfigKey() {
-        return configPrefix + ".apiKey";
-    }
 
-    protected String apiKey(NaruTask task) {
-        return task.session().agent().env().get(apiKeyConfigKey())
-                .flatMap(x -> x.asStringValue()).orNull();
-    }
 
     @Override
     protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
