@@ -446,7 +446,7 @@ public class OllamaService {
         NHttpRequest request = http.POST("api/pull")
                 .timeout(NDuration.ofMinutes(30))
                 .jsonRequestBody(body);
-        request.run().ifErrorThrow();
+        request.run().failFast();
 
         if (logger != null) {
             logger.accept(NMsg.ofC("Model %s pulled successfully.", NMsg.ofStyledPrimary1(model)));
@@ -468,7 +468,7 @@ public class OllamaService {
         NHttpRequest request = http.POST("api/delete")
                 .timeout(NDuration.ofSeconds(30))
                 .jsonRequestBody(body);
-        request.run().ifErrorThrow();
+        request.run().failFast();
 
         if (logger != null) {
             logger.accept(NMsg.ofC("Model %s deleted successfully.", NMsg.ofStyledPrimary1(model)));

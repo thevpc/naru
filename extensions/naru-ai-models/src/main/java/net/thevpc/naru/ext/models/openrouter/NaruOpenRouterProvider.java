@@ -63,7 +63,7 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
         request.header("Authorization", "Bearer " + apiKey);
 
         try {
-            NHttpResponse response = request.run().ifErrorThrow();
+            NHttpResponse response = request.run().failFast();
             NElement root = elementReader().read(response.contentAsString());
 
             boolean freeOnly = isFreeOnlyConfigured(session);

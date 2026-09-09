@@ -249,7 +249,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                         dynamicRetryAfter.set(retryAfter);
                     }
                     responseString = response.contentAsString();
-                    response.ifErrorThrow();
+                    response.failFast();
                 }
 
                 responseString = response.contentAsString();

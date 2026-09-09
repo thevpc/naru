@@ -65,7 +65,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
         try {
             NChronometer chrono = NChronometer.of();
             NaruModelUtils.logWebRequest(request, NMsg.ofC("checking capabilities of %s", model), body);
-            NHttpResponse response = request.run().ifErrorThrow();
+            NHttpResponse response = request.run().failFast();
             String json = response.contentAsString();
             NElement root = NElementReader.ofJson().read(json);
             NaruModelCapabilities naruModelCapabilities = parseCapabilities(root);
@@ -110,7 +110,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
                 .jsonRequestBody(body);
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("install of %s", key), body);
-        NHttpResponse response = request.run().ifErrorThrow();
+        NHttpResponse response = request.run().failFast();
         String json = response.contentAsString();
         NaruModelUtils.logWebResponse(request, NMsg.ofC("install of %s", key), body, json, chrono);
     }
@@ -127,7 +127,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
                 .jsonRequestBody(body);
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("uninstall of %s", key), body);
-        NHttpResponse response = request.run().ifErrorThrow();
+        NHttpResponse response = request.run().failFast();
         NElement json = response.contentAsJson();
         NaruModelUtils.logWebResponse(request, NMsg.ofC("uninstall of %s", json), body, json, chrono);
     }
@@ -145,7 +145,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
                 .jsonRequestBody(body);
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("uninstall of %s", key), body);
-        NHttpResponse response = request.run().ifErrorThrow();
+        NHttpResponse response = request.run().failFast();
         NElement json = response.contentAsJson();
         NaruModelUtils.logWebResponse(request, NMsg.ofC("uninstall of %s", name()), body, json, chrono);
     }
@@ -159,7 +159,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
                 .timeout(readTimeout(session));
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("ps of %s", name()), null);
-        NHttpResponse response = request.run().ifErrorThrow();
+        NHttpResponse response = request.run().failFast();
         NElement json = response.contentAsJson();
         List<NaruModelPsResult> results = new ArrayList<>();
         if (json.isAnyObject()) {
@@ -256,7 +256,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
                 .connectTimeout(NDuration.ofSeconds(10))
                 .readTimeout(NDuration.ofSeconds(10));
         try {
-            NHttpResponse response = request.run().ifErrorThrow();
+            NHttpResponse response = request.run().failFast();
             String json = response.contentAsString();
             NElement root = NElementReader.ofJson().read(json);
             List<String> models = new ArrayList<>();
