@@ -329,6 +329,12 @@ public class NaruModelRetryAndAuditTest {
         }
 
         @Override
+        public NHttpResponse failFast() {
+            if (isError()) throw new NHttpResponseException(statusMessage(), null, statusCode());
+            return this;
+        }
+
+        @Override
         public boolean isError() {
             return statusCode >= 400;
         }
