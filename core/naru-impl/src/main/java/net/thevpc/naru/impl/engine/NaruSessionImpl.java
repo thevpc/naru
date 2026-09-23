@@ -912,7 +912,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSession terminate() {
-        ensureNotStopped();
+        // Idempotent, like stop(): terminating an already stopped/terminated session
+        // is a no-op instead of throwing (ensureNotStopped would throw).
+        if (stopped) {
+            return this;
+        }
         for (Map.Entry<Long, NaruTask> e : new HashMap<>(tasks).entrySet()) {
             e.getValue().kill();
         }
@@ -1003,7 +1007,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         running = true;
         // start readline thread
         readlineThread = new Thread(this::readlineLoop, "naru-readline");
-        readlineThread.setDaemon(false);
+        // daemon: this thread only services interactive input requests. It must never
+        // keep the JVM alive after the work of a batch session is done, otherwise the
+        // process (and any test using it) never exits.
+        readlineThread.setDaemon(true);
         readlineThread.start();
 
         // start scheduler (its workers)
@@ -1056,12 +1063,18 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public void waitFor() {
-        ensureNotStopped();
+        // Note: intentionally not calling ensureNotStopped() here. In batch usage the
+        // session commonly finishes (and therefore stops itself) before waitFor() is
+        // even called; that race must simply return instead of throwing.
         try {
-            // wait for scheduler workers
+            // wait for scheduler workers to terminate
             scheduler.awaitTermination();
-            // wait for readline thread
-            readlineThread.join();
+            // defensive, bounded join: stop() interrupts the readline thread so it
+            // should exit promptly. The bound guarantees waitFor() can never hang
+            // forever if the terminal read is not interruptible.
+            if (readlineThread != null) {
+                readlineThread.join(10_000);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

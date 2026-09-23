@@ -1,0 +1,37 @@
+<!-- 22-Nov-2011 AYA : BDT 26587 update profile for the Jenkins build. -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>net.thevpc.xprojects.builders.naru</groupId>
+    <artifactId>naru-extensions-builder</artifactId>
+    <name>naru extensions Builder</name>
+    <version>1.0.0.0</version>
+    <packaging>pom</packaging>
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+    </properties>
+    <modules>
+        <module>naru-tools-fs</module>
+        <module>naru-tools-mcp</module>
+        <module>naru-tools-shell</module>
+        <module>naru-tools-web</module>
+        <module>naru-tools-coder-java</module>
+        <module>naru-tools-llm</module>
+        <module>naru-tools-sessions</module>
+        <module>naru-tools-routines</module>
+        <module>naru-tools-plan</module>
+        <module>naru-tools-tasks</module>
+        <module>naru-tools-tags</module>
+        <module>naru-ai-models</module>
+        <module>naru-tools-index</module>
+        <module>naru-tools-index-java</module>
+        <module>naru-tools-git</module>
+        <module>naru-tools-semantic</module>
+        <module>naru-tools-ollama</module>
+    </modules>
+    <build>
+    </build>
+</project>

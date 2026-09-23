@@ -25,8 +25,6 @@ public class NaruOllamaNativeRequestSerializer implements NaruModelRequestSerial
             }
         }
         body.set("messages", msgList.build());
-
-        // 2. Process Tools (Native Flat Schema array format)
         List<NaruToolDefinition> tools = request.tools();
         if (tools != null && !tools.isEmpty()) {
             NArrayElementBuilder toolList = NElement.ofArrayBuilder();
@@ -48,7 +46,10 @@ public class NaruOllamaNativeRequestSerializer implements NaruModelRequestSerial
     }
 
     private NElement toNativeToolDefinition(NaruToolDefinitionFunction fct) {
-        // This block must be returned directly at the root level of the tool entry array
+        // Ollama's native /api/chat requires each tools[] entry to be wrapped as
+        // {"type":"function","function":{...}}. Emitting the function object bare
+        // makes ollama silently drop the tool (the model then sees an empty tools
+        // list and can emit malformed tool calls with an empty name).
         NObjectElementBuilder functionBlock = NElement.ofObjectBuilder();
         functionBlock.set("name", fct.getName());
         functionBlock.set("description", fct.getDescription());
@@ -73,7 +74,11 @@ public class NaruOllamaNativeRequestSerializer implements NaruModelRequestSerial
         }
 
         paramsObj.set("properties", propertiesObj.build());
-        paramsObj.set("required", requiredArr.build());
+        // Ollama rejects an EMPTY "required" array with a 400 Bad Request; only
+        // emit it when there is at least one required parameter.
+        if (!requiredArr.children().isEmpty()) {
+            paramsObj.set("required", requiredArr.build());
+        }
 
         if (!propertiesObj.children().isEmpty()) {
             functionBlock.set("parameters", paramsObj.build());
@@ -84,8 +89,10 @@ public class NaruOllamaNativeRequestSerializer implements NaruModelRequestSerial
             functionBlock.set("parameters", emptyParams.build());
         }
 
-        // FIXED: Return the function object directly without wrapping it in type/function blocks
-        return functionBlock.build();
+        return NElement.ofObjectBuilder()
+                .set("type", "function")
+                .set("function", functionBlock.build())
+                .build();
     }
 
     private NElement buildNativeOptions(NaruModelConfig model) {
@@ -126,9 +133,12 @@ public class NaruOllamaNativeRequestSerializer implements NaruModelRequestSerial
                 fn.set("name", tc.getName());
 
                 if (tc.getArguments() != null) {
-                    // Ollama native engine requires arguments to be a serialized string in history contexts
-                    String jsonStringArgs = NElementWriter.ofJson().formatPlain(NElement.of(tc.getArguments()));
-                    fn.set("arguments", NElement.ofString(jsonStringArgs));
+                    // Ollama native accepts "arguments" as a first-class object (both
+                    // in the model response and in history). Serializing it as an
+                    // embedded JSON string forced escaping of nested quotes/newlines
+                    // that the Nuts HTTP writer does not emit correctly — ollama
+                    // rejected the request with "can't find closing '}' symbol".
+                    fn.set("arguments", NElement.of(tc.getArguments()));
                 }
 
                 call.set("id", "call_"+tc.getName());

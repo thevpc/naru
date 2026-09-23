@@ -51,8 +51,12 @@ public class RunShellTool extends DefaultNaruTool {
         NPath cwd = !NBlankable.isBlank(workDir) ? context.task().resolve(workDir) : context.task().projectDir();
 
         try {
+            // Pass the full current environment (PATH, HOME, JAVA_HOME, ...) to the
+            // child: nuts' NExec otherwise spawns the process with a near-empty env
+            // (+ NUTS_DEPLOY_* vars), so /bin/sh cannot find mvn/java on the PATH.
             NExec nExec = NExec.ofSystem("/bin/sh", "-c", command)
                     .directory(cwd)
+                    .env(System.getenv())
                     .failFast(true);
             String grabbedAllString = nExec
                     .grabbedAll();

@@ -77,7 +77,9 @@ public class NaruModeDirective extends NaruDirectiveBase {
                 for (NArg a : cmdLine) {
                     NOptional<NaruPromptMode> mode = task.session().registry().mode(a.image());
                     if (mode.isPresent()) {
-                        if (mode.get().equals(task.promptMode())) {
+                        // Only act when the mode actually changes (setting the same
+                        // mode again is a no-op, but must not be reported as invalid).
+                        if (!mode.get().equals(task.promptMode())) {
                             task.promptMode(mode.get());
                             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Changed mode : %s", a.image()));
                             task.addHistory(NaruMessage.user(NMsg.ofC("Changed mode : %s", a.image())));

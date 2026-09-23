@@ -55,7 +55,7 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
                             for (NPairElement entry : argsEl.asObject().get().namedPairs()) {
                                 String k = entry.key().asStringValue().orNull();
                                 if (!NBlankable.isBlank(k)) {
-                                    args.put(k, NElement.simpleOf(entry.value()));
+                                    args.put(k, toPlainValue(entry.value()));
                                 }
                             }
                         } else if (argsEl.isPrimitive()) {
@@ -100,5 +100,28 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
             }
         }
         return response;
+    }
+
+    /**
+     * Convert a tool-call argument element to its raw Java value. {@code
+     * NElement} string primitives must NOT be passed around as elements: their
+     * {@code toString()} yields the TSON representation (delimiter quotes and
+     * doubled inner quotes, e.g. {@code "pom.xml"} / {@code ""1.0""}) instead of
+     * the plain value ({@code pom.xml} / {@code "1.0"}), which would corrupt any
+     * file path or content handed to a tool. Nested objects/arrays are kept as
+     * elements (rare in flat tool arguments).
+     */
+    private static Object toPlainValue(NElement v) {
+        if (v == null || v.isNull()) {
+            return null;
+        }
+        if (v.isPrimitive()) {
+            NPrimitiveElement pv = v.asPrimitive().orNull();
+            if (pv != null && pv.value() != null) {
+                return pv.value();
+            }
+            return v.asStringValue().orNull();
+        }
+        return NElement.simpleOf(v);
     }
 }

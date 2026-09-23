@@ -135,7 +135,7 @@ public class FileToolHelper {
         }
         try {
             NPath p = task.resolve(path);
-            if (dry) {
+            if (Boolean.TRUE.equals(dry)) {
                 String preview = content.length() > MAX_PREVIEW_CHARS
                         ? content.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
                         : content;
@@ -195,7 +195,7 @@ public class FileToolHelper {
 
             String action = newLines.isEmpty() ? "delete" : (start == end ? "insert" : "replace");
 
-            if (dry) {
+            if (Boolean.TRUE.equals(dry)) {
                 String preview = finalContent.length() > MAX_PREVIEW_CHARS
                         ? finalContent.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
                         : finalContent;
@@ -429,7 +429,7 @@ public class FileToolHelper {
 
         NPath p = task.resolve(path);
         try {
-            if (dry) {
+            if (Boolean.TRUE.equals(dry)) {
                 String preview = content.length() > MAX_PREVIEW_CHARS
                         ? content.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
                         : content;

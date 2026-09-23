@@ -44,7 +44,7 @@ public class GitLogTool extends DefaultNaruTool {
             for (RevCommit c : commits) {
                 sb.append("commit ").append(c.getName()).append("\n");
                 sb.append("Author: ").append(c.getAuthorIdent().getName()).append(" <").append(c.getAuthorIdent().getEmailAddress()).append(">\n");
-                sb.append("Date:   ").append(sdf.format(c.getAuthorIdent().getWhen())).append("\n\n");
+                sb.append("Date:   ").append(sdf.format(c.getAuthorIdent().getWhenAsInstant())).append("\n\n");
                 sb.append("    ").append(c.getShortMessage()).append("\n\n");
             }
 

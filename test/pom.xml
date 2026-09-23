@@ -4,8 +4,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.thevpc.xprojects.builders.naru</groupId>
-    <artifactId>naru-builder</artifactId>
-    <name>naru Builder</name>
+    <artifactId>naru-test-builder</artifactId>
+    <name>naru test Builder</name>
     <version>1.0.0.0</version>
     <packaging>pom</packaging>
     <properties>
@@ -14,13 +14,7 @@
         <maven.compiler.target>17</maven.compiler.target>
     </properties>
     <modules>
-        <module>core/naru-api</module>
-        <module>core/naru-impl</module>
-
-        <module>extensions</module>
-        <module>test</module>
-
-        <module>app/naru</module>
+        <module>naru-agent-test</module>
     </modules>
     <build>
     </build>
