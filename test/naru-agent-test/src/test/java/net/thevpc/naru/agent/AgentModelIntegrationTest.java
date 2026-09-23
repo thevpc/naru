@@ -269,8 +269,15 @@ public class AgentModelIntegrationTest {
                     // both are hidden from the model unless the task opts in.
                     "/tools add-tagged fs",
                     "/tools add-tagged network",
-                    // don't let the model wander off into other working directories.
+                    // hide everything irrelevant to the write->build->test->run loop:
+                    // working-dir wanderers, web (offline), git/index/search/semantic
+                    // and tag tools, plus the redundant maven_* shortcuts. A lean
+                    // toolset keeps even small models focused on the goal.
                     "/tools exclude cd set_working_dir",
+                    "/tools exclude search_web tag_add tag_remove",
+                    "/tools exclude git_status git_diff git_log git_commit",
+                    "/tools exclude project_map code_symbols find_symbol project_summary",
+                    "/tools exclude semantic_search semantic_index maven_compile maven_test maven_package",
                     CALCULATOR_PROMPT,
                     "/ollama stop"
             );
@@ -326,7 +333,10 @@ public class AgentModelIntegrationTest {
             "which IS the project root. pom.xml must be at the TOP level of the current directory. ",
             "Do NOT create a sub-folder for the project and do NOT create files outside the current directory.",
             "",
-            "The calculator supports + - * / on simple INTEGER numbers, e.g. 7*6 -> 42, 12/4 -> 3, 4+5 -> 9, 7-5 -> 2.",
+            "The calculator supports + - * / on INTEGER numbers that may have MORE than one digit, ",
+            "e.g. 7*6 -> 42, 12/4 -> 3, 4+5 -> 9, 7-5 -> 2, 123+45 -> 168. ",
+            "Expressions are written WITHOUT any whitespace: one operand, one operator, another operand.",
+            "So eval receives exactly strings like \"7*6\" or \"12/4\" (no spaces, no parentheses).",
             "",
             "Create exactly these 4 files with the file tools:",
             "- pom.xml: groupId calc, artifactId calculator, version 1.0; properties maven.compiler.source=17, ",
@@ -336,7 +346,8 @@ public class AgentModelIntegrationTest {
             "  Do NOT add any other dependency or plugin.",
             "- src/main/java/calc/Calculator.java: package calc; public class Calculator; ",
             "  public static int eval(String expression): parse a simple 'a op b' expression (single operator, ",
-            "  integer operands) and return the result; support + - * /; throw IllegalArgumentException for unknown operators.",
+            "  integer operands that may have multiple digits, no whitespace) and return the result; ",
+            "  support + - * /; throw IllegalArgumentException for unknown operators.",
             "- src/main/java/calc/Main.java: package calc; public class Main; public static void main(String[] args): ",
             "  read args[0] as the expression and print ONLY the integer result (no extra text); ",
             "  print an error to stderr and exit(1) if no argument is given.",
@@ -350,13 +361,19 @@ public class AgentModelIntegrationTest {
             "WORK LOOP:",
             "1. Create the 4 files.",
             "2. Run 'mvn -o -q test' with run_shell. The project root is the current directory; do not cd anywhere.",
-            "3. If the build or the tests fail, study the error output, fix the offending files, and run ",
-            "   'mvn -o -q test' again. Repeat until it succeeds (BUILD SUCCESS) and all tests pass.",
+            "3. If the build or the tests fail, study the error output and diagnose. The defect is almost ",
+            "   certainly in Calculator.eval's parsing of the expression, so fix ONLY Calculator.java (or ",
+            "   Main.java if the printed output is wrong). NEVER modify or weaken the tests or the pom.xml ",
+            "   to make them pass, and never change plugins to 'fix' the build; then run 'mvn -o -q test' ",
+            "   again. Repeat until it succeeds (BUILD SUCCESS) and all tests pass.",
             "4. Then run 'java -cp target/classes calc.Main \"7*6\"' (must print 42) and ",
             "   'java -cp target/classes calc.Main \"12/4\"' (must print 3).",
-            "5. DONE: only when the build is green, all tests pass, and the two runs print 42 and 3, reply with a ",
-            "   short final summary of what you created. Do NOT call any more tools after the summary: ",
-            "   the summary must be your final answer.");
+            "5. DONE — you may ONLY finish when ALL of these are true, from commands you ran yourself: ",
+            "   'mvn -o -q test' ended with BUILD SUCCESS and all tests pass, and the two java commands ",
+            "   printed 42 and 3. Do NOT reply with advice, questions, or suggestions, and never declare ",
+            "   completion based on tool results alone. When (and only when) the build is green, all tests ",
+            "   pass, and both java runs printed their results, reply with a short factual summary of what ",
+            "   you created, then STOP. That summary is your final answer; do not call any more tools after it.");
 
     private static final class CommandResult {
         final int exitCode;
