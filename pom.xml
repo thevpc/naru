@@ -1,42 +1,65 @@
-<!-- 22-Nov-2011 AYA : BDT 26587 update profile for the Jenkins build. -->
-
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>net.thevpc.xprojects.builders.naru</groupId>
-    <artifactId>naru-builder</artifactId>
-    <name>naru Builder</name>
-    <version>1.0.0.0</version>
-    <packaging>pom</packaging>
+
+    <groupId>net.thevpc.naru</groupId>
+    <artifactId>naru-agent-test</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>naru-agent-test</name>
+    <description>Unit tests for Naru agent model interaction</description>
+
     <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
     </properties>
-    <modules>
-        <module>core/naru-api</module>
-        <module>core/naru-impl</module>
 
-        <module>extensions/naru-tools-fs</module>
-        <module>extensions/naru-tools-mcp</module>
-        <module>extensions/naru-tools-shell</module>
-        <module>extensions/naru-tools-web</module>
-        <module>extensions/naru-tools-coder-java</module>
-        <module>extensions/naru-tools-llm</module>
-        <module>extensions/naru-tools-sessions</module>
-        <module>extensions/naru-tools-routines</module>
-        <module>extensions/naru-tools-plan</module>
-        <module>extensions/naru-tools-tasks</module>
-        <module>extensions/naru-tools-tags</module>
-        <module>extensions/naru-ai-models</module>
-        <module>extensions/naru-tools-index</module>
-        <module>extensions/naru-tools-index-java</module>
-        <module>extensions/naru-tools-git</module>
-        <module>extensions/naru-tools-semantic</module>
-        <module>extensions/naru-tools-ollama</module>
+    <dependencies>
+        <!-- Naru API dependency -->
+        <dependency>
+            <groupId>net.thevpc.naru</groupId>
+            <artifactId>naru-api</artifactId>
+            <version>1.0.0</version>
+        </dependency>
 
-        <module>app/naru</module>
-    </modules>
+        <!-- Test dependencies -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.8.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>4.6.1</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
     <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.1</version>
+                <configuration>
+                    <source>11</source>
+                    <target>11</target>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>2.22.2</version>
+            </plugin>
+        </plugins>
     </build>
 </project>
