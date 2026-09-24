@@ -20,7 +20,10 @@ import java.util.List;
 public class NaruPromptStmt extends NaruStatement implements Cloneable {
 
     /**
-     * Task env key holding how many consecutive tool-call rounds a task has run.
+     * Task env key holding how many consecutive tool-call rounds the CURRENT
+     * model turn has run. It is accumulated while a turn's agent loop runs and
+     * reset to 0 whenever the turn ends, so every scripted prompt invocation
+     * (e.g. one re-triggered by a /while loop) starts with a full budget.
      */
     private static final String TOOL_CALL_ROUNDS_KEY = "naru.prompt.toolCallRounds";
 
@@ -36,6 +39,17 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
     public NaruPromptStmt(String prompt) {
         super(Type.PROMPT);
         this.prompt = prompt;
+    }
+
+    /**
+     * The (raw) prompt text this statement hands to the model. When the
+     * statement was produced by a {@code "/buffer on ... /buffer off"} block,
+     * it is the joined raw lines of that block.
+     *
+     * @return prompt text, may be empty
+     */
+    public String prompt() {
+        return prompt;
     }
 
     public NaruPromptStmt(NElement element) {
@@ -77,6 +91,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             String err = "ERROR calling model: " + e.getMessage();
             task.log(NaruLogMode.PROGRESS, NMsg.ofC("%s", err).asError());
             task.defaultAdvance(this);
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
             NaruStmtResult.ofError(err);
             return;
         }
@@ -85,6 +100,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         if (assistantMsg == null) {
             task.log(NaruLogMode.DEBUG, NMsg.ofC("Model returned empty response."));
             task.defaultAdvance(this);
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
             NaruStmtResult.ofSuccess("");
             return;
         }
@@ -110,6 +126,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                     task.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
                 }
                 task.setLastResult(assistantMsg);
+                task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
                 task.defaultAdvance(this);
                 return;
             }
@@ -128,6 +145,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         }
         task.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
         task.setLastResult(assistantMsg);
+        task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
         task.defaultAdvance(this);
     }
 }

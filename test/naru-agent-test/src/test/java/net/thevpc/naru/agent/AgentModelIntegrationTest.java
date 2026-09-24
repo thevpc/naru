@@ -7,25 +7,32 @@ import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.tools.ollama.OllamaProcessManager;
 import net.thevpc.naru.impl.engine.NaruAgentImpl;
+import net.thevpc.naru.api.stmt.NaruStatement;
+import net.thevpc.naru.impl.engine.stmt.NaruNopStmt;
+import net.thevpc.naru.impl.engine.stmt.NaruPromptStmt;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NOut;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -57,7 +64,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the tool call round-trip through the agent loop worked. It uses a model with
  * <b>native</b> tool support (default {@code ollama/qwen3:8b}, override with
  * {@code -Dnaru.test.tool.model}), and opts the file tools in via
- * {@code /mode implement} + {@code /tools add-tagged fs} (tagged tools are hidden
+ * {@code /mode implement} + {@code /tags enable fs} (tagged tools are hidden
  * from the model unless the task opts into their tag).</p>
  *
  * <p>{@link #testAgentBuildsMavenCalculatorProject()} is the code-generation
@@ -112,6 +119,193 @@ public class AgentModelIntegrationTest {
         } catch (Exception ignored) {
             // nothing to clean up
         }
+    }
+
+    @Test
+    public void testScriptControlFlowLoopWithSystem() {
+        // No LLM involved: this is a pure engine mechanics check for the building
+        // blocks of the codegen showcase — /while + /end control flow, /set --task
+        // variables, the /system directive (raw shell argument, full env, exit code
+        // published as lastExitCode) and early exit of a bounded loop once the
+        // check turns green. No model prompt appears in the script, so no model is
+        // needed at all.
+        assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
+            session = agent.startSession(
+                    "/set --task attempts = 0",
+                    "/set --task lastExitCode = 9",
+                    "/while (attempts < 3) && (lastExitCode != 0)",
+                    "/system if [ -f \".loop-flag\" ]; then exit 0; else touch .loop-flag; exit 5; fi",
+                    "/set --task attempts = attempts + 1",
+                    "/end"
+            );
+            NaruTask task = captureForegroundTask(session);
+            session.waitFor();
+
+            assertNotNull(task, "expected the session to create a task");
+            assertTrue(task.status() == NaruTaskStatus.DONE,
+                    () -> "expected the task to finish, but status was " + task.status());
+            // Attempt 1: flag absent -> exit 5 -> lastExitCode!=0 -> loop again.
+            // Attempt 2: flag present -> exit 0 -> lastExitCode==0 -> loop EXITS EARLY.
+            assertEquals("2", task.getTaskEnv("attempts", true).map(x -> x == null ? "<null>" : x.toString()).orNull(),
+                    "expected the bounded loop to run twice and then stop early");
+            assertEquals("0", task.getTaskEnv("lastExitCode", true).map(x -> x == null ? "<null>" : x.toString()).orNull(),
+                    "expected /system to publish its exit code as lastExitCode");
+            assertTrue(folder.resolve(".loop-flag").isRegularFile(),
+                    "expected /system to really run in the project dir (it must create .loop-flag)");
+        });
+    }
+
+    @Test
+    public void testScriptStreamBufferAndComments() {
+        // Engine-only (no LLM) checks for the script facilities the codegen
+        // showcase now relies on:
+        //  1. startSession(InputStream) loads and runs a script from a stream;
+        //  2. "//" (and "#") lines are comments — ignored;
+        //  3. "/set --session" writes the session env that NaruPromptStmt reads
+        //     (maxSteps), so the showcase can bound itself from its own script;
+        //  4. "/buffer on ... /buffer off" folds raw multi-line text (blank lines
+        //     and indentation included) into ONE prompt statement.
+        assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
+            String script = "// script born as a stream: comments and blank lines are ignored\n"
+                    + "\n"
+                    + "/set --session maxSteps = 12\n"
+                    + "/system touch stream-loaded-marker\n";
+            session = agent.startSession(new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8)));
+            NaruTask task = captureForegroundTask(session);
+            session.waitFor();
+
+            assertNotNull(task, "expected the session to create a task");
+            assertTrue(task.status() == NaruTaskStatus.DONE,
+                    () -> "expected the task to finish, but status was " + task.status());
+            assertTrue(folder.resolve("stream-loaded-marker").isRegularFile(),
+                    "expected the streamed script to really run (it must create the marker file)");
+            // session env written by the script itself (what NaruPromptStmt reads as maxSteps)
+            assertEquals("12", task.session().getSessionEnv("maxSteps")
+                            .map(x -> x == null ? "<null>" : x.toString()).orNull(),
+                    "expected /set --session maxSteps to be visible as a session env entry");
+
+            // parser-level checks on the same finished task: comments, blanks, buffer folding
+            assertTrue(task.parseStatement("// just a comment").get() instanceof NaruNopStmt,
+                    "expected '//' lines to parse as comments");
+            assertTrue(task.parseStatement("# legacy comment too").get() instanceof NaruNopStmt,
+                    "expected '#' lines to parse as comments");
+            assertTrue(task.parseStatement("   ").get() instanceof NaruNopStmt,
+                    "expected blank lines to parse as no-ops (and not crash like an empty optional)");
+            // /buffer on ... /buffer off folds raw lines into ONE prompt statement
+            task.parseStatement("/buffer on");
+            task.parseStatement("first line");
+            task.parseStatement("");
+            task.parseStatement("  second indented line");
+            NOptional<NaruStatement> folded = task.parseStatement("/buffer off");
+            assertTrue(folded.isPresent() && folded.get() instanceof NaruPromptStmt,
+                    "expected /buffer off to emit ONE prompt statement, got " + folded);
+            assertEquals("first line\n\n  second indented line",
+                    ((NaruPromptStmt) folded.get()).prompt(),
+                    "expected the buffer to join raw lines verbatim, preserving blanks and indentation");
+        });
+    }
+
+    @Test
+    public void testScriptTagsScriptableFileAndSystemSave() {
+        // Engine-only (no LLM): the scriptable primitives the naru-native green
+        // check relies on — /tags (enable/disable + list), scriptable /file
+        // (read/grep/find publish lastExitCode; --save stores values; find also
+        // stores the parent dir with --dir), /system --save (captures trimmed
+        // output into a var) and {{var}} moustache interpolation of task vars
+        // into later directive arguments.
+        assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
+            String script = ""
+                    + "// /tags: opt into the fs tag, exclude two tools, list for good measure\n"
+                    + "/tags enable fs network\n"
+                    + "/tags disable cd set_working_dir\n"
+                    + "/tags list\n"
+                    + "// prepare a nested project layout with a file to grep\n"
+                    + "/system mkdir -p proj\n"
+                    + "/system touch proj/pom.xml\n"
+                    + "/system echo hi > data.txt\n"
+                    + "// scriptable /file find: publishes exit code, saves first match + parent dir\n"
+                    + "/file find . --include=pom.xml --save=pom --dir=pomDir\n"
+                    + "/file find . --include=data.txt --save=data --dir=dataDir\n"
+                    + "// scriptable /file grep: 0 on match, 1 on miss\n"
+                    + "/file grep data.txt --pattern=hi --save=g\n"
+                    + "/if lastExitCode == 0\n"
+                    + "/system touch grep-hit-ok\n"
+                    + "/end\n"
+                    + "/file grep data.txt --pattern=zzz-missing --save=g2\n"
+                    + "/if lastExitCode == 1\n"
+                    + "/system touch grep-miss-ok\n"
+                    + "/end\n"
+                    + "// /system --save captures trimmed output; string equality works in /if\n"
+                    + "/system --save answer echo 42\n"
+                    + "/if answer == \"42\"\n"
+                    + "/system touch answer-ok\n"
+                    + "/else\n"
+                    + "/system touch answer-bad\n"
+                    + "/end\n"
+                    + "// {{var}} interpolation + && / || in /if conditions\n"
+                    + "/if pom == \"proj/pom.xml\" && pomDir == \"proj\" || data == \"wrong\"\n"
+                    + "/system touch interp-ok\n"
+                    + "/else\n"
+                    + "/system touch interp-bad\n"
+                    + "/end\n"
+                    + "/system --save out cat data.txt\n"
+                    + "/if out == \"hi\"\n"
+                    + "/system touch save-ok\n"
+                    + "/end\n";
+            session = agent.startSession(new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8)));
+            NaruTask task = captureForegroundTask(session);
+            session.waitFor();
+
+            assertNotNull(task, "expected the session to create a task");
+            assertTrue(task.status() == NaruTaskStatus.DONE,
+                    () -> "expected the task to finish, but status was " + task.status());
+
+            // /tags took effect on the task
+            assertTrue(task.findToolTags().stream().anyMatch(t -> "fs".equals(t.name())),
+                    "expected the 'fs' tag to be enabled via /tags");
+            assertTrue(task.findToolExclusions().contains("cd")
+                            && task.findToolExclusions().contains("set_working_dir"),
+                    "expected cd and set_working_dir to be excluded via /tags");
+
+            // /file find --save / --dir published usable values
+            assertEquals("proj/pom.xml",
+                    task.getTaskEnv("pom", true).map(Object::toString).orNull(),
+                    "expected /file find to save the first matching path relative to the search root");
+            assertEquals("proj",
+                    task.getTaskEnv("pomDir", true).map(Object::toString).orNull(),
+                    "expected /file find to save the parent dir of the first match");
+            assertEquals("data.txt",
+                    task.getTaskEnv("data", true).map(Object::toString).orNull(),
+                    "expected /file find to save the top-level file path");
+            assertEquals(".",
+                    task.getTaskEnv("dataDir", true).map(Object::toString).orNull(),
+                    "expected /file find to save '.' as parent dir of a top-level file");
+
+            // /system --save captured the trimmed output
+            assertEquals("42",
+                    task.getTaskEnv("answer", true).map(Object::toString).orNull(),
+                    "expected /system --save to store the trimmed command output");
+            assertEquals("hi",
+                    task.getTaskEnv("out", true).map(Object::toString).orNull(),
+                    "expected /system --save to store the trimmed 'cat' output");
+
+            // the /if conditions all evaluated true (markers prove grep-like exit
+            // codes, string equality, && / || and {{var}} interpolation worked)
+            assertTrue(folder.resolve("grep-hit-ok").isRegularFile(),
+                    "grep match -> lastExitCode 0");
+            assertTrue(folder.resolve("grep-miss-ok").isRegularFile(),
+                    "grep miss -> lastExitCode 1");
+            assertTrue(folder.resolve("answer-ok").isRegularFile(),
+                    "answer == \"42\"");
+            assertTrue(!folder.resolve("answer-bad").exists(),
+                    "expected /else NOT to run when the condition is true");
+            assertTrue(folder.resolve("interp-ok").isRegularFile(),
+                    "pom/pomDir interpolation + && / || evaluation");
+            assertTrue(!folder.resolve("interp-bad").exists(),
+                    "expected /else NOT to run when the condition is true");
+            assertTrue(folder.resolve("save-ok").isRegularFile(),
+                    "/system --save out == \"hi\"");
+        });
     }
 
     @Test
@@ -175,10 +369,10 @@ public class AgentModelIntegrationTest {
                     "/mode implement",
                     // file tools are tagged "fs" and hidden from the model unless the
                     // task opts into that tag; this makes file_write/file_read visible.
-                    "/tools add-tagged fs",
+                    "/tags enable fs",
                     // models tend to "explore" with cd/pwd first; excluding cd keeps
                     // the agent focused on the actual write (this test's purpose).
-                    "/tools exclude cd",
+                    "/tags disable cd",
                     "Call the file_write tool ONCE with path=\"" + fileName
                             + "\" and content=\"" + marker
                             + "\". The bare file name is relative to the current (project root) directory. "
@@ -248,41 +442,39 @@ public class AgentModelIntegrationTest {
      * <p>Nothing here tells the model which tool to use for any given step beyond
      * describing the goal and the loop; the script only enables the required tool
      * capabilities (file tools tagged {@code fs}, the shell tool tagged
-     * {@code network}) and hides the wandering-prone working-dir tools. The test
-     * verification is independent of the model's narration, so this test doubles as
-     * a benchmark: a model that is "good enough" will leave behind a project whose
-     * {@code pom.xml} exists, whose {@code mvn -o -q test} passes offline, and whose
-     * compiled {@code calc.Main} computes correct results.</p>
+     * {@code network}) and hides the wandering-prone working-dir tools. Unlike a
+     * bare prompt, the script does NOT trust the model to decide when it is done:
+     * a bounded {@code /while} loop re-invokes the model until a naru-owned check
+     * (offline {@code mvn -o -q test} plus both runtime calculator runs) exits 0
+     * or 8 attempts run out. The test verification is independent of the model's
+     * narration, so this test doubles as a benchmark: a model that is "good
+     * enough" will leave behind a project whose {@code pom.xml} exists, whose
+     * {@code mvn -o -q test} passes offline, and whose compiled {@code calc.Main}
+     * computes correct results.</p>
      */
     @Test
     public void testAgentBuildsMavenCalculatorProject() {
         // a write->build->fix->run loop is much longer than a chat round-trip,
         // so give the showcase its own generous (but still bounded) timeout.
-        assertTimeoutPreemptively(Duration.ofMinutes(20), () -> {
+        // Large local models are slow: bump with -Dnaru.test.codegen.timeoutMinutes=NN.
+        long codegenTimeout = Long.getLong("naru.test.codegen.timeoutMinutes", 20);
+        assertTimeoutPreemptively(Duration.ofMinutes(codegenTimeout), () -> {
+            // The whole script — the /ollama & /model directives, the tool filter,
+            // /set --session maxSteps, the bounded /while loop, the multi-line goal
+            // prompt wrapped in /buffer on ... /buffer off, and the naru-owned green
+            // check — lives in a classpath RESOURCE (src/test/resources/scripts/
+            // calc-build-loop.naru). @MODEL@ is substituted with the model under
+            // test before the stream is handed to startSession(InputStream).
+            String script = loadScriptResource("/scripts/calc-build-loop.naru")
+                    .replace("@MODEL@", configuredToolModel());
             session = agent.startSession(
-                    "/ollama serve",
-                    "/model use " + configuredToolModel(),
-                    // implement mode: authorizes file writes AND shell execution
-                    // (planning mode is read-only).
-                    "/mode implement",
-                    // file tools are tagged "fs", run_shell is tagged "network";
-                    // both are hidden from the model unless the task opts in.
-                    "/tools add-tagged fs",
-                    "/tools add-tagged network",
-                    // hide everything irrelevant to the write->build->test->run loop:
-                    // working-dir wanderers, web (offline), git/index/search/semantic
-                    // and tag tools, plus the redundant maven_* shortcuts. A lean
-                    // toolset keeps even small models focused on the goal.
-                    "/tools exclude cd set_working_dir",
-                    "/tools exclude search_web tag_add tag_remove",
-                    "/tools exclude git_status git_diff git_log git_commit",
-                    "/tools exclude project_map code_symbols find_symbol project_summary",
-                    "/tools exclude semantic_search semantic_index maven_compile maven_test maven_package",
-                    CALCULATOR_PROMPT,
-                    "/ollama stop"
-            );
-            // Generous bound for the write->build->fix->run loop; never infinite.
-            session.setSessionEnv("maxSteps", 80);
+                    new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8)));
+
+            // maxSteps bounds a single model turn's tool-call rounds (the budget
+            // is reset when a turn ends, so each while-loop re-invocation gets a
+            // full one). It is set INSIDE the script now (/set --session maxSteps
+            // = 80) and it is never infinite: the /while loop itself is capped at
+            // 8 attempts and the preemptive timeout below bounds wall-clock time.
 
             NaruTask task = captureForegroundTask(session);
 
@@ -322,58 +514,20 @@ public class AgentModelIntegrationTest {
     }
 
     /**
-     * The full task handed to the model — this IS the "command list". The only
-     * decisive parts are the goal, the file layout (so the verification can find
-     * the project), and the constraints the environment imposes (offline Maven,
-     * versions present in the local repository). The model chooses which tools to
-     * call and how to iterate.
+     * Load a classpath script resource (UTF-8). The whole codegen showcase —
+     * the /ollama & /model directives, the tool filter, /set --session (maxSteps),
+     * the bounded /while loop, the multi-line goal prompt wrapped in
+     * /buffer on ... /buffer off, and the naru-owned green check — lives in
+     * src/test/resources/scripts/calc-build-loop.naru.
      */
-    private static final String CALCULATOR_PROMPT = String.join("\n",
-            "Build a complete Java Maven command-line calculator project IN THE CURRENT DIRECTORY, ",
-            "which IS the project root. pom.xml must be at the TOP level of the current directory. ",
-            "Do NOT create a sub-folder for the project and do NOT create files outside the current directory.",
-            "",
-            "The calculator supports + - * / on INTEGER numbers that may have MORE than one digit, ",
-            "e.g. 7*6 -> 42, 12/4 -> 3, 4+5 -> 9, 7-5 -> 2, 123+45 -> 168. ",
-            "Expressions are written WITHOUT any whitespace: one operand, one operator, another operand.",
-            "So eval receives exactly strings like \"7*6\" or \"12/4\" (no spaces, no parentheses).",
-            "",
-            "Create exactly these 4 files with the file tools:",
-            "- pom.xml: groupId calc, artifactId calculator, version 1.0; properties maven.compiler.source=17, ",
-            "  maven.compiler.target=17, project.build.sourceEncoding=UTF-8; ONE dependency ",
-            "  org.junit.jupiter:junit-jupiter:5.8.2 with scope test; build plugins ",
-            "  org.apache.maven.plugins:maven-compiler-plugin:3.8.1 and org.apache.maven.plugins:maven-surefire-plugin:2.22.2. ",
-            "  Do NOT add any other dependency or plugin.",
-            "- src/main/java/calc/Calculator.java: package calc; public class Calculator; ",
-            "  public static int eval(String expression): parse a simple 'a op b' expression (single operator, ",
-            "  integer operands that may have multiple digits, no whitespace) and return the result; ",
-            "  support + - * /; throw IllegalArgumentException for unknown operators.",
-            "- src/main/java/calc/Main.java: package calc; public class Main; public static void main(String[] args): ",
-            "  read args[0] as the expression and print ONLY the integer result (no extra text); ",
-            "  print an error to stderr and exit(1) if no argument is given.",
-            "- src/test/java/calc/CalculatorTest.java: package calc; JUnit 5 (junit-jupiter) tests asserting ",
-            "  eval(\"4+5\")==9, eval(\"7-5\")==2, eval(\"7*6\")==42 and eval(\"12/4\")==3.",
-            "",
-            "ENVIRONMENT: there is NO network access, Maven works ONLY offline. ALWAYS run Maven as 'mvn -o -q test' ",
-            "(with -o for offline, -q for quiet). mvn and java are both on the PATH. run_shell returns ",
-            "'EXIT_CODE=<code>' followed by the command output (stdout+stderr, possibly truncated at 8KB).",
-            "",
-            "WORK LOOP:",
-            "1. Create the 4 files.",
-            "2. Run 'mvn -o -q test' with run_shell. The project root is the current directory; do not cd anywhere.",
-            "3. If the build or the tests fail, study the error output and diagnose. The defect is almost ",
-            "   certainly in Calculator.eval's parsing of the expression, so fix ONLY Calculator.java (or ",
-            "   Main.java if the printed output is wrong). NEVER modify or weaken the tests or the pom.xml ",
-            "   to make them pass, and never change plugins to 'fix' the build; then run 'mvn -o -q test' ",
-            "   again. Repeat until it succeeds (BUILD SUCCESS) and all tests pass.",
-            "4. Then run 'java -cp target/classes calc.Main \"7*6\"' (must print 42) and ",
-            "   'java -cp target/classes calc.Main \"12/4\"' (must print 3).",
-            "5. DONE — you may ONLY finish when ALL of these are true, from commands you ran yourself: ",
-            "   'mvn -o -q test' ended with BUILD SUCCESS and all tests pass, and the two java commands ",
-            "   printed 42 and 3. Do NOT reply with advice, questions, or suggestions, and never declare ",
-            "   completion based on tool results alone. When (and only when) the build is green, all tests ",
-            "   pass, and both java runs printed their results, reply with a short factual summary of what ",
-            "   you created, then STOP. That summary is your final answer; do not call any more tools after it.");
+    private static String loadScriptResource(String name) {
+        try (InputStream in = AgentModelIntegrationTest.class.getResourceAsStream(name)) {
+            assertNotNull(in, "missing script resource " + name);
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
 
     private static final class CommandResult {
         final int exitCode;

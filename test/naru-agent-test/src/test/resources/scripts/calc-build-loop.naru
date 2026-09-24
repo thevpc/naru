@@ -1,0 +1,127 @@
+// hide everything irrelevant to the write->build->test->run loop:
+/ollama serve
+/model use @MODEL@
+// implement mode: authorizes file writes AND shell execution (planning mode is read-only).
+/mode implement
+// file tools are tagged "fs", run_shell is tagged "network"; both are visible to
+// the model only because the task opts into those tags below (/tags enable).
+/tags enable fs
+/tags enable network
+// still hiding: working-dir wanderers, web (offline), git/index/search/semantic
+// and tag tools, plus the redundant maven_* shortcuts. A lean toolset keeps
+// even small models focused on the goal.
+/tags disable cd set_working_dir
+/tags disable search_web tag_add tag_remove
+/tags disable git_status git_diff git_log git_commit
+/tags disable project_map code_symbols find_symbol project_summary
+/tags disable semantic_search semantic_index maven_compile maven_test maven_package
+// maxSteps bounds ONE model turn's tool-call rounds; the budget is reset whenever
+// a turn ends, so each /while re-invocation below gets a full one. It can never
+// run forever: the /while loop is capped at 8 attempts and the test preemptively
+// times out.
+/set --session maxSteps = 80
+// naru drives a BOUNDED loop: the model is re-invoked to (re)create/fix the
+// project until the offline build + tests + both runtime checks are green, or 8
+// attempts run out. The model NEVER decides when to stop; naru verifies with a
+// fully naru-native green check (no shell one-liner): /file find/grep/read
+// publish lastExitCode, /system --save captures command output into a variable,
+// and {{var}} interpolates earlier results into later steps.
+/set --task attempts = 0
+/set --task lastExitCode = 1
+/while (attempts < 8) && (lastExitCode != 0)
+/buffer on
+Build a complete Java Maven command-line calculator project IN THE CURRENT DIRECTORY, 
+which IS the project root. pom.xml must be at the TOP level of the current directory. 
+Do NOT create a sub-folder for the project and do NOT create files outside the current directory.
+
+The calculator supports + - * / on INTEGER numbers that may have MORE than one digit, 
+e.g. 7*6 -> 42, 12/4 -> 3, 4+5 -> 9, 7-5 -> 2, 123+45 -> 168. 
+Expressions are written WITHOUT any whitespace: one operand, one operator, another operand.
+So eval receives exactly strings like "7*6" or "12/4" (no spaces, no parentheses).
+
+Create exactly these 4 files with the file tools:
+- pom.xml: groupId calc, artifactId calculator, version 1.0; properties maven.compiler.source=17, 
+  maven.compiler.target=17, project.build.sourceEncoding=UTF-8; ONE dependency 
+  org.junit.jupiter:junit-jupiter:5.8.2 with scope test; build plugins 
+  org.apache.maven.plugins:maven-compiler-plugin:3.8.1 and org.apache.maven.plugins:maven-surefire-plugin:2.22.2. 
+  Do NOT add any other dependency or plugin.
+- src/main/java/calc/Calculator.java: package calc; public class Calculator; 
+  public static int eval(String expression): parse a simple 'a op b' expression (single operator, 
+  integer operands that may have multiple digits, no whitespace) and return the result; 
+  support + - * /; throw IllegalArgumentException for unknown operators.
+- src/main/java/calc/Main.java: package calc; public class Main; public static void main(String[] args): 
+  read args[0] as the expression and print ONLY the integer result (no extra text); 
+  print an error to stderr and exit(1) if no argument is given.
+- src/test/java/calc/CalculatorTest.java: package calc; JUnit 5 (junit-jupiter) tests asserting 
+  eval("4+5")==9, eval("7-5")==2, eval("7*6")==42 and eval("12/4")==3.
+
+ENVIRONMENT: there is NO network access, Maven works ONLY offline. ALWAYS run Maven as 'mvn -o -q test' 
+(with -o for offline, -q for quiet). mvn and java are both on the PATH. run_shell returns 
+'EXIT_CODE=<code>' followed by the command output (stdout+stderr, possibly truncated at 8KB).
+
+WORK LOOP:
+1. Create the 4 files.
+2. Run 'mvn -o -q test' with run_shell. The project root is the current directory; do not cd anywhere.
+3. If the build or the tests fail, study the error output and diagnose. The defect is almost 
+   certainly in Calculator.eval's parsing of the expression, so fix ONLY Calculator.java (or 
+   Main.java if the printed output is wrong). NEVER modify or weaken the tests or the pom.xml 
+   to make them pass, and never change plugins to 'fix' the build; then run 'mvn -o -q test' 
+   again. Repeat until it succeeds (BUILD SUCCESS) and all tests pass.
+4. Then run 'java -cp target/classes calc.Main "7*6"' (must print 42) and 
+   'java -cp target/classes calc.Main "12/4"' (must print 3).
+5. DONE — you may ONLY finish when ALL of these are true, from commands you ran yourself: 
+   'mvn -o -q test' ended with BUILD SUCCESS and all tests pass, and the two java commands 
+   printed 42 and 3. Do NOT reply with advice, questions, or suggestions, and never declare 
+   completion based on tool results alone. When (and only when) the build is green, all tests 
+   pass, and both java runs printed their results, reply with a short factual summary of what 
+   you created, then STOP. That summary is your final answer; do not call any more tools after it.
+6. You may be invoked a second (or later) time with the same goal because an independent verifier 
+   re-ran the build and the runs after you finished. That is normal: your files are already on disk, 
+   diagnose the verifier failure shown above, fix ONLY the code (never the tests or pom.xml), and 
+   verify again with 'mvn -o -q test' and the two java runs until they all pass.
+/buffer off
+// ---------------------------- NARU GREEN CHECK ----------------------------
+// 1. locate the project: /file find publishes lastExitCode (0=found,1=none,2=error),
+//    stores the first matching path in {{pom}} and its parent dir in {{pomDir}}
+//    ('.' when pom.xml sits at the top level, e.g. 'proj' when the model nested it).
+/file find . --include=pom.xml --save=pom --dir=pomDir
+/if lastExitCode != 0
+    /print "green: pom.xml not found yet (project may not exist)"
+    /set --task lastExitCode = 3
+/else
+    /print "green: pom.xml found at {{pom}}"
+    /set --task green = 1
+    // 2. build + run the tests OFFLINE; naru checks the real exit code itself
+    /system mvn -o -q -f {{pom}} test
+    /if lastExitCode != 0
+        /print "green: 'mvn -o -q -f {{pom}} test' FAILED (lastExitCode={{lastExitCode}})"
+        /set --task green = 0
+    /else
+        /print "green: 'mvn -o -q -f {{pom}} test' succeeded"
+    /end
+    // 3. the compiled CLI must compute 7*6=42 and 12/4=3; /system --save captures
+    //    the trimmed output so the check is a plain naru string comparison
+    /system --save calc42 java -cp {{pomDir}}/target/classes calc.Main "7*6"
+    /if lastExitCode != 0 || calc42 != "42"
+        /print "green: calc 7*6 = '{{calc42}}' (expected 42)"
+        /set --task green = 0
+    /else
+        /print "green: calc 7*6 = 42 OK"
+    /end
+    /system --save calc3 java -cp {{pomDir}}/target/classes calc.Main "12/4"
+    /if lastExitCode != 0 || calc3 != "3"
+        /print "green: calc 12/4 = '{{calc3}}' (expected 3)"
+        /set --task green = 0
+    /else
+        /print "green: calc 12/4 = 3 OK"
+    /end
+    // all three checks passed -> publish the exit code that stops the /while
+    /if green == 1
+        /set --task lastExitCode = 0
+    /else
+        /set --task lastExitCode = 1
+    /end
+/end
+/set --task attempts = attempts + 1
+/end
+/ollama stop

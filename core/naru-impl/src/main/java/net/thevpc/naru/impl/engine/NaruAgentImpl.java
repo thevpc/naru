@@ -22,6 +22,9 @@ import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextStyle;
 import net.thevpc.nuts.util.*;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Predicate;
@@ -262,6 +265,23 @@ public class NaruAgentImpl implements NaruAgent {
                 .unhold();
         session.start();
         return session;
+    }
+
+    @Override
+    public NaruSession startSession(InputStream in) {
+        if (in == null) {
+            throw new NIllegalArgumentException(NMsg.ofC("null script input stream"));
+        }
+        String content;
+        try {
+            content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new NIllegalArgumentException(NMsg.ofC("fail to read script input stream : %s", e));
+        }
+        // Keep ALL lines (blank ones included): parseStatement turns blanks into
+        // no-ops, except inside a "/buffer on ... /buffer off" block where they
+        // are meaningful parts of a multi-line prompt.
+        return startSession(content.split("\r\n|\r|\n", -1));
     }
 
     private void enableRichTerm(NaruSession session) {

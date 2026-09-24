@@ -55,8 +55,15 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private final List<NaruMessage> history = new ArrayList<>();
     private final Set<String> skills = new TreeSet<>();
     private final Set<String> taskToolTags = new TreeSet<>();
+    private final List<NaruToolTag> taskToolTagDefinitions = new ArrayList<>();
     private final Set<String> excludedTools = new TreeSet<>();
     private NAruInputMode inputMode = NAruInputMode.LINE;
+    /**
+     * Raw lines being accumulated by a script-level "/buffer on ... /buffer off"
+     * block (null when not buffering). Blank lines are preserved, and "/buffer
+     * off" emits the joined lines as ONE model-prompt statement.
+     */
+    private List<String> pendingBuffer;
     private NPath workingDir;
     private int userQueriesCount;
     /**
@@ -431,6 +438,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         env.clear();
         skills.clear();
         taskToolTags.clear();
+        taskToolTagDefinitions.clear();
         ((NaruSessionImpl) session).fireChanged();
     }
 
@@ -552,6 +560,10 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public NaruTaskImpl _setTaskTags(Set<String> taskTags) {
         this.taskToolTags.clear();
         this.taskToolTags.addAll(taskTags);
+        this.taskToolTagDefinitions.clear();
+        for (String t : taskTags) {
+            this.taskToolTagDefinitions.add(session().registry().findAvailableTag(t).get());
+        }
         return this;
     }
 
@@ -669,18 +681,22 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     public List<NaruToolTag> findToolTags() {
-        return taskToolTags.stream().map(x -> session().registry().findAvailableTag(x).get()).collect(Collectors.toList());
+        return new ArrayList<>(taskToolTagDefinitions);
     }
 
     public NaruTask addToolTag(String toolTag) {
-        taskToolTags.add(
-                NNameFormat.LOWER_KEBAB_CASE.format(session().registry().findAvailableTag(toolTag).get().name())
-        );
+        NaruToolTag tag = session().registry().findAvailableTag(toolTag).get();
+        if (taskToolTags.add(NNameFormat.LOWER_KEBAB_CASE.format(tag.name()))) {
+            taskToolTagDefinitions.add(tag);
+        }
         return this;
     }
 
     public NaruTask removeToolTag(String toolTag) {
-        taskToolTags.remove(NNameFormat.LOWER_KEBAB_CASE.format(NStringUtils.strip(toolTag)));
+        String normalized = NNameFormat.LOWER_KEBAB_CASE.format(NStringUtils.strip(toolTag));
+        if (taskToolTags.remove(normalized)) {
+            taskToolTagDefinitions.removeIf(x -> NNameFormat.LOWER_KEBAB_CASE.format(x.name()).equals(normalized));
+        }
         return this;
     }
 
@@ -1755,11 +1771,34 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NOptional<NaruStatement> parseStatement(String line) {
-        if (NBlankable.isBlank(line)) {
-            return NOptional.ofNamedEmpty("statement");
+        if (line == null) {
+            return NOptional.of(new NaruNopStmt());
         }
+        String raw = line;
         line = line.trim();
-        if (line.startsWith("#")) {
+        // script-level buffering: raw lines between "/buffer on" and "/buffer off"
+        // are accumulated verbatim (blank lines and indentation included) and
+        // emitted as ONE model prompt statement, so a multi-line prompt can be
+        // written naturally (only the outer "/buffer on/off" markers are parsed).
+        if (line.equals("/buffer off")) {
+            List<String> buf = this.pendingBuffer;
+            this.pendingBuffer = null;
+            return buf == null || buf.isEmpty()
+                    ? NOptional.of(new NaruNopStmt())
+                    : NOptional.of(NaruStatementHelper.ofModelCall(String.join("\n", buf)));
+        }
+        if (this.pendingBuffer != null) {
+            this.pendingBuffer.add(raw);
+            return NOptional.of(new NaruNopStmt());
+        }
+        if (line.equals("/buffer on")) {
+            this.pendingBuffer = new ArrayList<>();
+            return NOptional.of(new NaruNopStmt());
+        }
+        if (NBlankable.isBlank(line)) {
+            return NOptional.of(new NaruNopStmt());
+        }
+        if (line.startsWith("#") || line.startsWith("//")) {
             return NOptional.of(new NaruNopStmt());
         }
         if (line.startsWith("/")) {

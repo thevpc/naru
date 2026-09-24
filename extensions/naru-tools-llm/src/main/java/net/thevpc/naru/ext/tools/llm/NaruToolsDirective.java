@@ -227,6 +227,14 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                     ));
                     context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
                     context.task().addHistory(NaruMessage.user(NMsg.ofC("calls tool %s %s\nresults:\n%s", a.image(), args, result).toString()));
+                    // Publish the exit code of process-running tools (e.g. run_shell)
+                    // so script control-flow (/while, /if) can condition on it, e.g.
+                    // "run until 'mvn -o -q test' exits 0". Results without an
+                    // EXIT_CODE= prefix leave the previous value untouched.
+                    Integer exitCode = extractExitCode(result);
+                    if (exitCode != null) {
+                        context.task().setTaskEnv("lastExitCode", exitCode);
+                    }
                 }
             }
         });
@@ -260,6 +268,27 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                 }
             }
         });
+    }
+
+    /**
+     * Extract the numeric exit code from a tool result formatted as
+     * "EXIT_CODE=&lt;code&gt;\n…" (the run_shell contract). Returns {@code null}
+     * for results carrying no exit code, so callers can keep the previous value.
+     */
+    private static Integer extractExitCode(String result) {
+        if (result != null && result.startsWith("EXIT_CODE=")) {
+            String v = result.substring("EXIT_CODE=".length());
+            int nl = v.indexOf('\n');
+            if (nl >= 0) {
+                v = v.substring(0, nl);
+            }
+            try {
+                return Integer.parseInt(v.trim());
+            } catch (NumberFormatException ignore) {
+                // not a parsable exit code: treat as "no exit code published"
+            }
+        }
+        return null;
     }
 
 }

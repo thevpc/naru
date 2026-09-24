@@ -169,6 +169,25 @@
   ▌   /stat  [ help | --help ]
   ▌            show stat help
   ▌     -----------------------------------------
+  ▌     /tags : enable/disable tool tags and exclusions
+  ▌     | Detailed Specification :
+  ▌ /tags  [options...]
+  ▌     enable/disable tool tags and tool exclusions
+  ▌   /tags  enable <tag-name>... [<tag-name>...]
+  ▌            enable tools tagged with the given tags
+  ▌   /tags  add <tag-name>... [<tag-name>...]
+  ▌            alias of enable: add the given tags
+  ▌   /tags  disable <tool-name>... [<tool-name>...]
+  ▌            exclude tools by name
+  ▌   /tags  remove <tool-name>... [<tool-name>...]
+  ▌            alias of disable: add the given tools to the exclusion set
+  ▌   /tags  list 
+  ▌            list enabled tags and excluded tools
+  ▌   /tags  tags 
+  ▌            list all available tags
+  ▌   /tags  [ help | --help ]
+  ▌            show tags help
+  ▌     -----------------------------------------
   ▌     /tools : manage AI tools
   ▌     | Detailed Specification :
   ▌ /tools  [options...]

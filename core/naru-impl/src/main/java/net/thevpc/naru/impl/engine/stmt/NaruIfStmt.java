@@ -117,32 +117,13 @@ public class NaruIfStmt extends NaruIncrementalStmt implements Cloneable {
             task.throwError(NMsg.ofC("Error statement: incomplete 'if' statement"));
         }
 
-        Object object = task.evalExpression(condition);
-        if (NLiteral.of(object).asBoolean().orElse(false)) {
-            task.addStatements(trueBranch.toArray(new NaruStatement[0]));
-            return;
-        }
-
-        for (ElseIfBranch ifBranch : elseIfBranch) {
-            object = task.evalExpression(ifBranch.condition);
-            if (NLiteral.of(object).asBoolean().orElse(false)) {
-                task.addStatements(ifBranch.body.toArray(new NaruStatement[0]));
-                return;
-            }
-        }
-
-        if (!falseBranch.isEmpty()) {
-            task.addStatements(falseBranch.toArray(new NaruStatement[0]));
-        }
-
-
-        // Phase A — first time: copy first, resolve on copy, prepend copy
-        if (runtimeNextChildIndex == -2) {
-            NaruIfStmt selfCopy = (NaruIfStmt) copy();
-            selfCopy.resolveBranch(task);
-            selfCopy.runtimeNextChildIndex = 0;
-            task.prependStatement(selfCopy.injected(true));
-            return; // copy will handle execution next tick
+        // Phase A — evaluate the condition ONCE and decide which branch runs.
+        // (Using the same copy+prepend pattern as /while: the branch children run
+        // one at a time through injected copies, and the final copy advances.)
+        int nextChildIndex = this.runtimeNextChildIndex;
+        if (nextChildIndex == -2) {
+            resolveBranch(task);
+            this.runtimeNextChildIndex = 0;
         }
 
         List<NaruStatement> branch = getSelectedBranch();
@@ -199,65 +180,70 @@ public class NaruIfStmt extends NaruIncrementalStmt implements Cloneable {
     }
 
     public boolean acceptStatement(NaruStatement any, NaruTask task) {
+        // Like /while, return TRUE whenever this statement was consumed (folded or
+        // completed); the scheduler only advances its input when this returns true.
         switch (parseStatus) {
             case IF: {
                 NaruStatement last = trueBranch.isEmpty() ? null : trueBranch.get(trueBranch.size() - 1);
-                if (last instanceof NaruIncrementalStmt) {
-                    ((NaruIncrementalStmt) last).acceptStatement(any, task);
-                } else {
-                    if (any instanceof NaruElseStmt) {
-                        parseStatus = IfStatus.ELSE;
-                    } else if (any instanceof NaruElseIfStmt) {
-                        parseStatus = IfStatus.ELSEIF;
-                        elseIfBranch.add(new ElseIfBranch(((NaruElseIfStmt) any).condition));
-                    } else if (any instanceof NaruEndStmt) {
-                        parseStatus = IfStatus.COMPLETE;
-                        return true;
-                    } else {
-                        trueBranch.add(any);
-                    }
+                if (last instanceof NaruIncrementalStmt && ((NaruIncrementalStmt) last).isPending()) {
+                    return ((NaruIncrementalStmt) last).acceptStatement(any, task);
                 }
-                break;
+                if (any instanceof NaruElseStmt) {
+                    parseStatus = IfStatus.ELSE;
+                    return true;
+                } else if (any instanceof NaruElseIfStmt) {
+                    parseStatus = IfStatus.ELSEIF;
+                    elseIfBranch.add(new ElseIfBranch(((NaruElseIfStmt) any).condition));
+                    return true;
+                } else if (any instanceof NaruEndStmt) {
+                    parseStatus = IfStatus.COMPLETE;
+                    return true;
+                } else {
+                    trueBranch.add(any);
+                    return true;
+                }
             }
             case ELSEIF: {
                 ElseIfBranch lastEF = elseIfBranch.get(elseIfBranch.size() - 1);
                 NaruStatement last = lastEF.body.isEmpty() ? null : lastEF.body.get(lastEF.body.size() - 1);
-                if (last instanceof NaruIncrementalStmt) {
-                    ((NaruIncrementalStmt) last).acceptStatement(any, task);
-                } else {
-                    if (any instanceof NaruElseStmt) {
-                        parseStatus = IfStatus.ELSE;
-                    } else if (any instanceof NaruElseIfStmt) {
-                        parseStatus = IfStatus.ELSEIF;
-                        elseIfBranch.add(new ElseIfBranch(((NaruElseIfStmt) any).condition));
-                    } else if (any instanceof NaruEndStmt) {
-                        parseStatus = IfStatus.COMPLETE;
-                        return true;
-                    } else {
-                        lastEF.body.add(any);
-                    }
+                if (last instanceof NaruIncrementalStmt && ((NaruIncrementalStmt) last).isPending()) {
+                    return ((NaruIncrementalStmt) last).acceptStatement(any, task);
                 }
-                break;
+                if (any instanceof NaruElseStmt) {
+                    parseStatus = IfStatus.ELSE;
+                    return true;
+                } else if (any instanceof NaruElseIfStmt) {
+                    parseStatus = IfStatus.ELSEIF;
+                    elseIfBranch.add(new ElseIfBranch(((NaruElseIfStmt) any).condition));
+                    return true;
+                } else if (any instanceof NaruEndStmt) {
+                    parseStatus = IfStatus.COMPLETE;
+                    return true;
+                } else {
+                    lastEF.body.add(any);
+                    return true;
+                }
             }
             case ELSE: {
-                NaruStatement last = trueBranch.isEmpty() ? null : trueBranch.get(trueBranch.size() - 1);
-                if (last instanceof NaruIncrementalStmt) {
-                    ((NaruIncrementalStmt) last).acceptStatement(any, task);
-                } else {
-                    if (any instanceof NaruElseStmt) {
-                        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("error statement : unexpected 'else'"));
-                        task.throwError(NMsg.ofC("error statement : unexpected 'else'"));
-                    } else if (any instanceof NaruElseIfStmt) {
-                        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("error statement : unexpected 'else'"));
-                        task.throwError(NMsg.ofC("error statement : unexpected 'elseif'"));
-                    } else if (any instanceof NaruEndStmt) {
-                        parseStatus = IfStatus.COMPLETE;
-                        return true;
-                    } else {
-                        falseBranch.add(any);
-                    }
+                NaruStatement last = falseBranch.isEmpty() ? null : falseBranch.get(falseBranch.size() - 1);
+                if (last instanceof NaruIncrementalStmt && ((NaruIncrementalStmt) last).isPending()) {
+                    return ((NaruIncrementalStmt) last).acceptStatement(any, task);
                 }
-                break;
+                if (any instanceof NaruElseStmt) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("error statement : unexpected 'else'"));
+                    task.throwError(NMsg.ofC("error statement : unexpected 'else'"));
+                    return false;
+                } else if (any instanceof NaruElseIfStmt) {
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("error statement : unexpected 'else'"));
+                    task.throwError(NMsg.ofC("error statement : unexpected 'elseif'"));
+                    return false;
+                } else if (any instanceof NaruEndStmt) {
+                    parseStatus = IfStatus.COMPLETE;
+                    return true;
+                } else {
+                    falseBranch.add(any);
+                    return true;
+                }
             }
         }
         return false;

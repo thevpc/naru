@@ -13,7 +13,21 @@ public class NaruBufferDirective extends NaruDirectiveBase {
             @Override
             public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                task.inputMode(task.inputMode() == NAruInputMode.LINE ? NAruInputMode.BLOC : NAruInputMode.LINE);
+                String arg = context.argument() == null ? "" : context.argument().trim();
+                NAruInputMode m;
+                switch (arg) {
+                    case "on":
+                        m = NAruInputMode.BLOC;
+                        break;
+                    case "off":
+                        m = NAruInputMode.LINE;
+                        break;
+                    default:
+                        // bare "/buffer" toggles
+                        m = task.inputMode() == NAruInputMode.LINE ? NAruInputMode.BLOC : NAruInputMode.LINE;
+                        break;
+                }
+                task.inputMode(m);
             }
         });
     }

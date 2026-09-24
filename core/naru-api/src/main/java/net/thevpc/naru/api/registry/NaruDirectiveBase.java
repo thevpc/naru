@@ -4,6 +4,8 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.cmdline.*;
+import net.thevpc.nuts.expr.NExprContext;
+import net.thevpc.nuts.expr.NExprContextBuilder;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
@@ -80,19 +82,66 @@ public abstract class NaruDirectiveBase implements NaruDirective {
     @Override
     public void execute(NaruDirectiveCallContext context) {
         NaruTask task = context.task();
+        // Resolve {{var}} moustache templates in the directive argument against the
+        // task's variables (frame locals -> task env -> session env) BEFORE any
+        // cmdline parsing, so naru scripts can feed the result of one step into the
+        // next, e.g. "/system mvn -o -q -f {{pom}} test" or "/file read {{target}}".
+        // The moustache syntax deliberately avoids clashing with shell '$' variables
+        // inside /system commands. Undefined variables / malformed templates are left
+        // untouched so a stray "{{" never breaks a script.
+        String argument = context.argument();
+        String resolved = resolveTemplates(task, argument);
+        if (resolved != argument) {
+            final NaruDirectiveCallContext base = context;
+            final String resolvedArgument = resolved;
+            context = new NaruDirectiveCallContext() {
+                @Override
+                public String name() {
+                    return base.name();
+                }
+
+                @Override
+                public String argument() {
+                    return resolvedArgument;
+                }
+
+                @Override
+                public NaruTask task() {
+                    return base.task();
+                }
+            };
+        }
         if (subCommands.size() == 1) {
             SubCommand s1 = (SubCommand) (subCommands.values().toArray()[0]);
             if (s1.name().isEmpty()) {
-                NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
-                if (!cmdLine.isEmpty() && (cmdLine.peek().get().image().equals("help") || cmdLine.peek().get().image().equals("--help"))) {
-                    executeHelp(context, cmdLine);
+                String arg = context.argument() == null ? "" : context.argument().trim();
+                if (arg.length() == 0 || arg.equals("help") || arg.equals("--help")) {
+                    executeHelp(context, NCmdLine.of(""));
                     return;
                 }
-                s1.execute(context, NCmdLine.parse(context.argument()).get());
+                NCmdLine cmdLine = NCmdLine.of("");
+                try {
+                    cmdLine = NCmdLine.parse(context.argument()).get();
+                } catch (Exception ignore) {
+                    // the argument is raw text (e.g. /sh or /system shell commands
+                    // with quotes/operators) that is NOT well-formed NCmdLine; such
+                    // directives read context.argument() directly, so an empty
+                    // cmdLine is fine and must not fail the whole call.
+                }
+                s1.execute(context, cmdLine);
                 return;
             }
         }
-        NCmdLine cmdLine = NCmdLine.parse(context.argument()).get();
+        NCmdLine cmdLine;
+        try {
+            cmdLine = NCmdLine.parse(context.argument()).get();
+        } catch (Exception e) {
+            // e.g. unsupported quoting or stray characters in model-generated
+            // arguments; report it instead of crashing the whole directive.
+            task.log(NaruLogMode.AGENT_RESPONSE,
+                    NMsg.ofC("invalid /%s syntax: %s", name(), context.argument()));
+            return;
+        }
         if (cmdLine.isEmpty()) {
             if (!NBlankable.isBlank(noCommand() != null)) {
                 subCommand(noCommand()).get().execute(context, cmdLine);
@@ -142,6 +191,32 @@ public abstract class NaruDirectiveBase implements NaruDirective {
                 ,NMsg.ofStyledSeparator("]")
         ));
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show %s help",name()));
+    }
+
+    /**
+     * Resolve {@code {{var}}} moustache templates in {@code arg} against the
+     * task's variables (frame locals -&gt; task env -&gt; session env). The original
+     * argument is returned unchanged when nothing needs resolving or when a
+     * variable is unknown, so a stray "{{" never breaks a script or a shell
+     * command.
+     */
+    private static String resolveTemplates(NaruTask task, String arg) {
+        if (arg == null || arg.indexOf("{{") < 0) {
+            return arg;
+        }
+        try {
+            NExprContext ctx = NExprContextBuilder.of()
+                    .declareBuiltins()
+                    .declareMathConstants()
+                    .declareMathFunctions()
+                    .declarePhysicsConstants()
+                    .declareVars(task.varResolver())
+                    .build();
+            String out = ctx.ofTemplate().withMoustacheStyle().compile(arg).runString();
+            return out == null ? arg : out;
+        } catch (Exception ignore) {
+            return arg;
+        }
     }
 
     @Override

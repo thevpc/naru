@@ -8,6 +8,7 @@ import net.thevpc.nuts.pipeline.NIterator;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NBooleanRef;
 import net.thevpc.nuts.util.NIntRef;
+import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -290,14 +291,18 @@ public class FileToolHelper {
         if (NBlankable.isBlank(path)) return "ERROR: 'path' is required.";
         if (NBlankable.isBlank(pattern)) return "ERROR: 'pattern' is required.";
 
+        // null means default: match case-sensitively (grep semantics)
+        boolean caseSensitiveOk = caseSensitive == null || caseSensitive;
+        boolean regexOk = regex != null && regex;
+
         NPath p = task.resolve(path);
         if (!p.exists()) return "ERROR: File not found: " + p;
         if (!p.permissions().contains(NPathPermission.CAN_READ)) return "ERROR: File is not readable: " + p;
 
         Pattern compiledPattern = null;
-        if (regex!=null && regex) {
+        if (regexOk) {
             try {
-                int flags = (!(caseSensitive!=null && !caseSensitive)) ? 0 : Pattern.CASE_INSENSITIVE;
+                int flags = caseSensitiveOk ? 0 : Pattern.CASE_INSENSITIVE;
                 compiledPattern = Pattern.compile(pattern, flags);
             } catch (PatternSyntaxException e) {
                 return "ERROR: Invalid regex pattern: " + e.getMessage();
@@ -314,7 +319,7 @@ public class FileToolHelper {
 
             while (it.hasNext() && matchCount < maxMatches) {
                 String line = it.next();
-                boolean isMatch = _grep_matches(line, pattern, compiledPattern, caseSensitive, regex);
+                boolean isMatch = _grep_matches(line, pattern, compiledPattern, caseSensitiveOk, regexOk);
 
                 if (isMatch) {
                     // 1. Output "before" context from deque
@@ -503,6 +508,35 @@ public class FileToolHelper {
         } catch (Exception e) {
             return "ERROR searching directory: " + e.getMessage();
         }
+    }
+
+    /**
+     * First file under {@code path} whose NAME matches {@code include} (a glob),
+     * or {@code null} when none / when the path is not a readable directory.
+     * The returned path is RELATIVE to the searched root when it lies inside it
+     * (absolute otherwise), so scripts can hand it straight to maven/java
+     * invoked with the project directory as cwd ({@code mvn -o -q -f pom.xml},
+     * {@code java -cp proj/target/classes ...}).
+     */
+    public static String folderFindFirst(NaruTask task, String path, String includeGlob, Boolean recursive) {
+        if (NBlankable.isBlank(path) || NBlankable.isBlank(includeGlob)) {
+            return null;
+        }
+        boolean recursiveOk = NUtils.firstNonNull(recursive, true);
+        NPath root = task.resolve(path);
+        if (!root.exists() || !root.isDirectory()) {
+            return null;
+        }
+        Predicate<NPath> includeMatcher = createMatcher(includeGlob);
+        List<NPath> files = collectFiles(root, recursiveOk, includeMatcher, null, null, null, 1,
+                new StringBuilder(), null, null, root,
+                NBooleanRef.of(false), NIntRef.of(0), 0, 1);
+        if (files.isEmpty()) {
+            return null;
+        }
+        NPath f = files.get(0);
+        NOptional<String> rel = root.relativize(f);
+        return rel.isPresent() ? rel.get() : f.toString();
     }
 
     private static boolean fileContentMatches(String pattern, NPath file, Pattern compiledPattern, boolean caseSensitive, boolean regex, NBooleanRef truncated, NIntRef totalMatches, StringBuilder out, int contextLines, int maxMatches, NPath root) {
