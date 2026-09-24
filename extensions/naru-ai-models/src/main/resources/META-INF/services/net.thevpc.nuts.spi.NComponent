@@ -3,6 +3,7 @@ net.thevpc.naru.ext.models.mistral.NaruMistralProvider
 net.thevpc.naru.ext.models.ollama.NaruOllamaProvider
 net.thevpc.naru.ext.models.groq.NaruGroqProvider
 net.thevpc.naru.ext.models.cerebras.NaruCerebrasProvider
+net.thevpc.naru.ext.models.colibri.NaruColibriProvider
 net.thevpc.naru.ext.models.openrouter.NaruOpenRouterProvider
 net.thevpc.naru.ext.models.xai.NaruXaiProvider
 net.thevpc.naru.ext.models.github.NaruGitHubModelsProvider
