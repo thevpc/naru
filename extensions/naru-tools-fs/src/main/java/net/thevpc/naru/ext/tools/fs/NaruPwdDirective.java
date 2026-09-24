@@ -14,11 +14,11 @@ public class NaruPwdDirective extends NaruDirectiveBase {
         super("pwd","fs", "print working directory");
         register(new AbstractSubCommand() {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 context.task().addHistory(NaruMessage.user(NMsg.ofC("current working directory is %s", task.workingDir()).toString()));
                 context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", task.workingDir()));
-                context.task().frame().lastResult(NaruStmtResult.ofSuccess(task.workingDir().toString()));
+                return NaruStmtResult.ofSuccess(task.workingDir().toString());
             }
         });
     }

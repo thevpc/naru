@@ -1,37 +1,30 @@
 package net.thevpc.naru.api.routine;
 
-public class NaruStmtResult {
-    private Object value;
-    private NaruStmtResultType type;
-
+public record NaruStmtResult(Object value, NaruStmtResultType type, int exitCode) {
     public static NaruStmtResult nonNull(NaruStmtResult other) {
-        if(other==null){
+        if (other == null) {
             return ofSuccess(null);
         }
         return other;
     }
+
     public static NaruStmtResult ofSuccess(Object value) {
-        return new NaruStmtResult(value, NaruStmtResultType.SUCCESS);
+        return new NaruStmtResult(value, NaruStmtResultType.SUCCESS, 0);
+    }
+
+    public static NaruStmtResult of(Object value, int exitCode) {
+        return new NaruStmtResult(value, exitCode == 0 ? NaruStmtResultType.SUCCESS : NaruStmtResultType.ERROR, exitCode);
     }
 
     public static NaruStmtResult ofError(String value) {
-        return new NaruStmtResult(value, NaruStmtResultType.ERROR);
-    }
-
-    public NaruStmtResult(Object value, NaruStmtResultType type) {
-        this.value = value;
-        this.type = type;
+        return new NaruStmtResult(value, NaruStmtResultType.ERROR, 1);
     }
 
     public Object successValue() {
         return type == NaruStmtResultType.SUCCESS ? value : null;
     }
 
-    public Object value() {
-        return value;
-    }
-
-    public NaruStmtResultType type() {
-        return type;
+    public Object errorValue() {
+        return type == NaruStmtResultType.ERROR ? value : null;
     }
 }

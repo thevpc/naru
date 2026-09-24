@@ -1,5 +1,6 @@
 package net.thevpc.naru.api.registry;
 
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
 import net.thevpc.nuts.cmdline.NArgCompletePosition;
 
@@ -32,7 +33,7 @@ public interface NaruDirective {
      * @param context per-run context (project dir, session, etc.)
      * @return result string (text, JSON snippet, error message, …)
      */
-    void execute(NaruDirectiveCallContext context);
+    NaruStmtResult execute(NaruDirectiveCallContext context);
 
     /**
      * Resolve autocomplete candidates for this directive.

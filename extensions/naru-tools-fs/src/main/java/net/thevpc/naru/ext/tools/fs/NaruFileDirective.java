@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
@@ -18,11 +19,12 @@ public class NaruFileDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<path> [--from=<from>] [--to=<to>] [--save=<var>]", "read file content; publishes lastExitCode (0=ok,1=empty,2=error) and stores the trimmed content in the task var given by --save")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NArg filePath = cmdLine.next().orNull();
                 if (filePath == null || filePath.isOption()) {
                     task.throwError(NMsg.ofC("missing file path"));
+                    return NaruStmtResult.of("missing file path", 2);
                 }
                 NRef<Long> from = NRef.of();
                 NRef<Long> to = NRef.of();
@@ -39,7 +41,7 @@ public class NaruFileDirective extends NaruDirectiveBase {
                 context.task().addHistory(NaruMessage.user(NMsg.ofC("file_read   path=%s  from=%s to=%s\n%s",
                         filePath, from, to, result
                 ).toString()));
-                publishFileResult(task, saveVar.get(), result,
+                return fileResult(task, saveVar.get(), result,
                         result != null && result.startsWith("ERROR") ? 2
                                 : result != null && result.startsWith("File is empty") ? 1 : 0);
             }
@@ -48,12 +50,12 @@ public class NaruFileDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<path> [--content=<content>] [--dry]", "write file content")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NArg filePath = cmdLine.next().orNull();
                 if (filePath == null || filePath.isOption()) {
                     task.throwError(NMsg.ofC("missing file path"));
-                    return;
+                    return NaruStmtResult.of("missing file path", 2);
                 }
                 NRef<String> content = NRef.of();
                 NRef<Boolean> dry = NRef.of();
@@ -64,7 +66,7 @@ public class NaruFileDirective extends NaruDirectiveBase {
                         .requireAll();
                 if (content.get() == null) {
                     task.throwError(NMsg.ofC("missing file content"));
-                    return;
+                    return NaruStmtResult.of("missing file content", 2);
                 }
                 String result = FileToolHelper.fileWrite(task, filePath.toString(),
                         content.get(), dry.get()
@@ -73,18 +75,19 @@ public class NaruFileDirective extends NaruDirectiveBase {
                 context.task().addHistory(NaruMessage.user(NMsg.ofC("file_write   path=%s  content=%s\n%s",
                         filePath, FileToolHelper.snippet(content.get()), result
                 ).toString()));
+                return result != null && result.startsWith("ERROR") ? NaruStmtResult.of(result, 2) : NaruStmtResult.ofSuccess(result);
             }
         });
         register(new AbstractSubCommand("append", NText.ofPlain("append file content"),
                 new SubCommandHelp("<path> [--content=<content>] [--dry]", "append file content")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NArg filePath = cmdLine.next().orNull();
                 if (filePath == null || filePath.isOption()) {
                     task.throwError(NMsg.ofC("missing file path"));
-                    return;
+                    return NaruStmtResult.of("missing file path", 2);
                 }
                 NRef<Long> from = NRef.of();
                 NRef<Long> to = NRef.of();
@@ -106,18 +109,19 @@ public class NaruFileDirective extends NaruDirectiveBase {
                 context.task().addHistory(NaruMessage.user(NMsg.ofC("file_append   path=%s  content=...\n%s",
                         filePath, FileToolHelper.snippet(content.get()), result
                 ).toString()));
+                return result != null && result.startsWith("ERROR") ? NaruStmtResult.of(result, 2) : NaruStmtResult.ofSuccess(result);
             }
         });
         register(new AbstractSubCommand("edit", NText.ofPlain("edit file content"),
                 new SubCommandHelp("<path> [--from=<from>] [--to=<to>] --content=<content>", "edit file content to replace a portion of lines with anew content to remove or update that part")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NArg filePath = cmdLine.next().orNull();
                 if (filePath == null || filePath.isOption()) {
                     task.throwError(NMsg.ofC("missing file path"));
-                    return;
+                    return NaruStmtResult.of("missing file path", 2);
                 }
                 NRef<Long> from = NRef.of();
                 NRef<Long> to = NRef.of();
@@ -142,18 +146,19 @@ public class NaruFileDirective extends NaruDirectiveBase {
                         filePath, from.get(), to.get(), dry.get(),
                         FileToolHelper.snippet(content.get()), result
                 ).toString()));
+                return result != null && result.startsWith("ERROR") ? NaruStmtResult.of(result, 2) : NaruStmtResult.ofSuccess(result);
             }
         });
         register(new AbstractSubCommand("grep", NText.ofPlain("search content within a file"),
                 new SubCommandHelp("<path> [--pattern=<pattern>] [--regex] [--context-lines=<n>] [--case-sensitive] [--max-matches=<n>] [--save=<var>]", "search content within a file to match pattern; publishes lastExitCode (0=found,1=no match,2=error) and stores the result text in the task var given by --save")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NArg filePath = cmdLine.next().orNull();
                 if (filePath == null || filePath.isOption()) {
                     task.throwError(NMsg.ofC("missing file path"));
-                    return;
+                    return NaruStmtResult.of("missing file path", 2);
                 }
                 NRef<Integer> contextLines = NRef.of();
                 NRef<Integer> maxMatches = NRef.of();
@@ -184,7 +189,7 @@ public class NaruFileDirective extends NaruDirectiveBase {
                         filePath, contextLines.get(), maxMatches.get(), pattern.get(), regex.get(),
                         caseSensitive.get(), result
                 ).toString()));
-                publishFileResult(task, saveVar.get(), result,
+                return fileResult(task, saveVar.get(), result,
                         result != null && result.startsWith("ERROR") ? 2
                                 : result != null && result.startsWith("No matches") ? 1 : 0);
             }
@@ -197,12 +202,12 @@ public class NaruFileDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<path> [--before=<d>] [--after=<d>]", "search for files in a directory using file modification date")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NArg filePath = cmdLine.next().orNull();
                 if (filePath == null || filePath.isOption()) {
                     task.throwError(NMsg.ofC("missing file path"));
-                    return;
+                    return NaruStmtResult.of("missing file path", 2);
                 }
                 NRef<Integer> contextLines = NRef.of();
                 NRef<Integer> maxMatches = NRef.of();
@@ -261,7 +266,6 @@ public class NaruFileDirective extends NaruDirectiveBase {
                 // (relative to the searched root), both usable with {{var}} later.
                 int exitCode = result != null && result.startsWith("ERROR") ? 2
                         : result != null && result.startsWith("No files found") ? 1 : 0;
-                task.setTaskEnv("lastExitCode", exitCode);
                 if (exitCode == 0 && (saveVar.isSet() || dirVar.isSet())) {
                     String first = FileToolHelper.folderFindFirst(task,
                             filePath.toString(), includeGlob.get(), recursive.get());
@@ -279,22 +283,25 @@ public class NaruFileDirective extends NaruDirectiveBase {
                         task.setTaskEnv(dirVar.get(), dir);
                     }
                 }
+                return NaruStmtResult.of(result == null ? "" : result.trim(), exitCode);
             }
         });
     }
 
     /**
-     * Publish the scriptable outcome of a {@code /file} subcommand:
-     * {@code lastExitCode} (0 = ok / found / matched, 1 = empty / none,
-     * 2 = error) so script control-flow can branch on it, and — when requested
-     * through {@code --save=<var>} — the trimmed result text into a task env
-     * var so a later step can interpolate it ({@code {{var}}}) or compare it
-     * ({@code /if x == "..."}).
+     * Build the scriptable outcome of a {@code /file} subcommand: the returned
+     * {@link NaruStmtResult} carries the trimmed result text and the exit code
+     * (0 = ok / found / matched, 1 = empty / none, 2 = error) which the task's
+     * {@code invokeDirective} factorization publishes into {@code lastExitCode}
+     * and {@code lastResult}. The {@code --save=<var>} var is stored into the
+     * task env so a later step can interpolate it ({@code {{var}}}) or compare
+     * it ({@code /if x == "..."}).
      */
-    private static void publishFileResult(NaruTask task, String saveVar, String result, int exitCode) {
-        task.setTaskEnv("lastExitCode", exitCode);
+    private static NaruStmtResult fileResult(NaruTask task, String saveVar, String result, int exitCode) {
+        String trimmed = result == null ? "" : result.trim();
         if (saveVar != null && !saveVar.isEmpty()) {
-            task.setTaskEnv(saveVar, result == null ? "" : result.trim());
+            task.setTaskEnv(saveVar, trimmed);
         }
+        return NaruStmtResult.of(trimmed, exitCode);
     }
 }

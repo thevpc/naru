@@ -111,10 +111,15 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             // tool-call rounds regardless of the model behaviour, otherwise a model
             // that keeps returning tool_calls would loop forever and the session
             // (and any waitFor() on it) would never end.
-            int maxSteps = task.session()
-                    .getSessionEnv("maxSteps")
+            // maxSteps bounds ONE model turn's tool-call rounds. A task-scoped
+            // /set maxSteps = 80 overrides the session default (which itself
+            // overrides NaruAgentConfig#maxSteps).
+            int maxSteps = task.getTaskEnv("maxSteps", false)
                     .map(x -> NLiteral.of(x).asInt().orElse(DEFAULT_MAX_STEPS))
-                    .orElse(DEFAULT_MAX_STEPS);
+                    .orElse(task.session()
+                            .getSessionEnv("maxSteps")
+                            .map(x -> NLiteral.of(x).asInt().orElse(DEFAULT_MAX_STEPS))
+                            .orElse(DEFAULT_MAX_STEPS));
             int rounds = task.getTaskEnv(TOOL_CALL_ROUNDS_KEY, false)
                     .map(x -> NLiteral.ofInt(x).orElse(0))
                     .orElse(0) + 1;

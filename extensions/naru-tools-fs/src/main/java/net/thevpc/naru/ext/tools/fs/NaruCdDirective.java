@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.*;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
@@ -16,14 +17,17 @@ public class NaruCdDirective extends NaruDirectiveBase {
         super("cd", "fs", "change directory");
         register(new AbstractSubCommand(new SubCommandHelp("<dir>", "change directory to <dir>")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NPath p2 = NBlankable.isBlank(context.argument()) ? context.task().projectDir() : NPath.of(context.argument());
                 if (p2.isDirectory()) {
                     task.setWorkingDir(p2);
                     context.task().addResultMessage(NMsg.ofC("change working directory to %s", task.workingDir()));
-                }else{
-                    context.task().addResultMessage(NMsg.ofC("directory not found: %s", p2).asError());
+                    return NaruStmtResult.ofSuccess(task.workingDir().toString());
+                } else {
+                    NMsg msg = NMsg.ofC("directory not found: %s", p2).asError();
+                    context.task().addResultMessage(msg);
+                    return NaruStmtResult.ofError(msg.toString());
                 }
             }
         });

@@ -4,7 +4,10 @@ import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.registry.NaruDirective;
+import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruRoutine;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
@@ -237,6 +240,12 @@ public class NaruPoisonTask implements NaruTask {
 
     @Override
     public void invokeDirective(String line) {
+        throw new NUnsupportedOperationException();
+
+    }
+
+    @Override
+    public NaruStmtResult invokeDirective(NaruDirective dir, NaruDirectiveCallContext context) {
         throw new NUnsupportedOperationException();
 
     }

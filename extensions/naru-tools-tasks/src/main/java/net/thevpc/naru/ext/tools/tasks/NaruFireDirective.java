@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.tasks;
 
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
@@ -37,7 +38,7 @@ public class NaruFireDirective extends NaruDirectiveBase {
                         + "\n  | operator : 'or' expression like in 'once | tt('1h')'"
         )) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NaruEventTarget target = null;
                 NaruRetentionPolicy policy = null;
@@ -52,8 +53,9 @@ public class NaruFireDirective extends NaruDirectiveBase {
                             case "--to": {
                                 NOptional<NaruEventTarget> oo = NaruEventTargets.parse(a.value(), task);
                                 if (oo.isNotPresent()) {
-                                    task.throwError(NMsg.ofC("Error on event: event %s : %s", event, oo.message().get()));
-                                    return;
+                                    NMsg msg = NMsg.ofC("Error on event: event %s : %s", event, oo.message().get());
+                                    task.throwError(msg);
+                                    return NaruStmtResult.ofError(msg.toString());
                                 }
                                 target = NaruEventTargets.or(target, oo.get());
                                 break;
@@ -61,8 +63,9 @@ public class NaruFireDirective extends NaruDirectiveBase {
                             case "--keep": {
                                 NOptional<NaruRetentionPolicy> oo = NaruRetentionPolicies.parse(a.value(), task);
                                 if (oo.isNotPresent()) {
-                                    task.throwError(NMsg.ofC("Error on event: event %s : %s", event, oo.message().get()));
-                                    return;
+                                    NMsg msg = NMsg.ofC("Error on event: event %s : %s", event, oo.message().get());
+                                    task.throwError(msg);
+                                    return NaruStmtResult.ofError(msg.toString());
                                 }
                                 policy = NaruRetentionPolicies.or(policy, oo.get());
                                 break;
@@ -76,10 +79,12 @@ public class NaruFireDirective extends NaruDirectiveBase {
                     }
                 }
                 if (NBlankable.isBlank(event)) {
-                    task.throwError(NMsg.ofC("Error on event: missing event %s", event));
-                    return;
+                    NMsg msg = NMsg.ofC("Error on event: missing event %s", event);
+                    task.throwError(msg);
+                    return NaruStmtResult.ofError(msg.toString());
                 }
                 task.fireEvent(event, payload, target, policy);
+                return NaruStmtResult.ofSuccess(null);
             }
         });
     }

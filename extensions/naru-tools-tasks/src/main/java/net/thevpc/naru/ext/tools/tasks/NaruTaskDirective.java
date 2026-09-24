@@ -24,7 +24,7 @@ public class NaruTaskDirective extends NaruDirectiveBase {
         noCommand("list");
         register(new AbstractSubCommand("current", NText.ofPlain("display current task")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
 
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current Task :%s%s %s (%s) %s %s %s %s %s",
@@ -38,12 +38,12 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                         task.schedulerMode(),
                         task.name()
                 ));
-                task.frame().lastResult(NaruStmtResult.ofSuccess(task.id()));
+                return NaruStmtResult.ofSuccess(task.id());
             }
         });
         register(new AbstractSubCommand("list", NText.ofPlain("list current tasks")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask ctask = context.task();
                 int index = 1;
                 NaruSession session = context.task().session();
@@ -62,18 +62,18 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                     ));
                     index++;
                 }
-                context.task().frame().lastResult(NaruStmtResult.ofSuccess(
+                return NaruStmtResult.ofSuccess(
                         session.tasks().stream().mapToLong(x -> x.id()).toArray()
-                ));
+                );
             }
         });
         register(new AbstractSubCommand("kill", NText.ofPlain("kill one or more tasks"),
                 new SubCommandHelp("<id>...", "kills tasks of with the provided task ids")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 if (cmdLine.isEmpty()) {
-                    return;
+                    return NaruStmtResult.ofSuccess(null);
                 }
                 NaruTask task = context.task();
                 List<Long> collected = new ArrayList<>();
@@ -90,19 +90,19 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                         }
                     }
                 }
-                context.task().frame().lastResult(NaruStmtResult.ofSuccess(
-                        collected.stream().mapToLong(x -> x).toArray()
-                ));
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("killed %s " + (collected.size() == 1 ? "task" : "tasks"), collected.size()));
+                return NaruStmtResult.ofSuccess(
+                        collected.stream().mapToLong(x -> x).toArray()
+                );
             }
         });
         register(new AbstractSubCommand("hold", NText.ofPlain("hold one or more tasks"),
                 new SubCommandHelp("<id>...", "hold (pause) tasks of with the provided task ids")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 if (cmdLine.isEmpty()) {
-                    return;
+                    return NaruStmtResult.ofSuccess(null);
                 }
                 NaruTask task = context.task();
 
@@ -125,17 +125,17 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                     }
                 }
 
-                context.task().frame().lastResult(NaruStmtResult.ofSuccess(collected.stream().mapToLong(x -> x).toArray()));
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("killed %s " + (collected.size() == 1 ? "task" : "tasks"), collected.size()));
+                return NaruStmtResult.ofSuccess(collected.stream().mapToLong(x -> x).toArray());
             }
         });
         register(new AbstractSubCommand("unhold", NText.ofPlain("unhold one or more tasks"),
                 new SubCommandHelp("<id>...", "unhold (pause) tasks of with the provided task ids")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 if (cmdLine.isEmpty()) {
-                    return;
+                    return NaruStmtResult.ofSuccess(null);
                 }
                 NaruTask task = context.task();
                 List<Long> collected = new ArrayList<>();
@@ -157,7 +157,7 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                     }
                 }
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("unhold %s " + (collected.size() == 1 ? "task" : "tasks"), collected.size()));
-                context.task().frame().lastResult(NaruStmtResult.ofSuccess(collected.stream().mapToLong(x -> x).toArray()));
+                return NaruStmtResult.ofSuccess(collected.stream().mapToLong(x -> x).toArray());
             }
         });
 
@@ -165,7 +165,7 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[<id>...]", "show stacktrace of the given task ids\nwhen no id is provided, shows stacktrace of the current task")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 List<String> collected = new ArrayList<>();
                 if (cmdLine.isEmpty()) {
                     NaruTask task = context.task();
@@ -199,15 +199,15 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                         }
                     }
                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("stacks of %s " + (count == 1 ? "task" : "tasks"), count));
-                    context.task().frame().lastResult(NaruStmtResult.ofSuccess(collected.stream().toArray(String[]::new)));
                 }
+                return NaruStmtResult.ofSuccess(collected.stream().toArray(String[]::new));
             }
         });
         register(new AbstractSubCommand("frames", NText.ofPlain("show frames (all debug infos, including vars, params...) of one or more tasks"),
                 new SubCommandHelp("[<id>...]", "show frames (all debug infos, including vars, params...) of the given task ids\nwhen no id is provided, shows frames of the current task")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 List<String> collected = new ArrayList<>();
                 if (cmdLine.isEmpty()) {
                     NaruTask task = context.task();
@@ -261,8 +261,8 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                         }
                     }
                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("frames of %s " + (count == 1 ? "task" : "tasks"), count));
-                    context.task().frame().lastResult(NaruStmtResult.ofSuccess(collected.stream().toArray(String[]::new)));
                 }
+                return NaruStmtResult.ofSuccess(collected.stream().toArray(String[]::new));
             }
         });
     }

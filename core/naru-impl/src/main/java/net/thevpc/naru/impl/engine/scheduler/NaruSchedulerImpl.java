@@ -267,7 +267,13 @@ public class NaruSchedulerImpl implements NaruScheduler {
                 task.log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] Task failed: %s", task.id(), error).asError());
                 if (task.taskMode() == NaruTaskMode.INTERACTIVE){
                     task.log(NaruLogMode.DEBUG, NMsg.ofC("[%s] Task failed: %s", task.id(), error).asError());
-                }else {
+                } else {
+                    // Non-interactive failures were silent before killing: most
+                    // console sinks filter SCHEDULER mode, so a batch script that
+                    // died looked like a spur-of-the-moment KILLED. Surface the
+                    // root cause at a visible mode before killing the task.
+                    task.log(NaruLogMode.PROGRESS, NMsg.ofC("[%s] Task killed by an error: %s", task.id(), error).asError());
+                    error.printStackTrace(System.err);
                     task.kill();
                 }
             }

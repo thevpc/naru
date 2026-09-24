@@ -5,9 +5,11 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.io.NPathPermission;
+import net.thevpc.nuts.io.NAnsiTermHelper;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextBuilder;
@@ -26,7 +28,7 @@ public class NaruLsDirective extends NaruDirectiveBase {
         super("ls", "fs", "list directory");
         register(new AbstractSubCommand() {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
 
                 NBooleanRef optAll = NBooleanRef.of(false); // -a
@@ -88,6 +90,7 @@ public class NaruLsDirective extends NaruDirectiveBase {
                 task.addHistory(NaruMessage.user(NMsg.ofC("call   : ls %s", context.argument()).toString()));
                 task.addHistory(NaruMessage.user(NMsg.ofC("result :\n%s", resultStr).toString()));
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", resultStr));
+                return NaruStmtResult.ofSuccess(NAnsiTermHelper.of().stripAnsi(resultStr.toString()));
             }
 
             private void renderPath(NPath path,

@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.tasks;
 
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.nuts.cmdline.NArg;
@@ -14,7 +15,7 @@ public class NaruSleepDirective extends NaruDirectiveBase {
         super("sleep", "task", "sleep current task");
         register(new AbstractSubCommand(new SubCommandHelp("<duration>", "sleep current task for the given duration")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NArg a = cmdLine.next().orNull();
                 if(a==null){
@@ -22,11 +23,13 @@ public class NaruSleepDirective extends NaruDirectiveBase {
                 }else{
                     NDuration d = NDuration.of(a.image()).orNull();
                     if(d==null){
-                        task.throwError(NMsg.ofC("Error on sleep: invalid sleep duration : %s", a.image()));
-                        return;
+                        NMsg msg = NMsg.ofC("Error on sleep: invalid sleep duration : %s", a.image());
+                        task.throwError(msg);
+                        return NaruStmtResult.ofError(msg.toString());
                     }
                     task.sleep(d);
                 }
+                return NaruStmtResult.ofSuccess(null);
             }
         });
     }

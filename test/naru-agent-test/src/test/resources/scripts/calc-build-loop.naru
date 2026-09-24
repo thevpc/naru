@@ -1,34 +1,47 @@
-// hide everything irrelevant to the write->build->test->run loop:
+# hide everything irrelevant to the write->build->test->run loop:
 /ollama serve
 /model use @MODEL@
-// implement mode: authorizes file writes AND shell execution (planning mode is read-only).
+# implement mode: authorizes file writes AND shell execution (planning mode is read-only).
 /mode implement
-// file tools are tagged "fs", run_shell is tagged "network"; both are visible to
-// the model only because the task opts into those tags below (/tags enable).
+# file tools are tagged "fs", run_shell is tagged "network"; both are visible to
+# the model only because the task opts into those tags below (/tags enable).
 /tags enable fs
 /tags enable network
-// still hiding: working-dir wanderers, web (offline), git/index/search/semantic
-// and tag tools, plus the redundant maven_* shortcuts. A lean toolset keeps
-// even small models focused on the goal.
+# still hiding: working-dir wanderers, web (offline), git/index/search/semantic
+# and tag tools, plus the redundant maven_* shortcuts. A lean toolset keeps
+# even small models focused on the goal.
 /tags disable cd set_working_dir
 /tags disable search_web tag_add tag_remove
 /tags disable git_status git_diff git_log git_commit
 /tags disable project_map code_symbols find_symbol project_summary
 /tags disable semantic_search semantic_index maven_compile maven_test maven_package
-// maxSteps bounds ONE model turn's tool-call rounds; the budget is reset whenever
-// a turn ends, so each /while re-invocation below gets a full one. It can never
-// run forever: the /while loop is capped at 8 attempts and the test preemptively
-// times out.
-/set --session maxSteps = 80
-// naru drives a BOUNDED loop: the model is re-invoked to (re)create/fix the
-// project until the offline build + tests + both runtime checks are green, or 8
-// attempts run out. The model NEVER decides when to stop; naru verifies with a
-// fully naru-native green check (no shell one-liner): /file find/grep/read
-// publish lastExitCode, /system --save captures command output into a variable,
-// and {{var}} interpolates earlier results into later steps.
-/set --task attempts = 0
-/set --task lastExitCode = 1
-/while (attempts < 8) && (lastExitCode != 0)
+# maxSteps bounds ONE model turn's tool-call rounds; the budget is reset whenever
+# a turn ends, so each /while re-invocation below gets a full one. It can never
+# run forever: the /while loop is capped at 12 attempts and the test preemptively
+# times out. /set targets the task env by default (--session/--local still exist).
+/set maxSteps = 80
+# naru drives a BOUNDED loop: the model is re-invoked to (re)create/fix the
+# project until an ENTIRE green check passes, or 12 attempts run out. The model
+# NEVER decides when to stop; naru verifies with a fully naru-native green check:
+# /file find publishes lastExitCode, /system --save captures command output (the
+# same value always lands in lastResult, alias '_'), {{var}} interpolates earlier
+# results into later steps, and /assert --set green <cond> collapses each old
+# "check + print + set green" if/else block into ONE line. lastExitCode is
+# naru-owned: scripts only READ it — /assert and /set derive it from the
+# truthiness of their result (truthy->0, falsy->1), /system and /file from the
+# real process/file outcome. `green` is a plain script var: the loop RESETS it
+# to 1 at the top of each iteration, the --set chain AND-accumulates that
+# iteration's checks, and the /while exits as soon as one iteration ends green.
+/set attempts = 0
+/set green = 0
+# the loop keys on `green` (never on lastExitCode): green==0 means "keep trying"
+# and green==1 (every check of this iteration passed) stops the loop.
+/while (attempts < 12) && (green != 1)
+# per-iteration budget: reset the check flag, count the attempt. /set also
+# publishes lastExitCode from its value's truthiness (1 -> 0), but nothing reads
+# lastExitCode here and the /while re-checks `green` — never lastExitCode.
+/set green = 1
+/set attempts++
 /buffer on
 Build a complete Java Maven command-line calculator project IN THE CURRENT DIRECTORY, 
 which IS the project root. pom.xml must be at the TOP level of the current directory. 
@@ -80,48 +93,35 @@ WORK LOOP:
    diagnose the verifier failure shown above, fix ONLY the code (never the tests or pom.xml), and 
    verify again with 'mvn -o -q test' and the two java runs until they all pass.
 /buffer off
-// ---------------------------- NARU GREEN CHECK ----------------------------
-// 1. locate the project: /file find publishes lastExitCode (0=found,1=none,2=error),
-//    stores the first matching path in {{pom}} and its parent dir in {{pomDir}}
-//    ('.' when pom.xml sits at the top level, e.g. 'proj' when the model nested it).
+# ---------------------------- NARU GREEN CHECK ----------------------------
+# 1. locate the project: /file find publishes lastExitCode (0=found,1=none,2=error),
+#    stores the first matching path in {{pom}} and its parent dir in {{pomDir}}
+#    ('.' when pom.xml sits at the top level, e.g. 'proj' when the model nested it).
 /file find . --include=pom.xml --save=pom --dir=pomDir
 /if lastExitCode != 0
     /print "green: pom.xml not found yet (project may not exist)"
-    /set --task lastExitCode = 3
+    /assert --set green lastExitCode == 0
 /else
     /print "green: pom.xml found at {{pom}}"
-    /set --task green = 1
-    // 2. build + run the tests OFFLINE; naru checks the real exit code itself
+# 2. build + run the tests OFFLINE; mvn exits 0 even when NOTHING was
+#    compiled/tested, so also require a surefire report file to exist:
+#    a project that deleted its tests would otherwise 'pass' trivially.
+#    /assert --set green <cond> evaluates ONE check: it logs "✓/✗ assert",
+#    publishes lastExitCode from the condition's truthiness, and AND-accumulates
+#    the outcome into green. A failure pins green to 0 for the REST of this
+#    iteration; the loop's leading /set green = 1 resets it before the next.
     /system mvn -o -q -f {{pom}} test
-    /if lastExitCode != 0
-        /print "green: 'mvn -o -q -f {{pom}} test' FAILED (lastExitCode={{lastExitCode}})"
-        /set --task green = 0
-    /else
-        /print "green: 'mvn -o -q -f {{pom}} test' succeeded"
-    /end
-    // 3. the compiled CLI must compute 7*6=42 and 12/4=3; /system --save captures
-    //    the trimmed output so the check is a plain naru string comparison
+    /assert --set green lastExitCode == 0
+    /file find target/surefire-reports --include=*.txt --save=report
+    /assert --set green lastExitCode == 0
+# 3. the compiled CLI must compute 7*6=42 and 12/4=3; /system --save captures
+#    the trimmed output (also surfaced as lastResult/_ for later steps)
     /system --save calc42 java -cp {{pomDir}}/target/classes calc.Main "7*6"
-    /if lastExitCode != 0 || calc42 != "42"
-        /print "green: calc 7*6 = '{{calc42}}' (expected 42)"
-        /set --task green = 0
-    /else
-        /print "green: calc 7*6 = 42 OK"
-    /end
+    /assert --set green calc42 == "42"
     /system --save calc3 java -cp {{pomDir}}/target/classes calc.Main "12/4"
-    /if lastExitCode != 0 || calc3 != "3"
-        /print "green: calc 12/4 = '{{calc3}}' (expected 3)"
-        /set --task green = 0
-    /else
-        /print "green: calc 12/4 = 3 OK"
-    /end
-    // all three checks passed -> publish the exit code that stops the /while
-    /if green == 1
-        /set --task lastExitCode = 0
-    /else
-        /set --task lastExitCode = 1
-    /end
+    /assert --set green calc3 == "3"
+# no manual "exit code" mapping needed: the /while re-checks green itself and
+# stops as soon as one iteration ends with green==1 (every check passed).
 /end
-/set --task attempts = attempts + 1
 /end
 /ollama stop

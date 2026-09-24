@@ -4,6 +4,8 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
+import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.io.NAnsiTermHelper;
 import net.thevpc.nuts.io.NPath;
@@ -28,7 +30,7 @@ public class NaruCatDirective extends NaruDirectiveBase {
                 new SubCommandHelp("-L", "syntax highlighting with inferred language")
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
 
                 NBooleanRef optLineNumbers = NBooleanRef.of(false); // -n
@@ -49,8 +51,9 @@ public class NaruCatDirective extends NaruDirectiveBase {
                 NPath baseDir = task.workingDir();
 
                 if (targets.isEmpty()) {
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofStyled("view: no file specified", NTextStyle.error()));
-                    return;
+                    NMsg msg = NMsg.ofStyled("view: no file specified", NTextStyle.error());
+                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
+                    return NaruStmtResult.ofError(msg.toString());
                 }
 
                 NTextBuilder result = NTextBuilder.of();
@@ -92,6 +95,7 @@ public class NaruCatDirective extends NaruDirectiveBase {
                 task.addHistory(NaruMessage.user(NMsg.ofC("call   : view %s", context.argument()).toString()));
                 task.addHistory(NaruMessage.user(NMsg.ofC("result :\n%s", NAnsiTermHelper.of().stripAnsi(resultText.toString())).toString()));
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", resultText));
+                return NaruStmtResult.ofSuccess(NAnsiTermHelper.of().stripAnsi(resultText.toString()));
             }
 
             private String withLineNumbers(String content) {

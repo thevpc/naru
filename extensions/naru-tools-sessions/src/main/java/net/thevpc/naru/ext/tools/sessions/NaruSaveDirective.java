@@ -2,9 +2,10 @@ package net.thevpc.naru.ext.tools.sessions;
 
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.routine.NaruStmtResult;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.text.NMsg;
@@ -17,14 +18,14 @@ public class NaruSaveDirective extends NaruDirectiveBase {
         super("save", "session", "save current session");
         register(new AbstractSubCommand(new SubCommandHelp("[<name>]", "save current session with optional name.\nwhen no name was provided, and this is a new session, a generated name will be guessed using the current model.\n when name is provided, it will be used to set name or rename the session.")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeSave(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeSave(context, cmdLine);
             }
         });
     }
 
 
-    public void executeSave(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeSave(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         NaruSession session = task.session();
         NArg n = cmdLine.next().orNull();
@@ -51,6 +52,7 @@ public class NaruSaveDirective extends NaruDirectiveBase {
         }
         session.save();
         context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved session: %s", NMsg.ofStyledString(session.name())));
+        return NaruStmtResult.ofSuccess(null);
     }
 
 

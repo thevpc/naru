@@ -19,7 +19,7 @@ public class NaruStartDirective extends NaruDirectiveBase {
         super("start", "task", "start new task");
         register(new AbstractSubCommand(new SubCommandHelp("<routine>...", "start one or more routines as a single consecutive new task\n<routine> can be routine name or routine path")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 List<String> li = new ArrayList<>();
                 cmdLine.matcher()
@@ -42,7 +42,7 @@ public class NaruStartDirective extends NaruDirectiveBase {
                         )
                         .bg()
                         .unhold();
-                context.task().frame().lastResult(NaruStmtResult.ofSuccess(tt.id()));
+                return NaruStmtResult.ofSuccess(tt.id());
             }
         });
     }

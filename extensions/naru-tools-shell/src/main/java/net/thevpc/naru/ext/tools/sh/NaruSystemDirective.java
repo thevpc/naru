@@ -5,6 +5,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.command.NExec;
 import net.thevpc.nuts.core.NSession;
@@ -12,6 +13,7 @@ import net.thevpc.nuts.io.NAnsiTermHelper;
 import net.thevpc.nuts.platform.NEnv;
 import net.thevpc.nuts.platform.NOsFamily;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NRef;
 
 import java.util.logging.Level;
 
@@ -35,7 +37,7 @@ public class NaruSystemDirective extends NaruDirectiveBase {
         super("system", "general", "run system command", "sys");
         register(new AbstractSubCommand() {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String cmd = context.argument();
                 boolean grab = true;
@@ -64,6 +66,7 @@ public class NaruSystemDirective extends NaruDirectiveBase {
                 final String runCmd = cmd == null ? "" : cmd;
                 final boolean grabMode = grab;
                 final String saveName = saveVar;
+                final NRef<NaruStmtResult> outcome = NRef.of();
                 try (NSession session = NSession.of().copy()) {
                     session.logTermLevel(Level.OFF);
                     session.runWith(() -> {
@@ -87,23 +90,26 @@ public class NaruSystemDirective extends NaruDirectiveBase {
                                     "call   : system %s\nexit code %s\nresult : \n%s",
                                     runCmd, exitCode, result).toString()));
                             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
-                            // publish so script control-flow can loop until exit 0
-                            task.setTaskEnv("lastExitCode", exitCode);
                             // optional capture: /system --save <var> <cmd> stores the
                             // trimmed output so a script can compare it without a pipe
+                            String trimmedOut = result == null ? "" : result.trim();
                             if (saveName != null && !saveName.isEmpty()) {
-                                task.setTaskEnv(saveName, result == null ? "" : result.trim());
+                                task.setTaskEnv(saveName, trimmedOut);
                             }
+                            // the returned (value, exitCode) pair is published centrally
+                            // by invokeDirective into lastResult (alias _) and lastExitCode
+                            outcome.set(NaruStmtResult.of(trimmedOut, exitCode));
                         } else {
                             // no output capture: run attached to the terminal (vim, ...)
                             e.run();
                             int exitCode = e.exitCode();
                             task.addHistory(NaruMessage.user(NMsg.ofC(
                                     "call   : system --no-grab %s\nexit code %s", runCmd, exitCode).toString()));
-                            task.setTaskEnv("lastExitCode", exitCode);
+                            outcome.set(NaruStmtResult.of(null, exitCode));
                         }
                     });
                 }
+                return outcome.get();
             }
         });
     }

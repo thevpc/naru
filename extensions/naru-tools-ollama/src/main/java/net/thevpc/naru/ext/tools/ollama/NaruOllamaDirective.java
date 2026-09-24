@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.model.NaruModelPsResult;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
@@ -27,15 +28,15 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                 new SubCommandHelp(NText.of(""), NText.ofPlain("show detailed Ollama status (installation, service, memory, models)"))
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeStatus(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeStatus(context, cmdLine);
             }
         });
 
         register(new AbstractSubCommand("check", NText.ofPlain("alias for status")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeStatus(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeStatus(context, cmdLine);
             }
         });
 
@@ -44,22 +45,22 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                 new SubCommandHelp(NText.of("[--install]"), NText.ofPlain("start Ollama, optionally auto-installing if missing"))
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeStart(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeStart(context, cmdLine);
             }
         });
 
         register(new AbstractSubCommand("start", NText.ofPlain("alias for run")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeStart(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeStart(context, cmdLine);
             }
         });
 
         register(new AbstractSubCommand("serve", NText.ofPlain("alias for run")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeStart(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeStart(context, cmdLine);
             }
         });
 
@@ -68,25 +69,26 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                 new SubCommandHelp(NText.of("[--all|--force]"), NText.ofPlain("stop Ollama server (use --all to stop non-NARU instances)"))
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeStop(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeStop(context, cmdLine);
             }
         });
 
         // Subcommand: restart
         register(new AbstractSubCommand("restart", NText.ofPlain("restart Ollama server")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 service.restart(task.session(), msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+                return NaruStmtResult.ofSuccess(null);
             }
         });
 
         // Subcommand: install
         register(new AbstractSubCommand("install", NText.ofPlain("download and install Ollama for the current operating system")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeInstall(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeInstall(context, cmdLine);
             }
         });
 
@@ -95,31 +97,31 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                 new SubCommandHelp(NText.of("[--purge]"), NText.ofPlain("uninstall Ollama (use --purge to also delete models directory)"))
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeUninstall(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeUninstall(context, cmdLine);
             }
         });
 
         // Subcommand: ps
         register(new AbstractSubCommand("ps", NText.ofPlain("list models currently loaded in memory/VRAM")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executePs(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executePs(context, cmdLine);
             }
         });
 
         // Subcommand: list / models
         register(new AbstractSubCommand("list", NText.ofPlain("list all local Ollama models")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeList(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeList(context, cmdLine);
             }
         });
 
         register(new AbstractSubCommand("models", NText.ofPlain("alias for list")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeList(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeList(context, cmdLine);
             }
         });
 
@@ -128,8 +130,8 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                 new SubCommandHelp(NText.of("<model>"), NText.ofPlain("name of model to download (e.g. qwen2.5-coder:7b)"))
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executePull(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executePull(context, cmdLine);
             }
         });
 
@@ -138,16 +140,17 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                 new SubCommandHelp(NText.of("<model>"), NText.ofPlain("name of model to delete"))
         ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeDelete(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeDelete(context, cmdLine);
             }
         });
     }
 
-    private void executeStatus(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    private NaruStmtResult executeStatus(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         OllamaStatus status = service.getStatus(task.session());
         OllamaInstallationInfo install = status.getInstallation();
+        NStringBuilder sb = NStringBuilder.of();
 
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("=== %s Status ===", NMsg.ofStyledPrimary1("Ollama")));
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  Platform     : %s / %s (Dist: %s)",
@@ -182,30 +185,41 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                 )
                         : NMsg.ofC("NO (External or background process)")
         ));
+        sb.println("=== Ollama Status ===");
+        sb.println("  Platform     : " + install.getOsFamily() + " / " + install.getArchFamily() + " (Dist: " + install.getOsDist() + ")");
+        sb.println("  Installed    : " + (install.isInstalled() ? "YES (Version: " + (install.getVersion() != null ? install.getVersion() : "unknown") + ", Path: " + install.getExecutablePath() + ")" : "NO (use '/ollama install' to install)"));
+        sb.println("  Service      : " + (status.isRunning() ? "RUNNING at " + status.getUrl() + " (Latency: " + status.getResponseTimeMs() + " ms, Server version: " + (status.getServerVersion() != null ? status.getServerVersion() : "unknown") + ")" : "STOPPED (use '/ollama run' to start)"));
+        sb.println("  Managed by NARU: " + (status.isStartedByNaru() ? "YES (PID: " + status.getPid() + ")" : "NO (External or background process)"));
 
         if (status.isRunning()) {
             List<String> models = status.getAvailableModels();
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  Local Models : %s available (use '/ollama list' to view)",
                     NMsg.ofStyledNumber(String.valueOf(models.size()))
             ));
+            sb.println("  Local Models : " + models.size() + " available (use '/ollama list' to view)");
 
             List<NaruModelPsResult> ps = status.getLoadedModels();
             if (!ps.isEmpty()) {
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  Loaded (VRAM): %s model(s) active",
                         NMsg.ofStyledNumber(String.valueOf(ps.size()))
                 ));
+                sb.println("  Loaded (VRAM): " + ps.size() + " model(s) active");
                 for (NaruModelPsResult p : ps) {
                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("    - %s (Size: %s, VRAM: %s)",
                             p.getModel().toMsg(),
                             NMsg.ofStyledNumber(NMemoryFormat.DEFAULT.format(NMemorySize.ofBytes(p.getSize()).normalize().canonicalize())),
                             NMsg.ofStyledNumber(NMemoryFormat.DEFAULT.format(NMemorySize.ofBytes(p.getSizeVram()).normalize().canonicalize()))
                     ));
+                    sb.println("    - " + p.getModel().toMsg() + " (Size: "
+                            + NMemoryFormat.DEFAULT.format(NMemorySize.ofBytes(p.getSize()).normalize().canonicalize()) + ", VRAM: "
+                            + NMemoryFormat.DEFAULT.format(NMemorySize.ofBytes(p.getSizeVram()).normalize().canonicalize()) + ")");
                 }
             }
         }
+        return NaruStmtResult.ofSuccess(sb.toString());
     }
 
-    private void executeStart(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    private NaruStmtResult executeStart(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         boolean autoInstall = false;
         while (cmdLine.hasNext()) {
@@ -214,16 +228,19 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                 autoInstall = true;
             }
         }
+        boolean started=false;
+        boolean installed=false;
 
         if (autoInstall && !service.isInstalled()) {
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Auto-installing Ollama before launch..."));
-            service.install(msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+            installed=service.install(msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
         }
 
-        service.start(task.session(), msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+        OllamaService.StartResult r = service.start(task.session(), msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+        return NaruStmtResult.ofSuccess(r.started());
     }
 
-    private void executeStop(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    private NaruStmtResult executeStop(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         boolean forceAll = false;
         while (cmdLine.hasNext()) {
@@ -232,10 +249,11 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                 forceAll = true;
             }
         }
-        service.stop(task.session(), forceAll, msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+        boolean r=service.stop(task.session(), forceAll, msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+        return NaruStmtResult.ofSuccess(r);
     }
 
-    private void executeInstall(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    private NaruStmtResult executeInstall(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Starting Ollama download and installation..."));
         boolean ok = service.install(msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
@@ -246,12 +264,14 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                     NMsg.ofStyledPrimary1(info.getExecutablePath()),
                     NMsg.ofStyledPrimary2(info.getVersion() != null ? info.getVersion() : "unknown")
             ));
+            return NaruStmtResult.ofSuccess(info.isInstalled());
         } else {
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Ollama installation failed. Check logs above.").asError());
+            return NaruStmtResult.ofError("Ollama installation failed. Check logs above.");
         }
     }
 
-    private void executeUninstall(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    private NaruStmtResult executeUninstall(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         boolean purge = false;
         while (cmdLine.hasNext()) {
@@ -263,25 +283,30 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
         boolean ok = service.uninstall(purge, msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
         if (ok) {
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofStyledSuccess("Ollama uninstalled."));
+            return NaruStmtResult.ofSuccess(null);
         } else {
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Ollama uninstallation encountered issues.").asWarning());
+            return NaruStmtResult.ofError("Ollama uninstallation encountered issues.");
         }
     }
 
-    private void executePs(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    private NaruStmtResult executePs(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         if (!service.isRunning(task.session())) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Ollama is not running. Use '/ollama run' to start it.").asError());
-            return;
+            NMsg msg = NMsg.ofC("Ollama is not running. Use '/ollama run' to start it.").asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
         }
         List<NaruModelPsResult> ps = service.listPs(task.session());
         if (ps.isEmpty()) {
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("No models currently loaded in memory/VRAM."));
-            return;
+            return NaruStmtResult.ofSuccess(null);
         }
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s loaded model(s):", ps.size()));
+        NStringBuilder sb = NStringBuilder.of();
+        sb.println(ps.size() + " loaded model(s):");
         for (NaruModelPsResult element : ps) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  %s  size: %s  vram: %s (%s)  expires: %s",
+            NMsg msg = NMsg.ofC("  %s  size: %s  vram: %s (%s)  expires: %s",
                     element.getModel().toMsg(),
                     NMsg.ofStyledNumber(NMemoryFormat.DEFAULT.format(NMemorySize.ofBytes(element.getSize()).normalize().canonicalize())),
                     NMsg.ofStyledNumber(NMemoryFormat.DEFAULT.format(NMemorySize.ofBytes(element.getSizeVram()).normalize().canonicalize())),
@@ -291,57 +316,74 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
                             ) + "%"
                     ),
                     element.getExpiresAt() != null ? element.getExpiresAt().toString() : "never"
-            ));
+            );
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            sb.println(msg.toString());
         }
+        return NaruStmtResult.ofSuccess(sb.toString());
     }
 
-    private void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    private NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         if (!service.isRunning(task.session())) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Ollama is not running. Use '/ollama run' to start it.").asError());
-            return;
+            NMsg msg = NMsg.ofC("Ollama is not running. Use '/ollama run' to start it.").asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
         }
         List<String> models = service.listModels(task.session());
         if (models.isEmpty()) {
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("No local models found in Ollama. Pull one with '/ollama pull <model>'."));
-            return;
+            return NaruStmtResult.ofSuccess(null);
         }
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s local model(s) available in Ollama:", models.size()));
+        NStringBuilder sb = NStringBuilder.of();
+        sb.println(models.size() + " local model(s) available in Ollama:");
         for (int i = 0; i < models.size(); i++) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  [%s] %s",
+            NMsg msg = NMsg.ofC("  [%s] %s",
                     NMsg.ofStyledNumber(String.valueOf(i + 1)),
                     NMsg.ofStyledPrimary1(models.get(i))
-            ));
+            );
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            sb.println(msg.toString());
         }
+        return NaruStmtResult.ofSuccess(sb.toString());
     }
 
-    private void executePull(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    private NaruStmtResult executePull(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         NOptional<NArg> n = cmdLine.next();
         if (!n.isPresent()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to pull (e.g. /ollama pull qwen2.5-coder:7b)").asError());
-            return;
+            NMsg msg = NMsg.ofC("Error: missing model name to pull (e.g. /ollama pull qwen2.5-coder:7b)").asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
         }
         String model = n.get().image();
         try {
             service.pullModel(model, task.session(), msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+            return NaruStmtResult.ofSuccess(null);
         } catch (Exception e) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error pulling model: %s", e.getMessage()).asError());
+            NMsg msg = NMsg.ofC("Error pulling model: %s", e.getMessage()).asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
         }
     }
 
-    private void executeDelete(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    private NaruStmtResult executeDelete(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         NOptional<NArg> n = cmdLine.next();
         if (!n.isPresent()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to delete (e.g. /ollama rm qwen2.5-coder:7b)").asError());
-            return;
+            NMsg msg = NMsg.ofC("Error: missing model name to delete (e.g. /ollama rm qwen2.5-coder:7b)").asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
         }
         String model = n.get().image();
         try {
             service.deleteModel(model, task.session(), msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+            return NaruStmtResult.ofSuccess(null);
         } catch (Exception e) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error deleting model: %s", e.getMessage()).asError());
+            NMsg msg = NMsg.ofC("Error deleting model: %s", e.getMessage()).asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
         }
     }
 }

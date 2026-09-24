@@ -2,8 +2,11 @@ package net.thevpc.naru.api.task;
 
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.api.registry.NaruDirective;
+import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruRoutine;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
@@ -68,11 +71,12 @@ public interface NaruTask extends NToElement {
     void log(NaruLogMode mode, NMsg s);
 
 
-    public NaruTask addToolExclusion(String toolName) ;
+    NaruTask addToolExclusion(String toolName);
 
-    public NaruTask removeToolExclusion(String toolName) ;
+    NaruTask removeToolExclusion(String toolName);
 
-    public Set<String> findToolExclusions() ;
+    Set<String> findToolExclusions();
+
     NaruTask removeToolTag(String toolTag);
 
     NaruTask addToolTag(String toolTag);
@@ -121,7 +125,8 @@ public interface NaruTask extends NToElement {
 
     boolean addHistory(String m);
 
-    void addSystemHistory(Function<NaruTask,NaruMessage> sysHistory);
+    void addSystemHistory(Function<NaruTask, NaruMessage> sysHistory);
+
     void addHistory(NaruMessage assistantMsg);
 
     void setLastResult(NaruMessage lastResult);
@@ -141,6 +146,8 @@ public interface NaruTask extends NToElement {
     List<NaruResourceInfo> skills();
 
     void tick();
+
+    NaruStmtResult invokeDirective(NaruDirective dir, NaruDirectiveCallContext context);
 
     void invokeDirective(String line);
 

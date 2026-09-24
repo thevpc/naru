@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NAruInputMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 
 public class NaruBufferDirective extends NaruDirectiveBase {
@@ -11,7 +12,7 @@ public class NaruBufferDirective extends NaruDirectiveBase {
         super("buffer", "general", "switch input mode (line <> buffer)");
         register(new AbstractSubCommand() {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String arg = context.argument() == null ? "" : context.argument().trim();
                 NAruInputMode m;
@@ -28,6 +29,7 @@ public class NaruBufferDirective extends NaruDirectiveBase {
                         break;
                 }
                 task.inputMode(m);
+                return NaruStmtResult.ofSuccess(m);
             }
         });
     }

@@ -7,6 +7,7 @@ import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.*;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
@@ -14,6 +15,7 @@ import net.thevpc.nuts.text.NTextBuilder;
 import net.thevpc.nuts.text.NTextStyle;
 import net.thevpc.nuts.util.NNameFormat;
 import net.thevpc.nuts.util.NOptional;
+import net.thevpc.nuts.util.NStringBuilder;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -34,20 +36,20 @@ public class NaruModeDirective extends NaruDirectiveBase {
                 )
                 ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeList(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeList(context, cmdLine);
             }
         });
         register(new AbstractSubCommand("current", NText.ofPlain("show active mode")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeCurrent(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeCurrent(context, cmdLine);
             }
         });
         register(new AbstractSubCommand("set", NText.ofPlain("set active mode")) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                executeSet(context, cmdLine);
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeSet(context, cmdLine);
             }
 
             @Override
@@ -72,7 +74,7 @@ public class NaruModeDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<name>","change active mode by name.")
                 ) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 for (NArg a : cmdLine) {
                     NOptional<NaruPromptMode> mode = task.session().registry().mode(a.image());
@@ -84,21 +86,24 @@ public class NaruModeDirective extends NaruDirectiveBase {
                             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Changed mode : %s", a.image()));
                             task.addHistory(NaruMessage.user(NMsg.ofC("Changed mode : %s", a.image())));
                         }
-                        return;
+                        return NaruStmtResult.ofSuccess(null);
                     }
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
-                    return;
+                    NMsg msg = NMsg.ofC("invalid command /%s %s", name(), context.argument());
+                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
+                    return NaruStmtResult.ofError(msg.toString());
                 }
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("invalid command /%s %s", name(), context.argument()));
+                NMsg msg = NMsg.ofC("invalid command /%s %s", name(), context.argument());
+                task.log(NaruLogMode.AGENT_RESPONSE, msg);
+                return NaruStmtResult.ofError(msg.toString());
             }
         });
     }
 
 
-    public void executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         List<NaruPromptMode> modes = task.session().registry().modes().stream().sorted(Comparator.comparing(NaruPromptMode::name)).collect(Collectors.toList());
-
+        NStringBuilder sb = NStringBuilder.of();
         for (NaruPromptMode m : modes) {
             NTextBuilder b = NTextBuilder.of();
             if (m.aliases().length > 0) {
@@ -111,25 +116,31 @@ public class NaruModeDirective extends NaruDirectiveBase {
                 );
                 b.append(")", NTextStyle.separator());
             }
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
+            NMsg msg = NMsg.ofC("%s %s",
                     NMsg.ofStyledKeyword(NNameFormat.LOWER_KEBAB_CASE.format(m.name())),
                     b
-            ));
+            );
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            sb.println(msg.toString());
         }
+        return NaruStmtResult.ofSuccess(sb.toString());
     }
 
-    public void executeCurrent(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeCurrent(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask session = context.task();
-        context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("current mode : %s", session.promptMode()).asError());
+        NMsg msg = NMsg.ofC("current mode : %s", session.promptMode()).asError();
+        context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
+        return NaruStmtResult.ofSuccess(msg.toString());
     }
 
 
-    public void executeSet(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeSet(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask session = context.task();
         String name = cmdLine.next().map(x -> x.image()).orElse("");
         if (name.isEmpty()) {
-            context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("missing mode : %s", name));
-            return;
+            NMsg msg = NMsg.ofC("missing mode : %s", name);
+            context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
         }
         NOptional<NaruPromptMode> m = session.session().registry().mode(name);
         if (!m.isEmpty()) {
@@ -139,8 +150,11 @@ public class NaruModeDirective extends NaruDirectiveBase {
                 session.addHistory(NaruMessage.user(NMsg.ofC("Changed mode : %s", name)));
             }
         } else {
-            context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("not found mode : %s", name));
+            NMsg msg = NMsg.ofC("not found mode : %s", name);
+            context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
         }
+        return NaruStmtResult.ofSuccess(null);
     }
 
 

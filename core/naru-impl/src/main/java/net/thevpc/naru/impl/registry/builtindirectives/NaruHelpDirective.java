@@ -3,6 +3,7 @@ package net.thevpc.naru.impl.registry.builtindirectives;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -15,6 +16,7 @@ import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NLiteral;
+import net.thevpc.nuts.util.NStringBuilder;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -59,7 +61,7 @@ public class NaruHelpDirective extends NaruDirectiveBase {
     }
 
     @Override
-    public void execute(NaruDirectiveCallContext context) {
+    public NaruStmtResult execute(NaruDirectiveCallContext context) {
         NaruTask task = context.task();
         String argument = context.argument();
         NCmdLine cmdLine = NCmdLine.parse(argument).get();
@@ -82,10 +84,11 @@ public class NaruHelpDirective extends NaruDirectiveBase {
                     .whenNonOption().asArg(a -> o.args.add(a.image()))
                     .requireAll();
         }
-
         class HelpWriter {
+            NStringBuilder slog=NStringBuilder.of();
             void log(NMsg s) {
                 task.log(NaruLogMode.AGENT_RESPONSE, s);
+                slog.println(s);
             }
 
             void printGlobalSyntax() {
@@ -139,7 +142,7 @@ public class NaruHelpDirective extends NaruDirectiveBase {
                 HelpExample e = EXAMPLES_REGISTRY_BY_NAME.get(s);
                 w.log(NMsg.ofC(" %s %s : %s", NMsg.ofStyledNumber(e.number), NMsg.ofStyledPrimary5(s), e.description));
             }
-            return;
+            return NaruStmtResult.ofSuccess(w.slog.toString());
         }
         if (o.targetedExample != null) {
             HelpExample ex = EXAMPLES_REGISTRY_BY_NAME.get(o.targetedExample.toLowerCase().trim());
@@ -161,12 +164,12 @@ public class NaruHelpDirective extends NaruDirectiveBase {
                 w.log(NMsg.ofC(""));
                 // Log the syntax-highlighted block directly
                 w.log(NMsg.ofC("%s",ex.getHighlightedCode()));
-                return;
+                return NaruStmtResult.ofSuccess(w.slog.toString());
             } else {
                 w.log(NMsg.ofC("Unknown help example name target identifier: %s", NMsg.ofStyledError(o.targetedExample)));
                 w.log(NMsg.ofC("Type %s to browse available documentation examples.", NMsg.ofStyledString("/help --examples")));
             }
-            return;
+            return NaruStmtResult.ofSuccess(w.slog.toString());
         }
 
         // Scenario 1: Specific subcommands target evaluation (e.g. /help model set)
@@ -176,15 +179,15 @@ public class NaruHelpDirective extends NaruDirectiveBase {
             // Intercept Internal Engine Control Flow Syntax Bundles
             if (Arrays.asList("if", "elseif", "else", "end").contains(primaryQuery)) {
                 w.printControlFlowHelp("conditional");
-                return;
+                return NaruStmtResult.ofSuccess(w.slog.toString());
             }
             if (Objects.equals("while", primaryQuery)) {
                 w.printControlFlowHelp("while");
-                return;
+                return NaruStmtResult.ofSuccess(w.slog.toString());
             }
             if (Objects.equals("for", primaryQuery)) {
                 w.printControlFlowHelp("for");
-                return;
+                return NaruStmtResult.ofSuccess(w.slog.toString());
             }
 
             // Route execution query to target plugin infrastructure
@@ -195,22 +198,23 @@ public class NaruHelpDirective extends NaruDirectiveBase {
                         ? "help " + String.join(" ", o.args.subList(1, o.args.size()))
                         : "help";
 
-                delegatedDirective.execute(new NaruDirectiveCallContextImpl(
+                NaruStmtResult help = delegatedDirective.execute(new NaruDirectiveCallContextImpl(
                         delegatedDirective.name(),
                         nestedArguments,
                         task
                 ));
-                return;
+                w.slog.append(help.successValue());
+                return NaruStmtResult.ofSuccess(w.slog.toString());
             }
 
             w.log(NMsg.ofC("Unknown engine component or registered directive: %s", NMsg.ofStyledError(primaryQuery)));
-            return;
+            return NaruStmtResult.ofSuccess(w.slog.toString());
         }
 
         // Scenario 2: Isolated Syntax Request Flag
         if (o.syntax) {
             w.printGlobalSyntax();
-            return;
+            return NaruStmtResult.ofSuccess(w.slog.toString());
         }
 
         // Scenario 3: Standard Dashboard Index Overview or Exhaustive Manual (--full)
@@ -242,7 +246,9 @@ public class NaruHelpDirective extends NaruDirectiveBase {
                 // If --full is requested, deep dump live documentation inline
                 if (o.full) {
                     w.log(NMsg.ofC("    | Detailed Specification :"));
-                    d.execute(new NaruDirectiveCallContextImpl(d.name(), "help", task));
+                    // no need to pass via task, this should never fail
+                    NaruStmtResult help = d.execute(new NaruDirectiveCallContextImpl(d.name(), "help", task));
+                    w.slog.append(help.successValue());
                     w.log(NMsg.ofC("    -----------------------------------------"));
                 }
             }
@@ -254,6 +260,7 @@ public class NaruHelpDirective extends NaruDirectiveBase {
         w.log(NMsg.ofC("For source examples, type: %s %s", ImplNaruUtils.formatDirective("help") , NMsg.ofStyledOption("--examples") ));
         w.log(NMsg.ofC("For source indexed example, type: %s %s %s", ImplNaruUtils.formatDirective("help"), NMsg.ofStyledOption("-e") , NMsg.ofStyledNumber("<number>") ));
         w.log(NMsg.ofC("To safely close out active environment processing stream session: %s", formatDirective("exit")));
+        return NaruStmtResult.ofSuccess(w.slog.toString());
     }
 
     @Override

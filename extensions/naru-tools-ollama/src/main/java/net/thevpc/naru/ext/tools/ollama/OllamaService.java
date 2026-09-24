@@ -281,16 +281,47 @@ public class OllamaService {
         return results;
     }
 
-    public boolean start(NaruSession session, Consumer<NMsg> logger) {
+    public static class StartResult {
+        private boolean alreadyStarted;
+        private boolean alreadyInstalled;
+        private boolean started;
+        private boolean installed;
+
+        public StartResult(boolean alreadyStarted, boolean started, boolean installed, boolean alreadyInstalled) {
+            this.alreadyStarted = alreadyStarted;
+            this.started = started;
+            this.installed = installed;
+            this.alreadyInstalled = alreadyInstalled;
+        }
+
+        public boolean alreadyInstalled() {
+            return alreadyInstalled;
+        }
+
+        public boolean alreadyStarted() {
+            return alreadyStarted;
+        }
+
+        public boolean started() {
+            return started;
+        }
+
+        public boolean installed() {
+            return installed;
+        }
+    }
+
+    public StartResult start(NaruSession session, Consumer<NMsg> logger) {
         if (isRunning(session)) {
             if (logger != null) {
                 logger.accept(NMsg.ofC("Ollama is already running at %s", NMsg.ofStyledPrimary1(getOllamaUrl(session))));
             }
-            return true;
+            return new StartResult(true, true, false, false);
         }
 
         OllamaInstallationInfo installInfo = getInstallationInfo();
-        if (!installInfo.isInstalled()) {
+        boolean alreadyInstalled = installInfo.isInstalled();
+        if (!alreadyInstalled) {
             if (logger != null) {
                 logger.accept(NMsg.ofC("Ollama is not installed. Attempting installation first...").asWarning());
             }
@@ -299,7 +330,7 @@ public class OllamaService {
                 if (logger != null) {
                     logger.accept(NMsg.ofC("Installation failed. Cannot start Ollama.").asError());
                 }
-                return false;
+                return new StartResult(false, false, false, false);
             }
             installInfo = getInstallationInfo();
         }
@@ -318,7 +349,7 @@ public class OllamaService {
                 if (logger != null) {
                     logger.accept(NMsg.ofC("Failed to spawn Ollama process.").asError());
                 }
-                return false;
+                return new StartResult(false, false, true, alreadyInstalled);
             }
 
             // Poll until server responds (up to 15 seconds)
@@ -338,7 +369,7 @@ public class OllamaService {
                                 NMsg.ofStyledNumber(String.valueOf(elapsed))
                         ));
                     }
-                    return true;
+                    return new StartResult(false, true, true, alreadyInstalled);
                 }
                 try {
                     Thread.sleep(300);
@@ -351,12 +382,12 @@ public class OllamaService {
             if (logger != null) {
                 logger.accept(NMsg.ofC("Timeout waiting for Ollama server to respond.").asError());
             }
-            return false;
+            return new StartResult(false, false, true, alreadyInstalled);
         } catch (Exception ex) {
             if (logger != null) {
                 logger.accept(NMsg.ofC("Error starting Ollama: %s", ex.getMessage()).asError());
             }
-            return false;
+            return new StartResult(false, false, true, alreadyInstalled);
         }
     }
 
@@ -414,7 +445,7 @@ public class OllamaService {
         return !isRunning(session);
     }
 
-    public boolean restart(NaruSession session, Consumer<NMsg> logger) {
+    public StartResult restart(NaruSession session, Consumer<NMsg> logger) {
         stop(session, true, logger);
         try {
             Thread.sleep(1000);

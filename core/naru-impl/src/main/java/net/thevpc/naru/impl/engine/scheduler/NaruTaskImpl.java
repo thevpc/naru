@@ -6,7 +6,7 @@ import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.plan.NaruPlan;
-import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
@@ -14,9 +14,6 @@ import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.skills.NaruSkill;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.api.registry.NaruDirective;
-import net.thevpc.naru.api.registry.NaruStructuralDirective;
-import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.task.NaruTaskStackFrame;
 import net.thevpc.naru.api.task.NaruTaskStackItem;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
@@ -1364,13 +1361,24 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown directive '/" + cmd + "'. Available tools: " + session().registry().directives().keySet()).asError());
             return;
         }
+        invokeDirective(dir, new NaruDirectiveCallContextImpl(cmd, line, this));
+    }
+
+    public NaruStmtResult invokeDirective(NaruDirective dir, NaruDirectiveCallContext context) {
+        NaruStmtResult r;
         try {
-            dir.execute(new NaruDirectiveCallContextImpl(cmd, line, this));
+            r = dir.execute(context);
         } catch (NCancelException e) {
             throw e;
         } catch (Exception e) {
-            log(NaruLogMode.TRACE, NMsg.ofC("ERROR executing directive '/" + cmd + "': " + e.getMessage()).asError());
+            NMsg msg = NMsg.ofC("ERROR executing directive '/" + dir.name() + "': " + e.getMessage()).asError();
+            log(NaruLogMode.TRACE, msg);
+            r = NaruStmtResult.of(msg.toString(), 127);
         }
+        setTaskEnv("lastExitCode", r.exitCode());
+        setTaskEnv("lastResult", r.successValue());
+        setTaskEnv("lastError", r.errorValue());
+        return r;
     }
 
     private NOptional<NaruStatement> parseAsDirectiveStatement(String line) {
@@ -1657,6 +1665,12 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NOptional<Object> resolveVariable(String key) {
+        if ("_".equals(key)) {
+            // '_' is the alias of lastResult: resolve through the same channel all
+            // result-producing directives publish into (they set both the task env
+            // entry "lastResult" and the frame-local lastResult).
+            return resolveVariable("lastResult");
+        }
         NaruTaskFrame ctx = frame();
         boolean inherit = ctx != null && ctx.isInheritVars();
         if (ctx != null) {

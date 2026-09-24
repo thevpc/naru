@@ -1,12 +1,14 @@
 package net.thevpc.naru.ext.tools.tasks;
 
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.scheduler.NaruEventFilter;
 import net.thevpc.naru.api.scheduler.NaruEventFilters;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
 
 public class NaruWaitDirective extends NaruDirectiveBase {
@@ -26,7 +28,7 @@ public class NaruWaitDirective extends NaruDirectiveBase {
                 +"\n  <taskId>"
         )) {
             @Override
-            public void execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NRef<String> eventName = NRef.of();
                 NRef<String> fromFilter = NRef.of();
@@ -38,10 +40,12 @@ public class NaruWaitDirective extends NaruDirectiveBase {
                         NStringUtils.firstNonBlankStripped(eventName.get(), NaruEvent.TASK_TERMINATED),
                         context.task());
                 if (f.isNotPresent()) {
-                    task.throwError(f.message().get());
-                    return;
+                    NMsg msg = f.message().get();
+                    task.throwError(msg);
+                    return NaruStmtResult.ofError(msg.toString());
                 }
                 task.awaitFilter(f.get());
+                return NaruStmtResult.ofSuccess(null);
             }
         });
     }

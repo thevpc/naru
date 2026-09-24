@@ -125,17 +125,22 @@ public class AgentModelIntegrationTest {
     public void testScriptControlFlowLoopWithSystem() {
         // No LLM involved: this is a pure engine mechanics check for the building
         // blocks of the codegen showcase — /while + /end control flow, /set --task
-        // variables, the /system directive (raw shell argument, full env, exit code
-        // published as lastExitCode) and early exit of a bounded loop once the
-        // check turns green. No model prompt appears in the script, so no model is
-        // needed at all.
+        // variables and update operators, the /system directive (raw shell argument,
+        // full env, exit code published as lastExitCode), /assert --set green to
+        // fold each check into one flag, and early exit of a bounded loop once an
+        // iteration turns green. The loop keys on the script's own `green` var and
+        // NEVER writes lastExitCode (it is naru-owned): green is reset at the top
+        // of each iteration, the /assert chain AND-accumulates, green==1 stops the
+        // loop. No model prompt appears in the script, so no model is needed at all.
         assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
             session = agent.startSession(
                     "/set --task attempts = 0",
-                    "/set --task lastExitCode = 9",
-                    "/while (attempts < 3) && (lastExitCode != 0)",
-                    "/system if [ -f \".loop-flag\" ]; then exit 0; else touch .loop-flag; exit 5; fi",
+                    "/set --task green = 0",
+                    "/while (attempts < 3) && (green != 1)",
+                    "/set --task green = 1",
                     "/set --task attempts = attempts + 1",
+                    "/system if [ -f \".loop-flag\" ]; then exit 0; else touch .loop-flag; exit 5; fi",
+                    "/assert --set green lastExitCode == 0",
                     "/end"
             );
             NaruTask task = captureForegroundTask(session);
@@ -144,12 +149,14 @@ public class AgentModelIntegrationTest {
             assertNotNull(task, "expected the session to create a task");
             assertTrue(task.status() == NaruTaskStatus.DONE,
                     () -> "expected the task to finish, but status was " + task.status());
-            // Attempt 1: flag absent -> exit 5 -> lastExitCode!=0 -> loop again.
-            // Attempt 2: flag present -> exit 0 -> lastExitCode==0 -> loop EXITS EARLY.
+            // Attempt 1: flag absent -> /system exits 5 -> assert fails -> green=0 -> loop again.
+            // Attempt 2: flag present -> /system exits 0 -> assert passes -> green=1 -> EXITS EARLY.
             assertEquals("2", task.getTaskEnv("attempts", true).map(x -> x == null ? "<null>" : x.toString()).orNull(),
                     "expected the bounded loop to run twice and then stop early");
+            assertEquals("1", task.getTaskEnv("green", true).map(Object::toString).orNull(),
+                    "expected the final iteration to be fully green");
             assertEquals("0", task.getTaskEnv("lastExitCode", true).map(x -> x == null ? "<null>" : x.toString()).orNull(),
-                    "expected /system to publish its exit code as lastExitCode");
+                    "expected the last /assert (green outcome) to publish lastExitCode 0");
             assertTrue(folder.resolve(".loop-flag").isRegularFile(),
                     "expected /system to really run in the project dir (it must create .loop-flag)");
         });
@@ -309,6 +316,157 @@ public class AgentModelIntegrationTest {
     }
 
     @Test
+    public void testScriptAssertSetOperatorsAndLastResult() {
+        // Engine-only (no LLM): the script conveniences added for the showcase —
+        // /set defaults to the task env with arithmetic updates (++/--/+=/-=/*=/=)
+        // and publishes its (value, exitCode) centrally: lastResult (alias "_")
+        // carries the assigned value and, per Rule C, a Boolean value mirrors its
+        // truthiness into lastExitCode (true->0, false->1) while any non-Boolean
+        // value publishes 0 (/set z = 0 -> lastResult 0 AND lastExitCode 0).
+        // /assert evaluates a condition in one line (publishes lastExitCode, --set
+        // AND-accumulates into a task var), and every directive publishes BOTH
+        // lastResult and lastExitCode — errors surface the value in lastError.
+        assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
+            String script = ""
+                    + "/system echo hi > data.txt\n"
+                    + "// /set targets the task env by default; update operators\n"
+                    + "/set n = 0\n"
+                    + "/set n++\n"
+                    + "/set n += 4\n"
+                    + "/set n--\n"
+                    + "/if n == 4\n"
+                    + "/system touch n-ok\n"
+                    + "/end\n"
+                    + "/set m = 10\n"
+                    + "/set m -= 2\n"
+                    + "/set m *= 3\n"
+                    + "/if m == 24\n"
+                    + "/system touch m-ok\n"
+                    + "/end\n"
+                    + "/set r = 9\n"
+                    + "/set r /= 3\n"
+                    + "/if r == 3\n"
+                    + "/system touch r-ok\n"
+                    + "/end\n"
+                    + "// /assert: plain form publishes lastExitCode\n"
+                    + "/assert n == 4\n"
+                    + "/if lastExitCode == 0\n"
+                    + "/system touch a-ok\n"
+                    + "/end\n"
+                    + "/assert n == 99\n"
+                    + "/if lastExitCode == 1\n"
+                    + "/system touch a-fail-ok\n"
+                    + "/end\n"
+                    + "// /assert --set: AND-accumulates across a chain\n"
+                    + "/assert --set green n == 4\n"
+                    + "/assert --set green m == 24\n"
+                    + "/if green == 1\n"
+                    + "/system touch green-ok\n"
+                    + "/end\n"
+                    + "/assert --set ff n == 99\n"
+                    + "/assert --set ff n == 4\n"
+                    + "/if ff == 1\n"
+                    + "/system touch ff-bad\n"
+                    + "/end\n"
+                    + "// lastResult and its _ alias carry the last directive result\n"
+                    + "/system --save out cat data.txt\n"
+                    + "/if lastResult == \"hi\" && _ == \"hi\"\n"
+                    + "/system touch lr-ok\n"
+                    + "/end\n"
+                    + "/set check = 5\n"
+                    + "/if _ == 5 && lastResult == 5\n"
+                    + "/system touch us-ok\n"
+                    + "/end\n"
+                    + "/set x = 7*6\n"
+                    + "/if lastResult == 42\n"
+                    + "/system touch lr2-ok\n"
+                    + "/end\n"
+                    + "// Rule C: non-Boolean /set values always publish lastExitCode 0\n"
+                    + "/set t = 1\n"
+                    + "/if lastExitCode == 0\n"
+                    + "/system touch lce1-ok\n"
+                    + "/end\n"
+                    + "/set f = 0\n"
+                    + "/if lastExitCode == 0\n"
+                    + "/system touch lce0-ok\n"
+                    + "/end\n"
+                    + "/set s = \"\"\n"
+                    + "/if lastExitCode == 0\n"
+                    + "/system touch lce-empty-ok\n"
+                    + "/end\n"
+                    + "// a boolean /set mirrors the bool in lastExitCode (Rule C)\n"
+                    + "/set g = (n == 4)\n"
+                    + "/if _ && lastExitCode == 0\n"
+                    + "/system touch gset-ok\n"
+                    + "/end\n"
+                    + "/set g2 = (n == 99)\n"
+                    + "/if lastExitCode == 1 && lastError == false\n"
+                    + "/system touch gset2-ok\n"
+                    + "/end\n";
+            session = agent.startSession(new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8)));
+            NaruTask task = captureForegroundTask(session);
+            session.waitFor();
+
+            assertNotNull(task, "expected the session to create a task");
+            assertTrue(task.status() == NaruTaskStatus.DONE,
+                    () -> "expected the task to finish, but status was " + task.status());
+
+            // /set update operators worked (default task scope)
+            assertEquals("4", task.getTaskEnv("n", true).map(x -> x == null ? "<null>" : x.toString()).orNull(),
+                    "expected n = 0; n++; n += 4; n-- to yield 4");
+            assertEquals("24", task.getTaskEnv("m", true).map(Object::toString).orNull(),
+                    "expected m = 10; m -= 2; m *= 3 to yield 24");
+            assertEquals("3", task.getTaskEnv("r", true).map(Object::toString).orNull(),
+                    "expected r = 9; r /= 3 to yield 3");
+
+            // /assert publishes lastExitCode (0 success / 1 failure)
+            assertTrue(folder.resolve("a-ok").isRegularFile(),
+                    "assert true -> lastExitCode 0");
+            assertTrue(folder.resolve("a-fail-ok").isRegularFile(),
+                    "assert false -> lastExitCode 1");
+
+            // /assert --set AND-accumulates: green stays 1 through two successes,
+            // ff stays 0 after one failure even though a later assert passed
+            assertEquals("1", task.getTaskEnv("green", true).map(Object::toString).orNull(),
+                    "expected --set green to AND two passing asserts to 1");
+            assertTrue(folder.resolve("green-ok").isRegularFile(), "green == 1");
+            assertEquals("0", task.getTaskEnv("ff", true).map(Object::toString).orNull(),
+                    "expected --set ff to stay 0 after a single failure");
+            assertTrue(!folder.resolve("ff-bad").exists(),
+                    "expected ff to stay 0 after a failed then a passing assert");
+
+            // lastResult / _ reflect the last result-producing directive
+            assertEquals("hi", task.getTaskEnv("out", true).map(Object::toString).orNull(),
+                    "expected /system --save to store the trimmed 'cat' output");
+            assertTrue(folder.resolve("lr-ok").isRegularFile(),
+                    "lastResult == \"hi\" && _ == \"hi\" after /system --save out cat data.txt");
+            assertTrue(folder.resolve("us-ok").isRegularFile(),
+                    "_ == 5 && lastResult == 5 after /set check = 5 (underscore alias)");
+            assertTrue(folder.resolve("lr2-ok").isRegularFile(),
+                    "lastResult == 42 after /set x = 7*6");
+
+            // Rule C: non-Boolean /set values publish lastExitCode 0 always
+            assertTrue(folder.resolve("lce1-ok").isRegularFile(),
+                    "/set t = 1 -> non-Boolean -> lastExitCode 0");
+            assertTrue(folder.resolve("lce0-ok").isRegularFile(),
+                    "/set f = 0 -> non-Boolean -> lastExitCode 0 (not 1)");
+            assertTrue(folder.resolve("lce-empty-ok").isRegularFile(),
+                    "/set s = \"\" -> non-Boolean -> lastExitCode 0 (not 1)");
+
+            // a Boolean /set mirrors the boolean in lastExitCode: value+0 on true;
+            // on false the value is carried by lastError (Rule C + type split)
+            assertEquals("true", task.getTaskEnv("g", true).map(Object::toString).orNull(),
+                    "/set g = (n == 4) stores true");
+            assertTrue(folder.resolve("gset-ok").isRegularFile(),
+                    "/set g=(n==4): _ truthy && lastExitCode 0");
+            assertEquals("false", task.getTaskEnv("g2", true).map(Object::toString).orNull(),
+                    "/set g2 = (n == 99) stores false");
+            assertTrue(folder.resolve("gset2-ok").isRegularFile(),
+                    "/set g2=(n==99): lastExitCode 1 && lastError carries false");
+        });
+    }
+
+    @Test
     public void testAgentModelInteraction() {
         assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
             session = agent.startSession(
@@ -460,11 +618,12 @@ public class AgentModelIntegrationTest {
         long codegenTimeout = Long.getLong("naru.test.codegen.timeoutMinutes", 20);
         assertTimeoutPreemptively(Duration.ofMinutes(codegenTimeout), () -> {
             // The whole script — the /ollama & /model directives, the tool filter,
-            // /set --session maxSteps, the bounded /while loop, the multi-line goal
-            // prompt wrapped in /buffer on ... /buffer off, and the naru-owned green
-            // check — lives in a classpath RESOURCE (src/test/resources/scripts/
-            // calc-build-loop.naru). @MODEL@ is substituted with the model under
-            // test before the stream is handed to startSession(InputStream).
+            // /set maxSteps (default task scope), the bounded /while loop, the
+            // multi-line goal prompt wrapped in /buffer on ... /buffer off, and the
+            // naru-owned green check — lives in a classpath RESOURCE
+            // (src/test/resources/scripts/calc-build-loop.naru). @MODEL@ is
+            // substituted with the model under test before the stream is handed to
+            // startSession(InputStream).
             String script = loadScriptResource("/scripts/calc-build-loop.naru")
                     .replace("@MODEL@", configuredToolModel());
             session = agent.startSession(
@@ -472,9 +631,10 @@ public class AgentModelIntegrationTest {
 
             // maxSteps bounds a single model turn's tool-call rounds (the budget
             // is reset when a turn ends, so each while-loop re-invocation gets a
-            // full one). It is set INSIDE the script now (/set --session maxSteps
-            // = 80) and it is never infinite: the /while loop itself is capped at
-            // 8 attempts and the preemptive timeout below bounds wall-clock time.
+            // full one). It is set INSIDE the script now (/set maxSteps = 80 with
+            // the default task scope) and it is never infinite: the /while loop
+            // itself is capped at 12 attempts and the preemptive timeout below
+            // bounds wall-clock time.
 
             NaruTask task = captureForegroundTask(session);
 
@@ -492,18 +652,37 @@ public class AgentModelIntegrationTest {
             NPath projectRoot = pom.parent();
             NOut.println(NMsg.ofC("maven project created at %s", projectRoot));
 
-            // 2. it builds and passes its tests OFFLINE;
+            // The model may be tempted to 'make the build pass' by deleting or
+            // weakening the tests — mvn -o -q test exits 0 even when no test was
+            // compiled. Require a real JUnit test that asserts the required
+            // expressions (multi-digit operands included).
+            NPath testFile = projectRoot.resolve("src/test/java/calc/CalculatorTest.java");
+            assertTrue(testFile.exists(),
+                    () -> "expected the model to keep a real JUnit test at " + testFile
+                            + " (deleting tests to make 'mvn test' pass is not acceptable)");
+            String testSrc = testFile.readString();
+            assertTrue(testSrc != null && testSrc.contains("@Test")
+                            && testSrc.contains("7*6") && testSrc.contains("12/4"),
+                    () -> "expected the JUnit test to actually assert the required expressions "
+                            + "(including multi-digit 7*6 and 12/4):\n" + testSrc);
+
+            // 2. it builds and passes its tests OFFLINE (now non-trivially: the
+            // tests above exist and must pass);
             CommandResult build = runCommand(projectRoot, "mvn -o -q test", 300);
             assertTrue(build.exitCode == 0,
                     () -> "expected 'mvn -o -q test' to succeed in " + projectRoot
                             + " but got EXIT_CODE=" + build.exitCode + ":\n"
                             + tail(build.output, 2000));
 
-            // 3. the compiled calculator actually computes.
+            // 3. the compiled calculator actually computes multi-digit expressions.
             CommandResult run = runCommand(projectRoot, "java -cp target/classes calc.Main \"7*6\"", 60);
             assertTrue(run.exitCode == 0 && "42".equals(run.output.trim()),
                     () -> "expected 'java -cp target/classes calc.Main \"7*6\"' to print 42 "
                             + "but got EXIT_CODE=" + run.exitCode + " output='" + run.output + "'");
+            CommandResult run2 = runCommand(projectRoot, "java -cp target/classes calc.Main \"12/4\"", 60);
+            assertTrue(run2.exitCode == 0 && "3".equals(run2.output.trim()),
+                    () -> "expected 'java -cp target/classes calc.Main \"12/4\"' to print 3 "
+                            + "but got EXIT_CODE=" + run2.exitCode + " output='" + run2.output + "'");
 
             NaruMessage last = task.getLastResult();
             if (last != null) {
@@ -515,7 +694,7 @@ public class AgentModelIntegrationTest {
 
     /**
      * Load a classpath script resource (UTF-8). The whole codegen showcase —
-     * the /ollama & /model directives, the tool filter, /set --session (maxSteps),
+     * the /ollama & /model directives, the tool filter, /set maxSteps,
      * the bounded /while loop, the multi-line goal prompt wrapped in
      * /buffer on ... /buffer off, and the naru-owned green check — lives in
      * src/test/resources/scripts/calc-build-loop.naru.

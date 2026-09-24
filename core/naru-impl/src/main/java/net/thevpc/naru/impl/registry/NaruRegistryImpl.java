@@ -324,18 +324,12 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public void dispatchSlash(String name, String argument, NaruTask task) {
-        NaruDirective tool = findDirective(name).orNull();
-        if (tool == null) {
+        NaruDirective dir = findDirective(name).orNull();
+        if (dir == null) {
             task.log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + availableDirectives.keySet()).asError());
             return;
         }
-        try {
-            tool.execute(new NaruDirectiveCallContextImpl(name, argument, task));
-        } catch (NCancelException e) {
-            throw e;
-        } catch (Exception e) {
-            task.log(NaruLogMode.TRACE, NMsg.ofC("ERROR executing tool '" + name + "': " + e.getMessage()).asError());
-        }
+        task.invokeDirective(dir,new NaruDirectiveCallContextImpl(name, argument, task));
     }
 
     /**

@@ -284,6 +284,36 @@
   ▌   /pwd  [ help | --help ]
   ▌            show pwd help
   ▌     -----------------------------------------
+  ▌   control Directives:
+  ▌     /assert : assert a condition
+  ▌     | Detailed Specification :
+  ▌ /assert  [options...]
+  ▌     assert a condition
+  ▌   The condition is evaluated exactly like an /if condition ({{var}}
+  ▌   interpolation already resolved values, so the log shows the actual
+  ▌   numbers/strings being compared). Success publishes lastExitCode=0 and
+  ▌   logs "✓ assert <cond>"; failure publishes lastExitCode=1 and logs
+  ▌   "✗ assert <cond>" (a missing condition publishes lastExitCode=2).
+  ▌   Non-fatal by default.
+  ▌   /assert  <condition>
+  ▌            evaluate the condition; publish lastExitCode (0=ok,1=failed).
+  ▌            ex:
+  ▌            /assert lastExitCode == 0
+  ▌   /assert  --set <var> <condition>
+  ▌            also AND-accumulate into the task var <var> (an unset var starts
+  ▌            as true; a failure pins it to 0 UNTIL the script resets it — the
+  ▌            loop pattern is /set flag = 1 at the top of each iteration):
+  ▌            a chain of asserts can
+  ▌            drive one "everything green" flag.
+  ▌            ex:
+  ▌            /assert --set green calc42 == "42"
+  ▌   /assert  --fail <condition>
+  ▌            abort the script (task error) on failure: classic assert semantics.
+  ▌            ex:
+  ▌            /assert --fail count == 3
+  ▌   /assert  [ help | --help ]
+  ▌            show assert help
+  ▌     -----------------------------------------
   ▌   general Directives:
   ▌     /buffer : switch input mode (line <> buffer)
   ▌     | Detailed Specification :
@@ -381,24 +411,47 @@
   ▌     | Detailed Specification :
   ▌ /set  [options...]
   ▌     set variable value
+  ▌     The default scope is the TASK env, so --task is optional. Variables can
+  ▌     be updated in place with ++/-- (add/subtract 1) and the op= forms
+  ▌     += -= *= /= against an expression (a missing variable counts as 0).
+  ▌     /set is a RESULT-PRODUCING directive: it publishes lastResult (alias _)
+  ▌     with the assigned/updated value AND, per Rule C, publishes lastExitCode 0
+  ▌     for ANY non-Boolean value — "/set z = 0" yields lastResult=0 AND
+  ▌     lastExitCode=0 — while a Boolean value mirrors its truthiness
+  ▌     (true -> 0, false -> 1). So "/set green = (calc3 == \"3\")" behaves like
+  ▌     an assert: green and lastExitCode reflect the boolean. lastExitCode and
+  ▌     lastResult are naru-owned: every directive returns its (value, exitCode)
+  ▌     and the task publishes last* centrally — scripts only READ them, never
+  ▌     WRITE them.
   ▌   /set   <var> = <expr>
   ▌            set variable value.
   ▌            ex:
   ▌            /set a=x*2
+  ▌   /set   <var>++ | <var>-- | <var> += <expr> (also -= *= /=)
+  ▌            increment/decrement or apply an arithmetic update.
+  ▌            ex:
+  ▌            /set attempts++
+  ▌            /set n += 2
   ▌   /set   --task <var> = <expr>
-  ▌            set task env variable value.
+  ▌            explicitly target the task env (this is the default).
   ▌            ex:
   ▌            /set --task a=x*2
   ▌   /set   --session <var> = <expr>
   ▌            set session env variable value.
   ▌            ex:
   ▌            /set --session a=x*2
+  ▌   /set   --local <var> = <expr>
+  ▌            set current frame local variable value.
+  ▌            ex:
+  ▌            /set --local a=x*2
   ▌   /set   
-  ▌            list local vars
+  ▌            list variables of the default scope (task env)
   ▌   /set   --task
   ▌            list task env variables
   ▌   /set   --session
   ▌            list session env variables
+  ▌   /set   --local
+  ▌            list current frame variables
   ▌   /set  [ help | --help ]
   ▌            show set help
   ▌     -----------------------------------------

@@ -45,8 +45,8 @@ public class OllamaStartTool extends DefaultNaruTool {
             service.install(msg -> task.log(NaruLogMode.TRACE, msg));
         }
 
-        boolean ok = service.start(task.session(), msg -> task.log(NaruLogMode.TRACE, msg));
-        if (ok) {
+        OllamaService.StartResult result = service.start(task.session(), msg -> task.log(NaruLogMode.TRACE, msg));
+        if (result.started() || result.alreadyStarted()) {
             return "SUCCESS: Ollama started at " + service.getOllamaUrl(task.session()) + " (PID: " + OllamaProcessManager.getManagedPid() + ")";
         } else {
             return "ERROR: Failed to start Ollama server. Check logs.";
