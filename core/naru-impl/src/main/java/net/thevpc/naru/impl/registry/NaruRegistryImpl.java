@@ -227,6 +227,9 @@ public class NaruRegistryImpl implements NaruRegistry {
     public List<NaruModelInfo> modelsInfos(NaruSession session) {
         ArrayList<NaruModelInfo> a = new ArrayList<>();
         for (NaruModelProvider p : modelProviders.values()) {
+            if (!p.isAvailable(session)) {
+                continue;
+            }
             for (String m : p.findModelIds(session)) {
                 NaruModelCapabilities c = p.getProtocol(new NaruModelConfig(
                         p.name(),

@@ -1,13 +1,14 @@
 package net.thevpc.naru.ext.models.custom;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.model.AbstractNaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
+import net.thevpc.naru.ext.models.NaruModelProtocolType;
+import net.thevpc.naru.ext.models.NaruModelProtocolTypes;
 import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
-import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
@@ -15,21 +16,26 @@ import net.thevpc.nuts.util.NOptional;
 import java.util.*;
 
 /**
- * Generic OpenAI-compatible provider driven entirely by configuration.
- * Lets users point NARU at any OpenAI-compatible endpoint
- * (LM Studio, vLLM, llama.cpp server, LiteLLM proxy, ...) with zero code.
+ * Generic config-driven provider: lets users point NARU at any wire-compatible
+ * endpoint (OpenAI-compatible, Anthropic Messages, ...) with zero code.
  *
  * <p>Configuration (per named endpoint):
  * <pre>
  * custom.endpoints=&lt;name1&gt;,&lt;name2&gt;,...
- * custom.endpoints.&lt;name&gt;.url=https://my-server/v1
+ * custom.endpoints.&lt;name&gt;.url=https://my-server
+ * custom.endpoints.&lt;name&gt;.type=openapi|anthropic   (optional, default: openapi)
  * custom.endpoints.&lt;name&gt;.apiKey=sk-...
  * custom.endpoints.&lt;name&gt;.models=model-a,model-b
- * custom.endpoints.&lt;name&gt;.chatPath=chat/completions   (optional)
- * custom.endpoints.&lt;name&gt;.contextLength=32768         (optional)
+ * custom.endpoints.&lt;name&gt;.chatPath=v1/chat/completions   (optional)
+ * custom.endpoints.&lt;name&gt;.contextLength=32768             (optional)
+ * custom.endpoints.&lt;name&gt;.tools=true                      (optional)
+ * custom.endpoints.&lt;name&gt;.probe=true                      (optional, default: true)
  * </pre>
  *
  * <p>Models are addressed as {@code custom/&lt;endpoint&gt;/&lt;model&gt;}.
+ *
+ * <p>By default each endpoint is probed (short-timeout GET on its url + TTL cache)
+ * before its models show up in listings; set {@code probe=false} to opt out.
  */
 public class NaruCustomProvider extends AbstractOpenAICompatProvider {
 
@@ -82,6 +88,9 @@ public class NaruCustomProvider extends AbstractOpenAICompatProvider {
                     "missing %s.url configuration for custom endpoint '%s'", prefix, endpoint));
         }
 
+        String type = endpointType(session, prefix);
+        NaruModelProtocolType protocolType = NaruModelProtocolTypes.of(type).orElse(NaruModelProtocolTypes.defaultType());
+
         NaruModelCapabilities capabilities = resolveCapabilities(model.model(), session);
         String chatPath = session.agent().env().get(prefix + ".chatPath").flatMap(x -> x.asStringValue())
                 .map(p -> {
@@ -89,19 +98,60 @@ public class NaruCustomProvider extends AbstractOpenAICompatProvider {
                     while (p.endsWith("/")) p = p.substring(0, p.length() - 1);
                     return p;
                 })
-                .orElse("chat/completions");
+                .orElse(defaultChatPath(type));
 
         NaruModelConfig wireModel = model.withModel(realModel);
         return NOptional.of(protocols.computeIfAbsent(model,
-                k -> new CustomProtocol(this, wireModel, prefix, chatPath, capabilities, url)
+                k -> protocolType.create(this, wireModel, prefix, chatPath, capabilities, url)
         ));
     }
 
+    private String endpointType(NaruSession session, String prefix) {
+        return session.agent().env().get(prefix + ".type").flatMap(x -> x.asStringValue())
+                .map(s -> s.trim().toLowerCase())
+                .orElse(NaruModelProtocolTypes.OPENAPI);
+    }
+
+    private String defaultChatPath(String type) {
+        if (NaruModelProtocolTypes.ANTHROPIC.equals(type)) {
+            return "v1/messages";
+        }
+        return "chat/completions";
+    }
+
+    @Override
+    public boolean isAvailable(NaruSession session) {
+        List<String> eps = endpoints(session);
+        if (eps.isEmpty()) {
+            // nothing configured -> nothing to hide
+            return true;
+        }
+        for (String endpoint : eps) {
+            if (isEndpointUsable(endpoint, session)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isEndpointUsable(String endpoint, NaruSession session) {
+        String prefix = PREFIX + endpoint;
+        boolean probe = session.agent().env().get(prefix + ".probe")
+                .flatMap(x -> x.asBooleanValue()).orElse(true);
+        if (!probe) {
+            return true;
+        }
+        String url = session.agent().env().get(prefix + ".url").flatMap(x -> x.asStringValue()).orNull();
+        return !NBlankable.isBlank(url) && isReachable(url);
+    }
 
     @Override
     public List<String> findModelIds(NaruSession session) {
         List<String> all = new ArrayList<>();
         for (String endpoint : endpoints(session)) {
+            if (!isEndpointUsable(endpoint, session)) {
+                continue;
+            }
             String prefix = PREFIX + endpoint;
             session.agent().env().get(prefix + ".models").flatMap(x -> x.asStringValue())
                     .ifPresent(v -> {
@@ -114,6 +164,7 @@ public class NaruCustomProvider extends AbstractOpenAICompatProvider {
         }
         return all;
     }
+
     @Override
     protected String baseUrl(NaruSession session) {
         return "";
@@ -128,13 +179,5 @@ public class NaruCustomProvider extends AbstractOpenAICompatProvider {
                 .flatMap(x -> x.asBooleanValue()).orElse(true);
         // tool-call emulation kicks in automatically when tools=false
         return new NaruModelCapabilitiesImpl(false, tools, false, false, contextLength);
-    }
-
-    static class CustomProtocol extends NaruModelProtocolOpenAICompat {
-
-        CustomProtocol(NaruCustomProvider provider, NaruModelConfig model, String configPrefix,
-                       String chatPath, NaruModelCapabilities capabilities, String defaultBaseUrl) {
-            super(provider, model, configPrefix, chatPath, capabilities, defaultBaseUrl);
-        }
     }
 }

@@ -31,6 +31,18 @@ public interface NaruModelProvider extends NComponent {
      */
     List<String> findModelIds(NaruSession session);
 
+    /**
+     * Whether this provider is currently reachable/usable.
+     * Used to hide unavailable providers from model listings
+     * (e.g. {@code /model list} should not display a local server that is down).
+     *
+     * <p>Default is {@code true} (assume available). Providers backed by a
+     * remote/local HTTP server may override this to probe reachability.
+     */
+    default boolean isAvailable(NaruSession session) {
+        return true;
+    }
+
     void setParam(String name, String value);
 
     NOptional<String> getParam(String name);

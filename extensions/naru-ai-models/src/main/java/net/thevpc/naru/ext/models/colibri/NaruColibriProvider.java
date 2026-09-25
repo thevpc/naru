@@ -26,6 +26,8 @@ import java.util.List;
  * colibri.apiKey=...                       (optional; falls back to env COLI_API_KEY)
  * colibri.models=glm-5.2-colibri,...       (optional static model list)
  * colibri.contextLength=65536              (optional, default: 65536)
+ * colibri.probe=true                       (optional, default: true; when true the provider
+ *                                           is hidden from '/model list' if the server is unreachable)
  * </pre>
  *
  * <p>Models are addressed as {@code colibri/&lt;model&gt;}, e.g.
@@ -87,6 +89,16 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
                 .orElse(DEFAULT_CONTEXT_LENGTH);
         // GLM 5.2 (colibri build): tool calling + thinking supported, no vision/embedding.
         return new NaruModelCapabilitiesImpl(false, true, true, false, contextLength);
+    }
+
+    @Override
+    public boolean isAvailable(NaruSession session) {
+        boolean probe = session.agent().env().get(name() + ".probe")
+                .flatMap(NElement::asBooleanValue).orElse(true);
+        if (!probe) {
+            return true;
+        }
+        return isReachable(baseUrl(session));
     }
 
     @Override

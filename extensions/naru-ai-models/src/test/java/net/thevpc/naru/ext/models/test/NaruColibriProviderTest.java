@@ -82,6 +82,17 @@ public class NaruColibriProviderTest {
         Assertions.assertNotNull(proto.get().getCapabilities());
     }
 
+    @Test
+    public void testIsAvailableProbeDisabled() {
+        NaruColibriProvider provider = new NaruColibriProvider();
+        Map<String, String> env = new HashMap<>();
+        env.put("colibri.probe", "false");
+        Assertions.assertTrue(provider.isAvailable(createMockSession(env)));
+        env.put("colibri.probe", "true");
+        env.put("colibri.url", "http://127.0.0.1:9"); // connection refused
+        Assertions.assertFalse(provider.isAvailable(createMockSession(env)));
+    }
+
     private NaruSession createMockSession(Map<String, String> envMap) {
         NaruEnv env = new NaruEnv() {
             @Override
@@ -89,6 +100,10 @@ public class NaruColibriProviderTest {
                 String v = envMap.get(key);
                 if (v == null) {
                     return NOptional.ofEmpty();
+                }
+                String lower = v.trim().toLowerCase();
+                if ("true".equals(lower) || "false".equals(lower)) {
+                    return NOptional.of(NElement.of(Boolean.parseBoolean(lower)));
                 }
                 return NOptional.of(NElement.of(v));
             }

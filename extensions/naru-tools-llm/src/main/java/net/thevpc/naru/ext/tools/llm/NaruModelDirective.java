@@ -2,6 +2,7 @@ package net.thevpc.naru.ext.tools.llm;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -10,6 +11,7 @@ import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextBuilder;
@@ -22,7 +24,7 @@ import java.util.stream.Collectors;
 public class NaruModelDirective extends NaruDirectiveBase {
 
     public NaruModelDirective() {
-        super("model", "ai", "manage AI models");
+        super("model", "ai", "manage AI models", "models");
         noCommand("list");
         register(new AbstractSubCommand("current", NText.ofPlain("show current model")) {
             @Override
@@ -280,23 +282,31 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("", NText.ofPlain("special..."),
-                new SubCommandHelp("<n>", "set model by index")
+                new SubCommandHelp("<n>", "set model by index"),
+                new SubCommandHelp("<filter>", "list models matching the given filter / keyword")
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                for (NArg a : cmdLine) {
-                    NOptional<Integer> b = NLiteral.of(a.image()).asInt();
+                // Non-numeric bare argument (e.g. /model glm) falls back to a
+                // filtered listing; a pure index selects the model at that position.
+                NOptional<NArg> head = cmdLine.peek();
+                if (head.isPresent() && !head.get().isOption()) {
+                    NOptional<Integer> b = NLiteral.of(head.get().image()).asInt();
                     if (b.isPresent()) {
                         return executeSetByNumber(context, b.get());
-                    } else {
-                        NMsg msg = NMsg.ofC("invalid command /%s %s", name(), context.argument());
-                        context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                        return NaruStmtResult.ofError(msg.toString());
                     }
                 }
-                NMsg msg = NMsg.ofC("invalid command /%s %s", name(), context.argument());
-                context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                return NaruStmtResult.ofError(msg.toString());
+                return executeList(context, cmdLine);
+            }
+        });
+        register(new AbstractSubCommand("endpoint", NText.ofPlain("manage config-driven custom provider endpoints"),
+                new SubCommandHelp(NText.of("add <name> --url=<url> [--type=openapi|anthropic] [--apiKey=<key>] [--models=<a,b>] [--chatPath=<path>] [--contextLength=<n>] [--tools=true|false] [--probe=true|false]"), NText.ofPlain("register (or update) a config-driven custom endpoint")),
+                new SubCommandHelp(NText.of("remove <name>"), NText.ofPlain("unregister a config-driven custom endpoint")),
+                new SubCommandHelp(NText.of("list"), NText.ofPlain("list all config-driven custom endpoints"))
+        ) {
+            @Override
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeEndpoint(context, cmdLine);
             }
         });
 
@@ -442,6 +452,196 @@ public class NaruModelDirective extends NaruDirectiveBase {
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s",
                 task.model().toText()));
         return NaruStmtResult.ofSuccess(null);
+    }
+
+    // ── /model endpoint add|remove|list ────────────────────────────────────────
+
+    public NaruStmtResult executeEndpoint(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruTask task = context.task();
+        NOptional<NArg> op = cmdLine.next();
+        if (!op.isPresent()) {
+            NMsg msg = NMsg.ofC("Error: missing endpoint operation (add|remove|list).").asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
+        }
+        switch (op.get().image()) {
+            case "add":
+                return executeEndpointAdd(context, cmdLine);
+            case "remove":
+                return executeEndpointRemove(context, cmdLine);
+            case "list":
+                return executeEndpointList(context, cmdLine);
+            default:
+                NMsg msg = NMsg.ofC("Error: invalid endpoint operation '%s' (expected add|remove|list).", op.get().image()).asError();
+                task.log(NaruLogMode.AGENT_RESPONSE, msg);
+                return NaruStmtResult.ofError(msg.toString());
+        }
+    }
+
+    public NaruStmtResult executeEndpointAdd(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruTask task = context.task();
+        NRef<String> name = NRef.of();
+        NRef<String> url = NRef.of();
+        NRef<String> type = NRef.of();
+        NRef<String> apiKey = NRef.of();
+        NRef<String> models = NRef.of();
+        NRef<String> chatPath = NRef.of();
+        NRef<Long> contextLength = NRef.of();
+        NRef<Boolean> tools = NRef.of();
+        NRef<Boolean> probe = NRef.of();
+
+        cmdLine.matcher()
+                .whenNonOption()
+                .asArg(a -> {
+                    if (name.isNull()) {
+                        name.set(a.asString().orNull());
+                    } else {
+                        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: unexpected argument %s", a.toString()).asError());
+                    }
+                })
+                .when("--url").asEntry(a -> url.set(a.getStringValue().orNull()))
+                .when("--type").asEntry(a -> type.set(a.getStringValue().orNull()))
+                .when("--apiKey").asEntry(a -> apiKey.set(a.getStringValue().orNull()))
+                .when("--models").asEntry(a -> models.set(a.getStringValue().orNull()))
+                .when("--chatPath").asEntry(a -> chatPath.set(a.getStringValue().orNull()))
+                .when("--contextLength").asEntry(a -> contextLength.set(a.getLongValue().orNull()))
+                .when("--tools").asEntry(a -> tools.set(a.getBooleanValue().orNull()))
+                .when("--probe").asEntry(a -> probe.set(a.getBooleanValue().orNull()))
+                .requireAll();
+
+        if (NBlankable.isBlank(name.get())) {
+            NMsg msg = NMsg.ofC("Error: missing endpoint name.").asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
+        }
+        if (NBlankable.isBlank(url.get())) {
+            NMsg msg = NMsg.ofC("Error: missing --url for endpoint '%s'.", name.get()).asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
+        }
+
+        NaruSession session = task.session();
+        List<String> eps = readCustomEndpoints(session);
+        if (!eps.contains(name.get())) {
+            eps.add(name.get());
+            session.setProjectEnv("custom.endpoints", NElement.ofString(String.join(",", eps)), NAruVisibility.PUBLIC);
+        }
+        String prefix = "custom.endpoints." + name.get();
+        session.setProjectEnv(prefix + ".url", NElement.ofString(url.get()), NAruVisibility.PUBLIC);
+        if (!type.isNull() && !NBlankable.isBlank(type.get())) {
+            session.setProjectEnv(prefix + ".type", NElement.ofString(type.get()), NAruVisibility.PUBLIC);
+        }
+        if (!apiKey.isNull() && !NBlankable.isBlank(apiKey.get())) {
+            session.setProjectEnv(prefix + ".apiKey", NElement.ofString(apiKey.get()), NAruVisibility.PRIVATE);
+        }
+        if (!models.isNull() && !NBlankable.isBlank(models.get())) {
+            session.setProjectEnv(prefix + ".models", NElement.ofString(models.get()), NAruVisibility.PUBLIC);
+        }
+        if (!chatPath.isNull() && !NBlankable.isBlank(chatPath.get())) {
+            session.setProjectEnv(prefix + ".chatPath", NElement.ofString(chatPath.get()), NAruVisibility.PUBLIC);
+        }
+        if (!contextLength.isNull() && contextLength.get() != null) {
+            session.setProjectEnv(prefix + ".contextLength", NElement.of(contextLength.get()), NAruVisibility.PUBLIC);
+        }
+        if (!tools.isNull() && tools.get() != null) {
+            session.setProjectEnv(prefix + ".tools", NElement.of(tools.get()), NAruVisibility.PUBLIC);
+        }
+        if (!probe.isNull() && probe.get() != null) {
+            session.setProjectEnv(prefix + ".probe", NElement.of(probe.get()), NAruVisibility.PUBLIC);
+        }
+
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("endpoint '%s' added (type=%s, url=%s)",
+                NMsg.ofStyledPrimary1(name.get()),
+                type.isNull() ? "openapi" : type.get(),
+                url.get()
+        ));
+        return NaruStmtResult.ofSuccess(null);
+    }
+
+    public NaruStmtResult executeEndpointRemove(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruTask task = context.task();
+        NRef<String> name = NRef.of();
+        cmdLine.matcher()
+                .whenNonOption()
+                .asArg(a -> {
+                    if (name.isNull()) {
+                        name.set(a.asString().orNull());
+                    } else {
+                        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: unexpected argument %s", a.toString()).asError());
+                    }
+                })
+                .requireAll();
+        if (NBlankable.isBlank(name.get())) {
+            NMsg msg = NMsg.ofC("Error: missing endpoint name.").asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
+        }
+        NaruSession session = task.session();
+        List<String> eps = readCustomEndpoints(session);
+        if (!eps.remove(name.get())) {
+            NMsg msg = NMsg.ofC("Error: endpoint '%s' not found.", name.get()).asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
+        }
+        session.setProjectEnv("custom.endpoints", NElement.ofString(String.join(",", eps)), NAruVisibility.PUBLIC);
+        String prefix = "custom.endpoints." + name.get();
+        session.setProjectEnv(prefix + ".url", null, NAruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".type", null, NAruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".apiKey", null, NAruVisibility.PRIVATE);
+        session.setProjectEnv(prefix + ".models", null, NAruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".chatPath", null, NAruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".contextLength", null, NAruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".tools", null, NAruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".probe", null, NAruVisibility.PUBLIC);
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("endpoint '%s' removed.", NMsg.ofStyledPrimary1(name.get())));
+        return NaruStmtResult.ofSuccess(null);
+    }
+
+    public NaruStmtResult executeEndpointList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruTask task = context.task();
+        NaruSession session = task.session();
+        List<String> eps = readCustomEndpoints(session);
+        if (eps.isEmpty()) {
+            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("No custom endpoint registered. Use '/model endpoint add <name> --url=<url> [--type=openapi|anthropic]'."));
+            return NaruStmtResult.ofSuccess(null);
+        }
+        NStringBuilder sb = NStringBuilder.of();
+        NMsg msg = NMsg.ofC("Custom endpoints: %s", eps.size());
+        task.log(NaruLogMode.AGENT_RESPONSE, msg);
+        sb.println(msg.toString());
+        for (String endpoint : eps) {
+            String prefix = "custom.endpoints." + endpoint;
+            String url = session.agent().env().get(prefix + ".url").flatMap(NElement::asStringValue).orElse("?");
+            String type = session.agent().env().get(prefix + ".type").flatMap(NElement::asStringValue).orElse("openapi");
+            String models = session.agent().env().get(prefix + ".models").flatMap(NElement::asStringValue).orElse("");
+            String probe = session.agent().env().get(prefix + ".probe")
+                    .flatMap(NElement::asBooleanValue)
+                    .map(String::valueOf)
+                    .orElse("true");
+            NMsg row = NMsg.ofC("  [%s] %s %s %s%s",
+                    NMsg.ofStyledPrimary1(endpoint),
+                    type,
+                    url,
+                    models.isEmpty() ? "" : "models=" + models,
+                    " probe=" + probe
+            );
+            task.log(NaruLogMode.AGENT_RESPONSE, row);
+            sb.println(row.toString());
+        }
+        return NaruStmtResult.ofSuccess(sb.toString());
+    }
+
+    private List<String> readCustomEndpoints(NaruSession session) {
+        List<String> eps = new ArrayList<>();
+        session.agent().env().get("custom.endpoints").flatMap(NElement::asStringValue)
+                .ifPresent(v -> {
+                    for (String s : v.split("[,\\s]+")) {
+                        if (!s.isBlank() && !eps.contains(s.trim())) {
+                            eps.add(s.trim());
+                        }
+                    }
+                });
+        return eps;
     }
 
     public NaruStmtResult executeListAlias(NaruDirectiveCallContext context, NCmdLine cmdLine) {

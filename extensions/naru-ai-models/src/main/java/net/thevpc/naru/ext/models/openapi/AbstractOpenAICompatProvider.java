@@ -18,6 +18,7 @@ import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Base class for OpenAI-compatible cloud providers (Groq, Cerebras, OpenRouter, GitHub Models, ...).
@@ -28,6 +29,9 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
     private volatile List<String> cachedLiveModels;
     private volatile long cachedLiveModelsAt = 0L;
     private static final long LIVE_MODELS_TTL_MS = 5 * 60 * 1000L;
+    private static final long REACHABILITY_TTL_MS = 5000L;
+
+    private final Map<String, ProbeResult> reachabilityCache = new ConcurrentHashMap<>();
 
     protected final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
 
@@ -174,5 +178,45 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
             return live;
         }
         return staticFallback;
+    }
+
+    // ── Reachability probe ─────────────────────────────────────────────────────
+
+    /**
+     * Short-timeout liveness probe on the given url with a small TTL cache.
+     * Any HTTP response (even 4xx/5xx) means the endpoint is reachable;
+     * connection failures/timeouts mean it is not.
+     */
+    protected boolean isReachable(String url) {
+        long now = System.currentTimeMillis();
+        ProbeResult cached = reachabilityCache.get(url);
+        if (cached != null && (now - cached.at) < REACHABILITY_TTL_MS) {
+            return cached.ok;
+        }
+        boolean ok = probeUrl(url);
+        reachabilityCache.put(url, new ProbeResult(ok, now));
+        return ok;
+    }
+
+    private boolean probeUrl(String url) {
+        try {
+            NHttpClient http = NHttpClient.of()
+                    .connectTimeout(NDuration.ofSeconds(3))
+                    .baseUri(url);
+            http.GET("/").timeout(NDuration.ofSeconds(3)).run();
+            return true; // any response = reachable
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static class ProbeResult {
+        final boolean ok;
+        final long at;
+
+        ProbeResult(boolean ok, long at) {
+            this.ok = ok;
+            this.at = at;
+        }
     }
 }
