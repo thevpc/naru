@@ -39,7 +39,8 @@ public class NaruPlanToolsetProvider implements NaruToolsetProvider {
     }
 
     private static List<NaruTool> planTools() {
-        // intentionally untagged: available in every mode (incl. read-only PLANNING mode)
+        // the structural tools are tagged PLAN, so a task only sees them once it has been
+        // granted the plan tag; think is a no-op scratchpad and stays untagged
         return Arrays.asList(
                 new PlanCreateTool(), new PlanUpdateTool(), new PlanGetTool(), new ThinkTool()
         );

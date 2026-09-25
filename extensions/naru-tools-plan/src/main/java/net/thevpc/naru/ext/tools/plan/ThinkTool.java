@@ -6,7 +6,6 @@ import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 
 /**
@@ -17,7 +16,9 @@ import net.thevpc.naru.api.task.NaruTask;
 public class ThinkTool extends DefaultNaruTool {
 
     public ThinkTool() {
-        super("think", new String[]{NaruToolTags.PLAN});
+        // deliberately untagged: a no-op scratchpad is not a plan mutation, and sharing
+        // the PLAN tag with the structural tools would hide thinking behind plan access
+        super("think", new String[0]);
     }
 
     @Override
