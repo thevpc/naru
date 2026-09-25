@@ -71,6 +71,7 @@ public class NaruOpenApiResponseParser implements NElementDeserializer<NaruRespo
 
             // FIXES BUG #1: The turn generation is complete if it hits "stop" OR "tool_calls"
             String finishReason = firstChoice.getStringValue("finish_reason").orElse("");
+            response.setStopReason(finishReason);
             response.setDone("stop".equals(finishReason) || "tool_calls".equals(finishReason));
 
             // Extract the standard nested "message" object
