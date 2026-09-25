@@ -1,4 +1,4 @@
-package net.thevpc.naru.api.plan;
+package net.thevpc.naru.ext.tools.plan;
 
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;

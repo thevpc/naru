@@ -2,13 +2,10 @@ package net.thevpc.naru.ext.tools.plan;
 
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.plan.NaruPlan;
-import net.thevpc.naru.api.plan.NaruPlanItem;
-import net.thevpc.naru.api.plan.NaruPlanItemStatus;
+
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.util.NOptional;
 
@@ -25,7 +22,7 @@ import java.util.Arrays;
 public class PlanUpdateTool extends DefaultNaruTool {
 
     public PlanUpdateTool() {
-        super("plan_update", new String[]{NaruToolTags.PLAN});
+        super("plan_update", new String[]{NaruPlanToolTagProvider.PLAN_TAG});
     }
 
     @Override
@@ -64,8 +61,8 @@ public class PlanUpdateTool extends DefaultNaruTool {
             return "ERROR: invalid status '" + statusStr + "' (use running, validating or blocked)";
         }
         NOptional<NaruPlan> planOpt = planRef == null
-                ? task.session().planManager().activePlan()
-                : task.session().planManager().findPlan(planRef);
+                ? NaruPlanExtension.plans(task.session()).activePlan()
+                : NaruPlanExtension.plans(task.session()).findPlan(planRef);
         if (planOpt.isError()) {
             return "ERROR: " + planOpt.toString();
         }
@@ -78,7 +75,7 @@ public class PlanUpdateTool extends DefaultNaruTool {
             return "ERROR: no item matching '" + itemRef + "' in plan " + plan.id();
         }
         NOptional<NaruPlanItem> updated =
-                task.session().planManager().reportItem(plan.id(), item.id(), status, notes);
+                NaruPlanExtension.plans(task.session()).reportItem(plan.id(), item.id(), status, notes);
         if (updated.isError()) {
             return "ERROR: " + updated.toString();
         }

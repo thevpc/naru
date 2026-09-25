@@ -1,10 +1,7 @@
-package net.thevpc.naru.impl.engine.plan;
+package net.thevpc.naru.ext.tools.plan;
 
-import net.thevpc.naru.api.plan.NaruPlan;
-import net.thevpc.naru.api.plan.NaruPlanItem;
-import net.thevpc.naru.api.plan.NaruPlanItemSpec;
-import net.thevpc.naru.api.plan.NaruPlanItemStatus;
-import net.thevpc.naru.api.plan.NaruPlanManager;
+
+
 import net.thevpc.nuts.elem.NArrayElement;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
@@ -264,15 +261,23 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
         return plans.get(planId);
     }
 
-    // ── persistence (invoked by NaruSessionImpl saveFolder/loadFolder) ───────
+    /**
+     * Drops every plan and the active-plan pointer. Used when a session ends.
+     */
+    public void clear() {
+        plans.clear();
+        activePlanId = null;
+    }
 
-    public void saveTo(NPath folder) {
+    // ── persistence (driven by NaruPlanExtension, via the session extension SPI) ──
+
+    /**
+     * Serialises every plan plus the active-plan pointer. Returns null when there is
+     * nothing worth persisting, which tells the core to remove any stale state file.
+     */
+    public NElement toElement() {
         if (plans.isEmpty()) {
-            NPath f = folder.resolve("plans.tson");
-            if (f.exists()) {
-                f.delete();
-            }
-            return;
+            return null;
         }
         NObjectElementBuilder b = NElement.ofObjectBuilder();
         b.set("schemaVersion", NaruPlan.SCHEMA_VERSION);
@@ -284,19 +289,21 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
         if (activePlanId != null) {
             b.set("activePlanId", activePlanId);
         }
-        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
-                .write(b.build(), folder.mkdirs().resolve("plans.tson"));
+        return b.build();
     }
 
-    public void loadFrom(NPath folder) {
+    /**
+     * Replaces the in-memory state with whatever the file holds. A missing file is not
+     * an error: it just means this session has no plans yet.
+     */
+    public void loadFrom(NPath file) {
         plans.clear();
         activePlanId = null;
-        NPath f = folder.resolve("plans.tson");
-        if (!f.exists()) {
+        if (file == null || !file.exists()) {
             return;
         }
         try {
-            NElement e = NElementReader.ofTson().ntf(false).read(f);
+            NElement e = NElementReader.ofTson().ntf(false).read(file);
             NObjectElement o = e.asObject().get();
             List<NaruPlan> loaded = new ArrayList<>();
             NArrayElement arr = o.getArray("plans").orNull();
@@ -328,7 +335,7 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
                 activePlanId = act;
             }
         } catch (Exception ex) {
-            throw new NIllegalArgumentException(NMsg.ofC("failed to load plans from %s: %s", f, ex.getMessage(), ex));
+            throw new NIllegalArgumentException(NMsg.ofC("failed to load plans from %s: %s", file, ex.getMessage(), ex));
         }
     }
 }

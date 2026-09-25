@@ -9,6 +9,7 @@
 | Guide                                            | Status   |
 |--------------------------------------------------|----------|
 | [Config-driven custom models](models/config-driven-custom-providers.md) | ✅ |
+| [Planning](planning.md)                           | ✅ |
 | More guides (sessions, routines, tools, ...)     | 🚧 coming |
 
 ---
@@ -26,3 +27,6 @@
 - [Configure an OpenAI-compatible endpoint by config](models/config-driven-custom-providers.md)
 - [Configure an Anthropic endpoint by config](models/config-driven-custom-providers.md#anthropic-messages-typeanthropic)
 - [Availability probing & `/models` filtering](models/config-driven-custom-providers.md#4-availability-and-models-filtering)
+- [Plan a goal as a dependency graph, and activate it](planning.md)
+- [`/plan` directive reference](planning.md#4-directives)
+- [Planning tools the model can call](planning.md#5-tools)

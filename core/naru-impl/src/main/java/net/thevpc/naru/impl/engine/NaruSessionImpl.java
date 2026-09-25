@@ -14,9 +14,9 @@ import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruRegistry;
+import net.thevpc.naru.api.registry.NaruSessionExtension;
 import net.thevpc.naru.impl.ia.budget.NaruMeteringServiceImpl;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
-import net.thevpc.naru.impl.engine.plan.NaruPlanManagerImpl;
 import net.thevpc.naru.impl.engine.routine.NaruRoutineMem;
 import net.thevpc.naru.impl.engine.routine.RoutineHelper;
 import net.thevpc.naru.impl.engine.scheduler.NaruSchedulerImpl;
@@ -84,7 +84,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final List<NaruSessionListener> sessionListeners = new ArrayList<>();
     private boolean stopped;
     private final Map<String, NaruRoutine> routines = new ConcurrentHashMap<>();
-    private final NaruPlanManagerImpl plans = new NaruPlanManagerImpl();
     private NAruVisibility loadTimeVisibility;
     private int schedulerThreadCount = 1;
     private volatile long schedulerThrottleDelayMs = 500;
@@ -541,8 +540,26 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         });
         long finalMaxLong = maxLong.get() == 0 ? 0 : maxLong.get() + 1;
         maxTaskId.updateAndGet(current -> Math.max(current, finalMaxLong));
-        plans.loadFrom(folder);
+        loadSessionExtensions(folder);
         return this;
+    }
+
+    /**
+     * Hands each installed feature extension its slice of the session folder. Extensions
+     * own their state file, so the core neither knows nor cares what is in it.
+     */
+    private void loadSessionExtensions(NPath folder) {
+        NPath extDir = folder.mkdirs().resolve("ext");
+        for (NaruSessionExtension extension : registry.sessionExtensions()) {
+            try {
+                extension.load(this, extDir.resolve(extension.name() + ".tson"));
+                extension.open(this);
+            } catch (Exception ex) {
+                // one broken extension must not cost the user the whole session
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "session extension '%s' failed to load: %s", extension.name(), ex.getMessage()).asError());
+            }
+        }
     }
 
     private static NaruRoutineMem loadRoutineTson(NPath x) {
@@ -672,7 +689,36 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
                     .write(e.getValue().toElement(), r.resolve(e.getKey() + ".tson"));
         }
-        plans.saveTo(folder);
+        saveSessionExtensions(folder);
+    }
+
+    /**
+     * Asks each installed feature extension to snapshot its state. Note this runs on
+     * every snapshot, not only on a user-initiated save, so extension save hooks are
+     * expected to be cheap and idempotent.
+     */
+    private void saveSessionExtensions(NPath folder) {
+        NPath extDir = folder.mkdirs().resolve("ext");
+        for (NaruSessionExtension extension : registry.sessionExtensions()) {
+            try {
+                NElement state = extension.save(this);
+                NPath file = extDir.resolve(extension.name() + ".tson");
+                if (state == null) {
+                    // an extension with nothing to persist must not leave a stale file
+                    // behind, or a later load would resurrect discarded state
+                    if (file.exists()) {
+                        file.delete();
+                    }
+                } else {
+                    NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
+                            .write(state, file);
+                }
+            } catch (Exception ex) {
+                // failing to snapshot one extension must not fail the whole session save
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "session extension '%s' failed to save: %s", extension.name(), ex.getMessage()).asError());
+            }
+        }
     }
 
     public NaruSession load(String otherUuid) {
@@ -938,12 +984,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     public NaruSkillManager skillManager() {
         ensureNotStopped();
         return skillManager;
-    }
-
-    @Override
-    public NaruPlanManagerImpl planManager() {
-        ensureNotStopped();
-        return plans;
     }
 
     @Override

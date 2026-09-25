@@ -67,4 +67,23 @@ public interface NaruRegistry {
     NOptional<NaruToolTag> findAvailableTag(String name);
 
     Map<String, NaruToolTag> availableTags();
+
+    /**
+     * The session-scoped feature extensions discovered for this session, in
+     * {@link NaruSessionExtension#order()} order. These are the instances the core
+     * itself uses, so the same object identity is visible to extensions and tools.
+     */
+    List<NaruSessionExtension> sessionExtensions();
+
+    /**
+     * Finds a session extension by {@link NaruSessionExtension#name()}, optionally
+     * narrowed to a known implementation type. Returns empty when the feature is not
+     * installed, which is the normal case for an optional feature.
+     */
+    <T extends NaruSessionExtension> NOptional<T> extension(String name, Class<T> as);
+
+    /**
+     * Closes every session extension. Called when a session terminates.
+     */
+    void close();
 }

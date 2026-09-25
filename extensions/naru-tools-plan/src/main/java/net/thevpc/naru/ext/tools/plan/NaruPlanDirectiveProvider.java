@@ -1,9 +1,7 @@
 package net.thevpc.naru.ext.tools.plan;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
-import net.thevpc.naru.api.plan.NaruPlan;
-import net.thevpc.naru.api.plan.NaruPlanItem;
-import net.thevpc.naru.api.plan.NaruPlanItemStatus;
+
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveProviderBase;
@@ -43,8 +41,8 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                         return logAll(context);
                     }
                     NOptional<NaruPlan> planOpt = ref == null
-                            ? task.session().planManager().activePlan()
-                            : task.session().planManager().findPlan(ref);
+                            ? NaruPlanExtension.plans(task.session()).activePlan()
+                            : NaruPlanExtension.plans(task.session()).findPlan(ref);
                     if (planOpt.isError()) {
                         return NaruStmtResult.ofError(planOpt.toString());
                     }
@@ -65,11 +63,11 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                     }
                     String id = cmdLine.next().get().image();
                     NaruTask task = context.task();
-                    NaruPlan p = task.session().planManager().findPlan(id).orNull();
+                    NaruPlan p = NaruPlanExtension.plans(task.session()).findPlan(id).orNull();
                     if (p == null) {
                         return NaruStmtResult.ofError("no plan '" + id + "'\n" + logListing(context));
                     }
-                    task.session().planManager().setActivePlanId(p.id());
+                    NaruPlanExtension.plans(task.session()).setActivePlanId(p.id());
                     logInfo(context, "plan " + p.id() + " activated; ready items will be dispatched");
                     return NaruStmtResult.ofSuccess(null);
                 }
@@ -78,11 +76,11 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                 @Override
                 public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                     NaruTask task = context.task();
-                    if (task.session().planManager().activePlanId() == null) {
+                    if (NaruPlanExtension.plans(task.session()).activePlanId() == null) {
                         logInfo(context, "no active plan");
                         return NaruStmtResult.ofSuccess(null);
                     }
-                    task.session().planManager().setActivePlanId(null);
+                    NaruPlanExtension.plans(task.session()).setActivePlanId(null);
                     logInfo(context, "plan deactivated; a running item is not cancelled");
                     return NaruStmtResult.ofSuccess(null);
                 }
@@ -104,7 +102,7 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                         }
                     }
                     NaruTask task = context.task();
-                    NaruPlan p = task.session().planManager().activePlan().orNull();
+                    NaruPlan p = NaruPlanExtension.plans(task.session()).activePlan().orNull();
                     if (p == null) {
                         return NaruStmtResult.ofError("no active plan");
                     }
@@ -123,7 +121,7 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                                 + "only this item.");
                     }
                     NOptional<List<NaruPlanItem>> demoted =
-                            task.session().planManager().reopenItem(p.id(), item.id(), false);
+                            NaruPlanExtension.plans(task.session()).reopenItem(p.id(), item.id(), false);
                     if (demoted.isError() || !demoted.isPresent()) {
                         return NaruStmtResult.ofError("could not reopen item " + item.id());
                     }
@@ -135,8 +133,8 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                 @Override
                 public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                     NaruTask task = context.task();
-                    String ref = cmdLine.isEmpty() ? task.session().planManager().activePlanId() : cmdLine.next().get().image();
-                    boolean removed = ref != null && task.session().planManager().removePlan(ref);
+                    String ref = cmdLine.isEmpty() ? NaruPlanExtension.plans(task.session()).activePlanId() : cmdLine.next().get().image();
+                    boolean removed = ref != null && NaruPlanExtension.plans(task.session()).removePlan(ref);
                     logInfo(context, removed ? "plan removed" : "no such plan");
                     return NaruStmtResult.ofSuccess(null);
                 }
@@ -154,9 +152,9 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
 
         private String logListing(NaruDirectiveCallContext context) {
             NaruTask task = context.task();
-            String active = task.session().planManager().activePlanId();
+            String active = NaruPlanExtension.plans(task.session()).activePlanId();
             StringBuilder sb = new StringBuilder();
-            for (NaruPlan p : task.session().planManager().plans().values()) {
+            for (NaruPlan p : NaruPlanExtension.plans(task.session()).plans().values()) {
                 int done = 0;
                 for (NaruPlanItem i : p.items()) {
                     if (i.status() == NaruPlanItemStatus.DONE) {

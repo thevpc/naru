@@ -35,6 +35,7 @@ public class NaruRegistryImpl implements NaruRegistry {
     private final Map<String, NaruToolTag> availableToolTags = new LinkedHashMap<>();
     private final Map<String, String> directiveAliases = new LinkedHashMap<>();
     private final Map<String, NaruModelProvider> modelProviders = new HashMap<>();
+    private final List<NaruSessionExtension> sessionExtensions = new ArrayList<>();
     private final NaruModeRegistry modeRegistry = new NaruModeRegistry();
     private final NaruSession session;
     private final Predicate<NaruDirective> directiveFilter;
@@ -378,6 +379,37 @@ public class NaruRegistryImpl implements NaruRegistry {
         return Collections.unmodifiableSet(tools().keySet());
     }
 
+    @Override
+    public List<NaruSessionExtension> sessionExtensions() {
+        return Collections.unmodifiableList(sessionExtensions);
+    }
+
+    @Override
+    public <T extends NaruSessionExtension> NOptional<T> extension(String name, Class<T> as) {
+        if (name == null) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("session extension '%s'", name));
+        }
+        for (NaruSessionExtension e : sessionExtensions) {
+            if (e.name().equals(name) && as.isInstance(e)) {
+                return NOptional.of(as.cast(e));
+            }
+        }
+        return NOptional.ofNamedEmpty(NMsg.ofC("session extension '%s'", name));
+    }
+
+    @Override
+    public void close() {
+        for (NaruSessionExtension e : sessionExtensions) {
+            try {
+                e.close();
+            } catch (Exception ex) {
+                // a misbehaving extension must not prevent the others from closing
+                session.log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "session extension '%s' failed to close: %s", e.name(), ex.getMessage()).asError());
+            }
+        }
+    }
+
     public NaruRegistry registerDefaults() {
         this.registerToolsetProvider(new NaruBuiltinToolsetProvider());
         this.registerDirectiveProvider(new NaruBuiltinDirectiveProvider());
@@ -394,6 +426,16 @@ public class NaruRegistryImpl implements NaruRegistry {
         for (NaruModelProvider provider : NExtensions.of().createAllSupported(NaruModelProvider.class, null)) {
             this.registerModelProvider(provider);
         }
+        // Unlike the loops above, these instances are retained: a session extension owns
+        // mutable per-session state, so the very same object has to answer the prompt,
+        // load and save hooks. Creating them per-lookup would silently split the state.
+        for (NaruSessionExtension extension : NExtensions.of().createAllSupported(NaruSessionExtension.class, null)) {
+            if (sessionExtensions.stream().anyMatch(x -> x.name().equals(extension.name()))) {
+                continue;
+            }
+            sessionExtensions.add(extension);
+        }
+        sessionExtensions.sort(Comparator.comparingInt(NaruSessionExtension::order));
         return this;
     }
 

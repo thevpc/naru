@@ -5,8 +5,6 @@ import net.thevpc.naru.api.budget.NaruTokenTransaction;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.plan.NaruPlan;
-import net.thevpc.naru.api.plan.NaruPlanStatus;
 import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruStmtResult;
@@ -774,16 +772,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         all.add(NaruMessage.system(promptMode().systemPrompt()).setSource(NaruSource.MODE).setSourceName(NNameFormat.LOWER_KEBAB_CASE.format(promptMode().name())));
         if (sourcesOk.contains(NaruSource.SYSTEM)) {
-            NaruPlan plan = session().planManager().activePlan().orNull();
-            if (plan != null && plan.status() != NaruPlanStatus.COMPLETED) {
-                all.add(NaruMessage.system(
-                        "### ACTIVE PLAN:\n"
-                                + plan.render()
-                                + "\nReport progress with plan_update(item, status, notes) as you start, block on, or finish work. "
-                                + "You cannot mark an item done yourself: completion goes through the item's validator, "
-                                + "so finish the work and let the validator judge it. The plan's shape is fixed for this "
-                                + "session; if it turns out to be wrong, say so in your report and let the user re-plan."
-                ).setSource(NaruSource.PLAN).setSourceName("plan"));
+            for (NaruSessionExtension extension : session().registry().sessionExtensions()) {
+                if (Collections.disjoint(extension.sources(), sourcesOk) || !extension.isRelevant(this)) {
+                    continue;
+                }
+                for (NaruMessage m : extension.contribute(this)) {
+                    all.add(m.copy().setSource(extension.source()).setSourceName(extension.name()));
+                }
             }
         }
         HashMap<String, NElement> env = new HashMap<>();

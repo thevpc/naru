@@ -2,13 +2,10 @@ package net.thevpc.naru.ext.tools.plan;
 
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.plan.NaruPlan;
-import net.thevpc.naru.api.plan.NaruPlanItemSpec;
-import net.thevpc.naru.api.plan.NaruPlanValidatorKind;
+
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NArrayElement;
 import net.thevpc.nuts.elem.NElement;
@@ -27,7 +24,7 @@ import java.util.List;
 public class PlanCreateTool extends DefaultNaruTool {
 
     public PlanCreateTool() {
-        super("plan_create", new String[]{NaruToolTags.PLAN});
+        super("plan_create", new String[]{NaruPlanToolTagProvider.PLAN_TAG});
     }
 
     @Override
@@ -101,7 +98,7 @@ public class PlanCreateTool extends DefaultNaruTool {
             return "ERROR: at least one item with a description is required";
         }
         try {
-            NaruPlan plan = context.task().session().planManager().createPlan(goal, specs);
+            NaruPlan plan = NaruPlanExtension.plans(context.task().session()).createPlan(goal, specs);
             return "Plan created (id " + plan.id() + "):\n" + plan.render()
                     + "\nNothing runs until a human activates it.";
         } catch (IllegalArgumentException e) {

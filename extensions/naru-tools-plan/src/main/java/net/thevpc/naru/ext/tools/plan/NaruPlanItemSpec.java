@@ -1,4 +1,4 @@
-package net.thevpc.naru.api.plan;
+package net.thevpc.naru.ext.tools.plan;
 
 import java.util.ArrayList;
 import java.util.Collections;

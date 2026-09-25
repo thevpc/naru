@@ -2,12 +2,10 @@ package net.thevpc.naru.ext.tools.plan;
 
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.plan.NaruPlan;
-import net.thevpc.naru.api.plan.NaruPlanItem;
+
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.util.NOptional;
 
@@ -17,7 +15,7 @@ import java.util.Map;
 public class PlanGetTool extends DefaultNaruTool {
 
     public PlanGetTool() {
-        super("plan_get", new String[]{NaruToolTags.PLAN});
+        super("plan_get", new String[]{NaruPlanToolTagProvider.PLAN_TAG});
     }
 
     @Override
@@ -44,8 +42,8 @@ public class PlanGetTool extends DefaultNaruTool {
             return listAll(task);
         }
         NOptional<NaruPlan> planOpt = ref == null
-                ? task.session().planManager().activePlan()
-                : task.session().planManager().findPlan(ref);
+                ? NaruPlanExtension.plans(task.session()).activePlan()
+                : NaruPlanExtension.plans(task.session()).findPlan(ref);
         if (planOpt.isError()) {
             return "ERROR: " + planOpt.toString();
         }
@@ -57,16 +55,16 @@ public class PlanGetTool extends DefaultNaruTool {
     }
 
     private String listAll(NaruTask task) {
-        Map<String, NaruPlan> plans = task.session().planManager().plans();
+        Map<String, NaruPlan> plans = NaruPlanExtension.plans(task.session()).plans();
         if (plans.isEmpty()) {
             return "No plans exist yet.";
         }
-        String active = task.session().planManager().activePlanId();
+        String active = NaruPlanExtension.plans(task.session()).activePlanId();
         StringBuilder sb = new StringBuilder("Plans:\n");
         for (NaruPlan p : plans.values()) {
             int done = 0;
             for (NaruPlanItem i : p.items()) {
-                if (i.status() == net.thevpc.naru.api.plan.NaruPlanItemStatus.DONE) {
+                if (i.status() == NaruPlanItemStatus.DONE) {
                     done++;
                 }
             }
