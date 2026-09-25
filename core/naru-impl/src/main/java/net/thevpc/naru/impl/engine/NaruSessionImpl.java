@@ -88,6 +88,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private NAruVisibility loadTimeVisibility;
     private int schedulerThreadCount = 1;
     private volatile long schedulerThrottleDelayMs = 500;
+    /**
+     * Rows displayed by the last '/model' listing, in display order. Kept so that
+     * '/model use <n>' resolves against the very same rows the user saw, even when
+     * the listing was filtered (--free, --provider, keyword) and therefore renumbered.
+     */
+    private volatile List<NaruModelKey> listedModels = Collections.emptyList();
 
 
     public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruMeteringService meteringService, boolean configureDefaults
@@ -231,7 +237,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setInputMode(NAruInputMode.LINE);
             natuTask._setWorkingDir(cwd == null ? workingDir : cwd);
             natuTask._setProjectDir(projectDir);
-            natuTask._setMode(registry().mode(NaruStandardMode.PLANNING).get());
+            natuTask._setMode(NUtils.firstNonNull(taskBuilder.promptMode(), registry().mode(NaruStandardMode.PLANNING).get()));
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);
@@ -241,12 +247,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setInputMode(NAruInputMode.LINE);
             natuTask._setWorkingDir(cwd == null ? parent.workingDir() : cwd);
             natuTask._setProjectDir(parent.projectDir());
-            natuTask._setMode(NUtils.firstNonNull(parent.promptMode(), registry().mode(NaruStandardMode.PLANNING).get()));
+            // an explicit mode on the spec wins over the inherited one, so that a
+            // plan can spawn implement-type executors from a PLANNING parent
+            natuTask._setMode(NUtils.firstNonNull(taskBuilder.promptMode(), parent.promptMode(), registry().mode(NaruStandardMode.PLANNING).get()));
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);
             natuTask._setModel(parent.model());
             natuTask._setSkills(parent.skillNames());
+        }
+        // tags are never inherited: a task only sees a tagged tool when it holds
+        // one of that tool's tags, so grant them explicitly
+        for (String tag : taskBuilder.toolTags()) {
+            natuTask.addToolTag(tag);
         }
         natuTask.addSystemHistory(s->NaruMessage.system(buildSystemPrompt(s)));
         natuTask._prependInitHooks();
@@ -373,39 +386,62 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     public NOptional<NaruModelConfig> findModel(String keyOrName) {
         ensureNotStopped();
-        List<NaruModelConfig> models = registry().modelsKeys(this).stream().map(NaruModelConfig::new).collect(Collectors.toList());
-        NaruModelConfig a = findModelAlias(keyOrName).orNull();
-        if (a != null) {
-            for (NaruModelConfig m : models) {
-                if (Objects.equals(m.key(), a.key())) {
-                    return NOptional.of(a);
-                }
-            }
+        String ref = keyOrName == null ? null : NStringUtils.stripToNull(keyOrName);
+        if (ref == null) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("model"));
         }
-        if (keyOrName.contains("/")) {
-            NOptional<NaruModelConfig> r = NaruModelKey.parse(keyOrName).map(NaruModelConfig::new);
-            if (r.isPresent()) {
-                for (NaruModelConfig m : models) {
-                    if (Objects.equals(m.key(), r.get().key())) {
-                        return NOptional.of(r.get());
-                    }
-                }
+        // single provider round: modelsKeys() is network bound, never call it twice
+        List<NaruModelKey> catalog = registry().modelsKeys(this);
+        // 1. explicit alias ("/model alias foo=openrouter/x", then "/model use foo")
+        NaruModelConfig a = findModelAlias(ref).orNull();
+        if (a != null && catalog.contains(a.key())) {
+            return NOptional.of(a);
+        }
+        // 2. fully qualified key "provider/model"
+        if (ref.contains("/")) {
+            NOptional<NaruModelConfig> r = NaruModelKey.parse(ref).map(NaruModelConfig::new);
+            if (r.isPresent() && catalog.contains(r.get().key())) {
+                return r;
             }
         } else {
-            for (NaruModelConfig m : models) {
-                if (m.model().equals(keyOrName)) {
-                    return NOptional.of(m);
+            // 3. exact model name
+            for (NaruModelKey k : catalog) {
+                if (k.model().equals(ref)) {
+                    return NOptional.of(new NaruModelConfig(k));
                 }
             }
         }
-        Integer ii = NLiteral.of(keyOrName).asInt().orNull();
-        if (ii != null) {
-            ii = ii - 1;
-            if (ii >= 0 && ii < models.size()) {
-                return NOptional.of(models.get(ii));
+        // 4. positional index. The last '/model' listing wins because its own numbering
+        //    (possibly filtered) is what the user is referring to. Only when no listing is
+        //    available do we fall back to the raw catalog order.
+        Integer idx = NLiteral.of(ref).asInt().orNull();
+        if (idx != null) {
+            int i = idx - 1;
+            List<NaruModelKey> listed = listedModels;
+            if (!listed.isEmpty()) {
+                // the listing is authoritative: never silently fall through to another
+                // row, otherwise an out-of-range index selects an unrelated model.
+                if (i >= 0 && i < listed.size()) {
+                    return NOptional.of(new NaruModelConfig(listed.get(i)));
+                }
+            } else if (i >= 0 && i < catalog.size()) {
+                return NOptional.of(new NaruModelConfig(catalog.get(i)));
             }
         }
         return NOptional.ofNamedEmpty(NMsg.ofC("model '%s'", keyOrName));
+    }
+
+    @Override
+    public List<NaruModelKey> listedModels() {
+        ensureNotStopped();
+        return listedModels;
+    }
+
+    @Override
+    public NaruSession setListedModels(List<NaruModelKey> models) {
+        ensureNotStopped();
+        this.listedModels = models == null ? Collections.emptyList() : List.copyOf(models);
+        return this;
     }
 
     @Override
@@ -1109,6 +1145,29 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                     payload, tid, i.parentId(), Instant.now(), NaruEventTargets.ofEveryone(), NaruRetentionPolicies.ofDefault()));
             if (tasks.isEmpty()) {
                 stop();
+            }
+        }
+    }
+
+    /**
+     * Dispatches a task status transition to session listeners.
+     * <p>
+     * Note that {@link #onTerminated(long)} runs first for terminal states and
+     * unregisters the task, so a listener must use the {@code task} argument
+     * rather than {@code findTask(id)} — by the time it is called the lookup
+     * already returns empty.
+     */
+    public void onTaskStatusChanged(NaruTask task, NaruTaskStatus oldStatus, NaruTaskStatus newStatus) {
+        // deliberately not guarded on 'stopped': onTerminated() stops the session when the
+        // last task dies, and a listener must still observe that final transition
+        for (NaruSessionListener listener : sessionListeners) {
+            try {
+                listener.onTaskStatusChanged(task, oldStatus, newStatus);
+            } catch (Throwable error) {
+                // must not escape: this runs inside NaruTaskImpl.status(), so a
+                // throwing listener would otherwise fail the task being ticked
+                log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] session listener failed on task %s: %s",
+                        error, task.id(), newStatus).asError());
             }
         }
     }

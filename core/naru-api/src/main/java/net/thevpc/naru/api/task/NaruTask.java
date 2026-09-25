@@ -103,6 +103,19 @@ public interface NaruTask extends NToElement {
 
     NaruTask kill();
 
+    /**
+     * Whether {@link #kill()} has been requested and not yet cleared by
+     * {@code reset()}.
+     * <p>
+     * Cancellation is cooperative: {@code kill()} marks the task so that the
+     * scheduler stops re-queueing it at the next statement boundary, but a
+     * statement already executing is not interrupted. Long running tools and
+     * model calls should poll this and bail out early rather than run to
+     * completion. {@link #status()} alone is not sufficient for polling, since
+     * the scheduler transiently flips it to {@code RUNNING} around every tick.
+     */
+    boolean isKillRequested();
+
     boolean hasMoreStatements();
 
     NaruTask addStatement(NaruStatement any);

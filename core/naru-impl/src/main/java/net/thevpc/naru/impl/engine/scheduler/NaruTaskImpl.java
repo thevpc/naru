@@ -54,6 +54,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private final Set<String> taskToolTags = new TreeSet<>();
     private final List<NaruToolTag> taskToolTagDefinitions = new ArrayList<>();
     private final Set<String> excludedTools = new TreeSet<>();
+    /**
+     * Set by {@link #kill()} so that a statement already executing can notice
+     * the cancellation and bail out early. The scheduler only observes the
+     * {@code KILLED} status between statements, so without this flag a long
+     * running tool or model call has no way to know it is being cancelled.
+     */
+    private volatile boolean killRequested;
     private NAruInputMode inputMode = NAruInputMode.LINE;
     /**
      * Raw lines being accumulated by a script-level "/buffer on ... /buffer off"
@@ -173,8 +180,14 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NaruTask kill() {
+        killRequested = true;
         status(NaruTaskStatus.KILLED);
         return this;
+    }
+
+    @Override
+    public boolean isKillRequested() {
+        return killRequested;
     }
 
 
@@ -420,6 +433,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             }
             this.fireChanged();
         }
+        ((NaruSessionImpl) session).onTaskStatusChanged(this, oldStatus, newStatus);
     }
 
     @Override
@@ -427,6 +441,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         history.clear();
         held = false;
         status = NaruTaskStatus.READY;
+        killRequested = false;
         userQueriesCount = 0;
         inputBuffer = "";
         lastResult = null;

@@ -36,7 +36,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("use", NText.ofPlain("select model"),
-                new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name or index (as given by 'list' subcommand) to select"))
+                new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name, 'provider/model', alias, or index of the last listing ('/model list [--free|--provider=x|<filter>]')"))
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -50,8 +50,10 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 NArg a = n.get();
                 NaruModelConfig k = task.session().findModel(a.image()).orNull();
                 if (k == null) {
-                    NMsg msg = NMsg.ofC("Error: model %s not found.",
-                            a.image()).asError();
+                    NMsg msg = NMsg.ofC("Error: model %s not found%s.",
+                            a.image(),
+                            NLiteral.of(a.image()).asInt().isPresent() ? " (see the indexes printed by '/model list')" : ""
+                    ).asError();
                     task.log(NaruLogMode.AGENT_RESPONSE, msg);
                     return NaruStmtResult.ofError(msg.toString());
                 }
@@ -274,7 +276,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("list", NText.ofPlain("list available models"),
-                new SubCommandHelp(NText.of("[<filter>] [--provider=<name>] [--free]"), NText.ofPlain("list available models, optionally filtered by keyword or provider"))
+                new SubCommandHelp(NText.of("[<filter>] [--provider=<name>] [--free]"), NText.ofPlain("list available models, optionally filtered by keyword, provider or free-only. The printed indexes can be reused with '/model use <n>' until the next listing"))
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -282,7 +284,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("", NText.ofPlain("special..."),
-                new SubCommandHelp("<n>", "set model by index"),
+                new SubCommandHelp("<n>", "set model by index (as printed by the last '/model' listing)"),
                 new SubCommandHelp("<filter>", "list models matching the given filter / keyword")
         ) {
             @Override
@@ -371,6 +373,10 @@ public class NaruModelDirective extends NaruDirectiveBase {
         }
 
         String titleSuffix = (filter != null || providerFilter != null || freeOnly) ? " (filtered)" : "";
+        // freeze the displayed order: '/model use <n>' must resolve against these exact
+        // rows, not the unfiltered catalog, otherwise filtering renumbers the list and
+        // every index the user copies becomes a different model.
+        task.session().setListedModels(models.stream().map(NaruModelInfo::key).collect(Collectors.toList()));
         NStringBuilder sb = NStringBuilder.of();
         NMsg msg = NMsg.ofC("%s Available models%s:", models.size(), titleSuffix);
         task.log(NaruLogMode.AGENT_RESPONSE, msg);
@@ -435,6 +441,15 @@ public class NaruModelDirective extends NaruDirectiveBase {
             sb.println(row.toString());
             index++;
         }
+        NMsg hint = NMsg.ofC("Use %s or %s with any of these %sindexes%s, or a full %s.",
+                NMsg.ofStyledPrimary1("/model use <n>"),
+                NMsg.ofStyledPrimary1("/model <n>"),
+                NMsg.ofStyledSuccess(""),
+                NMsg.ofStyledSuccess(""),
+                NMsg.ofStyledPrimary1("provider/model")
+        );
+        task.log(NaruLogMode.AGENT_RESPONSE, hint);
+        sb.println(hint.toString());
         return NaruStmtResult.ofSuccess(sb.toString());
     }
 
@@ -443,8 +458,12 @@ public class NaruModelDirective extends NaruDirectiveBase {
         NaruTask task = context.task();
         NaruModelConfig k = task.session().findModel(String.valueOf(nbr)).orNull();
         if (k == null) {
-            NMsg msg = NMsg.ofC("Error: model %s not found.",
-                    nbr).asError();
+            int listed = task.session().listedModels().size();
+            NMsg msg = (listed > 0
+                    ? NMsg.ofC("Error: no model at index %s in the last listing (%s model(s) shown). Use %s to refresh.",
+                    nbr, listed, NMsg.ofStyledPrimary1("/model list"))
+                    : NMsg.ofC("Error: no model at index %s. Use %s first.",
+                    nbr, NMsg.ofStyledPrimary1("/model list"))).asError();
             task.log(NaruLogMode.AGENT_RESPONSE, msg);
             return NaruStmtResult.ofError(msg.toString());
         }

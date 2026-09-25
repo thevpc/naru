@@ -95,7 +95,7 @@
   ▌ /model  [options...]
   ▌     manage AI models
   ▌   /model   <n>
-  ▌            set model by index
+  ▌            set model by index (as printed by the last '/model' listing)
   ▌   /model  alias 
   ▌            list aliases
   ▌   /model  alias <alias>=<name>
@@ -106,7 +106,7 @@
   ▌            model name to install
   ▌   /model 
   ▌   /model  list 
-  ▌            list aliases
+  ▌            list available models, optionally filtered by keyword, provider or free-only. The printed indexes can be reused with '/model use <n>' until the next listing
   ▌   /model  ps 
   ▌            list loaded (in VRAM) models
   ▌   /model  unalias <alias>
@@ -136,7 +136,7 @@
   ▌   /model  update <alias> --stop=<value>
   ▌            update/append stop words ('stop') (ex: '<|start>')
   ▌   /model  use <model>
-  ▌            model name or index (as given by 'list' subcommand) to select
+  ▌            model name, 'provider/model', alias, or index of the last listing ('/model list [--free|--provider=x|<filter>]')
   ▌   /model  use-global <model>
   ▌            model name to set as default globally
   ▌   /model  [ help | --help ]

@@ -88,6 +88,23 @@ public interface NaruSession {
 
     NOptional<NaruModelConfig> findModel(String modelNameOrId);
 
+    /**
+     * Snapshot of the models displayed by the last {@code /model} listing, in display
+     * order. Positional indexes ({@code /model use <n>}) are resolved against this
+     * snapshot first, so that a filtered listing such as {@code /model --free} or
+     * {@code /model --provider=x} keeps its indexes valid even though filtering
+     * renumbers the rows.
+     *
+     * @return last displayed models, or an empty list if no listing happened yet.
+     */
+    List<NaruModelKey> listedModels();
+
+    /**
+     * Records the models displayed by a {@code /model} listing so subsequent
+     * {@code /model use <n>} calls resolve indexes against the same rows.
+     */
+    NaruSession setListedModels(List<NaruModelKey> models);
+
     Map<String, NaruModelConfig> modelAliases();
 
     Map<NaruModelConfig, List<String>> reversedModelAliases();

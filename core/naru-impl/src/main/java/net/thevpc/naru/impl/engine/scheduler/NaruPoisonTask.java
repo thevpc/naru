@@ -492,6 +492,11 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
+    public boolean isKillRequested() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
     public NaruTaskMode taskMode() {
         throw new NUnsupportedOperationException();
     }

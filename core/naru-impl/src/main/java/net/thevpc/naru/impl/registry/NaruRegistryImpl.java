@@ -226,30 +226,48 @@ public class NaruRegistryImpl implements NaruRegistry {
     @Override
     public List<NaruModelInfo> modelsInfos(NaruSession session) {
         ArrayList<NaruModelInfo> a = new ArrayList<>();
-        for (NaruModelProvider p : modelProviders.values()) {
-            if (!p.isAvailable(session)) {
+        // iterate modelsKeys() so that the (provider,model) order is *identical* to the
+        // one used to resolve positional indexes. Any drift here silently maps
+        // '/model use <n>' to a different model than the one displayed at position <n>.
+        for (NaruModelKey k : modelsKeys(session)) {
+            NaruModelProvider p = modelProviders.get(k.provider().toLowerCase());
+            if (p == null) {
                 continue;
             }
-            for (String m : p.findModelIds(session)) {
-                NaruModelCapabilities c = p.getProtocol(new NaruModelConfig(
-                        p.name(),
-                        m
-                ), session).get().getCapabilities();
-                a.add(new NaruModelInfo(p.name(), m, c));
-            }
+            NaruModelCapabilities c = p.getProtocol(new NaruModelConfig(
+                    p.name(),
+                    k.model()
+            ), session).get().getCapabilities();
+            a.add(new NaruModelInfo(p.name(), k.model(), c));
         }
-        a.sort(Comparator.comparing(NaruModelInfo::provider).thenComparing(NaruModelInfo::model));
         return a;
     }
 
     @Override
     public List<NaruModelKey> modelsKeys(NaruSession session) {
-        ArrayList<NaruModelKey> a = new ArrayList<>();
+        // LinkedHashSet: a provider may report the same (provider,model) twice (e.g. a
+        // custom endpoint whose id collides with a cloud provider). Duplicates would make
+        // positional indexes ambiguous, so only the first occurrence is kept.
+        Set<NaruModelKey> set = new LinkedHashSet<>();
         for (NaruModelProvider p : modelProviders.values()) {
-            for (String m : p.findModelIds(session)) {
-                a.add(new NaruModelKey(p.name(), m));
+            if (!p.isAvailable(session)) {
+                continue;
+            }
+            List<String> ids;
+            try {
+                ids = p.findModelIds(session);
+            } catch (RuntimeException e) {
+                // a single unreachable provider must not break listing for all the others
+                ids = Collections.emptyList();
+            }
+            for (String m : ids) {
+                if (!NBlankable.isBlank(m)) {
+                    set.add(new NaruModelKey(p.name(), m));
+                }
             }
         }
+        List<NaruModelKey> a = new ArrayList<>(set);
+        // (provider,model) is now unique => this is a total order => a stable index
         a.sort(Comparator.comparing(NaruModelKey::provider).thenComparing(NaruModelKey::model));
         return a;
     }
@@ -267,29 +285,9 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public NOptional<NaruModelKey> findModel(String keyOrName, NaruSession session) {
-        List<NaruModelKey> models = modelsKeys(session);
-        if (keyOrName.contains("/")) {
-            NOptional<NaruModelKey> r = NaruModelKey.parse(keyOrName);
-            if (r.isPresent()) {
-                if (models.contains(r.get())) {
-                    return NOptional.of(r.get());
-                }
-            }
-        } else {
-            for (NaruModelKey m : models) {
-                if (m.model().equals(keyOrName)) {
-                    return NOptional.of(m);
-                }
-            }
-        }
-        Integer ii = NLiteral.of(keyOrName).asInt().orNull();
-        if (ii != null) {
-            ii = ii - 1;
-            if (ii >= 0 && ii < models.size()) {
-                return NOptional.of(models.get(ii));
-            }
-        }
-        return NOptional.ofNamedEmpty(NMsg.ofC("model '%s'", keyOrName));
+        // single resolution path: the session also honours the last '/model' listing
+        // snapshot, which this method could not know about.
+        return session.findModel(keyOrName).map(NaruModelConfig::key);
     }
 
     /**
