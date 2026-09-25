@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.models.custom;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
@@ -178,6 +179,42 @@ public class NaruCustomProvider extends AbstractOpenAICompatProvider {
         boolean tools = session.agent().env().get(prefix + ".tools")
                 .flatMap(x -> x.asBooleanValue()).orElse(true);
         // tool-call emulation kicks in automatically when tools=false
-        return new NaruModelCapabilitiesImpl(false, tools, false, false, contextLength);
+        return new NaruModelCapabilitiesImpl(false, tools, false, false, contextLength,
+                resolveCachingMode(session, prefix));
+    }
+
+    /**
+     * Cache support for a custom endpoint.
+     *
+     * <p>Defaults are derived from the wire protocol rather than assumed, because
+     * the same {@code type} can be pointed at servers with different behaviour:
+     * an OpenAI-shaped endpoint has no cache control at all (the server may still
+     * do automatic prefix caching, which costs the user nothing to allow), while
+     * the Anthropic wire format has real, client-controlled breakpoints.
+     *
+     * <p>An explicit {@code custom.endpoints.<name>.cachingMode} always wins, so
+     * a user pointing at a proxy that does or does not cache can say so.
+     */
+    private NaruCachingMode resolveCachingMode(NaruSession session, String prefix) {
+        NOptional<NElement> explicit = session.agent().env().get(prefix + ".cachingMode");
+        if (explicit.isPresent()) {
+            String raw = explicit.get().asStringValue().orNull();
+            if (raw != null) {
+                for (NaruCachingMode m : NaruCachingMode.values()) {
+                    if (m.name().equalsIgnoreCase(raw.trim())) {
+                        return m;
+                    }
+                }
+                // An unrecognised value must not be guessed at. Silently falling
+                // back to a mode the user did not ask for could send a request
+                // shape their server rejects.
+                return NaruCachingMode.NONE;
+            }
+        }
+        String type = endpointType(session, prefix);
+        if ("anthropic".equalsIgnoreCase(type)) {
+            return NaruCachingMode.EXPLICIT_INLINE;
+        }
+        return NaruCachingMode.AUTOMATIC_PREFIX;
     }
 }

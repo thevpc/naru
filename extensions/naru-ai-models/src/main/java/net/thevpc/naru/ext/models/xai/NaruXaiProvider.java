@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.xai;
 
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -56,7 +57,7 @@ public class NaruXaiProvider extends AbstractOpenAICompatProvider {
             contextLength = 524288L; // 500K flagship context
         }
 
-        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength);
+        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength, NaruCachingMode.AUTOMATIC_PREFIX);
     }
 
     /**

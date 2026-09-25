@@ -1,18 +1,20 @@
 package net.thevpc.naru.ext.models;
 
 import net.thevpc.naru.api.model.NaruModelCapabilities;
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
 
 import java.util.*;
 
 public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
-    public static final NaruModelCapabilitiesImpl UNKNOWN = new NaruModelCapabilitiesImpl(false, false, false, false,-1);
+    public static final NaruModelCapabilitiesImpl UNKNOWN = new NaruModelCapabilitiesImpl(false, false, false, false, -1, NaruCachingMode.NONE);
     private final boolean vision;
     private final boolean tools;
     private final boolean thinking;
     private final boolean embedding;
     private final long contextLength;
+    private final NaruCachingMode cachingMode;
 
     public NaruModelCapabilitiesImpl(NElement element) {
         NObjectElement o = element.asObject().get();
@@ -21,18 +23,36 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
         thinking = o.getBooleanValue("thinking").orElse(false);
         embedding = o.getBooleanValue("embedding").orElse(false);
         contextLength = o.getLongValue("contextLength").orElse(-1L);
+        cachingMode = o.getStringValue("cachingMode")
+                .map(NaruCachingMode::valueOf)
+                .orElse(NaruCachingMode.NONE);
     }
 
-    public NaruModelCapabilitiesImpl(boolean vision, boolean tools, boolean thinking, boolean embedding,long contextLength) {
+    /**
+     * Convenience for genuinely unknown capabilities, where no caching claim can
+     * be justified. Providers that do support caching must use the six-argument
+     * constructor so the mode is stated rather than inferred.
+     */
+    public NaruModelCapabilitiesImpl(boolean vision, boolean tools, boolean thinking, boolean embedding, long contextLength) {
+        this(vision, tools, thinking, embedding, contextLength, NaruCachingMode.NONE);
+    }
+
+    public NaruModelCapabilitiesImpl(boolean vision, boolean tools, boolean thinking, boolean embedding, long contextLength, NaruCachingMode cachingMode) {
         this.vision = vision;
         this.tools = tools;
         this.thinking = thinking;
         this.embedding = embedding;
         this.contextLength = contextLength;
+        this.cachingMode = cachingMode == null ? NaruCachingMode.NONE : cachingMode;
     }
 
     public long contextLength() {
         return contextLength;
+    }
+
+    @Override
+    public NaruCachingMode cachingMode() {
+        return cachingMode;
     }
 
     @Override
@@ -59,7 +79,8 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         NaruModelCapabilitiesImpl that = (NaruModelCapabilitiesImpl) o;
-        return vision == that.vision && tools == that.tools && thinking == that.thinking && embedding == that.embedding && contextLength == that.contextLength;
+        return vision == that.vision && tools == that.tools && thinking == that.thinking && embedding == that.embedding
+                && contextLength == that.contextLength && cachingMode == that.cachingMode;
     }
 
     @Override
@@ -82,6 +103,9 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
         if (embedding) {
             k.add("embedding");
         }
+        if (cachingMode != NaruCachingMode.NONE) {
+            k.add("cache:" + cachingMode.name().toLowerCase(Locale.ROOT));
+        }
         if (k.isEmpty()) {
             k.add("text-only");
         }
@@ -90,7 +114,7 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
 
     @Override
     public int hashCode() {
-        return Objects.hash(vision, tools, thinking, embedding,contextLength);
+        return Objects.hash(vision, tools, thinking, embedding, contextLength, cachingMode);
     }
 
     @Override
@@ -106,6 +130,7 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
                 .set("thinking", thinking)
                 .set("embedding", embedding)
                 .set("contextLength", contextLength)
+                .set("cachingMode", cachingMode.name())
                 .build()
                 ;
     }

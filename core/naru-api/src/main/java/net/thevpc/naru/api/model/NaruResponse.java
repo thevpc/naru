@@ -12,6 +12,21 @@ public class NaruResponse {
     private int totalTokens = -1;
     private int promptTokens = -1;
     private int evalTokens = -1;
+    /**
+     * Tokens billed at the cache-write rate because they were not already
+     * cached. -1 if the provider does not report cache accounting.
+     */
+    private int cacheWriteTokens = -1;
+    /**
+     * Tokens billed at the discounted cache-read rate because they were served
+     * from a cache hit. -1 if the provider does not report cache accounting.
+     *
+     * <p>These are a breakdown <em>of</em> {@code promptTokens}, not an
+     * addition to it: a cache-read token was also an input token. Cost models
+     * must subtract them from the input total before pricing, or they will
+     * double-count the discount as if it were extra spend.
+     */
+    private int cacheReadTokens = -1;
 
     public NaruResponse() {}
 
@@ -61,5 +76,32 @@ public class NaruResponse {
     public NaruResponse setEvalTokens(int evalTokens) {
         this.evalTokens = evalTokens;
         return this;
+    }
+
+    public int getCacheWriteTokens() {
+        return cacheWriteTokens;
+    }
+
+    public NaruResponse setCacheWriteTokens(int cacheWriteTokens) {
+        this.cacheWriteTokens = cacheWriteTokens;
+        return this;
+    }
+
+    public int getCacheReadTokens() {
+        return cacheReadTokens;
+    }
+
+    public NaruResponse setCacheReadTokens(int cacheReadTokens) {
+        this.cacheReadTokens = cacheReadTokens;
+        return this;
+    }
+
+    /**
+     * Whether the provider gave a cache breakdown at all. Callers must not
+     * assume zero when this is false: "not reported" and "reported as zero"
+     * mean very different things for cost.
+     */
+    public boolean hasCacheAccounting() {
+        return cacheReadTokens >= 0 || cacheWriteTokens >= 0;
     }
 }

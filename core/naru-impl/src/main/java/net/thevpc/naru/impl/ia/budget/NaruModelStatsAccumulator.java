@@ -9,6 +9,12 @@ public class NaruModelStatsAccumulator {
     private String userId;
     private long promptTokens;
     private long completionTokens;
+    /**
+     * Subset of {@link #promptTokens}. Tracked separately so a cache hit is
+     * visible in /stats instead of being indistinguishable from a cold call.
+     */
+    private long cacheWriteTokens;
+    private long cacheReadTokens;
     private long contextUsage;
     private long peakContextUsage;
     private long contextSize;
@@ -116,6 +122,24 @@ public class NaruModelStatsAccumulator {
 
     public NaruModelStatsAccumulator setCompletionTokens(long completionTokens) {
         this.completionTokens = completionTokens;
+        return this;
+    }
+
+    public long getCacheWriteTokens() {
+        return cacheWriteTokens;
+    }
+
+    public NaruModelStatsAccumulator setCacheWriteTokens(long cacheWriteTokens) {
+        this.cacheWriteTokens = cacheWriteTokens;
+        return this;
+    }
+
+    public long getCacheReadTokens() {
+        return cacheReadTokens;
+    }
+
+    public NaruModelStatsAccumulator setCacheReadTokens(long cacheReadTokens) {
+        this.cacheReadTokens = cacheReadTokens;
         return this;
     }
 

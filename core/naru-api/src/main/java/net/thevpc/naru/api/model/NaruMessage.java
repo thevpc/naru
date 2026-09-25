@@ -41,6 +41,20 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
      * kept separate from the user-visible content.
      */
     private String thinking;
+    /**
+     * Marks the first message of a user turn.
+     *
+     * <p>Exists so the conversation can be cut into immutable segments for
+     * prompt caching. A cacheable segment must never grow after it is created,
+     * or its content hash changes and the provider is told to discard a prefix
+     * it is still holding. Grouping on "starts a user turn" gives boundaries
+     * that are stable across turns and survive a session reload, which
+     * grouping on message position or count would not.
+     *
+     * <p>Not part of the wire format and not part of the cache content hash: it
+     * describes how messages are grouped, not what the provider receives.
+     */
+    private boolean turnBoundary;
 
     public NaruMessage() {
     }
@@ -116,6 +130,7 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         this.content = o.getStringValue("content").orNull();
         this.toolCallId = o.getStringValue("toolCallId").orNull();
         this.toolName = o.getStringValue("toolName").orNull();
+        this.turnBoundary = o.getBooleanValue("turnBoundary").orElse(false);
         NElement images1 = o.get("images").orNull();
         if (images1 != null && images1.isAnyArray()) {
             images = new ArrayList<>();
@@ -151,6 +166,10 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
             o.set("toolCalls", _toolCalls.build());
         }
         o.set("thinking", thinking);
+        if (turnBoundary) {
+            // omitted when false so existing session files stay byte-identical
+            o.set("turnBoundary", true);
+        }
         return o.build();
     }
 
@@ -248,6 +267,15 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
 
     public String getThinking() {
         return thinking;
+    }
+
+    public boolean isTurnBoundary() {
+        return turnBoundary;
+    }
+
+    public NaruMessage setTurnBoundary(boolean turnBoundary) {
+        this.turnBoundary = turnBoundary;
+        return this;
     }
 
     public NaruMessage setThinking(String thinking) {

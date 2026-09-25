@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.cerebras;
 
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -48,7 +49,7 @@ public class NaruCerebrasProvider extends AbstractOpenAICompatProvider {
             contextLength = 131072L; // corrected below — see note
         }
 
-        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength);
+        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength, NaruCachingMode.AUTOMATIC_PREFIX);
     }
 
 

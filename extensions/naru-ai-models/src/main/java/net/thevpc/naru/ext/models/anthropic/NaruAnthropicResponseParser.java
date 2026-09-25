@@ -41,6 +41,18 @@ public class NaruAnthropicResponseParser implements NElementDeserializer<NaruRes
                 response.setPromptTokens(inputTokens);
                 response.setEvalTokens(outputTokens);
                 response.setTotalTokens(inputTokens + outputTokens);
+
+                // Anthropic reports the cache breakdown separately, and
+                // input_tokens EXCLUDES both cache reads and cache writes. So the
+                // billed input total is the sum of all three, and a cost model
+                // that only looks at input_tokens would under-report spending by
+                // exactly the cached portion.
+                int cacheCreation = usageObj.getIntValue("cache_creation_input_tokens").orElse(-1);
+                int cacheRead = usageObj.getIntValue("cache_read_input_tokens").orElse(-1);
+                if (cacheCreation >= 0 || cacheRead >= 0) {
+                    response.setCacheWriteTokens(Math.max(0, cacheCreation));
+                    response.setCacheReadTokens(Math.max(0, cacheRead));
+                }
             }
 
             // 2. Stop reason: end_turn / stop_sequence / tool_use => turn finished

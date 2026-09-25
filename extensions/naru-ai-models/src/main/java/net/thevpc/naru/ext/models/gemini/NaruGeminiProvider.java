@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.models.gemini;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
@@ -65,7 +66,8 @@ public class NaruGeminiProvider extends AbstractOpenAICompatProvider {
             contextLength = 2097152L; // 2M tokens context window for Pro tiers
         }
 
-        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength);
+        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength,
+                NaruCachingMode.AUTOMATIC_PREFIX);
     }
 
     @Override

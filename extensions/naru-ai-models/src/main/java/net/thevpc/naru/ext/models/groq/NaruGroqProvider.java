@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.groq;
 
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -59,7 +60,7 @@ public class NaruGroqProvider extends AbstractOpenAICompatProvider {
             contextLength = 262144L; // 256K for Kimi K2
         }
 
-        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength);
+        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength, NaruCachingMode.AUTOMATIC_PREFIX);
     }
 
     @Override

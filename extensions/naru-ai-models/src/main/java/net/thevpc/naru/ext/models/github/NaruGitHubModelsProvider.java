@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.github;
 
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -61,7 +62,7 @@ public class NaruGitHubModelsProvider extends AbstractOpenAICompatProvider {
             contextLength = 16384L; // 16K for Phi-4
         }
 
-        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength);
+        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength, NaruCachingMode.AUTOMATIC_PREFIX);
     }
 
     @Override

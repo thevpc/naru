@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.ollama;
 
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -226,7 +227,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
             // fall back to model_info arch context_length
         }
 
-        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength);
+        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength, NaruCachingMode.NONE);
     }
 
     private long parseNumCtx(String parameters) {

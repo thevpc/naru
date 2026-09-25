@@ -99,4 +99,50 @@ public class NaruAnthropicResponseParserTest {
         Assertions.assertFalse(r.isDone());
         Assertions.assertEquals("max_tokens", r.getStopReason());
     }
+
+    @Test
+    public void testCacheUsageParsed() {
+        // Anthropic excludes both cache reads and cache writes from
+        // input_tokens, so the billed input total is the sum of all three.
+        NaruResponse r = parse("{\n" +
+                "  \"id\": \"msg_c1\",\n" +
+                "  \"content\": [{\"type\": \"text\", \"text\": \"hi\"}],\n" +
+                "  \"stop_reason\": \"end_turn\",\n" +
+                "  \"usage\": {\n" +
+                "    \"input_tokens\": 10,\n" +
+                "    \"output_tokens\": 5,\n" +
+                "    \"cache_creation_input_tokens\": 1200,\n" +
+                "    \"cache_read_input_tokens\": 800\n" +
+                "  }\n" +
+                "}");
+        Assertions.assertEquals(10, r.getPromptTokens());
+        Assertions.assertEquals(1200, r.getCacheWriteTokens());
+        Assertions.assertEquals(800, r.getCacheReadTokens());
+        Assertions.assertTrue(r.hasCacheAccounting());
+    }
+
+    @Test
+    public void testNoCacheFieldsLeavesCacheTokensUnset() {
+        NaruResponse r = parse("{\n" +
+                "  \"content\": [{\"type\": \"text\", \"text\": \"hi\"}],\n" +
+                "  \"stop_reason\": \"end_turn\",\n" +
+                "  \"usage\": {\"input_tokens\": 25, \"output_tokens\": 30}\n" +
+                "}");
+        Assertions.assertFalse(r.hasCacheAccounting(),
+                "a provider that does not report cache usage must not be recorded as a zero-cache turn");
+    }
+
+    @Test
+    public void testCacheReadOnlyTurn() {
+        NaruResponse r = parse("{\n" +
+                "  \"content\": [{\"type\": \"text\", \"text\": \"hi\"}],\n" +
+                "  \"usage\": {\n" +
+                "    \"input_tokens\": 15,\n" +
+                "    \"output_tokens\": 4,\n" +
+                "    \"cache_read_input_tokens\": 2000\n" +
+                "  }\n" +
+                "}");
+        Assertions.assertEquals(0, r.getCacheWriteTokens());
+        Assertions.assertEquals(2000, r.getCacheReadTokens());
+    }
 }

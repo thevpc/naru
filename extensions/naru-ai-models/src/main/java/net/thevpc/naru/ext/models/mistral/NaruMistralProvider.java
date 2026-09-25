@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.mistral;
 
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
@@ -59,7 +60,7 @@ public class NaruMistralProvider extends AbstractOpenAICompatProvider {
             contextLength = 8192L; // mistral-embed: 8K context
         }
 
-        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength);
+        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength, NaruCachingMode.AUTOMATIC_PREFIX);
     }
 
     @Override

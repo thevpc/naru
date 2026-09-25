@@ -2,6 +2,7 @@ package net.thevpc.naru.ext.models;
 
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.ext.models.cache.NaruModelCaching;
 import net.thevpc.naru.ext.models.util.NaruModelUtils;
 import net.thevpc.nuts.concurrent.NRetryCall;
 import net.thevpc.nuts.elem.*;
@@ -28,6 +29,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     protected final NaruModelCapabilities capabilities;
     protected final String configPrefix;
     protected final String chatPath;
+
     protected final NaruModelRequestSerializer serializer;
     protected final NaruModelProvider provider;
 
@@ -106,6 +108,17 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return url;
     }
 
+    /**
+     * The endpoint to POST to, relative to the base url.
+     *
+     * <p>Overridable because some wire formats put the model in the path
+     * ({@code models/gemini-2.5-pro:generateContent}) rather than in the body,
+     * which a fixed path cannot express.
+     */
+    protected String chatPath(NaruTask task, Map<String, NElement> env) {
+        return chatPath;
+    }
+
     protected NDuration connectTimeout(NaruTask task, Map<String, NElement> env) {
         return task.session().agent().env().get(configPrefix + ".connectTimeout").flatMap(x -> x.asStringValue())
                 .flatMap(x -> NDuration.of(x))
@@ -141,6 +154,24 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
 
     protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
         // Subclasses can inject headers, auth, etc.
+    }
+
+    /**
+     * Serialise with the cache plan when the provider's serializer understands
+     * one, and otherwise fall back to the plain three-argument call.
+     *
+     * <p>Degrading silently rather than throwing is deliberate: a provider can
+     * declare caching support while reusing a shared serializer that predates
+     * it, and a user should get uncached-but-working behaviour instead of an
+     * error. {@code NaruCachePlanView.none()} keeps the emitted body identical
+     * to what a non-segmented request always produced.
+     */
+    protected NElement serialize(NaruModelRequest request, NaruCachePlanView plan, NaruTask task) {
+        if (plan != null && plan.mode() != NaruCachingMode.NONE && serializer instanceof NaruCacheAwareRequestSerializer) {
+            return ((NaruCacheAwareRequestSerializer) serializer).serialize(request, model,
+                    task == null ? null : task.session(), plan);
+        }
+        return serializer.serialize(request, model, task == null ? null : task.session());
     }
 
     protected void onResponseReceived(NHttpResponse response, NaruTask task) {
@@ -197,11 +228,24 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 && mrequest.env().get("emulate_tool_calls").asBooleanValue().get();
 
         NaruModelRequest preparedModelRequest = preprocessRequest(mrequest, task);
-        NElement body = serializer.serialize(preparedModelRequest, model, task.session());
+
+        // Plan the cache before serialising: the plan decides where breakpoints
+        // land, so the serializer needs it. The body is built once and retried
+        // verbatim, which is what we want — a retry must re-send the identical
+        // prefix, not a freshly planned one that would invalidate itself.
+        NaruCachingMode cachingMode = capabilities.cachingMode();
+        final NaruCachePlanView cachePlan;
+        if (cachingMode != null && cachingMode != NaruCachingMode.NONE) {
+            cachePlan = NaruModelCaching.plan(task.session(), provider().name(), model.model(),
+                    cachingMode, preparedModelRequest);
+        } else {
+            cachePlan = NaruCachePlanView.none();
+        }
+        NElement body = serialize(preparedModelRequest, cachePlan, task);
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(task, env))
                 .baseUri(url(task, env));
-        NHttpRequest request = http.POST(chatPath)
+        NHttpRequest request = http.POST(chatPath(task, env))
                 .timeout(readTimeout(task, env))
                 .jsonRequestBody(body);
         prepareRequest(request, body, task);
@@ -264,6 +308,11 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 if (toolsWrapped || emulate_tool_calls) {
                     naruResponse = NoToolWrapHelper.unwrapResponse(naruResponse, NoToolWrapHelper.TOOL_CALL_SEP, task);
                 }
+                // Only now that the provider has accepted the request is the
+                // prefix genuinely stored. Committing earlier — say, right after
+                // serialising — would record a prefix that a failed call never
+                // cached, and the next turn would trust a lie.
+                commitCacheState(preparedModelRequest, cachePlan, cachingMode, task);
                 return naruResponse;
             } catch (Throwable t) {
                 error = t instanceof NonRetryableWebException ? t.getCause() : t;
@@ -319,6 +368,26 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
 
 
     // ── Response parser ────────────────────────────────────────────────────────
+
+    /**
+     * Remember the prefix this turn actually sent.
+     *
+     * <p>Overridable so a provider with a stateful cache can record the server's
+     * resource id instead. Any failure here is swallowed: losing a cache hint
+     * costs tokens, and must never cost the response the user is waiting for.
+     */
+    protected void commitCacheState(NaruModelRequest request, NaruCachePlanView plan,
+                                    NaruCachingMode mode, NaruTask task) {
+        if (mode == null || mode == NaruCachingMode.NONE || plan == null || task == null) {
+            return;
+        }
+        try {
+            NaruModelCaching.commit(task.session(), provider().name(), model.model(), mode,
+                    request.cacheableContext());
+        } catch (RuntimeException ex) {
+            NLog.of(getClass()).log(NMsg.ofC("Could not record prompt cache state: %s", ex.getMessage()));
+        }
+    }
 
     protected NaruResponse parseResponse(String json) {
         return nElementReader.read(json, NaruResponse.class);

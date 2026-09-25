@@ -57,6 +57,20 @@ public class NaruOpenApiResponseParser implements NElementDeserializer<NaruRespo
                 response.setPromptTokens(promptTokens);
                 response.setEvalTokens(completionTokens);
                 response.setTotalTokens(totalTokens);
+
+                // Automatic prefix caching is reported as a breakdown *inside*
+                // prompt_tokens: the cached tokens are already counted there, so
+                // this is a split of the input total, not an addition to it.
+                NObjectElement details = usageObj.getObject("prompt_tokens_details").orNull();
+                if (details != null) {
+                    int cached = details.getIntValue("cached_tokens").orElse(-1);
+                    if (cached >= 0) {
+                        response.setCacheReadTokens(cached);
+                        // there is no cache-write concept; anything not served
+                        // from cache was processed at full rate this turn
+                        response.setCacheWriteTokens(Math.max(0, promptTokens - cached));
+                    }
+                }
             }
 
             // 2. Locate the first entry in the choices array

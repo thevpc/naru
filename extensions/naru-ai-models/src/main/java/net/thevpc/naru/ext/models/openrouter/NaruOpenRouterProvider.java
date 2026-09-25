@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.openrouter;
 
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
@@ -127,7 +128,7 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
                         tools = hasToolsParam;
                     }
 
-                    cachedCapabilities.put(id, new NaruModelCapabilitiesImpl(vision, tools, thinking, false, contextLength));
+                    cachedCapabilities.put(id, new NaruModelCapabilitiesImpl(vision, tools, thinking, false, contextLength, NaruCachingMode.AUTOMATIC_PREFIX));
 
                     // Filter application
                     if (freeOnly && !isFree) {
@@ -254,7 +255,7 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
         boolean embedding = false;
         long contextLength = -1;
 
-        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength);
+        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength, NaruCachingMode.AUTOMATIC_PREFIX);
     }
 
     static class NaruOpenRouterProtocol extends NaruModelProtocolOpenAICompat {

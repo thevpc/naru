@@ -938,7 +938,89 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 all,
                 toolDefinitions,
                 env
-        );
+        ).withCacheableContext(segmentForCaching(all, toolDefinitions));
+    }
+
+    /**
+     * Cut the prompt into segments a provider can cache.
+     *
+     * <p>The split is driven by which messages change between turns, because
+     * that is the only thing that determines whether a cached prefix survives:
+     *
+     * <ul>
+     *   <li><b>tool definitions first.</b> Anthropic evaluates the cached prefix
+     *       as tools, then system, then messages, so that is the order segments
+     *       are laid out in. Matching the provider's real prefix order is what
+     *       makes "this segment changed" correctly imply "everything after it
+     *       in wire order is also suspect" — with tools last, a tool change
+     *       would look like a hit on the whole conversation and quietly serve a
+     *       prefix the provider has already dropped.</li>
+     *   <li><b>system</b> — the system prompt, extensions, agent classpath and
+     *       skills. Changes only when configuration or files change, so it is
+     *       the segment worth the most and the one most likely to be reused
+     *       over a long session.</li>
+     *   <li><b>one segment per completed turn</b> — a turn's messages are never
+     *       edited after the next turn begins, so their hash stays stable and
+     *       the cached prefix grows by one segment per exchange instead of
+     *       being invalidated wholesale.</li>
+     *   <li><b>the in-flight tail</b> — everything from the last turn boundary
+     *       onward, which is still being appended to. Marked volatile so no
+     *       breakpoint is ever placed on content that is about to change.</li>
+     * </ul>
+     *
+     * <p>The message list is passed through untouched: this only adds cache
+     * metadata. Callers that ignore the metadata get the exact request they got
+     * before.
+     */
+    private NaruCacheableContext segmentForCaching(List<NaruMessage> all, List<NaruToolDefinition> tools) {
+        if (all.isEmpty() && (tools == null || tools.isEmpty())) {
+            return null;
+        }
+        List<NaruContextSegment> segments = new ArrayList<>();
+
+        if (tools != null && !tools.isEmpty()) {
+            segments.add(NaruContextSegment.cacheable("tool-defs",
+                    NaruSegmentContent.Tools.of(tools)));
+        }
+
+        // Messages carry the source they were attributed to, which is exactly
+        // the boundary we want: system material is stable, USER material is the
+        // conversation. Contributed extension messages are stamped SYSTEM and
+        // therefore land in the first group.
+        List<NaruMessage> stable = new ArrayList<>();
+        List<NaruMessage> conversation = new ArrayList<>();
+        for (NaruMessage m : all) {
+            if (m.getSource() == NaruSource.USER) {
+                conversation.add(m);
+            } else {
+                stable.add(m);
+            }
+        }
+        if (!stable.isEmpty()) {
+            segments.add(NaruContextSegment.cacheable("system-context",
+                    NaruSegmentContent.Messages.of(stable)));
+        }
+        if (!conversation.isEmpty()) {
+            // Walk the conversation, opening a new segment at each turn
+            // boundary. The final group is still in progress.
+            List<NaruMessage> current = null;
+            int segmentIndex = 0;
+            for (NaruMessage m : conversation) {
+                if (m.isTurnBoundary() || current == null) {
+                    current = new ArrayList<>();
+                    segments.add(NaruContextSegment.cacheable("turn-" + (segmentIndex++),
+                            NaruSegmentContent.Messages.of(current)));
+                }
+                current.add(m);
+            }
+            // The last segment is the one being appended to right now. Relabel
+            // it volatile: a breakpoint on it would be invalidated by the very
+            // next message the agent adds.
+            NaruContextSegment last = segments.get(segments.size() - 1);
+            segments.set(segments.size() - 1,
+                    NaruContextSegment.volatileSegment(last.id(), last.content()));
+        }
+        return NaruCacheableContext.of(segments);
     }
 
     @Override
@@ -1139,7 +1221,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public boolean addHistory(String m) {
         if (!NBlankable.isBlank(m)) {
-            addHistory(NaruMessage.user(m));
+            // This is the typed-input path, which is the only place a new user
+            // turn genuinely begins. Marking it here rather than in
+            // addHistory(NaruMessage) keeps agent-generated user-role messages
+            // — statement results, tool output — from being mistaken for the
+            // start of a turn, which would fragment the conversation into
+            // segments too small to be worth caching.
+            addHistory(NaruMessage.user(m).setTurnBoundary(true));
             return true;
         }
         return false;

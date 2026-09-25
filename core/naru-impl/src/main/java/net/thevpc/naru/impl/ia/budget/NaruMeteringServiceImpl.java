@@ -77,8 +77,23 @@ public class NaruMeteringServiceImpl implements NaruMeteringService {
     }
 
     private void accumulate(NaruTokenTransaction part, NaruModelStatsAccumulator into) {
-        into.setPromptTokens(part.getPromptTokens());
-        into.setCompletionTokens(part.getCompletionTokens());
+        // These are running totals across every call made against this
+        // model/user pair, so they must add. Assigning here would silently
+        // report only the most recent call's prompt and completion sizes,
+        // making a busy session look like a single-request one and understating
+        // spend for budget purposes.
+        into.setPromptTokens(into.getPromptTokens() + part.getPromptTokens());
+        into.setCompletionTokens(into.getCompletionTokens() + part.getCompletionTokens());
+
+        // A provider that does not report cache accounting uses -1. Treat that
+        // as zero so it cannot drag a running total backwards.
+        if (part.getCacheWriteTokens() > 0) {
+            into.setCacheWriteTokens(into.getCacheWriteTokens() + part.getCacheWriteTokens());
+        }
+        if (part.getCacheReadTokens() > 0) {
+            into.setCacheReadTokens(into.getCacheReadTokens() + part.getCacheReadTokens());
+        }
+
         into.setContextUsage(into.getCompletionTokens() + part.getPromptTokens());
         into.setTotalTokens(into.getTotalTokens() + into.getContextUsage());
         long old = into.getPeakContextUsage();
@@ -112,6 +127,8 @@ public class NaruMeteringServiceImpl implements NaruMeteringService {
                 m.getPeakContextUsage(),
                 m.getContextSize(),
                 m.getTotalTokens(),
+                m.getCacheWriteTokens(),
+                m.getCacheReadTokens(),
                 ub,
                 all,
                 calls,

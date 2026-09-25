@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.colibri;
 
+import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
@@ -88,7 +89,7 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
                 .flatMap(NElement::asLongValue)
                 .orElse(DEFAULT_CONTEXT_LENGTH);
         // GLM 5.2 (colibri build): tool calling + thinking supported, no vision/embedding.
-        return new NaruModelCapabilitiesImpl(false, true, true, false, contextLength);
+        return new NaruModelCapabilitiesImpl(false, true, true, false, contextLength, NaruCachingMode.AUTOMATIC_PREFIX);
     }
 
     @Override

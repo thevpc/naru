@@ -127,4 +127,29 @@ public class NaruOpenApiResponseParserTest {
         Assertions.assertEquals("final answer", r.getMessage().getContent());
         Assertions.assertEquals("think step by step", r.getMessage().getThinking());
     }
+
+    @Test
+    public void testCachedTokensArePartOfPromptTotal() {
+        // OpenAI reports cached tokens as a breakdown INSIDE prompt_tokens, so
+        // they must not be added on top of it.
+        NaruResponse r = parse("{\n" +
+                "  \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"ok\"}, \"finish_reason\": \"stop\"}],\n" +
+                "  \"usage\": {\"prompt_tokens\": 1000, \"completion_tokens\": 20, \"total_tokens\": 1020,\n" +
+                "    \"prompt_tokens_details\": {\"cached_tokens\": 750}}\n" +
+                "}");
+        Assertions.assertEquals(1000, r.getPromptTokens());
+        Assertions.assertEquals(750, r.getCacheReadTokens());
+        Assertions.assertEquals(250, r.getCacheWriteTokens(),
+                "whatever was not served from cache was processed at full rate");
+        Assertions.assertEquals(1020, r.getTotalTokens(), "total must not double-count cached tokens");
+    }
+
+    @Test
+    public void testNoPromptDetailsLeavesCacheUnreported() {
+        NaruResponse r = parse("{\n" +
+                "  \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"ok\"}, \"finish_reason\": \"stop\"}],\n" +
+                "  \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 20, \"total_tokens\": 120}\n" +
+                "}");
+        Assertions.assertFalse(r.hasCacheAccounting());
+    }
 }
