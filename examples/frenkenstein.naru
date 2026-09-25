@@ -1,0 +1,23 @@
+/set --session trace=true
+/routine use frenkenstein
+10 /print "am a alive..."
+20 /routine  frenkenstein
+20 30 "am am not dead..."
+
+
+/routine use handle-go
+10 /print "worker: go signal intercepted by handler"
+20 /fire done --to=siblings result=42
+
+/routine use worker
+10 /print "worker: starting..."
+20 /on go handle-go
+30 /fire ready --to=siblings "message=worker is ready"
+40 /wait --for=event(go)
+50 /print "worker: received go, working..."
+
+/routine main
+/start coordinator
+/start worker
+/wait --for=children
+/print "both tasks completed"
