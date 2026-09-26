@@ -1,6 +1,5 @@
 package net.thevpc.naru.impl.engine.stmt;
 
-import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
@@ -38,7 +37,7 @@ public class NaruReturnStmt extends NaruStatement implements Cloneable {
         // nothing else would ever set it: popFrame only propagates between frames, so a
         // top-level return would otherwise leave getReturnResult() null forever. Recording
         // it here is what lets a caller ask a finished task what it produced.
-        if (task.stackframes().isEmpty()) {
+        if (task.stackFrames().isEmpty()) {
             task.setReturnResult(ret);
         }
         task.defaultAdvance(this);

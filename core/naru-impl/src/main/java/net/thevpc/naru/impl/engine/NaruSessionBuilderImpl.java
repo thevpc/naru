@@ -34,6 +34,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     private NaruTaskSpec task;
     private boolean interactive;
     private boolean banner;
+    private NMsg bannerMessage;
     private boolean richTerm;
 
     NaruSessionBuilderImpl(NaruAgentImpl agent) {
@@ -103,6 +104,17 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     }
 
     @Override
+    public NaruSessionBuilder bannerMessage(NMsg bannerMessage) {
+        this.bannerMessage = bannerMessage;
+        return this;
+    }
+
+    @Override
+    public NMsg bannerMessage() {
+        return bannerMessage;
+    }
+
+    @Override
     public NaruSession build() {
         NPath dir = directory != null ? directory : agent.defaultSessionDirectory();
         NaruInteraction useInteraction = interaction != null
@@ -151,15 +163,19 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     }
 
     private void printBanner() {
-        agent.log(NaruLogMode.RAW, NMsg.ofC(
-                "╭╮╷╭─╮╭─╮╷ ╷\n" +
-                        "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
-                        "╵ ╵╵ ╵╵╰╴╰─╯ v%s\n" +
-                        "Type %s%s (or %s%s) for help and %s%s to exit.\n"
-                , NVersion.of("1.0.0.0")
-                , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("help")
-                , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("?")
-                , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("exit")
-        ));
+        NMsg b = bannerMessage();
+        if (b == null) {
+            b = NMsg.ofC(
+                    "╭╮╷╭─╮╭─╮╷ ╷\n" +
+                            "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
+                            "╵ ╵╵ ╵╵╰╴╰─╯ v%s\n" +
+                            "Type %s%s (or %s%s) for help and %s%s to exit.\n"
+                    , NVersion.of("1.0.0.0")
+                    , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("help")
+                    , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("?")
+                    , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("exit")
+            );
+        }
+        agent.log(NaruLogMode.RAW, b);
     }
 }

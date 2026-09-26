@@ -494,7 +494,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public List<NaruTaskStackFrame> stackframes() {
+    public List<NaruTaskStackFrame> stackFrames() {
         throw new NUnsupportedOperationException();
     }
 
@@ -618,22 +618,22 @@ public class NaruPoisonTask implements NaruTask {
     // looking answer. Anything asking a poison task how it went has already lost the thread.
 
     @Override
-    public Instant endTime() {
+    public NOptional<Instant> endTime() {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public NDuration duration() {
+    public NOptional<NDuration> duration() {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public String error() {
+    public NOptional<String> error() {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public boolean isTerminal() {
+    public boolean isCompleted() {
         throw new NUnsupportedOperationException();
     }
 
@@ -643,7 +643,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public Object value() {
+    public NOptional<Object> value() {
         throw new NUnsupportedOperationException();
     }
 

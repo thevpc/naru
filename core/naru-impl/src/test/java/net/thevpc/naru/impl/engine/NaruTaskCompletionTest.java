@@ -9,6 +9,8 @@ import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.util.NLiteral;
+import net.thevpc.nuts.util.NEmptyOptionalException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -40,7 +42,10 @@ public class NaruTaskCompletionTest {
     @BeforeAll
     public static void setUpWorkspace() {
         try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
+            // --sandbox, unlike the --system --standalone the rest of the suite uses, keeps this
+            // class's workspace off the machine's real one. Worth knowing if a test here starts
+            // depending on state another class left behind -- that state will not be there.
+            NWorkspace ws = Nuts.openWorkspace("--sandbox");
             if (ws != null) {
                 ws.share();
             }
@@ -112,10 +117,10 @@ public class NaruTaskCompletionTest {
                 .build()
                 .run());
 
-        Assertions.assertEquals(42L, asLong(result.value()));
+        Assertions.assertEquals(42L, asLong(result.value().orNull()));
         Assertions.assertTrue(result.isSuccess(), () -> "expected success but got " + result);
         Assertions.assertEquals(0, result.exitCode());
-        Assertions.assertNull(result.error());
+        Assertions.assertTrue(result.error().isEmpty(), "a task that succeeded has no error to report");
         Assertions.assertEquals("DONE", result.status().name());
     }
 
@@ -140,14 +145,14 @@ public class NaruTaskCompletionTest {
         Assertions.assertFalse(session.findTask(id).isPresent(),
                 "precondition: deregistered once terminated");
         // everything below reads state that is now only reachable through the handle
-        Assertions.assertEquals(7L, asLong(run.value()));
+        Assertions.assertEquals(7L, asLong(run.value().orNull()));
         Assertions.assertEquals(id, run.id());
         Assertions.assertEquals("seven", run.name());
         Assertions.assertNotNull(run.session());
         Assertions.assertNotNull(run.projectDir());
-        Assertions.assertTrue(run.isTerminal());
-        Assertions.assertNotNull(run.endTime());
-        Assertions.assertNotNull(run.duration());
+        Assertions.assertTrue(run.isCompleted());
+        Assertions.assertTrue(run.endTime().isPresent(), "run.endTime() should be set once the task has finished");
+        Assertions.assertTrue(run.duration().isPresent(), "run.duration() should be set once the task has finished");
     }
 
     /**
@@ -171,8 +176,8 @@ public class NaruTaskCompletionTest {
         NaruTask first = await(session.run(spec("/print 1")));
         NaruTask second = await(session.run(spec("/print 2")));
 
-        Assertions.assertEquals(1L, asLong(first.value()));
-        Assertions.assertEquals(2L, asLong(second.value()));
+        Assertions.assertEquals(1L, asLong(first.value().orNull()));
+        Assertions.assertEquals(2L, asLong(second.value().orNull()));
         Assertions.assertNotEquals(first.id(), second.id());
         Assertions.assertTrue(session.isRunning(),
                 "the session must still be serving because the resident task is alive");
@@ -230,8 +235,8 @@ public class NaruTaskCompletionTest {
 
         // the seeded var is visible to expression evaluation, and "hello world" went in as
         // one value rather than two shell-ish words
-        Assertions.assertEquals(42L, asLong(result.value()));
-        Assertions.assertEquals(41, result.asLong("count"));
+        Assertions.assertEquals(42L, asLong(result.value().orNull()));
+        Assertions.assertEquals(41, NLiteral.ofLong(result.var("count").orNull()).get());
         Assertions.assertEquals("hello world", result.var("label").orElse(null));
         Assertions.assertTrue(result.vars().containsKey("label"));
     }
@@ -250,9 +255,9 @@ public class NaruTaskCompletionTest {
 
         Assertions.assertFalse(run.isCompleted(), "must not have completed");
         Assertions.assertEquals(NaruTaskMode.INTERACTIVE, run.taskMode());
-        Assertions.assertNull(run.endTime());
-        Assertions.assertNull(run.duration());
-        Assertions.assertNull(run.error());
+        Assertions.assertNull(run.endTime().orNull());
+        Assertions.assertNull(run.duration().orNull());
+        Assertions.assertTrue(run.error().isEmpty(), "a task still running has failed nothing yet");
         Assertions.assertEquals(5L, asLong(run.vars().get("seeded")),
                 "a host UI must be able to watch a task's inputs before it ends");
         run.cancel();
@@ -321,7 +326,7 @@ public class NaruTaskCompletionTest {
                 .run());
 
         Assertions.assertTrue(result.isSuccess(), () -> "expected success but got " + result);
-        Assertions.assertEquals(5L, asLong(result.value()));
+        Assertions.assertEquals(5L, asLong(result.value().orNull()));
         Assertions.assertEquals(0, result.exitCode());
         Assertions.assertEquals(5L, result.throwIfFailed().exitCode() + 5L);
     }
@@ -369,7 +374,7 @@ public class NaruTaskCompletionTest {
 
         Assertions.assertTrue(fired.await(PATIENCE.toSeconds(), TimeUnit.SECONDS),
                 "callback never fired");
-        Assertions.assertEquals(asLong(awaited.value()), asLong(seen.get().value()));
+        Assertions.assertEquals(asLong(awaited.value().orNull()), asLong(seen.get().value().orNull()));
         Assertions.assertSame(awaited, seen.get(), "every waiter must see the same result");
     }
 
@@ -443,7 +448,7 @@ public class NaruTaskCompletionTest {
         });
         run.onComplete(r -> good.countDown());
 
-        Assertions.assertEquals(1L, asLong(await(run).value()),
+        Assertions.assertEquals(1L, asLong(await(run).value().orNull()),
                 "the result must still be delivered");
         Assertions.assertTrue(good.await(PATIENCE.toSeconds(), TimeUnit.SECONDS),
                 "one bad callback must not starve the next");
@@ -493,7 +498,7 @@ public class NaruTaskCompletionTest {
         Assertions.assertSame(future, run.toFuture());
 
         NaruTask result = future.get(PATIENCE.toSeconds(), TimeUnit.SECONDS);
-        Assertions.assertEquals(8L, asLong(result.value()));
+        Assertions.assertEquals(8L, asLong(result.value().orNull()));
     }
 
     // ── interactive and cancellation ──────────────────────────────────────────
@@ -583,7 +588,7 @@ public class NaruTaskCompletionTest {
         Assertions.assertNotNull(result, "cancel must settle the run rather than hang it");
         Assertions.assertEquals("KILLED", result.status().name());
         Assertions.assertEquals(NaruTask.EXIT_INTERRUPTED, result.exitCode());
-        Assertions.assertTrue(result.error().contains("user pressed stop"), result.error());
+        Assertions.assertTrue(result.error().get().contains("user pressed stop"), result.error().get());
         Assertions.assertFalse(result.isSuccess());
     }
 
@@ -649,7 +654,7 @@ public class NaruTaskCompletionTest {
         }
 
         Assertions.assertEquals(0, mismatches.get(), "waiters disagreed about the result");
-        Assertions.assertEquals(314L, asLong(canonical.get().value()));
+        Assertions.assertEquals(314L, asLong(canonical.get().value().orNull()));
     }
 
     @Test
@@ -701,7 +706,7 @@ public class NaruTaskCompletionTest {
         NaruTask result = await(run, Duration.ofSeconds(20));
         Assertions.assertNotNull(result, "a stopped session must not strand its waiters");
         Assertions.assertEquals("KILLED", result.status().name());
-        Assertions.assertTrue(result.error().contains("session stopped"), result.error());
+        Assertions.assertTrue(result.error().get().contains("session stopped"), result.error().get());
     }
 
     /**
@@ -723,7 +728,7 @@ public class NaruTaskCompletionTest {
 
         // the session stopped itself once the task ended; that must not rewrite the verdict
         Assertions.assertEquals("DONE", result.status().name());
-        Assertions.assertEquals(6L, asLong(result.value()));
+        Assertions.assertEquals(6L, asLong(result.value().orNull()));
         Assertions.assertTrue(result.isSuccess(), () -> "expected success but got " + result);
     }
 
@@ -756,16 +761,16 @@ public class NaruTaskCompletionTest {
                 "the task should end rather than block forever");
         Assertions.assertEquals("FAILED", run.status().name());
         Assertions.assertFalse(run.isSuccess());
-        Assertions.assertFalse(run.hasValue(), "a task that never ran has nothing to report");
+        Assertions.assertFalse(run.value().isPresent(), "a task that never ran has nothing to report");
         Assertions.assertEquals(NaruTask.EXIT_FAILURE, run.exitCode(),
                 "a failure must never report a clean exit code");
-        Assertions.assertNotNull(run.error(), "a task that failed must say why");
-        Assertions.assertTrue(run.error().contains("no input listener"), run.error());
+        Assertions.assertNotNull(run.error().get(), "a task that failed must say why");
+        Assertions.assertTrue(run.error().get().contains("no input listener"), run.error().get());
         // the reason survives the throw, because a caller catching this still needs to know
         // which task failed and why
         IllegalStateException thrown =
                 Assertions.assertThrows(IllegalStateException.class, run::throwIfFailed);
-        Assertions.assertTrue(thrown.getMessage().contains(run.error()), thrown.getMessage());
+        Assertions.assertTrue(thrown.getMessage().contains(run.error().get()), thrown.getMessage());
     }
 
     /**
@@ -784,7 +789,7 @@ public class NaruTaskCompletionTest {
 
         Assertions.assertNotNull(run.vars(), "an absent variable map would be a trap to walk into");
         Assertions.assertFalse(run.vars().isEmpty(), "this task does set lastResult");
-        Assertions.assertEquals(1L, asLong(run.value()));
+        Assertions.assertEquals(1L, asLong(run.value().orNull()));
         Assertions.assertTrue(run.isSuccess());
     }
 
@@ -799,8 +804,11 @@ public class NaruTaskCompletionTest {
 
         Assertions.assertEquals("fallback", run.varOrDefault("missing", "fallback"));
         Assertions.assertTrue(run.var("missing").isEmpty(), "absent is not the same as null-valued");
-        Assertions.assertThrows(NumberFormatException.class, () -> run.asLong("missing"),
-                "asLong on an absent variable is a caller error, not a default");
+        // Reading an absent variable as a number is a caller error, not something to default
+        // quietly -- and because var() is empty rather than null, the failure names the missing
+        // variable instead of reporting that the text "null" is not a number.
+        Assertions.assertThrows(NEmptyOptionalException.class, () -> NLiteral.ofLong(run.var("missing")).get(),
+                "reading an absent variable as a long is a caller error, not a default");
     }
 
     /**
@@ -827,7 +835,7 @@ public class NaruTaskCompletionTest {
                 .build()
                 .run());
 
-        Object value = run.value();
+        Object value = run.value().orNull();
         int exit = run.exitCode();
         Map<String, Object> vars = run.vars();
         Assertions.assertEquals(7L, asLong(value));
@@ -840,7 +848,7 @@ public class NaruTaskCompletionTest {
         // readers do not move.
         run.setTaskEnv("x", 999L).setTaskEnv("lastResult", "tampered").setTaskEnv("lastExitCode", 5L);
 
-        Assertions.assertEquals(7L, asLong(run.value()), "value must not follow a later write");
+        Assertions.assertEquals(7L, asLong(run.value().orNull()), "value must not follow a later write");
         Assertions.assertEquals(0, run.exitCode(), "exit code must not follow a later write");
         Assertions.assertEquals(1L, asLong(run.vars().get("x")), "vars must be the ones it ended with");
         Assertions.assertEquals(vars.keySet(), run.vars().keySet(), "and the same set of names");
@@ -922,7 +930,7 @@ public class NaruTaskCompletionTest {
             session.foregroundTaskId();
         });
         // and the task the stop cancelled is still a readable record
-        Assertions.assertTrue(run.isTerminal());
+        Assertions.assertTrue(run.isCompleted());
         Assertions.assertNotNull(run.status());
     }
 
@@ -942,8 +950,8 @@ public class NaruTaskCompletionTest {
         run.session().stop();
 
         Assertions.assertTrue(run.await(Duration.ofSeconds(20)), "a stopped session must settle its tasks");
-        Assertions.assertTrue(run.isTerminal());
+        Assertions.assertTrue(run.isCompleted());
         Assertions.assertTrue(run.exitCode() != 0, "a task killed by the stop must not look clean");
-        Assertions.assertNotNull(run.endTime());
+        Assertions.assertTrue(run.endTime().isPresent(), "run.endTime() should be set once the task has finished");
     }
 }

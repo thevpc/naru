@@ -67,7 +67,7 @@ public class NaruTaskValueStatementsTest {
     public void returnBecomesTheResultValue() {
         NaruTask result = run("return", "/return 40+2");
 
-        Assertions.assertEquals(42L, asLong(result.value()));
+        Assertions.assertEquals(42L, asLong(result.value().orNull()));
         Assertions.assertTrue(result.isSuccess(), () -> "expected success but got " + result);
         Assertions.assertEquals(0, result.exitCode());
     }
@@ -78,8 +78,8 @@ public class NaruTaskValueStatementsTest {
         NaruTask result = run("bare", "/return");
 
         Assertions.assertTrue(result.isSuccess(), () -> "expected success but got " + result);
-        Assertions.assertFalse(result.hasValue(), "a bare return produces no value, and that is fine");
-        Assertions.assertNull(result.value());
+        Assertions.assertFalse(result.value().isPresent(), "a bare return produces no value, and that is fine");
+        Assertions.assertNull(result.value().orNull());
     }
 
     @Test
@@ -97,7 +97,7 @@ public class NaruTaskValueStatementsTest {
                 .run();
         result.await();
 
-        Assertions.assertEquals("caching-done", result.value());
+        Assertions.assertEquals("caching-done", result.value().orNull());
     }
 
     /**
@@ -112,7 +112,7 @@ public class NaruTaskValueStatementsTest {
         NaruTask result = run("soft", "/set --task ok = (1 == 2)", "/return 99");
 
         Assertions.assertEquals("DONE", result.status().name());
-        Assertions.assertEquals(99L, asLong(result.value()),
+        Assertions.assertEquals(99L, asLong(result.value().orNull()),
                 "the value must not be sacrificed to report the problem");
         Assertions.assertNotEquals(0, result.exitCode(),
                 "the objection must be visible as an exit code");
@@ -124,7 +124,7 @@ public class NaruTaskValueStatementsTest {
     public void aTrueConditionStaysASuccess() {
         NaruTask result = run("green", "/set --task ok = (1 == 1)", "/return 99");
 
-        Assertions.assertEquals(99L, asLong(result.value()));
+        Assertions.assertEquals(99L, asLong(result.value().orNull()));
         Assertions.assertTrue(result.isSuccess(), () -> "expected success but got " + result);
     }
 
@@ -139,9 +139,9 @@ public class NaruTaskValueStatementsTest {
 
         for (int i = 0; i < 3; i++) {
             Assertions.assertTrue(result.isCompleted());
-            Assertions.assertEquals(7L, asLong(result.value()));
-            Assertions.assertNotNull(result.endTime());
-            Assertions.assertNotNull(result.duration());
+            Assertions.assertEquals(7L, asLong(result.value().orNull()));
+            Assertions.assertNotNull(result.endTime().get());
+            Assertions.assertNotNull(result.duration().get());
         }
     }
 

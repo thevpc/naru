@@ -113,11 +113,17 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     // deregistered from its session the moment it ends, so this is the only place left that
     // can answer what happened.
 
-    /** Exit code key: the verdict a task's last statement published. */
+    /**
+     * Exit code key: the verdict a task's last statement published.
+     */
     private static final String ENV_EXIT_CODE = "lastExitCode";
-    /** Error key: the message a task's last statement published. */
+    /**
+     * Error key: the message a task's last statement published.
+     */
     private static final String ENV_ERROR = "lastError";
-    /** Result key: what the task last computed, and the fallback for {@link #value()}. */
+    /**
+     * Result key: what the task last computed, and the fallback for {@link #value()}.
+     */
     private static final String ENV_RESULT = "lastResult";
 
     private final CompletableFuture<NaruTask> completion = new CompletableFuture<>();
@@ -285,7 +291,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public List<NaruTaskStackFrame> stackframes() {
+    public List<NaruTaskStackFrame> stackFrames() {
         List<NaruTaskStackFrame> all = new ArrayList<>();
         for (NaruTaskFrameImpl frame : frames) {
             String u = null;
@@ -454,7 +460,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         // unanswered input request kills it on its own -- and without this the second one
         // re-ran onTerminated against a session that had already wound down and been stopped,
         // which threw out of the scheduler worker and left the run's result unset.
-        if (NaruTaskStatus.isTerminalStatus(status)) {
+        if (isCompleted()) {
             if (newStatus != status) {
                 log(NaruLogMode.TRACE, NMsg.ofC("[%s] ignoring status %s after %s", id(), newStatus, status).asError());
             }
@@ -480,7 +486,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             }
             this.fireChanged();
         }
-        if (NaruTaskStatus.isTerminalStatus(status)) {
+        if (isCompleted()) {
             // settle last, so that everything published above -- deregistration, listeners,
             // the snapshot -- is in place before anyone waiting on this task is released
             settleCompletion();
@@ -491,27 +497,28 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     // ── completion and result ─────────────────────────────────────────────────
 
     @Override
-    public Instant endTime() {
-        return endTime;
+    public NOptional<Instant> endTime() {
+        return NOptional.of(endTime);
     }
 
     @Override
-    public NDuration duration() {
+    public NOptional<NDuration> duration() {
         Instant end = endTime;
         if (end == null) {
-            return null;
+            // a task still running has no duration to report, only an elapsed time
+            return NOptional.ofEmpty(NMsg.ofC("task has not completed yet"));
         }
-        return NDuration.between(creationDate, end);
+        return NOptional.of(NDuration.between(creationDate, end));
     }
 
     @Override
-    public String error() {
-        return frozenError;
+    public NOptional<String> error() {
+        return NOptional.of(frozenError);
     }
 
     @Override
-    public boolean isTerminal() {
-        return NaruTaskStatus.isTerminalStatus(status);
+    public boolean isCompleted() {
+        return status != null && status.isCompleted();
     }
 
     @Override
@@ -520,14 +527,17 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public Object value() {
+    public NOptional<Object> value() {
         if (endTime != null) {
-            return frozenValue;
+            return NOptional.of(frozenValue);
         }
         // an explicit /return is the script stating what it produced, so it wins; falling back
         // to the last result means a script that simply ends still reports what it computed
         Object returned = returnResult;
-        return returned != null ? returned : envValue(ENV_RESULT);
+        if (returned != null) {
+            return NOptional.of(returned);
+        }
+        return NOptional.of(envValue(ENV_RESULT));
     }
 
     @Override
@@ -1478,22 +1488,28 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NaruTask loadLines(String... any) {
+        List<NaruStatement> all = new ArrayList<>();
         for (String path : any) {
             if (path != null) {
                 NaruStatement p = parseStatement(path).orNull();
                 if (p != null) {
-                    addStatements(p);
+                    all.add(p);
                 }
             }
         }
+        addStatements(all.toArray(new NaruStatement[0]));
         return this;
 
     }
 
     @Override
     public NaruTask addStatements(NaruStatement... any) {
-        for (NaruStatement s : any) {
-            addStatement(s);
+        if (any != null) {
+            for (NaruStatement s : any) {
+                if (s != null) {
+                    addStatement(s);
+                }
+            }
         }
         return this;
     }

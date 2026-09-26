@@ -152,8 +152,8 @@ public interface NaruSession {
      * NaruTask t = agent.newSession()
      *         .task(NaruTaskSpec.of().statements("/return 1+1"))
      *         .build()
-     *         .run()
-     *         .await();
+     *         .run();
+     * t.await();
      * }</pre>
      * Calling it on a session configured without a task, or calling it twice, throws: the
      * configured task is one specific invocation, and silently running again would be a

@@ -8,9 +8,10 @@
 
 | Guide                                            | Status   |
 |--------------------------------------------------|----------|
-| [Config-driven custom models](models/config-driven-custom-providers.md) | ✅ |
-| [Planning](planning.md)                           | ✅ |
-| More guides (sessions, routines, tools, ...)     | 🚧 coming |
+| [Sessions and tasks](content/sessions.md)                | ✅ |
+| [Config-driven custom models](content/config-driven-custom-providers.md) | ✅ |
+| [Planning](content/planning.md)                           | ✅ |
+| More guides (routines, tools, ...)                | 🚧 coming |
 
 ---
 
@@ -24,9 +25,12 @@
 
 ## Quick links
 
-- [Configure an OpenAI-compatible endpoint by config](models/config-driven-custom-providers.md)
-- [Configure an Anthropic endpoint by config](models/config-driven-custom-providers.md#anthropic-messages-typeanthropic)
-- [Availability probing & `/models` filtering](models/config-driven-custom-providers.md#4-availability-and-models-filtering)
-- [Plan a goal as a dependency graph, and activate it](planning.md)
-- [`/plan` directive reference](planning.md#4-directives)
-- [Planning tools the model can call](planning.md#5-tools)
+- [Run a script from Java and read the result](content/sessions.md)
+- [Waiting: block, time out, compose, or react](content/sessions.md#5-waiting-for-a-task)
+- [Running NARU without a terminal](content/sessions.md#9-running-without-a-terminal)
+- [Configure an OpenAI-compatible endpoint by config](content/config-driven-custom-providers.md)
+- [Configure an Anthropic endpoint by config](content/config-driven-custom-providers.md#anthropic-messages-typeanthropic)
+- [Availability probing & `/models` filtering](content/config-driven-custom-providers.md#4-availability-and-models-filtering)
+- [Plan a goal as a dependency graph, and activate it](content/planning.md)
+- [`/plan` directive reference](content/planning.md#4-directives)
+- [Planning tools the model can call](content/planning.md#5-tools)

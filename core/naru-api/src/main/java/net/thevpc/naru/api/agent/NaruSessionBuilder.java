@@ -2,6 +2,7 @@ package net.thevpc.naru.api.agent;
 
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NMsg;
 
 /**
  * Configures and creates one {@link NaruSession}.
@@ -83,6 +84,10 @@ public interface NaruSessionBuilder {
      * library or server host has no banner to print.
      */
     NaruSessionBuilder banner(boolean banner);
+
+    NaruSessionBuilder bannerMessage(NMsg bannerMessage);
+
+    NMsg bannerMessage();
 
     /**
      * Enables the rich terminal: ANSI styling and command highlighting. Only meaningful for

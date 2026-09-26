@@ -212,7 +212,7 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                 if (cmdLine.isEmpty()) {
                     NaruTask task = context.task();
                     int index = 1;
-                    for (NaruTaskStackFrame item : task.stackframes()) {
+                    for (NaruTaskStackFrame item : task.stackFrames()) {
                         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s <%s> %s", index, item.index(), item.name(), item.instruction()));
                         collected.add(NMsg.ofC("[%s] %s <%s> %s", index, item.index(), item.name(), item.instruction()).toString());
                         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("\tparams : %s", item.params().size()));
@@ -240,7 +240,7 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                             } else {
                                 count++;
                                 int index = 1;
-                                for (NaruTaskStackFrame item : t.stackframes()) {
+                                for (NaruTaskStackFrame item : t.stackFrames()) {
                                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("[%s] %s <%s> %s", index, item.index(), item.name(), item.instruction()));
                                     collected.add(NMsg.ofC("[%s] %s <%s> %s", index, item.index(), item.name(), item.instruction()).toString());
                                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("\tparams : %s", item.params().size()));

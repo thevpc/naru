@@ -22,7 +22,6 @@ import net.thevpc.nuts.util.NOptional;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,7 +50,7 @@ public interface NaruTask extends NToElement {
      * ends, and a record of itself afterwards.
      * <p>
      * What freezes is the <i>outcome</i>: {@link #endTime()}, {@link #error()},
-     * {@link #duration()}, {@link #value()}, {@link #hasValue()}, {@link #exitCode()} and
+     * {@link #duration()}, {@link #value()}, {@link #exitCode()} and
      * {@link #vars()}. It is frozen because a task outlives its own registration, so it may be
      * the only remaining record of what happened, and a record that a later write can edit is
      * not a record. The descriptive setters ({@link #setProjectDir}, {@link #taskMode} and the
@@ -70,57 +69,44 @@ public interface NaruTask extends NToElement {
      * When this task reached a terminal state, or empty while it is still live. Frozen at that
      * moment, and the marker that says the rest of the outcome is settled too.
      */
-    Instant endTime();
+    NOptional<Instant> endTime();
 
     /**
      * How long this task ran, or empty until it has ended.
      */
-    NDuration duration();
+    NOptional<NDuration> duration();
 
     /**
      * Why this task failed, or empty if it did not fail. Frozen at termination.
      */
-    String error();
+    NOptional<String> error();
 
     /**
-     * Whether this task has reached a terminal state, which is final.
+     * Whether this task has finished, which is final: a completed task never runs again.
+     * <p>
+     * A task waiting on input or on an event is <i>not</i> completed. It is still going to be
+     * given another chance, and a host awaiting it is waiting for real work rather than for a
+     * verdict -- so this reads false for {@link NaruTaskStatus#BLOCKED_ON_INPUT} and
+     * {@link NaruTaskStatus#BLOCKED_ON_EVENT}, and true only for
+     * {@link NaruTaskStatus#DONE}, {@link NaruTaskStatus#FAILED} and
+     * {@link NaruTaskStatus#KILLED}.
      */
-    boolean isTerminal();
+    boolean isCompleted();
 
     /**
-     * Whether this task is finished. Distinct from {@link #isTerminal()} only in intent: a
-     * caller waiting for a task to be done should read this, and {@link #isTerminal()} is for
-     * deciding whether further transitions are meaningful.
-     */
-    default boolean isCompleted() {
-        return isTerminal();
-    }
-
-    /**
-     * Whether the task finished without complaint: terminal, with no error and a zero exit
+     * Whether the task finished without complaint: completed, with no error and a zero exit
      * code. A task can be {@link #isCompleted() done} and still not successful -- it produced
      * an answer <i>and</i> an objection, and those are reported independently.
      */
     boolean isSuccess();
 
     /**
-     * What the task produced, or null if it produced nothing. Frozen at termination.
+     * What the task produced, empty if it produced nothing. Frozen at termination.
      * <p>
      * Prefers an explicit {@code /return}, and falls back to the task's last result so that a
      * script which simply ends still reports what it last computed.
      */
-    Object value();
-
-    /**
-     * Whether there is a value to read at all, which is a tidier thing to test than
-     * {@code value() != null} at every call site. A task that produced null and a task that
-     * produced nothing are not told apart here -- neither is a value -- so a caller that must
-     * distinguish a deliberate null should compare {@link #value()} against null itself.
-     * Frozen at termination, like {@link #value()}.
-     */
-    default boolean hasValue() {
-        return value() != null;
-    }
+    NOptional<Object> value();
 
     /**
      * The task's own verdict, from the exit code its last statement published. A killed task
@@ -159,19 +145,6 @@ public interface NaruTask extends NToElement {
      */
     default Object varOrDefault(String key, Object fallback) {
         return vars().getOrDefault(key, fallback);
-    }
-
-    /**
-     * One of this task's variables as a {@code long}. Naru counts in {@link Long} and
-     * {@code Double} interchangeably, and a host reading a task's output should not have to
-     * care which it got.
-     */
-    default long asLong(String key) {
-        Object v = vars().get(key);
-        if (v instanceof Number n) {
-            return n.longValue();
-        }
-        return Long.parseLong(String.valueOf(v).trim());
     }
 
     /**
@@ -231,7 +204,7 @@ public interface NaruTask extends NToElement {
      */
     NaruTask cancel(String reason);
 
-    List<NaruTaskStackFrame> stackframes();
+    List<NaruTaskStackFrame> stackFrames();
 
     List<NaruTaskStackItem> stacktrace();
 
@@ -268,7 +241,6 @@ public interface NaruTask extends NToElement {
     NaruTask setExtraContext(String extraContext);
 
     void log(NaruLogMode mode, NMsg s);
-
 
     NaruTask addToolExclusion(String toolName);
 
@@ -423,14 +395,10 @@ public interface NaruTask extends NToElement {
 
 
     NaruTaskInbox inbox();
-//    NaruTask addInbox(NaruEvent event);
 
     Map<String, NaruEventSubscription> eventSubscriptions();
 
     NaruTask subscribe(String eventType, NaruEventSubscription subscription);
-
-
-//    NaruEvent pollInbox();
 
     NaruTask acquireStepPermit();
 
