@@ -212,25 +212,9 @@ public class NaruPoisonTask implements NaruTask {
         throw new NUnsupportedOperationException();
     }
 
-    @Override
-    public boolean loadSkill(String name) {
-        return false;
-    }
 
-    @Override
-    public boolean unloadSkill(String name) {
-        return false;
-    }
 
-    @Override
-    public Set<String> skillNames() {
-        throw new NUnsupportedOperationException();
-    }
 
-    @Override
-    public List<NaruResourceInfo> skills() {
-        throw new NUnsupportedOperationException();
-    }
 
     @Override
     public void tick() {

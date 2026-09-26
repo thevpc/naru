@@ -10,7 +10,6 @@ import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.scheduler.*;
-import net.thevpc.naru.api.skills.NaruSkill;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskStackFrame;
@@ -49,7 +48,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private long parentId;
     private final List<Function<NaruTask, NaruMessage>> systemHistory = new ArrayList<>();
     private final List<NaruMessage> history = new ArrayList<>();
-    private final Set<String> skills = new TreeSet<>();
     private final Set<String> taskToolTags = new TreeSet<>();
     private final List<NaruToolTag> taskToolTagDefinitions = new ArrayList<>();
     private final Set<String> excludedTools = new TreeSet<>();
@@ -447,7 +445,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         returnResult = null;
         frames.clear();
         env.clear();
-        skills.clear();
         taskToolTags.clear();
         taskToolTagDefinitions.clear();
         ((NaruSessionImpl) session).fireChanged();
@@ -560,12 +557,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public NPath workingDir() {
         return workingDir;
-    }
-
-    public NaruTaskImpl _setSkills(Set<String> skills) {
-        this.skills.clear();
-        this.skills.addAll(skills);
-        return this;
     }
 
     public NaruTaskImpl _setTaskTags(Set<String> taskTags) {
@@ -771,14 +762,22 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             );
         }
         all.add(NaruMessage.system(promptMode().systemPrompt()).setSource(NaruSource.MODE).setSourceName(NNameFormat.LOWER_KEBAB_CASE.format(promptMode().name())));
-        if (sourcesOk.contains(NaruSource.SYSTEM)) {
-            for (NaruSessionExtension extension : session().registry().sessionExtensions()) {
-                if (Collections.disjoint(extension.sources(), sourcesOk) || !extension.isRelevant(this)) {
-                    continue;
+        // No outer SYSTEM gate here: an extension declares the sources it needs, and the
+        // per-extension test below is the filter. Gating on SYSTEM would silently drop
+        // every extension that contributes under a source of its own, which is exactly
+        // what naru-skills does.
+        for (NaruSessionExtension extension : session().registry().sessionExtensions()) {
+            if (Collections.disjoint(extension.sources(), sourcesOk) || !extension.isRelevant(this)) {
+                continue;
+            }
+            for (NaruMessage m : extension.contribute(this)) {
+                NaruMessage c = m.copy().setSource(extension.source());
+                // the extension name is the default attribution, but an extension that
+                // knows more than that (a file path, a plan id) may say so itself
+                if (NBlankable.isBlank(c.getSourceName())) {
+                    c.setSourceName(extension.name());
                 }
-                for (NaruMessage m : extension.contribute(this)) {
-                    all.add(m.copy().setSource(extension.source()).setSourceName(extension.name()));
-                }
+                all.add(c);
             }
         }
         HashMap<String, NElement> env = new HashMap<>();
@@ -919,18 +918,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             }
         }
 
-        if (sourcesOk.contains(NaruSource.SKILL)) {
-            // add skills
-            for (String skill : skills) {
-                NaruSkill s = session().skillManager().findSkill(skill);
-                if (s != null) {
-                    String collected = s.getLines().stream().collect(Collectors.joining("\n"));
-                    all.add(NaruMessage.user(
-                            "## ACTIVE SKILL DIRECTIVE: " + s.getName().toUpperCase() + "\n" + collected
-                    ).setSource(NaruSource.SKILL).setSourceName(s.getSourceName()));
-                }
-            }
-        }
         if (sourcesOk.contains(NaruSource.USER)) {
             all.addAll(history.stream().map(x -> x.copy().setSource(NaruSource.USER)).collect(Collectors.toList()));
         }
@@ -1273,44 +1260,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public NaruMessage getLastResult() {
         return lastResult;
-    }
-
-    @Override
-    public boolean loadSkill(String name) {
-        if (NBlankable.isBlank(name)) {
-            return false;
-        }
-        if (skills.contains(name)) {
-            return false;
-        }
-        NaruSkill s = session().skillManager().findSkill(name);
-        if (s == null) {
-            return false;
-        }
-        skills.add(name);
-        return true;
-    }
-
-    @Override
-    public boolean unloadSkill(String name) {
-        if (NBlankable.isBlank(name)) {
-            return false;
-        }
-        name = NNameFormat.LOWER_KEBAB_CASE.format(name.trim());
-        if (skills.contains(name)) {
-            skills.remove(name);
-            return true;
-        }
-        return false;
-    }
-
-    public Set<String> skillNames() {
-        return new TreeSet<>(skills);
-    }
-
-    @Override
-    public List<NaruResourceInfo> skills() {
-        return skills.stream().map(x -> session().skillManager().findSkillInfo(x)).filter(x -> x != null).collect(Collectors.toList());
     }
 
     @Override

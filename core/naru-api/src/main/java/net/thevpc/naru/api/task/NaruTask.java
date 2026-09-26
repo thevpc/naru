@@ -150,14 +150,6 @@ public interface NaruTask extends NToElement {
 
     NaruMessage getLastResult();
 
-    boolean loadSkill(String name);
-
-    boolean unloadSkill(String name);
-
-    Set<String> skillNames();
-
-    List<NaruResourceInfo> skills();
-
     void tick();
 
     NaruStmtResult invokeDirective(NaruDirective dir, NaruDirectiveCallContext context);

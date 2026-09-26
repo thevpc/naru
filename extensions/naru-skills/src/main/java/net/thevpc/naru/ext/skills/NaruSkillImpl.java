@@ -1,18 +1,18 @@
-package net.thevpc.naru.impl.ia.skill;
+package net.thevpc.naru.ext.skills;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
-import net.thevpc.naru.api.skills.NaruSkill;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.IntPredicate;
 
-public class NaruSkillImpl implements NaruSkill {
+class NaruSkillImpl implements NaruSkill {
     private final String name;
     private final String sourceName;
-    private NAruVisibility visibility;
+    private final NAruVisibility visibility;
     private final List<String> lines = new ArrayList<>();
 
-    public NaruSkillImpl(String name, NAruVisibility visibility, List<String> lines,String sourceName) {
+    NaruSkillImpl(String name, NAruVisibility visibility, List<String> lines, String sourceName) {
         this.name = name;
         this.sourceName = sourceName;
         this.visibility = visibility;
@@ -24,6 +24,7 @@ public class NaruSkillImpl implements NaruSkill {
         return sourceName;
     }
 
+    @Override
     public NAruVisibility getVisibility() {
         return visibility;
     }
@@ -32,7 +33,6 @@ public class NaruSkillImpl implements NaruSkill {
     public String getName() {
         return name;
     }
-
 
     @Override
     public List<String> getLines() {
@@ -43,9 +43,8 @@ public class NaruSkillImpl implements NaruSkill {
     public List<String> getLines(IntPredicate lineFilter) {
         List<String> newOne = new ArrayList<>();
         for (int i = 0; i < lines.size(); i++) {
-            String e = lines.get(i);
             if (lineFilter == null || lineFilter.test(i)) {
-                newOne.add(e);
+                newOne.add(lines.get(i));
             }
         }
         return newOne;
@@ -57,8 +56,7 @@ public class NaruSkillImpl implements NaruSkill {
             return "<empty>";
         }
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < lines.size(); i++) {
-            String e = lines.get(i);
+        for (String e : lines) {
             sb.append(e).append("\n");
         }
         return sb.toString();
@@ -68,6 +66,4 @@ public class NaruSkillImpl implements NaruSkill {
     public boolean isEmpty() {
         return lines.isEmpty();
     }
-
-
 }

@@ -5,7 +5,6 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.NaruScheduler;
 import net.thevpc.naru.api.scheduler.NaruSessionEventLog;
-import net.thevpc.naru.api.skills.NaruSkillManager;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruRegistry;
@@ -32,8 +31,6 @@ public interface NaruSession {
     boolean hasMoreStatements();
 
     NPath projectDir();
-
-    NaruSkillManager skillManager();
 
     NaruSession terminate();
 

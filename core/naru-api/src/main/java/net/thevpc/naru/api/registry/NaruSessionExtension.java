@@ -72,7 +72,8 @@ public interface NaruSessionExtension extends NComponent {
     /**
      * Messages to splice into the task's context. Evaluated on every call, so an
      * implementation must read current state rather than cache it. The returned
-     * messages have their source and source name applied by the core.
+     * messages have their source applied by the core; a message that already carries a
+     * source name keeps it, and one that does not is attributed to {@link #name()}.
      */
     default List<NaruMessage> contribute(NaruTask task) {
         return Collections.emptyList();

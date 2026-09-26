@@ -9,7 +9,6 @@ import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.*;
-import net.thevpc.naru.api.skills.NaruSkillManager;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
@@ -22,7 +21,6 @@ import net.thevpc.naru.impl.engine.routine.RoutineHelper;
 import net.thevpc.naru.impl.engine.scheduler.NaruSchedulerImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruSessionEventLogImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
-import net.thevpc.naru.impl.ia.skill.NaruSkillManagerImpl;
 import net.thevpc.naru.impl.util.ImplNaruUtils;
 import net.thevpc.nuts.concurrent.NCallable;
 import net.thevpc.nuts.elem.*;
@@ -52,7 +50,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     /**
      * Optional: additional context the user wants to share with every tool.
      */
-    private final NaruSkillManager skillManager;
     private final NaruMeteringService meteringService;
     private final NaruSessionManagerImpl sessionManager;
 
@@ -106,7 +103,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.workingDir = projectDir.normalize();
         this.meteringService = meteringService == null ? new NaruMeteringServiceImpl() : meteringService;
         this.sessionManager = new NaruSessionManagerImpl(this);
-        this.skillManager = new NaruSkillManagerImpl(this);
         this.registry = new NaruRegistryImpl(this,directiveFilter, toolFilter, tagFilter);
         this.sessionListener = sessionListener;
         NaruModelConfig model0 = null;
@@ -154,6 +150,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (configureDefaults) {
             ((NaruRegistryImpl) registry).registerDefaults();
         }
+        // A brand new session has no state to restore, but extensions still have to be
+        // brought up: one may need the session to resolve anything at all. The SPI
+        // promises open() runs before any task does, and a fresh session runs tasks too.
+        openSessionExtensions();
     }
 
     @Override
@@ -241,7 +241,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);
             natuTask._setModel(model);
-            natuTask._setSkills(new HashSet<>());
         } else {
             natuTask._setInputMode(NAruInputMode.LINE);
             natuTask._setWorkingDir(cwd == null ? parent.workingDir() : cwd);
@@ -253,7 +252,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);
             natuTask._setModel(parent.model());
-            natuTask._setSkills(parent.skillNames());
         }
         // tags are never inherited: a task only sees a tagged tool when it holds
         // one of that tool's tags, so grant them explicitly
@@ -545,11 +543,29 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     /**
+     * Brings extensions up on a session that has nothing to restore, so a new session
+     * reaches the same state a reloaded one does, minus the saved data. Each extension is
+     * handed a path that does not exist, which {@code load} is required to tolerate.
+     */
+    private void openSessionExtensions() {
+        for (NaruSessionExtension extension : registry.sessionExtensions()) {
+            try {
+                extension.load(this, projectDir.resolve(".naru/never-saved").resolve(extension.name() + ".tson"));
+                extension.open(this);
+            } catch (Exception ex) {
+                // one broken extension must not cost the user the whole session
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "session extension '%s' failed to open: %s", extension.name(), ex.getMessage()).asError());
+            }
+        }
+    }
+
+    /**
      * Hands each installed feature extension its slice of the session folder. Extensions
      * own their state file, so the core neither knows nor cares what is in it.
      */
     private void loadSessionExtensions(NPath folder) {
-        NPath extDir = folder.mkdirs().resolve("ext");
+        NPath extDir = folder.resolve("ext");
         for (NaruSessionExtension extension : registry.sessionExtensions()) {
             try {
                 extension.load(this, extDir.resolve(extension.name() + ".tson"));
@@ -978,12 +994,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     public NPath projectDir() {
         ensureNotStopped();
         return projectDir;
-    }
-
-    @Override
-    public NaruSkillManager skillManager() {
-        ensureNotStopped();
-        return skillManager;
     }
 
     @Override

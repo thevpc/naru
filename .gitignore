@@ -52,3 +52,4 @@ documentation/.naru
 /extensions/naru-tools-plan/target/
 /test/naru-agent-test/target/
 .aider*
+/extensions/naru-skills/target/

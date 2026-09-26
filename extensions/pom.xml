@@ -20,6 +20,7 @@
         <module>naru-tools-web</module>
         <module>naru-tools-coder-java</module>
         <module>naru-tools-llm</module>
+        <module>naru-skills</module>
         <module>naru-tools-sessions</module>
         <module>naru-tools-routines</module>
         <module>naru-tools-plan</module>
