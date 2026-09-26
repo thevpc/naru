@@ -1,10 +1,9 @@
-package net.thevpc.naru.ext.tools.llm;
+package net.thevpc.naru.ext.budget;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.api.budget.NaruModelStats;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
@@ -18,8 +17,8 @@ import java.text.DecimalFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class NaruStatsDirective extends NaruDirectiveBase {
-    public NaruStatsDirective() {
+public class NaruBudgetDirective extends NaruDirectiveBase {
+    public NaruBudgetDirective() {
         super("stat", "ai", "show and manage stats", "stats");
         register(new AbstractSubCommand() {
             @Override
@@ -32,7 +31,7 @@ public class NaruStatsDirective extends NaruDirectiveBase {
 
     public NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        List<NaruModelStats> modelStats = context.task().session().meteringService().findModelStats(context.task().session())
+        List<NaruModelStats> modelStats = NaruBudgetExtension.metering(context.task().session()).findModelStats()
                 .stream()
                 .filter(a -> a.getCallsCount() > 0)
                 .sorted(Comparator
@@ -43,7 +42,7 @@ public class NaruStatsDirective extends NaruDirectiveBase {
                 .collect(Collectors.toList());
 
         NStringBuilder sb = NStringBuilder.of();
-        for (NaruProviderRateLimitInfo s : context.task().session().meteringService().findProviderRateLimitInfos(context.task().session())) {
+        for (NaruProviderRateLimitInfo s : NaruBudgetExtension.metering(context.task().session()).findProviderRateLimitInfos()) {
             NMsg msg = NMsg.ofC("%s (%s)%s%s",
                             NMsg.ofStyledPrimary9(s.providerName()),
                             s.serverTime(),

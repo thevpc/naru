@@ -93,7 +93,7 @@ public class NaruSkillsExtensionTest {
         privateSkill("javadoc", "PRIVATE javadoc rules");
         NaruAgent agent = new NaruAgentImpl();
         agent.setProjectDirectory(projectDir);
-        session = new NaruSessionImpl(agent, projectDir, null, true, NOOP_LISTENER, null, null, null);
+        session = new NaruSessionImpl(agent, projectDir, true, NOOP_LISTENER, null, null, null);
         ext = NaruSkillsExtension.skills(session);
     }
 

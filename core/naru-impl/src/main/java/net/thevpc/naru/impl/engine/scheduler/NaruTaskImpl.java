@@ -1,7 +1,6 @@
 package net.thevpc.naru.impl.engine.scheduler;
 
 import net.thevpc.naru.api.agent.*;
-import net.thevpc.naru.api.budget.NaruTokenTransaction;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
@@ -1903,18 +1902,21 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NaruResponse chat(NaruModelConfig modelKey, NaruModelRequest request) {
-        Instant now = Instant.now();
         NChronometer chronometer = NChronometer.of();
         NaruResponse r = session().registry().protocol(modelKey, session()).get().chat(request, this);
-        session().meteringService().trackTransaction(new NaruTokenTransaction(
-                session().uuid(),
-                null,
-                model(),
+        // Announce what the provider reported, cache accounting included: the response
+        // carries cacheWrite/cacheRead counts, and dropping them here is what used to make
+        // every cached session look like a cold one in /stats. -1 means the provider does
+        // not report cache accounting at all, and is passed through unchanged so a
+        // consumer can tell "no cache" from "not measured".
+        ((NaruSessionImpl) session()).fireModelCallUsage(
+                model().key(),
                 r.getPromptTokens(),
                 r.getEvalTokens(),
-                now,
+                r.getCacheWriteTokens(),
+                r.getCacheReadTokens(),
                 chronometer.stop().duration()
-        ), session());
+        );
         return r;
     }
 

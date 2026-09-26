@@ -53,3 +53,4 @@ documentation/.naru
 /test/naru-agent-test/target/
 .aider*
 /extensions/naru-skills/target/
+/extensions/naru-budget/target/

@@ -1,4 +1,4 @@
-package net.thevpc.naru.api.budget;
+package net.thevpc.naru.ext.budget;
 
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.nuts.time.NDuration;

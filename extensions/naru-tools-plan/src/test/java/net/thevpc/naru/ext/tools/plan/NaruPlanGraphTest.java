@@ -66,7 +66,7 @@ public class NaruPlanGraphTest {
         agent.setProjectDirectory(NPath.ofTempFolder("naru-plan-graph"));
         // configureDefaults must be on: the plan graph is now provided by a session
         // extension discovered through the registry, not by the session itself
-        session = new NaruSessionImpl(agent, agent.getProjectDirectory(), null, true,
+        session = new NaruSessionImpl(agent, agent.getProjectDirectory(), true,
                 NOOP_LISTENER, null, null, null);
     }
 

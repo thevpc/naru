@@ -34,7 +34,7 @@ public class NaruModelProtocolMistral extends NaruModelProtocolOpenAICompat {
 
     @Override
     protected void onResponseReceived(NHttpResponse response, NaruTask task) {
-        if (task == null || task.session() == null || task.session().meteringService() == null) {
+        if (task == null || task.session() == null) {
             return;
         }
         try {
@@ -73,7 +73,7 @@ public class NaruModelProtocolMistral extends NaruModelProtocolOpenAICompat {
 
             providerLastResultInfo.set("retry-after", retryAfter == null ? null : retryAfter.toSeconds());
 
-            task.session().meteringService().trackProviderStats(
+            task.session().reportProviderRateLimits(
                     new DefaultNaruProviderRateLimitInfo(
                             task.session().uuid(),
                             null,
@@ -98,8 +98,7 @@ public class NaruModelProtocolMistral extends NaruModelProtocolOpenAICompat {
                             correlationId,
                             retryAfter,
                             providerLastResultInfo.build()
-                    ),
-                    task.session()
+                    )
             );
         } catch (Exception ignored) {
         }

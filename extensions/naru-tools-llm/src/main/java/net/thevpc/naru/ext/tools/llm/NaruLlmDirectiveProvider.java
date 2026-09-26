@@ -7,7 +7,8 @@ public class NaruLlmDirectiveProvider extends NaruDirectiveProviderBase {
         super("llm");
         this.registerDirective(new NaruToolsDirective());
         this.registerDirective(new NaruTagsDirective());
-        this.registerDirective(new NaruStatsDirective());
+        // stats directive moved to naru-budget extension
+
         this.registerDirective(new NaruModelDirective());
         this.registerDirective(new NaruModeDirective());
         this.registerDirective(new NaruHistoryDirective());

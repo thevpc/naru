@@ -1,6 +1,5 @@
 package net.thevpc.naru.api.agent;
 
-import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.NaruScheduler;
@@ -103,7 +102,6 @@ public interface NaruSession {
 
     Map<NaruModelConfig, List<String>> reversedModelAliases();
 
-    NaruMeteringService meteringService();
 
     NOptional<NElement> getProjectEnv(String key);
 
@@ -144,6 +142,24 @@ public interface NaruSession {
     void addSessionListener(NaruSessionListener listener);
 
     void removeSessionListener(NaruSessionListener listener);
+
+    // ── usage reporting ──────────────────────────────────────────────────────
+    // The core announces provider-reported numbers; what they mean is up to a listener.
+
+    /**
+     * Registers a listener for model-call usage and provider rate limits. Notifications are
+     * delivered on the thread that made the call, so a listener must not block.
+     */
+    void addUsageListener(NaruSessionUsageListener listener);
+
+    void removeUsageListener(NaruSessionUsageListener listener);
+
+    /**
+     * Announces a provider's self-reported rate limits to every
+     * {@link NaruSessionUsageListener}. Called by model protocols that receive limit
+     * headers; providers that send none never call it. Observers that throw are ignored.
+     */
+    void reportProviderRateLimits(NaruProviderRateLimitInfo info);
 
     List<NaruResourceInfo> routines();
 

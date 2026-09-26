@@ -1,4 +1,4 @@
-package net.thevpc.naru.impl.ia.budget;
+package net.thevpc.naru.ext.budget;
 
 import net.thevpc.naru.api.model.NaruModelKey;
 

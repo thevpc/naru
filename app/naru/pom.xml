@@ -28,6 +28,7 @@
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-web</artifactId><version>1.0.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-llm</artifactId><version>1.0.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-skills</artifactId><version>1.0.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-budget</artifactId><version>1.0.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-routines</artifactId><version>1.0.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-plan</artifactId><version>1.0.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-sessions</artifactId><version>1.0.0.0</version></dependency>

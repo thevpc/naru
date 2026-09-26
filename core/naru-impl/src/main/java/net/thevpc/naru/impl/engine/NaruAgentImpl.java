@@ -9,7 +9,6 @@ import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.scheduler.NaruTaskMode;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruRegistry;
-import net.thevpc.naru.impl.ia.budget.NaruMeteringServiceImpl;
 import net.thevpc.naru.api.util.NaruTerminalFormatter;
 import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
 import net.thevpc.naru.impl.util.StoredStringMap;
@@ -46,7 +45,6 @@ import java.util.function.Predicate;
  */
 public class NaruAgentImpl implements NaruAgent {
 
-    private final NaruMeteringServiceImpl meteringService = new NaruMeteringServiceImpl();
     /**
      * Optional step listener for CLI progress printing.
      */
@@ -253,7 +251,7 @@ public class NaruAgentImpl implements NaruAgent {
         if (dir == null) {
             dir = NPath.ofUserDirectory();
         }
-        return new NaruSessionImpl(this, dir.toAbsolute(), meteringService, true, asSessionListener,directiveFilter, toolFilter, tagFilter);
+        return new NaruSessionImpl(this, dir.toAbsolute(), true, asSessionListener,directiveFilter, toolFilter, tagFilter);
     }
 
 

@@ -66,7 +66,7 @@ public class ModelIndexStabilityTest {
         NaruAgent agent = new NaruAgentImpl();
         agent.setProjectDirectory(NPath.ofTempFolder("naru-model-index"));
         // configureDefaults=false: no SPI provider discovery, no network, no real models
-        session = new NaruSessionImpl(agent, agent.getProjectDirectory(), null, false,
+        session = new NaruSessionImpl(agent, agent.getProjectDirectory(), false,
                 new NaruSessionListener() {
                     @Override
                     public void onEventAppended(NaruEvent newEvent) {

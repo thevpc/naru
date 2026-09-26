@@ -1,7 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.*;
-import net.thevpc.naru.api.budget.NaruMeteringService;
 import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruDirective;
@@ -14,7 +13,6 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
-import net.thevpc.naru.impl.ia.budget.NaruMeteringServiceImpl;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.naru.impl.engine.routine.NaruRoutineMem;
 import net.thevpc.naru.impl.engine.routine.RoutineHelper;
@@ -26,6 +24,7 @@ import net.thevpc.nuts.concurrent.NCallable;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.io.*;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.*;
 import net.thevpc.nuts.collections.NMaps;
 
@@ -47,10 +46,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private NaruModelConfig model;
     private final Set<NPath> alreadyLoadedFiles = new HashSet<>();
 
-    /**
-     * Optional: additional context the user wants to share with every tool.
-     */
-    private final NaruMeteringService meteringService;
     private final NaruSessionManagerImpl sessionManager;
 
     private String uuid = UUID.randomUUID().toString();
@@ -79,6 +74,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final NaruSessionEventLog eventLog;
     private final NaruSessionListener sessionListener;
     private final List<NaruSessionListener> sessionListeners = new ArrayList<>();
+    /**
+     * Observers of provider-reported usage. Not persisted, and not part of session state:
+     * an extension that wants usage across a reload re-registers in open().
+     */
+    private final List<NaruSessionUsageListener> usageListeners = new CopyOnWriteArrayList<>();
     private boolean stopped;
     private final Map<String, NaruRoutine> routines = new ConcurrentHashMap<>();
     private NAruVisibility loadTimeVisibility;
@@ -92,7 +92,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private volatile List<NaruModelKey> listedModels = Collections.emptyList();
 
 
-    public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruMeteringService meteringService, boolean configureDefaults
+    public NaruSessionImpl(NaruAgent agent, NPath projectDir, boolean configureDefaults
             , NaruSessionListener sessionListener
             , Predicate<NaruDirective> directiveFilter
             , Predicate<NaruTool> toolFilter
@@ -101,7 +101,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.agent = agent;
         this.projectDir = projectDir.normalize();
         this.workingDir = projectDir.normalize();
-        this.meteringService = meteringService == null ? new NaruMeteringServiceImpl() : meteringService;
         this.sessionManager = new NaruSessionManagerImpl(this);
         this.registry = new NaruRegistryImpl(this,directiveFilter, toolFilter, tagFilter);
         this.sessionListener = sessionListener;
@@ -1037,11 +1036,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return registry;
     }
 
-    public NaruMeteringService meteringService() {
-        ensureNotStopped();
-        return meteringService;
-    }
-
     @Override
     public long foregroundTaskId() {
         ensureNotStopped();
@@ -1140,6 +1134,52 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
+    public void addUsageListener(NaruSessionUsageListener listener) {
+        if (listener != null) {
+            usageListeners.add(listener);
+        }
+    }
+
+    @Override
+    public void removeUsageListener(NaruSessionUsageListener listener) {
+        usageListeners.remove(listener);
+    }
+
+    /**
+     * Announces a completed model call to every usage listener.
+     * <p>
+     * A listener that throws is skipped rather than allowed to fail the call it is only
+     * observing: metering and rate-limit reporting are side channels, and a broken one
+     * must not cost the user their answer.
+     */
+    public void fireModelCallUsage(NaruModelKey model, long promptTokens, long completionTokens,
+                            long cacheWriteTokens, long cacheReadTokens, NDuration duration) {
+        for (NaruSessionUsageListener l : usageListeners) {
+            try {
+                l.onModelCall(model, promptTokens, completionTokens, cacheWriteTokens, cacheReadTokens, duration);
+            } catch (Exception ex) {
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "usage listener %s failed on model call: %s", l.getClass().getSimpleName(), ex.getMessage()));
+            }
+        }
+    }
+
+    @Override
+    public void reportProviderRateLimits(NaruProviderRateLimitInfo info) {
+        if (info == null) {
+            return;
+        }
+        for (NaruSessionUsageListener l : usageListeners) {
+            try {
+                l.onProviderRateLimits(info);
+            } catch (Exception ex) {
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "usage listener %s failed on rate limits: %s", l.getClass().getSimpleName(), ex.getMessage()));
+            }
+        }
+    }
+
+    @Override
     public void removeSessionListener(NaruSessionListener listener) {
         ensureNotStopped();
         if (listener != null) {
@@ -1210,6 +1250,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     public void onTaskStatusChanged(NaruTask task, NaruTaskStatus oldStatus, NaruTaskStatus newStatus) {
         // deliberately not guarded on 'stopped': onTerminated() stops the session when the
         // last task dies, and a listener must still observe that final transition
+        try {
+            sessionListener.onTaskStatusChanged(task, oldStatus, newStatus);
+        } catch (Throwable error) {
+            // must not escape: this runs inside NaruTaskImpl.status(), so a
+            // throwing listener would otherwise fail the task being ticked
+            log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] session listener failed on task %s: %s",
+                    error, task.id(), newStatus).asError());
+        }
         for (NaruSessionListener listener : sessionListeners) {
             try {
                 listener.onTaskStatusChanged(task, oldStatus, newStatus);
