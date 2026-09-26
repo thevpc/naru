@@ -6,8 +6,11 @@ import net.thevpc.nuts.util.NBlankable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class NaruTaskSpec {
@@ -17,6 +20,7 @@ public class NaruTaskSpec {
     private List<String> statements = new ArrayList<>();
     private NaruPromptMode promptMode;
     private final Set<String> toolTags = new LinkedHashSet<>();
+    private final Map<String, Object> vars = new LinkedHashMap<>();
 
     public static NaruTaskSpec of() {
         return new NaruTaskSpec();
@@ -108,6 +112,45 @@ public class NaruTaskSpec {
             }
         }
         return this;
+    }
+
+    /**
+     * Replace the initial task variables, replacing anything set earlier.
+     * <p>
+     * This is how a host passes real inputs in. The alternative -- a leading
+     * {@code /set --task name = value} statement -- forces every value through the script
+     * parser, which means stringifying anything that is not a literal and quoting anything
+     * containing spaces.
+     *
+     * @param vars the variables, may be null to clear; null keys are ignored
+     */
+    public NaruTaskSpec vars(Map<String, Object> vars) {
+        this.vars.clear();
+        if (vars != null) {
+            for (Map.Entry<String, Object> entry : vars.entrySet()) {
+                if (entry.getKey() != null) {
+                    this.vars.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        return this;
+    }
+
+    /**
+     * Add or replace a single initial task variable, keeping the others.
+     */
+    public NaruTaskSpec var(String name, Object value) {
+        if (name != null) {
+            vars.put(name, value);
+        }
+        return this;
+    }
+
+    /**
+     * The initial task variables, unmodifiable. Empty rather than null when none were set.
+     */
+    public Map<String, Object> vars() {
+        return Collections.unmodifiableMap(vars);
     }
 
     public NaruTaskSpec resolveName() {

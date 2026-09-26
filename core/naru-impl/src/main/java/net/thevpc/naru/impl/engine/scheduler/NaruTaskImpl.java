@@ -11,6 +11,7 @@ import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
+
 import net.thevpc.naru.api.task.NaruTaskStackFrame;
 import net.thevpc.naru.api.task.NaruTaskStackItem;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
@@ -31,10 +32,14 @@ import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.*;
 
 import java.net.URL;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Semaphore;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -101,6 +106,41 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private NaruIncrementalStmt pendingStatement;
     private final NaruTaskInboxImpl inbox;
     private NaruStatement doing;
+
+    // ── completion ────────────────────────────────────────────────────────────
+    // A task is its own handle on its own result, so it keeps the means of being waited on
+    // rather than handing that to a separate wrapper that would have to outlive it. A task is
+    // deregistered from its session the moment it ends, so this is the only place left that
+    // can answer what happened.
+
+    /** Exit code key: the verdict a task's last statement published. */
+    private static final String ENV_EXIT_CODE = "lastExitCode";
+    /** Error key: the message a task's last statement published. */
+    private static final String ENV_ERROR = "lastError";
+    /** Result key: what the task last computed, and the fallback for {@link #value()}. */
+    private static final String ENV_RESULT = "lastResult";
+
+    private final CompletableFuture<NaruTask> completion = new CompletableFuture<>();
+    private final List<Consumer<NaruTask>> completionCallbacks = new ArrayList<>();
+    private final Object completionLock = new Object();
+    private volatile Instant endTime;
+    private volatile String frozenError;
+    private volatile String cancelReason;
+
+    // The outcome, frozen at the moment the task ended. A task stays reachable after it has been
+    // deregistered, so these are the only record of what it produced; reading them straight out of
+    // the environment would let a later write quietly rewrite history. Each is null (or 0, or an
+    // empty map) until settleCompletion fills it in, which is what makes endTime the marker for
+    // "the outcome is settled".
+    private volatile Object frozenValue;
+    private volatile int frozenExitCode;
+    private volatile Map<String, Object> frozenVars;
+    /**
+     * Whether the outcome has been frozen and the callback list drained. Not the same question as
+     * whether the future is done: a subscriber that arrives in between must be answered, and
+     * only this flag says which way.
+     */
+    private volatile boolean outcomeSettled;
 
     public NaruTaskImpl(NElement element, NaruSession session) {
         this.session = session;
@@ -409,6 +449,17 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     public void status(NaruTaskStatus newStatus) {
         NaruTaskStatus oldStatus = status;
+        // A terminal status is final. A task can be driven to one from more than one direction
+        // at the same time -- cancelling it races the failure it was already heading for, and an
+        // unanswered input request kills it on its own -- and without this the second one
+        // re-ran onTerminated against a session that had already wound down and been stopped,
+        // which threw out of the scheduler worker and left the run's result unset.
+        if (NaruTaskStatus.isTerminalStatus(status)) {
+            if (newStatus != status) {
+                log(NaruLogMode.TRACE, NMsg.ofC("[%s] ignoring status %s after %s", id(), newStatus, status).asError());
+            }
+            return;
+        }
         if (newStatus != status) {
             this.status = newStatus;
             switch (status) {
@@ -429,7 +480,270 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             }
             this.fireChanged();
         }
+        if (NaruTaskStatus.isTerminalStatus(status)) {
+            // settle last, so that everything published above -- deregistration, listeners,
+            // the snapshot -- is in place before anyone waiting on this task is released
+            settleCompletion();
+        }
         ((NaruSessionImpl) session).onTaskStatusChanged(this, oldStatus, newStatus);
+    }
+
+    // ── completion and result ─────────────────────────────────────────────────
+
+    @Override
+    public Instant endTime() {
+        return endTime;
+    }
+
+    @Override
+    public NDuration duration() {
+        Instant end = endTime;
+        if (end == null) {
+            return null;
+        }
+        return NDuration.between(creationDate, end);
+    }
+
+    @Override
+    public String error() {
+        return frozenError;
+    }
+
+    @Override
+    public boolean isTerminal() {
+        return NaruTaskStatus.isTerminalStatus(status);
+    }
+
+    @Override
+    public boolean isSuccess() {
+        return status == NaruTaskStatus.DONE && frozenError == null && exitCode() == 0;
+    }
+
+    @Override
+    public Object value() {
+        if (endTime != null) {
+            return frozenValue;
+        }
+        // an explicit /return is the script stating what it produced, so it wins; falling back
+        // to the last result means a script that simply ends still reports what it computed
+        Object returned = returnResult;
+        return returned != null ? returned : envValue(ENV_RESULT);
+    }
+
+    @Override
+    public int exitCode() {
+        if (endTime != null) {
+            return frozenExitCode;
+        }
+        return computeExitCode();
+    }
+
+    private int computeExitCode() {
+        Object raw = envValue(ENV_EXIT_CODE);
+        if (raw instanceof Number n) {
+            return n.intValue();
+        }
+        if (raw != null) {
+            try {
+                return Integer.parseInt(raw.toString().trim());
+            } catch (NumberFormatException e) {
+                return EXIT_FAILURE;
+            }
+        }
+        // a task that ended badly without publishing a verdict must not look clean
+        if (status == NaruTaskStatus.KILLED) {
+            return EXIT_INTERRUPTED;
+        }
+        if (status == NaruTaskStatus.FAILED) {
+            return EXIT_FAILURE;
+        }
+        return 0;
+    }
+
+    @Override
+    public Map<String, Object> vars() {
+        Map<String, Object> frozen = frozenVars;
+        if (frozen != null) {
+            return frozen;
+        }
+        return Collections.unmodifiableMap(getTaskEnv());
+    }
+
+    @Override
+    public NaruTask throwIfFailed() {
+        if (!isSuccess()) {
+            throw new IllegalStateException("task " + id() + " did not succeed"
+                    + (name() == null ? "" : " (" + name() + ")")
+                    + ": status=" + status
+                    + ", exitCode=" + exitCode()
+                    + (frozenError == null ? "" : ", error=" + frozenError));
+        }
+        return this;
+    }
+
+    @Override
+    public void await() {
+        if (taskMode() == NaruTaskMode.INTERACTIVE) {
+            // Not a timeout, and not a failure: this task is finished only when a host answers
+            // it, so blocking here would wait on the host indefinitely. That is almost never
+            // what the caller meant by awaiting an interactive task.
+            throw new IllegalStateException("task " + id()
+                    + " is INTERACTIVE and ends only when a host answers it, so an untimed await would never return; "
+                    + "use await(Duration) to bound the wait, or drive the task by answering it");
+        }
+        awaitUnbounded();
+    }
+
+    @Override
+    public boolean await(Duration timeout) {
+        if (timeout == null) {
+            throw new IllegalArgumentException("timeout is required");
+        }
+        if (timeout.isZero() || timeout.isNegative()) {
+            // refused rather than passed on: the JDK would accept a zero or negative timeout
+            // and turn it into a TimeoutException, so a caller asking to wait no time at all
+            // would be told the task "timed out" instead of being told the request was wrong
+            throw new IllegalArgumentException("timeout must be positive but was " + timeout);
+        }
+        try {
+            // get is used rather than a timed get plus a settled check so that completion and
+            // timeout are not two separate reads that can disagree
+            completion.get(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            return true;
+        } catch (java.util.concurrent.TimeoutException e) {
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (java.util.concurrent.ExecutionException e) {
+            // the future only ever completes normally; a failure is a result, not an exception
+            return true;
+        }
+    }
+
+    private void awaitUnbounded() {
+        try {
+            completion.join();
+        } catch (java.util.concurrent.CancellationException e) {
+            // settled as done
+        }
+    }
+
+    @Override
+    public void onComplete(Consumer<NaruTask> callback) {
+        if (callback == null) {
+            return;
+        }
+        boolean runNow;
+        synchronized (completionLock) {
+            // registering on a finished task runs the callback now rather than dropping it,
+            // so a late subscriber is not quietly the one caller that never hears back
+            runNow = outcomeSettled;
+            if (!runNow) {
+                completionCallbacks.add(callback);
+            }
+        }
+        if (runNow) {
+            dispatchCallback(callback);
+        }
+    }
+
+    @Override
+    public CompletableFuture<NaruTask> toFuture() {
+        return completion;
+    }
+
+    @Override
+    public NaruTask cancel(String reason) {
+        if (reason != null) {
+            this.cancelReason = reason;
+        }
+        return kill();
+    }
+
+    /**
+     * Freeze this task's outcome and release anyone waiting on it. Idempotent: the terminal
+     * status guard in {@link #status()} already makes a second transition impossible, and this
+     * guards the case where the task was never driven through {@code status()} at all.
+     */
+    private void settleCompletion() {
+        if (outcomeSettled) {
+            return;
+        }
+        // Read the outcome out of the environment before freezing it, and while that environment
+        // is still the one current at the moment the task ended. The status is already terminal
+        // by now, so the exit-code fallbacks below see the state they need.
+        this.frozenError = deriveError();
+        this.frozenValue = computeValue();
+        this.frozenExitCode = computeExitCode();
+        this.frozenVars = Collections.unmodifiableMap(getTaskEnv());
+        this.endTime = Instant.now();
+        List<Consumer<NaruTask>> due;
+        synchronized (completionLock) {
+            // Claiming the callbacks and marking the outcome settled have to be one step, and it
+            // has to be this flag rather than whether the future happens to be done. A subscriber
+            // arriving a moment later must be answered, and if it asked the future instead it
+            // would be told "not yet" during exactly the window in which the list had already
+            // been drained, so its callback would sit there forever.
+            due = new ArrayList<>(completionCallbacks);
+            completionCallbacks.clear();
+            outcomeSettled = true;
+        }
+        // Completing outside the lock keeps user code attached to the future off it: a caller
+        // doing task.toFuture().thenApply(...) would otherwise run that chain under the lock.
+        completion.complete(this);
+        for (Consumer<NaruTask> callback : due) {
+            dispatchCallback(callback);
+        }
+    }
+
+    private Object computeValue() {
+        Object returned = returnResult;
+        return returned != null ? returned : envValue(ENV_RESULT);
+    }
+
+    private String deriveError() {
+        Object raw = envValue(ENV_ERROR);
+        if (raw instanceof String s) {
+            return s.isBlank() ? cancelReason : s;
+        }
+        if (raw != null) {
+            return raw.toString();
+        }
+        // a cancellation is an outcome, not a malfunction, so it is reported through the
+        // reason the caller gave rather than as an error the task itself published
+        return cancelReason;
+    }
+
+    /**
+     * Read a task variable as the value it holds.
+     * <p>
+     * The environment is keyed to {@link NOptional} so that a variable can exist and be empty,
+     * which is how a task can hold a variable explicitly set to nothing. Callers asking for a
+     * value want the value, so the wrapper is unwrapped here rather than at every call site --
+     * handing a caller an {@code Optional} where a result was promised would be a nasty
+     * surprise to debug.
+     */
+    private Object envValue(String key) {
+        NOptional<Object> v = env.get(key);
+        return v == null ? null : v.orNull();
+    }
+
+    private void dispatchCallback(Consumer<NaruTask> callback) {
+        try {
+            Executor executor = ((NaruSessionImpl) session).runCallbackExecutor();
+            executor.execute(() -> {
+                try {
+                    callback.accept(this);
+                } catch (Exception e) {
+                    // a subscriber that throws must not stop the others, nor make the task look
+                    // as though it failed: it ran, and this is the subscriber's problem
+                    log(NaruLogMode.SCHEDULER, NMsg.ofC("onComplete callback threw for task %s: %s", id(), e).asError());
+                }
+            });
+        } catch (Exception e) {
+            log(NaruLogMode.SCHEDULER, NMsg.ofC("could not schedule onComplete callback for task %s: %s", id(), e).asError());
+        }
     }
 
     @Override
@@ -2195,7 +2509,15 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public Map<String, Object> getTaskEnv() {
-        return env.entrySet().stream().collect(Collectors.toMap(x -> x.getKey(), x -> x.getValue().orNull()));
+        // Collected by hand rather than with Collectors.toMap, which throws on a null value:
+        // an entry may legitimately hold NOptional.empty (a variable explicitly set to
+        // nothing), and a snapshot of the environment must not blow up on it. Insertion
+        // order is preserved too, which matters when this is presented as a task's output.
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, NOptional<Object>> entry : env.entrySet()) {
+            out.put(entry.getKey(), entry.getValue() == null ? null : entry.getValue().orNull());
+        }
+        return out;
     }
 
     @Override

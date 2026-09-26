@@ -119,6 +119,8 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
                 handle.taskMode(NaruTaskMode.INTERACTIVE);
             }
             handle.fg().unhold();
+            // so startRun() hands back a handle for *this* task rather than making another
+            session.configuredTask(handle);
         }
         if (richTerm) {
             enableRichTerm(useInteraction, session);

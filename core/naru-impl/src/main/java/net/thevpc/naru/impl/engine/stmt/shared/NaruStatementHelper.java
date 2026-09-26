@@ -13,7 +13,7 @@ import net.thevpc.nuts.util.NOptional;
 import java.util.Set;
 
 public class NaruStatementHelper {
-    public static final Set<String> STATEMENT_KEYWORDS = Set.of("for", "while", "if", "else", "elseif", "end", "goto");
+    public static final Set<String> STATEMENT_KEYWORDS = Set.of("for", "while", "if", "else", "elseif", "end", "goto", "return");
     public static NOptional<NaruStatement> of(String cmd,String args) {
         if(cmd.startsWith(":") || cmd.endsWith(":")) {
             return NOptional.of(new NaruLabelStmt(cmd.replace(":"," ").trim()));
@@ -42,6 +42,15 @@ public class NaruStatementHelper {
             }
             case "call":{
                 return NOptional.of(new NaruCallStmt(args));
+            }
+            // /return is advertised by /help and is how a script states what it produced,
+            // but it was missing from this dispatch: parsing "/return x" fell through to the
+            // directive lookup, found no directive of that name, and failed with
+            // "missing directive : return". NaruReturnStmt was only ever reachable by
+            // deserialising a saved session, which is why a task's returnResult was always
+            // null for anything a user actually wrote.
+            case "return":{
+                return NOptional.of(new NaruReturnStmt(args));
             }
         }
         return NOptional.ofNamedEmpty("unknown statement");

@@ -97,14 +97,14 @@ public class NaruAgentSessionsTest {
         NaruAgent agent = newAgent();
         NaruSession session = blocked(agent, "lookup");
 
-        Assertions.assertSame(session, agent.session(session.uuid()));
+        Assertions.assertSame(session, agent.session(session.uuid()).orNull());
     }
 
     @Test
     public void anUnknownOrNullIdFindsNothing() {
         NaruAgent agent = newAgent();
-        Assertions.assertNull(agent.session("no-such-id"));
-        Assertions.assertNull(agent.session(null), "a null id must not blow up on a live server");
+        Assertions.assertFalse(agent.session("no-such-id").isPresent());
+        Assertions.assertFalse(agent.session(null).isPresent(), "a null id must not blow up on a live server");
     }
 
     @Test
@@ -112,11 +112,11 @@ public class NaruAgentSessionsTest {
         NaruAgent agent = newAgent();
         NaruSession session = blocked(agent, "stopping");
         String id = session.uuid();
-        Assertions.assertSame(session, agent.session(id));
+        Assertions.assertSame(session, agent.session(id).orNull());
 
         session.stop();
 
-        Assertions.assertNull(agent.session(id), "a stopped session must not linger in the live set");
+        Assertions.assertFalse(agent.session(id).isPresent(), "a stopped session must not linger in the live set");
         Assertions.assertFalse(agent.sessions().contains(session));
     }
 

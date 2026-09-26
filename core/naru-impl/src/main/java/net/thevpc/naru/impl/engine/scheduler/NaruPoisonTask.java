@@ -23,10 +23,13 @@ import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NUnsupportedOperationException;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class NaruPoisonTask implements NaruTask {
@@ -607,6 +610,80 @@ public class NaruPoisonTask implements NaruTask {
 
     @Override
     public void addSystemHistory(Function<NaruTask, NaruMessage> sysHistory) {
+        throw new NUnsupportedOperationException();
+    }
+
+    // A poison task is not a task that happens to have no result, it is the absence of one, so
+    // the completion and result surface refuses outright rather than reporting a plausible
+    // looking answer. Anything asking a poison task how it went has already lost the thread.
+
+    @Override
+    public Instant endTime() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NDuration duration() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public String error() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public boolean isTerminal() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public boolean isSuccess() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public Object value() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public int exitCode() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public Map<String, Object> vars() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask throwIfFailed() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public void await() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public boolean await(Duration timeout) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public void onComplete(Consumer<NaruTask> callback) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<NaruTask> toFuture() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask cancel(String reason) {
         throw new NUnsupportedOperationException();
     }
 }

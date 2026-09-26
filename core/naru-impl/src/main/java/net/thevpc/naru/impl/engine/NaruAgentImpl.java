@@ -58,6 +58,19 @@ public class NaruAgentImpl implements NaruAgent {
                 t.setDaemon(true);
                 return t;
             });
+    /**
+     * Runs user-supplied {@code NaruTask.onComplete} callbacks.
+     * <p>
+     * Deliberately not {@link #STOP_THE_WORLD_EXECUTOR}: that pool exists to run saves while
+     * the engine is halted, and a completion callback is free to call {@code save()} itself,
+     * which would then be queued behind itself.
+     */
+    private final ExecutorService runCallbackExecutor =
+            Executors.newCachedThreadPool(r -> {
+                Thread t = new Thread(r, "naru-run-callback");
+                t.setDaemon(true);
+                return t;
+            });
     private final ConcurrentLinkedQueue<Runnable> pendingActions = new ConcurrentLinkedQueue<>();
 
     private Predicate<NaruDirective> directiveFilter;
@@ -128,6 +141,16 @@ public class NaruAgentImpl implements NaruAgent {
     public NaruAgentImpl tagFilter(Predicate<NaruToolTag> tagFilter) {
         this.tagFilter = tagFilter;
         return this;
+    }
+
+    /**
+     * The pool that {@code NaruTask.onComplete} callbacks are dispatched on.
+     * <p>
+     * Package-visible rather than public: run handles are created by the session, which is the
+     * only thing that should be choosing an executor for a user callback.
+     */
+    java.util.concurrent.Executor runCallbackExecutor() {
+        return runCallbackExecutor;
     }
 
     public <T> Future<T> postAction(NCallable<T> action) {

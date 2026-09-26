@@ -10,6 +10,8 @@ import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
+
+
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
@@ -72,7 +74,16 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private String systemPrompt;
     private final NaruSessionEventLog eventLog;
     private final NaruSessionListener sessionListener;
-    private final List<NaruSessionListener> sessionListeners = new ArrayList<>();
+    /**
+     * The task the {@link net.thevpc.naru.api.agent.NaruSessionBuilder} created at build time,
+     * which {@link #run()} starts. The builder creates its task eagerly so that mode and
+     * foreground can be set on it, before the session ever runs.
+     */
+    private NaruTask configuredTask;
+    private boolean ranTask;
+    /** Guards against the reentrant stop() that killing the last live task provokes. */
+    private volatile boolean stopping;
+    private final List<NaruSessionListener> sessionListeners = new CopyOnWriteArrayList<>();
     /**
      * How this session reaches its user. Owns any input thread and all presentation, so
      * a headless session runs with none of it.
@@ -261,6 +272,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setReturnResult(null);
             natuTask._setModel(parent.model());
         }
+        // seeded before the task can run anything, and before the system prompt is built,
+        // so a prompt that interpolates an input variable can see it
+        for (Map.Entry<String, Object> entry : taskBuilder.vars().entrySet()) {
+            natuTask.setTaskEnv(entry.getKey(), entry.getValue());
+        }
         // tags are never inherited: a task only sees a tagged tool when it holds
         // one of that tool's tags, so grant them explicitly
         for (String tag : taskBuilder.toolTags()) {
@@ -273,6 +289,61 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                         .stream().map(x -> x.injected(true)).toArray(NaruStatement[]::new));
         tasks.put(id, natuTask);
         return natuTask;
+    }
+
+    @Override
+    public NaruTask run(NaruTaskSpec spec) {
+        if (spec == null) {
+            throw new IllegalArgumentException("task spec is required");
+        }
+        if (!isRunning()) {
+            throw new IllegalStateException("session is not running; call start() first, or use run()");
+        }
+        NaruTask task = newTask(spec);
+        // newTask leaves a task held, which is what lets a caller configure it before
+        // anything executes; a spawned run has no such window, so release it here. No
+        // fg() call: foreground decides where interactive input is routed, and hijacking
+        // that from a task the host is already talking to would be rude.
+        task.unhold();
+        return task;
+    }
+
+    @Override
+    public NaruTask run() {
+        if (configuredTask == null) {
+            throw new IllegalStateException(
+                    "this session was built without a task; use run(NaruTaskSpec) to supply one");
+        }
+        if (ranTask) {
+            // the configured task is one specific invocation; silently running it again would
+            // hand back a second result and lose the first without saying so
+            throw new IllegalStateException("run() was already called on this session");
+        }
+        ranTask = true;
+        NaruTask task = configuredTask;
+        // release the task before starting the session: it is created held, so that a caller
+        // can configure it after build() but before anything runs. A task with no statements
+        // finishes as soon as it is first ticked, so there is no window to register later.
+        task.unhold();
+        start();
+        return task;
+    }
+
+    /**
+     * Remembers the task the builder created, so {@link #run()} can run that one rather than
+     * creating a second.
+     */
+    void configuredTask(NaruTask task) {
+        this.configuredTask = task;
+    }
+
+    public Executor runCallbackExecutor() {
+        // the agent is held as the interface type, but the callback pool is an
+        // implementation detail that only the impl class owns. Fall back to running
+        // callbacks on the calling thread rather than failing a completion outright.
+        return agent instanceof NaruAgentImpl impl
+                ? impl.runCallbackExecutor()
+                : Runnable::run;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -295,7 +366,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NOptional<NaruTask> findTask(long tid) {
-        ensureNotStopped();
+        // deliberately not guarded on 'stopped'. A lookup is a question, not a command, and
+        // the interesting time to ask is precisely when a session has just stopped because
+        // its last task finished -- which is also when callers most want to confirm the task
+        // is gone. Throwing here made that impossible to express.
         return NOptional.ofNamed(tasks.get(tid), "task " + tid);
     }
 
@@ -988,6 +1062,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             // Nobody is going to answer, so the task must not stay blocked forever.
             log(NaruLogMode.SCRIPT, NMsg.ofC("input cancelled: %s", reason));
             try {
+                // publish the reason before the transition: the task is about to deregister
+                // itself, and error() is the only place left that can say why it failed. Without
+                // this a FAILED task reports no reason at all, because the cancellation is the
+                // engine's doing and no statement ever wrote it.
+                task.setTaskEnv("lastError", reason);
                 ((NaruTaskSchedulerView) task).status(NaruTaskStatus.FAILED);
             } catch (Exception ignored) {
                 // a task that refuses to change state is already terminal
@@ -1138,13 +1217,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruRegistry registry() {
-        ensureNotStopped();
+        // See eventLog(): a worker can be mid-tick when the session is marked stopped, and the
+        // registry is a lookup of things that outlive the session, not new work being started.
         return registry;
     }
 
     @Override
     public long foregroundTaskId() {
-        ensureNotStopped();
+        // Asked from the terminal path itself, so it must answer even while winding down --
+        // rejecting here would turn an ordinary task ending into a scheduler worker failure.
         return foregroundTaskId;
     }
 
@@ -1188,8 +1269,24 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (!running) {
             return this;
         }
-        if (stopped) {
+        if (stopped || stopping) {
+            // 'stopping' catches the reentrant call: killing a task below deregisters it, and
+            // deregistering the last task stops the session. Without this the whole teardown
+            // below would run twice, announcing the stop to every listener twice.
             return this;
+        }
+        stopping = true;
+        // Stopping does not drive tasks to a terminal state, so anything still running would
+        // keep anyone waiting on it blocked forever. Kill them while the session is still able
+        // to record the transition -- a task that reports its own ending calls back into
+        // onTerminated(), which insists the session is not yet stopped -- and before closing
+        // the interaction below, since closing it cancels a pending input request and would
+        // race this to decide who reports the ending.
+        //
+        // A task is its own handle, so this needs no registry of waiting callers: reaching
+        // into each live task is enough, and the list it walks is the one it already keeps.
+        for (NaruTask task : new ArrayList<>(tasks.values())) {
+            task.cancel("session stopped");
         }
         stopped = true;
         scheduler.shutdown();
@@ -1293,7 +1390,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public void onTerminated(long tid) {
-        ensureNotStopped();
+        // deliberately not guarded on 'stopped', for the same reason onTaskStatusChanged is
+        // not: this is a notification that a task reached a terminal state, and a session can
+        // reach that state *because* it was stopped. Guarding here used to throw out of
+        // NaruTaskImpl.status() before the transition was published, so a task killed after
+        // its session stopped never reported KILLED to anyone -- including a task
+        // awaiting it, which then waited forever.
         if (foregroundTaskId() == tid) {
             foregroundTaskId(-1);
         }
@@ -1348,7 +1450,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public NaruSessionEventLog eventLog() {
-        ensureNotStopped();
+        // Deliberately not guarded by ensureNotStopped(). Stopping does not wait for the
+        // scheduler workers to finish -- shutdown only asks them to stop, and a worker part way
+        // through a tick keeps going for a moment -- so a worker can reach this after the
+        // session was marked stopped. Throwing here killed the worker from inside the inbox
+        // drain, which is the one place that can least afford to die. The log is also how a
+        // caller inspects a session that has stopped, so it has to stay readable regardless.
         return eventLog;
     }
 

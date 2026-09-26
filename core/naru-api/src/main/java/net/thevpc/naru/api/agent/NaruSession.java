@@ -125,6 +125,45 @@ public interface NaruSession {
 
     NaruTask newTask(NaruTaskSpec taskBuilder);
 
+    /**
+     * Create a task from {@code spec}, start it, and return it.
+     * <p>
+     * This is the main entry point for embedding. The returned task is its own handle: wait on
+     * it, compose it as a future, or give it a completion callback, without the caller having
+     * to track the task id or re-look it up. The latter matters because a task is deregistered
+     * from the session as soon as it terminates, and stays answerable on its own afterwards.
+     * <p>
+     * The session must already be running; call {@link #start()} first, or use {@link #run()}
+     * to do both in one step. A session stops itself when its last task ends, so a session
+     * meant to serve several requests needs one long-lived task holding it open.
+     *
+     * @param spec what to run, must not be null
+     * @return the new task, already started
+     * @throws IllegalStateException if the session is not running
+     */
+    NaruTask run(NaruTaskSpec spec);
+
+    /**
+     * Start the session if it is not already running, then run the task it was configured
+     * with, and return that task.
+     * <p>
+     * The one-liner for the common case, where a session exists to run exactly one task:
+     * <pre>{@code
+     * NaruTask t = agent.newSession()
+     *         .task(NaruTaskSpec.of().statements("/return 1+1"))
+     *         .build()
+     *         .run()
+     *         .await();
+     * }</pre>
+     * Calling it on a session configured without a task, or calling it twice, throws: the
+     * configured task is one specific invocation, and silently running again would be a
+     * surprising way to lose a result.
+     *
+     * @return the configured task, already started
+     * @throws IllegalStateException if the session has no task configured, or already ran it
+     */
+    NaruTask run();
+
     NOptional<NaruTask> findTask(long tid);
 
     long foregroundTaskId();

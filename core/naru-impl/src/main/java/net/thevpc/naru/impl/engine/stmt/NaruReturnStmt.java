@@ -34,6 +34,13 @@ public class NaruReturnStmt extends NaruStatement implements Cloneable {
         Object ret = expression==null?null:task.evalExpression(expression);
         task.frame().lastResult(NaruStmtResult.ofSuccess(ret));
         task.popFrame();
+        // A return that unwinds past the last frame is the task's own return value, and
+        // nothing else would ever set it: popFrame only propagates between frames, so a
+        // top-level return would otherwise leave getReturnResult() null forever. Recording
+        // it here is what lets a caller ask a finished task what it produced.
+        if (task.stackframes().isEmpty()) {
+            task.setReturnResult(ret);
+        }
         task.defaultAdvance(this);
     }
 }
