@@ -48,10 +48,10 @@ public class NaruBudgetExtensionTest {
 
     private static NaruSessionImpl newSession(String name) {
         NaruAgent agent = new NaruAgentImpl();
-        agent.setProjectDirectory(NPath.ofTempFolder("naru-budget-" + name));
+        agent.projectDirectory(NPath.ofTempFolder("naru-budget-" + name));
         // configureDefaults=true: the extension is found through the same SPI lookup the
         // /stats directive uses, so this also covers registration
-        return new NaruSessionImpl(agent, agent.getProjectDirectory(), true, null, null, null, null);
+        return new NaruSessionImpl(agent, agent.projectDirectory(), null, true, null, null, null, null);
     }
 
     private static void call(NaruSessionImpl session, NaruModelKey model, long prompt, long completion) {

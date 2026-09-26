@@ -8,7 +8,6 @@ import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelRequest;
-import net.thevpc.naru.api.agent.NaruAgent;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
@@ -63,10 +62,10 @@ public class NaruPlanGraphTest {
     @BeforeEach
     public void setUp() {
         NaruAgent agent = new NaruAgentImpl();
-        agent.setProjectDirectory(NPath.ofTempFolder("naru-plan-graph"));
+        agent.projectDirectory(NPath.ofTempFolder("naru-plan-graph"));
         // configureDefaults must be on: the plan graph is now provided by a session
         // extension discovered through the registry, not by the session itself
-        session = new NaruSessionImpl(agent, agent.getProjectDirectory(), true,
+        session = new NaruSessionImpl(agent, agent.projectDirectory(), null, true,
                 NOOP_LISTENER, null, null, null);
     }
 

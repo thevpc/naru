@@ -93,7 +93,7 @@ public class AgentModelIntegrationTest {
         // Initialize Naru system
         folder = NPath.ofTempFolder("naru");
         agent = new NaruAgentImpl();
-        agent.setProjectDirectory(folder);
+        agent.projectDirectory(folder);
         NOut.println(NMsg.ofC("create agent at %s", agent));
     }
 
@@ -133,7 +133,7 @@ public class AgentModelIntegrationTest {
         // of each iteration, the /assert chain AND-accumulates, green==1 stops the
         // loop. No model prompt appears in the script, so no model is needed at all.
         assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
-            session = agent.startSession(
+            session = agent.newSession().statements(
                     "/set --task attempts = 0",
                     "/set --task green = 0",
                     "/while (attempts < 3) && (green != 1)",
@@ -142,7 +142,7 @@ public class AgentModelIntegrationTest {
                     "/system if [ -f \".loop-flag\" ]; then exit 0; else touch .loop-flag; exit 5; fi",
                     "/assert --set green lastExitCode == 0",
                     "/end"
-            );
+            ).build().start();
             NaruTask task = captureForegroundTask(session);
             session.waitFor();
 
@@ -177,7 +177,7 @@ public class AgentModelIntegrationTest {
                     + "\n"
                     + "/set --session maxSteps = 12\n"
                     + "/system touch stream-loaded-marker\n";
-            session = agent.startSession(new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8)));
+            session = agent.newSession().script(new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8))).build().start();
             NaruTask task = captureForegroundTask(session);
             session.waitFor();
 
@@ -259,7 +259,7 @@ public class AgentModelIntegrationTest {
                     + "/if out == \"hi\"\n"
                     + "/system touch save-ok\n"
                     + "/end\n";
-            session = agent.startSession(new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8)));
+            session = agent.newSession().script(new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8))).build().start();
             NaruTask task = captureForegroundTask(session);
             session.waitFor();
 
@@ -403,7 +403,7 @@ public class AgentModelIntegrationTest {
                     + "/if lastExitCode == 1 && lastError == false\n"
                     + "/system touch gset2-ok\n"
                     + "/end\n";
-            session = agent.startSession(new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8)));
+            session = agent.newSession().script(new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8))).build().start();
             NaruTask task = captureForegroundTask(session);
             session.waitFor();
 
@@ -469,7 +469,7 @@ public class AgentModelIntegrationTest {
     @Test
     public void testAgentModelInteraction() {
         assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
-            session = agent.startSession(
+            session = agent.newSession().statements(
                     "/ollama serve",
                     "/model use " + configuredModel(),
                     "what is the capital of Tunisia",
@@ -477,7 +477,7 @@ public class AgentModelIntegrationTest {
                     // the @AfterEach guard covers the case where the script is cut
                     // short by the test timeout.
                     "/ollama stop"
-            );
+            ).build().start();
             // Bound the agent loop: if the model keeps emitting (emulated) tool calls
             // instead of answering, the session must still terminate promptly.
             session.setSessionEnv("maxSteps", 3);
@@ -519,7 +519,7 @@ public class AgentModelIntegrationTest {
             String fileName = "naru-tool-test-" + System.nanoTime() + ".txt";
             String marker = "NARU-TOOL-MARKER-" + UUID.randomUUID();
 
-            session = agent.startSession(
+            session = agent.newSession().statements(
                     "/ollama serve",
                     "/model use " + configuredToolModel(),
                     // implement mode: its system prompt authorizes file writes
@@ -536,7 +536,7 @@ public class AgentModelIntegrationTest {
                             + "\". The bare file name is relative to the current (project root) directory. "
                             + "Do NOT call any other tool.",
                     "/ollama stop"
-            );
+            ).build().start();
             // Bound the agent loop: a couple of tool calls + a final answer is enough.
             session.setSessionEnv("maxSteps", 6);
 
@@ -623,11 +623,11 @@ public class AgentModelIntegrationTest {
             // naru-owned green check — lives in a classpath RESOURCE
             // (src/test/resources/scripts/calc-build-loop.naru). @MODEL@ is
             // substituted with the model under test before the stream is handed to
-            // startSession(InputStream).
+            // the builder's script(InputStream).
             String script = loadScriptResource("/scripts/calc-build-loop.naru")
                     .replace("@MODEL@", configuredToolModel());
-            session = agent.startSession(
-                    new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8)));
+            session = agent.newSession().script(
+                    new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8))).build().start();
 
             // maxSteps bounds a single model turn's tool-call rounds (the budget
             // is reset when a turn ends, so each while-loop re-invocation gets a

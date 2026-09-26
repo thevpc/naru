@@ -126,9 +126,17 @@ LangGraph has both but is Python-only with a static graph.
 
 ---
 
+## Features
+- [X] Metering
+- [X] Skills
+- [X] MCP
+- [X] Plan
+- [X] Ollama
+- [X] Java Development (File indexing ...)
+- [X] Cloud LLM SPIs (Claude, OpenAI, Gemini, Groq, Open Router, Crebras, Mistral, Github, XAi, OpenAi/Ahthropic compatible,...)
+
 ## Roadmap
 
-- [ ] Cloud LLM SPIs (Claude, OpenAI, Gemini)
 - [ ] Streaming output
 - [ ] Embedding SPI + pgvector
 - [ ] RAG pipeline

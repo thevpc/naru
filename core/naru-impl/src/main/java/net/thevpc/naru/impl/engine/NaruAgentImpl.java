@@ -6,25 +6,17 @@ import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.scheduler.NaruEvent;
-import net.thevpc.naru.api.scheduler.NaruTaskMode;
-import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruRegistry;
-import net.thevpc.naru.api.util.NaruTerminalFormatter;
-import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
 import net.thevpc.naru.impl.util.StoredStringMap;
-import net.thevpc.nuts.artifact.NVersion;
 import net.thevpc.nuts.concurrent.NCallable;
 import net.thevpc.nuts.io.*;
 import net.thevpc.nuts.log.NLogger;
 import net.thevpc.nuts.text.NMsg;
-import net.thevpc.nuts.text.NText;
-import net.thevpc.nuts.text.NTextStyle;
 import net.thevpc.nuts.util.*;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.*;
 import java.util.function.Predicate;
 
@@ -52,7 +44,12 @@ public class NaruAgentImpl implements NaruAgent {
     private NPath projectDirectory;
     private StoredStringMap<NaruModelConfig> modelAliases;
     private NaruProjectEnv projectEnv;
-    private final List<NaruSession> sessions = new ArrayList<>();
+    /**
+     * Live sessions. Populated from session lifecycle callbacks, which can arrive on any
+     * thread, so the collection must be concurrent: a plain list was a race as soon as
+     * two sessions started at once.
+     */
+    private final Set<NaruSession> sessions = new CopyOnWriteArraySet<>();
     private final Object signal = new Object();
     private volatile Thread maintenanceThread;
     private final ExecutorService STOP_THE_WORLD_EXECUTOR =
@@ -100,34 +97,44 @@ public class NaruAgentImpl implements NaruAgent {
         this.logger = NLogger.STDOUT;
     }
 
+    @Override
     public Predicate<NaruDirective> directiveFilter() {
         return directiveFilter;
     }
 
-    public NaruAgentImpl setDirectiveFilter(Predicate<NaruDirective> directiveFilter) {
+    @Override
+    public NaruAgent directiveFilter(Predicate<NaruDirective> directiveFilter) {
         this.directiveFilter = directiveFilter;
         return this;
     }
 
+    @Override
     public Predicate<NaruTool> toolFilter() {
         return toolFilter;
     }
 
-    public NaruAgentImpl setToolFilter(Predicate<NaruTool> toolFilter) {
+    @Override
+    public NaruAgentImpl toolFilter(Predicate<NaruTool> toolFilter) {
         this.toolFilter = toolFilter;
         return this;
     }
 
+    @Override
     public Predicate<NaruToolTag> tagFilter() {
         return tagFilter;
     }
 
-    public NaruAgentImpl setTagFilter(Predicate<NaruToolTag> tagFilter) {
+    @Override
+    public NaruAgentImpl tagFilter(Predicate<NaruToolTag> tagFilter) {
         this.tagFilter = tagFilter;
         return this;
     }
 
     public <T> Future<T> postAction(NCallable<T> action) {
+        // The maintenance loop is what drains pendingActions. It used to be started only
+        // when a session started, so a save() issued before the first start() parked on a
+        // future nobody was going to complete.
+        ensureGlobal();
         CompletableFuture<T> future = new CompletableFuture<>();
         pendingActions.add(() -> {
             try {
@@ -140,15 +147,24 @@ public class NaruAgentImpl implements NaruAgent {
         return future;
     }
 
+    /**
+     * Starts the single maintenance loop that runs retention, drains blocked tasks and
+     * executes posted actions.
+     * <p>
+     * Started on demand rather than per session, and the check is double-checked because
+     * session lifecycle callbacks and posted actions reach it from several threads at once.
+     * The loop never exits, so once started it keeps serving actions even while no session
+     * is live.
+     */
     private void ensureGlobal() {
-        if (sessions.isEmpty()) {
-
-        } else {
-            if (maintenanceThread == null) {
-                Thread t = new Thread(this::maintenanceLoop, "naru-maintenance");
-                t.setDaemon(true);
-                t.start();
-                maintenanceThread = t;
+        if (maintenanceThread == null) {
+            synchronized (this) {
+                if (maintenanceThread == null) {
+                    Thread t = new Thread(this::maintenanceLoop, "naru-maintenance");
+                    t.setDaemon(true);
+                    t.start();
+                    maintenanceThread = t;
+                }
             }
         }
     }
@@ -189,12 +205,12 @@ public class NaruAgentImpl implements NaruAgent {
     }
 
     @Override
-    public NPath getProjectDirectory() {
+    public NPath projectDirectory() {
         return projectDirectory;
     }
 
     @Override
-    public NaruAgent setProjectDirectory(NPath projectDirectory) {
+    public NaruAgent projectDirectory(NPath projectDirectory) {
         this.projectDirectory = projectDirectory;
         modelAliases = new StoredStringMap<>(projectDirectory.resolve(".naru/model/aliases.tson"), NaruModelConfig.class)
                 .setSerializer(x -> x.toElement())
@@ -220,132 +236,54 @@ public class NaruAgentImpl implements NaruAgent {
         return this;
     }
 
-    public NaruSession startInteractiveSession(String... commands) {
-        log(NaruLogMode.RAW, NMsg.ofC(
-                "╭╮╷╭─╮╭─╮╷ ╷\n" +
-                        "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
-                        "╵ ╵╵ ╵╵╰╴╰─╯ v%s\n" +
-                        "Type %s%s (or %s%s) for help and %s%s to exit.\n"
-                , NVersion.of("1.0.0.0")
-                , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("help")
-                , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("?")
-                , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("exit")
-        ));
-        NaruSession session = newSession(null);
-        enableRichTerm(session);
-        NOut.resetLine();
-        session.newTask(NaruTaskSpec.of().statements(commands).resolveNameOr("naru"))
-                .taskMode(NaruTaskMode.INTERACTIVE)
-                .fg()
-                .unhold()
-        ;
-        session.start(); // ← missing
-        session.waitFor();
-        return session;
-    }
-
-    public NaruSession newSession(NPath dir) {
-        if (dir == null) {
-            dir = projectDirectory;
-        }
-        if (dir == null) {
-            dir = NPath.ofUserDirectory();
-        }
-        return new NaruSessionImpl(this, dir.toAbsolute(), true, asSessionListener,directiveFilter, toolFilter, tagFilter);
-    }
-
-
     @Override
-    public NaruSession startSession(String... commands) {
-        NaruSession session = newSession(null);
-        session.newTask(NaruTaskSpec.of().statements(commands).resolveNameOr("naru"))
-                .fg()
-                .unhold();
-        session.start();
-        return session;
+    public NaruSessionBuilder newSession() {
+        return new NaruSessionBuilderImpl(this);
+    }
+
+    /**
+     * Where a session lives when the caller does not say: the project directory, or the
+     * user's home directory when the agent has none.
+     */
+    NPath defaultSessionDirectory() {
+        if (projectDirectory != null) {
+            return projectDirectory;
+        }
+        return NPath.ofUserDirectory();
+    }
+
+    NaruSessionListener sessionListener() {
+        return asSessionListener;
+    }
+
+    /**
+     * A snapshot, not a window: a host iterating the result cannot be broken by, or break,
+     * a session starting at the same moment.
+     */
+    @Override
+    public List<NaruSession> sessions() {
+        return List.copyOf(sessions);
     }
 
     @Override
-    public NaruSession startSession(InputStream in) {
-        if (in == null) {
-            throw new NIllegalArgumentException(NMsg.ofC("null script input stream"));
+    public NOptional<NaruSession> session(String id) {
+        if (id == null) {
+            return NOptional.ofNamedEmpty("session with null id");
         }
-        String content;
-        try {
-            content = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new NIllegalArgumentException(NMsg.ofC("fail to read script input stream : %s", e));
+        synchronized (sessions) {
+            for (NaruSession s : sessions) {
+                if (Objects.equals(s.uuid(), id)) {
+                    return NOptional.of(s);
+                }
+            }
         }
-        // Keep ALL lines (blank ones included): parseStatement turns blanks into
-        // no-ops, except inside a "/buffer on ... /buffer off" block where they
-        // are meaningful parts of a multi-line prompt.
-        return startSession(content.split("\r\n|\r|\n", -1));
-    }
-
-    private void enableRichTerm(NaruSession session) {
-        NSystemTerminal.enableRichTerm();
-        NIO.of().systemTerminal()
-                .commandAutoCompleteResolver(new NaruNArgCompleteResolver(session))
-                .commandHighlighter(new NaruTerminalFormatter(session))
-        ;
+        return NOptional.ofNamedEmpty("session " + id);
     }
 
     @Override
     public void log(NaruLogMode mode, NMsg message) {
-        //if (config.isVerbose() && logger != null) {
-        switch (mode) {
-            case RAW: {
-                logger.log(message);
-                break;
-            }
-            case MODEL_RESPONSE: {
-                for (NText line : NaruTerminalFormatter.formatOutputLines(message.toString(), NText.ofStyled("  \u258C", NTextStyle.primary3()))) {
-                    logger.log(NMsg.ofC("%s", line));
-                }
-                break;
-            }
-            case MODEL_THINKING: {
-                for (NText line : NaruTerminalFormatter.formatOutputLines(message.toString(), NText.ofStyled("  \u258C", NTextStyle.primary9()))) {
-                    logger.log(NMsg.ofC("%s", line));
-                }
-                break;
-            }
-            case AGENT_RESPONSE: {
-                logLines(message, 1, "\u258C", 4);
-                break;
-            }
-            case SCRIPT: {
-                logLines(message, 2, "▶️", 5);
-                break;
-            }
-            case TRACE: {
-                logLines(message, 2, "\u258C", 6);
-                break;
-            }
-            case PROGRESS: {
-                logLines(message, 2, "\u258C", 7);
-                break;
-            }
-            case DEBUG: {
-                logLines(message, 2, "\u258C", 8);
-                break;
-            }
-            case SCHEDULER: {
-                logLines(message, 0, "\u258C", 9);
-                break;
-            }
-            default: {
-                logger.log(message);
-            }
-        }
-        //}
-    }
-
-    private void logLines(NMsg message, int indent, String prefix, int style) {
-        List<NText> all = NText.of(message).split("\n", false);
-        String spaces = NStringUtils.repeat(" ", indent * 2);
-        for (NText o : all) {
-            logger.log((NMsg.ofC("%s%s %s", spaces, NMsg.ofStyled(prefix, NTextStyle.primary(style)), o)));
+        if (logger != null) {
+            logger.log(message);
         }
     }
 

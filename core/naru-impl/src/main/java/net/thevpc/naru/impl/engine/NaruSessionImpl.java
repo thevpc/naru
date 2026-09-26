@@ -33,9 +33,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import net.thevpc.naru.impl.interaction.NaruTerminalInteraction;
 
 public class NaruSessionImpl implements NaruSession, NToElement {
     private final NaruAgent agent;
@@ -46,7 +48,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private NaruModelConfig model;
     private final Set<NPath> alreadyLoadedFiles = new HashSet<>();
 
-    private final NaruSessionManagerImpl sessionManager;
+    private final NaruSessionStoreManagerImpl sessionStoreManager;
 
     private String uuid = UUID.randomUUID().toString();
     private String name = "NO_NAME";
@@ -65,15 +67,17 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private NPath projectDir;
     private final NaruScheduler scheduler;
     // session has one dedicated readline thread, parked until needed
-    private final BlockingQueue<NaruTask> inputRequests = new LinkedBlockingQueue<>();
-    private Thread readlineThread;
-    private boolean readlineThreadRunning = true;
     private boolean running = false;
     private final NaruRegistry registry;
     private String systemPrompt;
     private final NaruSessionEventLog eventLog;
     private final NaruSessionListener sessionListener;
     private final List<NaruSessionListener> sessionListeners = new ArrayList<>();
+    /**
+     * How this session reaches its user. Owns any input thread and all presentation, so
+     * a headless session runs with none of it.
+     */
+    private final NaruInteraction interaction;
     /**
      * Observers of provider-reported usage. Not persisted, and not part of session state:
      * an extension that wants usage across a reload re-registers in open().
@@ -92,16 +96,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private volatile List<NaruModelKey> listedModels = Collections.emptyList();
 
 
-    public NaruSessionImpl(NaruAgent agent, NPath projectDir, boolean configureDefaults
+    public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
             , NaruSessionListener sessionListener
             , Predicate<NaruDirective> directiveFilter
             , Predicate<NaruTool> toolFilter
             , Predicate<NaruToolTag> tagFilter
     ) {
         this.agent = agent;
+        // a session created without a stated preference gets the desktop one, which is
+        // what every caller did before this seam existed
+        this.interaction = interaction == null ? new NaruTerminalInteraction() : interaction;
         this.projectDir = projectDir.normalize();
         this.workingDir = projectDir.normalize();
-        this.sessionManager = new NaruSessionManagerImpl(this);
+        this.sessionStoreManager = new NaruSessionStoreManagerImpl(this);
         this.registry = new NaruRegistryImpl(this,directiveFilter, toolFilter, tagFilter);
         this.sessionListener = sessionListener;
         NaruModelConfig model0 = null;
@@ -116,16 +123,16 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                     .stream().filter(x -> x.capabilities().isTools()).collect(Collectors.toList());
             if (any.isEmpty()) {
                 if (model0 == null) {
-                    NOut.println(NMsg.ofC("no model (with tools capability) was found at all", model0).asError());
+                    warn(NMsg.ofC("no model (with tools capability) was found at all"));
                 } else {
-                    NOut.println(NMsg.ofC("model %s not found. actually no model (with tools capability) was found at all", model0).asError());
+                    warn(NMsg.ofC("model %s not found. actually no model (with tools capability) was found at all", model0));
                 }
             } else {
                 model = findModel(any.get(0).key().toString()).orNull();
                 if (model == null) {
-                    NOut.println(NMsg.ofC("model %s not found.", model0).asWarning());
+                    warn(NMsg.ofC("model %s not found.", model0));
                 } else {
-                    NOut.println(NMsg.ofC("model %s not found. auto select %s", model0, model.toText()).asWarning());
+                    warn(NMsg.ofC("model %s not found. auto select %s", model0, model.toText()));
                 }
             }
         }
@@ -140,7 +147,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 } else {
                     log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s/dead] fire %s", newEvent.sourceTid(), newEvent));
                 }
-                sessionListener.onEventAppended(newEvent);
+                if (sessionListener != null) {
+                    sessionListener.onEventAppended(newEvent);
+                }
                 for (NaruSessionListener listener : sessionListeners) {
                     listener.onEventAppended(newEvent);
                 }
@@ -602,7 +611,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     public NaruSession copy() {
         ensureNotStopped();
         this.uuid = UUID.randomUUID().toString();
-        this.sessionListener.onSessionReloaded(this);
+        fireReloaded();
         for (NaruSessionListener listener : sessionListeners) {
             listener.onSessionReloaded(this);
         }
@@ -621,7 +630,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         //clearHistory();
         maxTaskId.set(0);
         saveSnapshot();
-        sessionListener.onSessionReloaded(this);
+        fireReloaded();
         for (NaruSessionListener listener : sessionListeners) {
             listener.onSessionReloaded(this);
         }
@@ -755,7 +764,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             ((NaruSchedulerImpl) scheduler).reloadState();
             return this;
         });
-        sessionListener.onSessionReloaded(this);
+        fireReloaded();
         for (NaruSessionListener listener : sessionListeners) {
             listener.onSessionReloaded(this);
         }
@@ -824,7 +833,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             ((NaruSchedulerImpl) scheduler).reloadState();
             return null;
         });
-        sessionListener.onSessionReloaded(this);
+        fireReloaded();
         for (NaruSessionListener listener : sessionListeners) {
             listener.onSessionReloaded(this);
         }
@@ -842,7 +851,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             return false;
         });
         if (b) {
-            sessionListener.onSessionReloaded(this);
+            fireReloaded();
             for (NaruSessionListener listener : sessionListeners) {
                 listener.onSessionReloaded(this);
             }
@@ -850,8 +859,29 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return this;
     }
 
+    /**
+     * The working snapshot this session saves itself to as it runs.
+     * <p>
+     * Namespaced by session uuid. It used to be one path shared by the whole project, so
+     * two concurrent sessions in a project overwrote and deleted each other's task
+     * snapshots.
+     * <p>
+     * Kept outside {@code .naru/local/sessions/} on purpose: that folder is what
+     * {@code save()} writes and what the store manager lists, so a scratch file living
+     * inside it would be picked up as a saved session and copied around by restore.
+     */
+    /**
+     * Tells the owning agent this session's state was reloaded. A session built without an
+     * agent listener is legitimate (tests embed one directly), so the callback is optional.
+     */
+    private void fireReloaded() {
+        if (sessionListener != null) {
+            sessionListener.onSessionReloaded(this);
+        }
+    }
+
     private NPath snapshotFile() {
-        return projectDir().resolve(".naru/local/sessions/snapshot/session.tson");
+        return projectDir().resolve(".naru/local/snapshot/" + uuid() + "/session.tson");
     }
 
     private void _prepareInit() {
@@ -880,7 +910,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return o.build();
     }
 
-    // readline thread
+    /**
+     * Pushes a line of user input into the session. This is how a headless host answers a
+     * question: it hands the text over whenever it arrives, from any thread, and the task
+     * that asked resumes.
+     */
+    @Override
     public void deliverInput(String line) {
         ensureNotStopped();
         NaruTask fg = findTask(foregroundTaskId).orNull();
@@ -894,10 +929,70 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
     }
 
-    // called by scheduler when task becomes BLOCKED_ON_INPUT
+    /**
+     * Called by the scheduler when a task becomes BLOCKED_ON_INPUT. The question is handed
+     * to the interaction, which decides whether that means blocking a terminal thread or
+     * pushing it to a browser.
+     */
     public void onInputRequested(NaruTask task) {
         ensureNotStopped();
-        inputRequests.add(task);
+        interaction.requestInput(new TaskInputRequest(task));
+    }
+
+    /**
+     * One outstanding question, as seen by the interaction.
+     * <p>
+     * Guarded so the first answer wins. Without it, a browser that reconnects and replays
+     * a submission would resume the same task twice, and the two runs would interleave
+     * their statements into one history.
+     */
+    private final class TaskInputRequest implements NaruInputRequest {
+        private final NaruTask task;
+        private final AtomicBoolean answered = new AtomicBoolean();
+
+        TaskInputRequest(NaruTask task) {
+            this.task = task;
+        }
+
+        @Override
+        public NMsg prompt() {
+            return ((NaruTaskSchedulerView) task).pendingPrompt();
+        }
+
+        @Override
+        public NaruTask task() {
+            return task;
+        }
+
+        @Override
+        public void deliver(String line) {
+            if (!answered.compareAndSet(false, true)) {
+                return;
+            }
+            if (stopped) {
+                return;
+            }
+            ((NaruTaskSchedulerView) task).deliverInput(line);
+            ((NaruTaskSchedulerView) task).status(NaruTaskStatus.READY);
+            ((NaruSchedulerImpl) scheduler).enqueue(task);
+        }
+
+        @Override
+        public void cancel(String reason) {
+            if (!answered.compareAndSet(false, true)) {
+                return;
+            }
+            if (stopped) {
+                return;
+            }
+            // Nobody is going to answer, so the task must not stay blocked forever.
+            log(NaruLogMode.SCRIPT, NMsg.ofC("input cancelled: %s", reason));
+            try {
+                ((NaruTaskSchedulerView) task).status(NaruTaskStatus.FAILED);
+            } catch (Exception ignored) {
+                // a task that refuses to change state is already terminal
+            }
+        }
     }
 
     private void handleSessionCommand(String line) {
@@ -910,7 +1005,18 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (mode == NaruLogMode.SCHEDULER && !isTrace()) {
             return;
         }
-        agent.log(mode, s);
+        interaction.write(mode, s);
+    }
+
+    /**
+     * A problem the user needs to know about but that is not a statement to execute.
+     * <p>
+     * Routed through the session's own interaction rather than the process stdout: with
+     * several sessions running, output written straight to the console cannot be traced
+     * back to the session that produced it.
+     */
+    void warn(NMsg message) {
+        interaction.write(NaruLogMode.SCRIPT, message);
     }
 
     private boolean isTrace() {
@@ -1025,9 +1131,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NaruSessionManager sessionManager() {
+    public NaruSessionStoreManager sessionStoreManager() {
         ensureNotStopped();
-        return sessionManager;
+        return sessionStoreManager;
     }
 
     @Override
@@ -1050,55 +1156,26 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
 
-    // readline thread loop
-    private void readlineLoop() {
-        ensureNotStopped();
-        while (readlineThreadRunning) {
-            NaruTask task = null; // parks here until request arrives
-            try {
-                task = inputRequests.take();
-            } catch (InterruptedException e) {
-                break;
-            }
-            NaruTaskSchedulerView t = (NaruTaskSchedulerView) task;
-            NMsg prompt = t.pendingPrompt();
-            String line = null;
-            try {
-                line = NTerminal.of().readLine(prompt); // blocks until user types
-            } catch (Exception ex) {
-                //
-            }
-            if (line == null) {
-                continue;
-            }
-            t.deliverInput(line);
-            t.status(NaruTaskStatus.READY);
-            ((NaruSchedulerImpl) scheduler).enqueue(task);
-        }
-    }
-
-
     @Override
-    public void start() {
+    public NaruSession start() {
         ensureNotStopped();
         if (running) {
-            return;
+            return this;
         }
         running = true;
-        // start readline thread
-        readlineThread = new Thread(this::readlineLoop, "naru-readline");
-        // daemon: this thread only services interactive input requests. It must never
-        // keep the JVM alive after the work of a batch session is done, otherwise the
-        // process (and any test using it) never exits.
-        readlineThread.setDaemon(true);
-        readlineThread.start();
+        // The interaction owns whatever thread it needs, and starts none at all when it is
+        // headless. Opening it before the scheduler means input can be accepted from the
+        // moment the first task starts asking.
+        interaction.open(this);
 
-        // start scheduler (its workers)
         scheduler.start();
-        sessionListener.sessionStarted(this);
+        if (sessionListener != null) {
+            sessionListener.sessionStarted(this);
+        }
         for (NaruSessionListener listener : sessionListeners) {
             listener.sessionStarted(this);
         }
+        return this;
     }
 
     @Override
@@ -1107,22 +1184,27 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public void stop() {
+    public NaruSession stop() {
         if (!running) {
-            return;
+            return this;
         }
         if (stopped) {
-            return;
+            return this;
         }
         stopped = true;
         scheduler.shutdown();
-        readlineThreadRunning = false;
-        readlineThread.interrupt();
         running = false;
-        sessionListener.sessionStopped(this);
+        // close the interaction before announcing the stop: that cancels any input request
+        // still waiting, so a worker is never left blocked on a question the host is gone
+        // for. The terminal interaction also shuts down its readline thread here.
+        interaction.close();
+        if (sessionListener != null) {
+            sessionListener.sessionStopped(this);
+        }
         for (NaruSessionListener listener : sessionListeners) {
             listener.sessionStopped(this);
         }
+        return this;
     }
 
     @Override
@@ -1188,22 +1270,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public void waitFor() {
+    public NaruSession waitFor() {
         // Note: intentionally not calling ensureNotStopped() here. In batch usage the
         // session commonly finishes (and therefore stops itself) before waitFor() is
         // even called; that race must simply return instead of throwing.
-        try {
-            // wait for scheduler workers to terminate
-            scheduler.awaitTermination();
-            // defensive, bounded join: stop() interrupts the readline thread so it
-            // should exit promptly. The bound guarantees waitFor() can never hang
-            // forever if the terminal read is not interruptible.
-            if (readlineThread != null) {
-                readlineThread.join(10_000);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // Only the scheduler is awaited. The interaction closes itself in stop(), and a
+        // headless session has no thread to wait for at all.
+        scheduler.awaitTermination();
+        return this;
     }
 
     @Override
@@ -1251,7 +1325,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         // deliberately not guarded on 'stopped': onTerminated() stops the session when the
         // last task dies, and a listener must still observe that final transition
         try {
-            sessionListener.onTaskStatusChanged(task, oldStatus, newStatus);
+            if (sessionListener != null) {
+                sessionListener.onTaskStatusChanged(task, oldStatus, newStatus);
+            }
         } catch (Throwable error) {
             // must not escape: this runs inside NaruTaskImpl.status(), so a
             // throwing listener would otherwise fail the task being ticked

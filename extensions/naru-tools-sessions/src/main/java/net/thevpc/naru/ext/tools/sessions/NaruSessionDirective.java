@@ -61,7 +61,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 int wordIndex = pos.wordIndex();
                 if (wordIndex == 2) {
                     String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
-                    for (NaruResourceInfo info : session.sessionManager().list()) {
+                    for (NaruResourceInfo info : session.sessionStoreManager().list()) {
                         if (info.getName() != null && !info.getName().isEmpty()) {
                             addCandidates(candidates, currentArg, info.getName());
                         }
@@ -95,7 +95,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 int wordIndex = pos.wordIndex();
                 if (wordIndex == 2) {
                     String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
-                    for (NaruResourceInfo info : session.sessionManager().list()) {
+                    for (NaruResourceInfo info : session.sessionStoreManager().list()) {
                         if (info.getName() != null && !info.getName().isEmpty()) {
                             addCandidates(candidates, currentArg, info.getName());
                         }
@@ -157,7 +157,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
     public NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
 
-        List<NaruResourceInfo> naruResourceInfos = task.session().sessionManager().list();
+        List<NaruResourceInfo> naruResourceInfos = task.session().sessionStoreManager().list();
         NStringBuilder sb = NStringBuilder.of();
         int index = 1;
         for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
@@ -179,7 +179,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
 
     public NaruStmtResult executePurge(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        int count = task.session().sessionManager().purge();
+        int count = task.session().sessionStoreManager().purge();
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("purged %s sessions", count));
         return NaruStmtResult.ofSuccess(count);
     }
@@ -190,7 +190,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         }
         NaruTask task = context.task();
 
-        NaruSessionManager sm = task.session().sessionManager();
+        NaruSessionStoreManager sm = task.session().sessionStoreManager();
         int trials = 0;
         int count = 0;
         while (!cmdLine.isEmpty()) {
@@ -223,7 +223,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
 
     public NaruStmtResult executeLoad(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        NaruSessionManager sm = task.session().sessionManager();
+        NaruSessionStoreManager sm = task.session().sessionStoreManager();
         String name = cmdLine.next().flatMap(x -> x.asString()).orNull();
         if (NBlankable.isBlank(name)) {
             name = "main";

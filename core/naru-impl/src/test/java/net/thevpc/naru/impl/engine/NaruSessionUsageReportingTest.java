@@ -1,7 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.NaruAgent;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionUsageListener;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
@@ -51,9 +50,9 @@ public class NaruSessionUsageReportingTest {
 
     private static NaruSessionImpl newSession() {
         NaruAgent agent = new NaruAgentImpl();
-        agent.setProjectDirectory(NPath.ofTempFolder("naru-usage-reporting"));
+        agent.projectDirectory(NPath.ofTempFolder("naru-usage-reporting"));
         // configureDefaults=false keeps SPI discovery and the network out of it
-        return new NaruSessionImpl(agent, agent.getProjectDirectory(), false, null, null, null, null);
+        return new NaruSessionImpl(agent, agent.projectDirectory(), null, false, null, null, null, null);
     }
 
     /** Records every callback so a test can assert on the values, not just the count. */

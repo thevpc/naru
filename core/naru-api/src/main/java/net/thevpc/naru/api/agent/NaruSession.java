@@ -75,7 +75,15 @@ public interface NaruSession {
 
     NaruSession setName(String name);
 
-    NaruSessionManager sessionManager();
+    /**
+     * The catalog of sessions <b>saved to disk</b> in this project.
+     * <p>
+     * Distinct from {@link NaruAgent#sessions()}, which is the set of sessions currently
+     * <i>running in this JVM</i>. Nothing here is live: these are directories under
+     * {@code .naru/sessions/} that can be listed, restored, purged or deleted, and they
+     * are not required to have ever been started in this process.
+     */
+    NaruSessionStoreManager sessionStoreManager();
 
     NaruRegistry registry();
 
@@ -125,11 +133,11 @@ public interface NaruSession {
 
     boolean isRunning();
 
-    void start();
+    NaruSession start();
 
-    void stop();
+    NaruSession stop();
 
-    void waitFor();
+    NaruSession waitFor();
 
     String systemPrompt();
 
@@ -142,6 +150,17 @@ public interface NaruSession {
     void addSessionListener(NaruSessionListener listener);
 
     void removeSessionListener(NaruSessionListener listener);
+
+    /**
+     * Hands a line of user input to the session, from any thread.
+     * <p>
+     * This is how a host answers a {@link NaruInputRequest}. A terminal hands over what
+     * the readline thread read; a web front end hands over what the browser posted,
+     * possibly long after the question was asked and from a different process. The line
+     * goes to the foreground task if one is blocked on input, and is treated as a session
+     * command otherwise.
+     */
+    void deliverInput(String line);
 
     // ── usage reporting ──────────────────────────────────────────────────────
     // The core announces provider-reported numbers; what they mean is up to a listener.

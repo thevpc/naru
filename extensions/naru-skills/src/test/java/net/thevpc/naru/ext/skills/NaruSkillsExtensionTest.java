@@ -14,7 +14,6 @@ import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
-import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementFormatterStyle;
@@ -92,8 +91,8 @@ public class NaruSkillsExtensionTest {
         publicSkill("git-flow", "follow git flow");
         privateSkill("javadoc", "PRIVATE javadoc rules");
         NaruAgent agent = new NaruAgentImpl();
-        agent.setProjectDirectory(projectDir);
-        session = new NaruSessionImpl(agent, projectDir, true, NOOP_LISTENER, null, null, null);
+        agent.projectDirectory(projectDir);
+        session = new NaruSessionImpl(agent, projectDir, null, true, NOOP_LISTENER, null, null, null);
         ext = NaruSkillsExtension.skills(session);
     }
 

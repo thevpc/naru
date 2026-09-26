@@ -69,19 +69,28 @@ public class NaruCmdLineProcessor {
             return;
         }
         NaruAgent runner = new NaruAgentImpl();
-        runner.setProjectDirectory(NPath.of(projectDir));
+        runner.projectDirectory(NPath.of(projectDir));
         boolean interactive = (forceInteractive == null ? precommands.isEmpty() : forceInteractive);
         if (interactive) {
-            runner.startInteractiveSession(precommands.toArray(new String[0]))
-                    ;
+            runner.newSession()
+                    .statements(precommands.toArray(new String[0]))
+                    .interactive()
+                    .banner(true)
+                    .richTerm(true)
+                    .build()
+                    .start()
+                    .waitFor();
         } else {
             if (precommands.isEmpty()) {
                 throw new NIllegalArgumentException(NMsg.ofC("no task specified"));
             }
             try {
-                runner.startSession(precommands.toArray(new String[0]))
+                runner.newSession()
+                        .statements(precommands.toArray(new String[0]))
+                        .build()
+                        .start()
                         .waitFor();
-            }catch (NCancelException e){
+            } catch (NCancelException e) {
                 // just exit
             }
         }

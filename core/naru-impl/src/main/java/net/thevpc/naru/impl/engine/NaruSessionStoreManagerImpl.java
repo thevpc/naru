@@ -2,22 +2,31 @@ package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.NAruVisibility;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
-import net.thevpc.naru.api.agent.NaruSessionManager;
+import net.thevpc.naru.api.agent.NaruSessionStoreManager;
 import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NStringUtils;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-public class NaruSessionManagerImpl implements NaruSessionManager {
+public class NaruSessionStoreManagerImpl implements NaruSessionStoreManager {
+    /**
+     * The session this catalog is reached through.
+     * <p>
+     * A back-reference on purpose, and it is what keeps the store honest: a lookup falls
+     * back to the current session's own uuid and name, and purging or deleting the current
+     * session resets it rather than leaving stale state behind. Everything else here is
+     * pure disk access.
+     */
     private final NaruSessionImpl adapter;
 
-    public NaruSessionManagerImpl(NaruSessionImpl adapter) {
+    public NaruSessionStoreManagerImpl(NaruSessionImpl adapter) {
         this.adapter = adapter;
     }
 
@@ -34,7 +43,23 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
             s.setVisibility(NAruVisibility.PUBLIC);
             a.add(s);
         }
-        a.sort((o1, o2) -> o2.getModificationInstant().compareTo(o1.getModificationInstant()));
+        // newest first. A session file with no recorded modification instant is treated as
+        // the oldest rather than allowed to blow up the whole listing: one odd file on disk
+        // should not make /sessions unusable.
+        a.sort((o1, o2) -> {
+            Instant t1 = o1.getModificationInstant();
+            Instant t2 = o2.getModificationInstant();
+            if (t1 == null && t2 == null) {
+                return 0;
+            }
+            if (t1 == null) {
+                return 1;
+            }
+            if (t2 == null) {
+                return -1;
+            }
+            return t2.compareTo(t1);
+        });
         return a;
     }
 
@@ -112,6 +137,14 @@ public class NaruSessionManagerImpl implements NaruSessionManager {
         return sessionDir(publicSession).resolve(uuid).resolve("session.tson");
     }
 
+    /**
+     * A directory is a saved session only if it holds a {@code session.tson}.
+     * <p>
+     * The snapshot exclusion is for directories written by older layouts, which kept the
+     * working snapshot at {@code .naru/local/sessions/snapshot} as a sibling of the real
+     * session folders. It is harmless to keep now that scratch state lives outside
+     * this folder.
+     */
     private static class NonSnapshotSessionFolder implements Predicate<NPath> {
         @Override
         public boolean test(NPath x) {
