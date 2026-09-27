@@ -63,7 +63,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
      * running tool or model call has no way to know it is being cancelled.
      */
     private volatile boolean killRequested;
-    private NAruInputMode inputMode = NAruInputMode.LINE;
+    private NaruInputMode inputMode = NaruInputMode.LINE;
     /**
      * Raw lines being accumulated by a script-level "/buffer on ... /buffer off"
      * block (null when not buffering). Blank lines are preserved, and "/buffer
@@ -833,7 +833,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         this.projectDir = o.getStringValue("projectDir").map(x -> NPath.of(x)).orElse(projectDir);
         this.workingDir = o.getStringValue("workingDir").map(x -> NPath.of(x)).orElse(workingDir);
         this.lastResult = o.get("lastResult").map(x -> NaruMessage.of(x)).orNull();
-        this.inputMode = o.get("inputMode").map(x -> NAruInputMode.parse(x).orElse(NAruInputMode.LINE)).orNull();
+        this.inputMode = o.get("inputMode").map(x -> NaruInputMode.parse(x).orElse(NaruInputMode.LINE)).orNull();
         this.inputBuffer = "";
         NOptional<NElement> ibe = o.get("inputBuffer");
         if (ibe.isPresent() && ibe.get().isAnyStringOrName()) {
@@ -901,7 +901,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
 
-    public NaruTaskImpl _setInputMode(NAruInputMode inputMode) {
+    public NaruTaskImpl _setInputMode(NaruInputMode inputMode) {
         this.inputMode = inputMode;
         return this;
     }
@@ -950,12 +950,12 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public NAruInputMode inputMode() {
+    public NaruInputMode inputMode() {
         return inputMode;
     }
 
     @Override
-    public NaruTask inputMode(NAruInputMode inputMode) {
+    public NaruTask inputMode(NaruInputMode inputMode) {
         if (inputMode != null) {
             if (inputMode != this.inputMode) {
                 this.inputMode = inputMode;

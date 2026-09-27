@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.skills;
 
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 
 import java.util.List;
 import java.util.function.IntPredicate;
@@ -13,7 +13,7 @@ import java.util.function.IntPredicate;
  * injects it into prompts.
  */
 public interface NaruSkill {
-    NAruVisibility getVisibility();
+    NaruVisibility getVisibility();
 
     String getName();
 

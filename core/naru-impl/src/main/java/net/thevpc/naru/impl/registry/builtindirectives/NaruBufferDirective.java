@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.registry.builtindirectives;
 
-import net.thevpc.naru.api.agent.NAruInputMode;
+import net.thevpc.naru.api.agent.NaruInputMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
@@ -15,17 +15,17 @@ public class NaruBufferDirective extends NaruDirectiveBase {
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String arg = context.argument() == null ? "" : context.argument().trim();
-                NAruInputMode m;
+                NaruInputMode m;
                 switch (arg) {
                     case "on":
-                        m = NAruInputMode.BLOC;
+                        m = NaruInputMode.BLOC;
                         break;
                     case "off":
-                        m = NAruInputMode.LINE;
+                        m = NaruInputMode.LINE;
                         break;
                     default:
                         // bare "/buffer" toggles
-                        m = task.inputMode() == NAruInputMode.LINE ? NAruInputMode.BLOC : NAruInputMode.LINE;
+                        m = task.inputMode() == NaruInputMode.LINE ? NaruInputMode.BLOC : NaruInputMode.LINE;
                         break;
                 }
                 task.inputMode(m);

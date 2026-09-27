@@ -17,13 +17,13 @@ import java.util.List;
 import java.util.Map;
 
 public interface NaruSession {
-    NAruVisibility getVisibility();
+    NaruVisibility getVisibility();
 
     NaruSession throttleDelay(long ms);
 
     NaruScheduler scheduler();
 
-    NaruSession setVisibility(NAruVisibility visibility);
+    NaruSession setVisibility(NaruVisibility visibility);
 
     NaruAgent agent();
 
@@ -127,7 +127,7 @@ public interface NaruSession {
 
     NOptional<NElement> getProjectEnv(String key);
 
-    void setProjectEnv(String key, NElement value, NAruVisibility visibility);
+    void setProjectEnv(String key, NElement value, NaruVisibility visibility);
 
     NOptional<Object> getSessionEnv(String key);
 

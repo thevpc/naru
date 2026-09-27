@@ -1,15 +1,13 @@
 package net.thevpc.naru.api.routine;
 
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NToElement;
-import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.IntPredicate;
 
@@ -20,7 +18,7 @@ public interface NaruRoutine extends NToElement {
 
     String uuid();
 
-    NAruVisibility visibility();
+    NaruVisibility visibility();
 
     String name();
 

@@ -46,7 +46,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     /**
      * public|private
      */
-    private NAruVisibility visibility = NAruVisibility.PRIVATE;
+    private NaruVisibility visibility = NaruVisibility.PRIVATE;
     private NaruModelConfig model;
     private final Set<NPath> alreadyLoadedFiles = new HashSet<>();
 
@@ -96,7 +96,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final List<NaruSessionUsageListener> usageListeners = new CopyOnWriteArrayList<>();
     private boolean stopped;
     private final Map<String, NaruRoutine> routines = new ConcurrentHashMap<>();
-    private NAruVisibility loadTimeVisibility;
+    private NaruVisibility loadTimeVisibility;
     private int schedulerThreadCount = 1;
     private volatile long schedulerThrottleDelayMs = 500;
     /**
@@ -211,15 +211,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NAruVisibility getVisibility() {
+    public NaruVisibility getVisibility() {
         return visibility;
     }
 
     @Override
-    public NaruSession setVisibility(NAruVisibility visibility) {
+    public NaruSession setVisibility(NaruVisibility visibility) {
         ensureNotStopped();
         NAssert.requireNamedNonNull(visibility, "visibility");
-        if (visibility != NAruVisibility.PUBLIC && visibility != NAruVisibility.PRIVATE) {
+        if (visibility != NaruVisibility.PUBLIC && visibility != NaruVisibility.PRIVATE) {
             NAssert.requireNamedTrue(false, "valid visibility");
         }
         this.visibility = visibility;
@@ -252,7 +252,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         NaruTaskImpl natuTask = new NaruTaskImpl(id, parent == null ? -1 : parent.id(), this);
         natuTask.name(taskBuilder.name());
         if (parent == null) {
-            natuTask._setInputMode(NAruInputMode.LINE);
+            natuTask._setInputMode(NaruInputMode.LINE);
             natuTask._setWorkingDir(cwd == null ? workingDir : cwd);
             natuTask._setProjectDir(projectDir);
             natuTask._setMode(NUtils.firstNonNull(taskBuilder.promptMode(), registry().mode(NaruStandardMode.PLANNING).get()));
@@ -261,7 +261,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setReturnResult(null);
             natuTask._setModel(model);
         } else {
-            natuTask._setInputMode(NAruInputMode.LINE);
+            natuTask._setInputMode(NaruInputMode.LINE);
             natuTask._setWorkingDir(cwd == null ? parent.workingDir() : cwd);
             natuTask._setProjectDir(parent.projectDir());
             // an explicit mode on the spec wins over the inherited one, so that a
@@ -400,7 +400,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public void setProjectEnv(String key, NElement value, NAruVisibility visibility) {
+    public void setProjectEnv(String key, NElement value, NaruVisibility visibility) {
         ensureNotStopped();
         NaruEnv a = agent.env();
         a.put(key, value, visibility);
@@ -582,9 +582,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.name = NStringUtils.firstNonBlankStripped(o.getStringValue("name").orElse(null), "NO_NAME");
         this.creationInstant = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
         this.modificationInstant = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationInstant);
-        this.visibility = NAruVisibility.parse(o.getStringValue("visibility").orElse(null)).orElse(NAruVisibility.PRIVATE);
-        if (this.visibility != NAruVisibility.PRIVATE && this.visibility != NAruVisibility.PUBLIC) {
-            this.visibility = NAruVisibility.PRIVATE;
+        this.visibility = NaruVisibility.parse(o.getStringValue("visibility").orElse(null)).orElse(NaruVisibility.PRIVATE);
+        if (this.visibility != NaruVisibility.PRIVATE && this.visibility != NaruVisibility.PUBLIC) {
+            this.visibility = NaruVisibility.PRIVATE;
         }
         NElement mv = o.get("model").orElse(null);
         this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
@@ -754,7 +754,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         stopTheWorldAndWait(() -> {
             NPath publicFolder = projectDir.resolve(".naru/sessions/" + uuid());
             NPath privateFolder = projectDir.resolve(".naru/local/sessions/" + uuid());
-            if (getVisibility() == NAruVisibility.PUBLIC) {
+            if (getVisibility() == NaruVisibility.PUBLIC) {
                 saveFolder(publicFolder);
                 if (privateFolder.exists()) {
                     privateFolder.deleteTree();
@@ -826,12 +826,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
             if (isValidSessionFolder(privateFolder)) {
                 loadFolder(privateFolder);
-                setVisibility(NAruVisibility.PRIVATE);
-                this.loadTimeVisibility = NAruVisibility.PRIVATE;
+                setVisibility(NaruVisibility.PRIVATE);
+                this.loadTimeVisibility = NaruVisibility.PRIVATE;
             } else if (isValidSessionFolder(publicFolder)) {
                 loadFolder(publicFolder);
-                setVisibility(NAruVisibility.PUBLIC);
-                this.loadTimeVisibility = NAruVisibility.PUBLIC;
+                setVisibility(NaruVisibility.PUBLIC);
+                this.loadTimeVisibility = NaruVisibility.PUBLIC;
             } else {
                 throw new NIllegalArgumentException(NMsg.ofC("Session '%s' not found", otherUuid));
             }
@@ -873,23 +873,23 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             if (loadTimeVisibility == null) {
                 if (isValidSessionFolder(privateFolder)) {
                     loadFolder(privateFolder);
-                    setVisibility(NAruVisibility.PRIVATE);
-                    this.loadTimeVisibility = NAruVisibility.PRIVATE;
+                    setVisibility(NaruVisibility.PRIVATE);
+                    this.loadTimeVisibility = NaruVisibility.PRIVATE;
                 } else {
                     if (isValidSessionFolder(publicFolder)) {
                         loadFolder(publicFolder);
-                        setVisibility(NAruVisibility.PUBLIC);
-                        this.loadTimeVisibility = NAruVisibility.PUBLIC;
+                        setVisibility(NaruVisibility.PUBLIC);
+                        this.loadTimeVisibility = NaruVisibility.PUBLIC;
                     } else {
                         this.uuid = UUID.randomUUID().toString();
                         this._prepareInit();
                     }
                 }
-            } else if (loadTimeVisibility == NAruVisibility.PUBLIC) {
+            } else if (loadTimeVisibility == NaruVisibility.PUBLIC) {
                 if (isValidSessionFolder(publicFolder)) {
                     loadFolder(publicFolder);
-                    setVisibility(NAruVisibility.PUBLIC);
-                    this.loadTimeVisibility = NAruVisibility.PUBLIC;
+                    setVisibility(NaruVisibility.PUBLIC);
+                    this.loadTimeVisibility = NaruVisibility.PUBLIC;
                 } else {
                     this.uuid = UUID.randomUUID().toString();
                     this._prepareInit();
@@ -897,8 +897,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             } else {
                 if (isValidSessionFolder(privateFolder)) {
                     loadFolder(privateFolder);
-                    setVisibility(NAruVisibility.PRIVATE);
-                    this.loadTimeVisibility = NAruVisibility.PRIVATE;
+                    setVisibility(NaruVisibility.PRIVATE);
+                    this.loadTimeVisibility = NaruVisibility.PRIVATE;
                 } else {
                     this.uuid = UUID.randomUUID().toString();
                     this._prepareInit();
@@ -963,7 +963,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.creationInstant = Instant.now();
         this.modificationInstant = creationInstant;
         this.maxTaskId.set(0);
-        this.loadTimeVisibility = NAruVisibility.PRIVATE;
+        this.loadTimeVisibility = NaruVisibility.PRIVATE;
     }
 
     @Override
@@ -1505,7 +1505,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 //    }
 
 //    @Override
-//    public NaruRoutine ensureRoutineExists(String routineName, NAruVisibility visibilityOnCreate, NaruTask naruTask) {
+//    public NaruRoutine ensureRoutineExists(String routineName, NaruVisibility visibilityOnCreate, NaruTask naruTask) {
 //        routineName = NStringUtils.firstNonBlankStripped(routineName, "main");
 //        NaruRoutine rt = routine(routineName, naruTask).orNull();
 //        if (rt != null) {

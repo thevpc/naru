@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.engine.routine;
 
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.routine.NaruIndexedLine;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.stmt.NaruStatement;
@@ -17,12 +17,12 @@ import java.util.function.IntPredicate;
 public class NaruRoutineMem implements NaruRoutine {
     private String uuid;
     private String name;
-    private NAruVisibility visibility;
+    private NaruVisibility visibility;
     private Instant creationInstant;
     private Instant modificationInstant;
     private TreeMap<Integer, String> lines = new TreeMap<>();
 
-    public NaruRoutineMem(String uuid, String name, NAruVisibility visibility) {
+    public NaruRoutineMem(String uuid, String name, NaruVisibility visibility) {
         this.uuid = uuid;
         this.name = name;
         this.visibility = visibility;
@@ -39,9 +39,9 @@ public class NaruRoutineMem implements NaruRoutine {
             NListContainerElement c = element.asListContainer().get();
             name = c.getStringValue("name").orNull();
             uuid = c.getStringValue("uuid").orNull();
-            visibility = NAruVisibility.parse(c.getStringValue("visibility").orNull()).orElse(NAruVisibility.PRIVATE);
-            if (visibility == NAruVisibility.MIXED) {
-                visibility = NAruVisibility.PRIVATE;
+            visibility = NaruVisibility.parse(c.getStringValue("visibility").orNull()).orElse(NaruVisibility.PRIVATE);
+            if (visibility == NaruVisibility.MIXED) {
+                visibility = NaruVisibility.PRIVATE;
             }
             creationInstant = c.getInstantValue("creationInstant").orNull();
             modificationInstant = c.getInstantValue("modificationInstant").orNull();
@@ -84,7 +84,7 @@ public class NaruRoutineMem implements NaruRoutine {
 
 
 
-    public NAruVisibility visibility() {
+    public NaruVisibility visibility() {
         return visibility;
     }
 
@@ -98,7 +98,7 @@ public class NaruRoutineMem implements NaruRoutine {
         return modificationInstant;
     }
 
-    public NaruRoutineMem visibility(NAruVisibility visibility) {
+    public NaruRoutineMem visibility(NaruVisibility visibility) {
         this.visibility = visibility;
         return this;
     }
@@ -292,7 +292,7 @@ public class NaruRoutineMem implements NaruRoutine {
 ////            String pathName = NStringUtils.firstNonBlankStripped(name(),"noname") + ".naru";
 ////            NPath pub = publicDir.resolve(pathName);
 ////            NPath priv = privateDir.resolve(pathName);
-////            if (visibility() == NAruVisibility.PUBLIC) {
+////            if (visibility() == NaruVisibility.PUBLIC) {
 ////                if (priv.isRegularFile()) {
 ////                    priv.delete();
 ////                }
@@ -331,7 +331,7 @@ public class NaruRoutineMem implements NaruRoutine {
 //    }
 
 
-    public NaruRoutineMem setVisibility(NAruVisibility visibility) {
+    public NaruRoutineMem setVisibility(NaruVisibility visibility) {
         this.visibility = visibility;
         return this;
     }

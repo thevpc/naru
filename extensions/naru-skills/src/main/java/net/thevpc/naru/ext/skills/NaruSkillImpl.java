@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.skills;
 
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -9,10 +9,10 @@ import java.util.function.IntPredicate;
 class NaruSkillImpl implements NaruSkill {
     private final String name;
     private final String sourceName;
-    private final NAruVisibility visibility;
+    private final NaruVisibility visibility;
     private final List<String> lines = new ArrayList<>();
 
-    NaruSkillImpl(String name, NAruVisibility visibility, List<String> lines, String sourceName) {
+    NaruSkillImpl(String name, NaruVisibility visibility, List<String> lines, String sourceName) {
         this.name = name;
         this.sourceName = sourceName;
         this.visibility = visibility;
@@ -25,7 +25,7 @@ class NaruSkillImpl implements NaruSkill {
     }
 
     @Override
-    public NAruVisibility getVisibility() {
+    public NaruVisibility getVisibility() {
         return visibility;
     }
 

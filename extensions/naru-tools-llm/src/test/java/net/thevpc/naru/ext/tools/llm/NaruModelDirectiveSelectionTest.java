@@ -1,9 +1,6 @@
 package net.thevpc.naru.ext.tools.llm;
 
-import net.thevpc.naru.api.agent.NaruAgent;
-import net.thevpc.naru.api.agent.NaruEnv;
-import net.thevpc.naru.api.agent.NaruLogMode;
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
@@ -144,7 +141,7 @@ public class NaruModelDirectiveSelectionTest {
                             }
 
                             @Override
-                            public void put(String key, NElement value, net.thevpc.naru.api.agent.NAruVisibility visibility) {
+                            public void put(String key, NElement value, NaruVisibility visibility) {
                             }
                         }
                         : null);

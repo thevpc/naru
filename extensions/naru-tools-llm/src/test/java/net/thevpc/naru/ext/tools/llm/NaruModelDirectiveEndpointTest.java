@@ -2,7 +2,7 @@ package net.thevpc.naru.ext.tools.llm;
 
 import net.thevpc.naru.api.agent.NaruAgent;
 import net.thevpc.naru.api.agent.NaruEnv;
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
@@ -63,11 +63,11 @@ public class NaruModelDirectiveEndpointTest {
             }
 
             @Override
-            public void put(String key, NElement value, NAruVisibility visibility) {
+            public void put(String key, NElement value, NaruVisibility visibility) {
                 if (value == null) {
                     publicStore.remove(key);
                     privateStore.remove(key);
-                } else if (visibility == NAruVisibility.PRIVATE) {
+                } else if (visibility == NaruVisibility.PRIVATE) {
                     privateStore.put(key, value);
                 } else {
                     publicStore.put(key, value);
@@ -84,7 +84,7 @@ public class NaruModelDirectiveEndpointTest {
                         case "agent":
                             return agent;
                         case "setProjectEnv":
-                            env.put((String) args[0], (NElement) args[1], (NAruVisibility) args[2]);
+                            env.put((String) args[0], (NElement) args[1], (NaruVisibility) args[2]);
                             return null;
                         case "getProjectEnv":
                             return env.get((String) args[0]);

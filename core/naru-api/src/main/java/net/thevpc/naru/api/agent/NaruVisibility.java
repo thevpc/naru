@@ -3,10 +3,10 @@ package net.thevpc.naru.api.agent;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
 
-public enum NAruVisibility {
+public enum NaruVisibility {
     PUBLIC, PRIVATE, MIXED;
 
-    public static NOptional<NAruVisibility> parse(String visibility) {
+    public static NOptional<NaruVisibility> parse(String visibility) {
         if(NBlankable.isBlank(visibility)){
             return NOptional.ofNamedEmpty("visibility : '"+visibility+"'");
         }

@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.impl.util.StoredStringMap;
 import net.thevpc.nuts.elem.NElement;
@@ -26,9 +26,9 @@ public class NaruProjectEnv implements NaruEnv {
     }
 
     @Override
-    public void put(String key, NElement value, NAruVisibility visibility) {
-        if(visibility==null||visibility==NAruVisibility.MIXED){
-            visibility=NAruVisibility.PRIVATE;
+    public void put(String key, NElement value, NaruVisibility visibility) {
+        if(visibility==null||visibility== NaruVisibility.MIXED){
+            visibility= NaruVisibility.PRIVATE;
         }
         switch (visibility){
             case PRIVATE:{

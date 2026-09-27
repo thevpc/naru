@@ -3,11 +3,11 @@ package net.thevpc.naru.api.agent;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NOptional;
 
-public enum NAruInputMode {
+public enum NaruInputMode {
     LINE,
     BLOC;
 
-    public static NOptional<NAruInputMode> parse(NElement x) {
+    public static NOptional<NaruInputMode> parse(NElement x) {
         if(x !=null){
             if(x.isAnyStringOrName()){
                 return parse(x.asStringValue().get());
@@ -20,7 +20,7 @@ public enum NAruInputMode {
         return name().toLowerCase();
     }
 
-    public static NOptional<NAruInputMode> parse(String x) {
+    public static NOptional<NaruInputMode> parse(String x) {
         if(x !=null){
             switch (x.trim()
                     .replace("_", "")

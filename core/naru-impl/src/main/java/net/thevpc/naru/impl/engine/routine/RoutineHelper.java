@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.engine.routine;
 
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NBlankable;
@@ -38,7 +38,7 @@ public class RoutineHelper {
         }
         boolean numbered=false;
         try {
-            NaruRoutineMem rr = new NaruRoutineMem(null, null, NAruVisibility.PUBLIC);
+            NaruRoutineMem rr = new NaruRoutineMem(null, null, NaruVisibility.PUBLIC);
             String name = path.toString();
             String text = path.readString();
             final int EXPECT_START_METADATA = 1;
@@ -61,7 +61,7 @@ public class RoutineHelper {
                         } else {
                             status = EXPECT_CMD;
                             if (!loadContent) {
-                                fill2(rr, path, creationInstant, modificationInstant, uuid, name, NAruVisibility.PUBLIC, lines);
+                                fill2(rr, path, creationInstant, modificationInstant, uuid, name, NaruVisibility.PUBLIC, lines);
                                 return NOptional.of(rr);
                             }
                             if (numbered) {
@@ -132,7 +132,7 @@ public class RoutineHelper {
                     }
                     default: {
                         if (!loadContent) {
-                            fill2(rr, path, creationInstant, modificationInstant, uuid, name, NAruVisibility.PUBLIC, lines);
+                            fill2(rr, path, creationInstant, modificationInstant, uuid, name, NaruVisibility.PUBLIC, lines);
                             return NOptional.of(rr);
                         }
                         if (line.isEmpty()) {
@@ -155,14 +155,14 @@ public class RoutineHelper {
                     }
                 }
             }
-            fill2(rr, path, creationInstant, modificationInstant, uuid, name, NAruVisibility.PUBLIC, lines);
+            fill2(rr, path, creationInstant, modificationInstant, uuid, name, NaruVisibility.PUBLIC, lines);
             return NOptional.of(rr);
         } catch (Exception e) {
             return NOptional.ofNamedError(e.getMessage());
         }
     }
 
-    private static void fill2(NaruRoutineMem rr, NPath path, Instant creationInstant, Instant modificationInstant, String uuid, String name, NAruVisibility visibility, Map<Integer, String> lines) {
+    private static void fill2(NaruRoutineMem rr, NPath path, Instant creationInstant, Instant modificationInstant, String uuid, String name, NaruVisibility visibility, Map<Integer, String> lines) {
         if (creationInstant == null) {
             creationInstant = path.creationInstant();
         }

@@ -90,7 +90,7 @@ public abstract class NaruDirectiveBase implements NaruDirective {
         // untouched so a stray "{{" never breaks a script.
         String argument = context.argument();
         String resolved = resolveTemplates(task, argument);
-        if (resolved != argument) {
+        if (Objects.equals(resolved,argument)) {
             final NaruDirectiveCallContext base = context;
             final String resolvedArgument = resolved;
             context = new NaruDirectiveCallContext() {
@@ -114,7 +114,7 @@ public abstract class NaruDirectiveBase implements NaruDirective {
             SubCommand s1 = (SubCommand) (subCommands.values().toArray()[0]);
             if (s1.name().isEmpty()) {
                 String arg = context.argument() == null ? "" : context.argument().trim();
-                if (arg.length() == 0 || arg.equals("help") || arg.equals("--help")) {
+                if (/*arg.length() == 0 || */arg.equals("help") || arg.equals("--help")) {
                     return executeHelp(context, NCmdLine.of(""));
                 }
                 NCmdLine cmdLine = NCmdLine.of("");

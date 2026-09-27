@@ -107,7 +107,9 @@ public class NaruAgentImpl implements NaruAgent {
     };
 
     public NaruAgentImpl() {
-        this.logger = NLogger.STDOUT;
+        this.logger = a -> {
+            NOut.resetLine().println(a);
+        };
     }
 
     @Override

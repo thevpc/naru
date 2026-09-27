@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.tools.llm;
 
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
@@ -230,7 +230,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 }
                 context.task().setModel(k);
                 NAssert.requireNamedNonNull(k, "key");
-                context.task().session().setProjectEnv("model", k.toElement(), NAruVisibility.PRIVATE);
+                context.task().session().setProjectEnv("model", k.toElement(), NaruVisibility.PRIVATE);
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("switch global model : %s",
                         task.model().toText()));
                 return NaruStmtResult.ofSuccess(null);
@@ -566,30 +566,30 @@ public class NaruModelDirective extends NaruDirectiveBase {
         List<String> eps = readCustomEndpoints(session);
         if (!eps.contains(name.get())) {
             eps.add(name.get());
-            session.setProjectEnv("custom.endpoints", NElement.ofString(String.join(",", eps)), NAruVisibility.PUBLIC);
+            session.setProjectEnv("custom.endpoints", NElement.ofString(String.join(",", eps)), NaruVisibility.PUBLIC);
         }
         String prefix = "custom.endpoints." + name.get();
-        session.setProjectEnv(prefix + ".url", NElement.ofString(url.get()), NAruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".url", NElement.ofString(url.get()), NaruVisibility.PUBLIC);
         if (!type.isNull() && !NBlankable.isBlank(type.get())) {
-            session.setProjectEnv(prefix + ".type", NElement.ofString(type.get()), NAruVisibility.PUBLIC);
+            session.setProjectEnv(prefix + ".type", NElement.ofString(type.get()), NaruVisibility.PUBLIC);
         }
         if (!apiKey.isNull() && !NBlankable.isBlank(apiKey.get())) {
-            session.setProjectEnv(prefix + ".apiKey", NElement.ofString(apiKey.get()), NAruVisibility.PRIVATE);
+            session.setProjectEnv(prefix + ".apiKey", NElement.ofString(apiKey.get()), NaruVisibility.PRIVATE);
         }
         if (!models.isNull() && !NBlankable.isBlank(models.get())) {
-            session.setProjectEnv(prefix + ".models", NElement.ofString(models.get()), NAruVisibility.PUBLIC);
+            session.setProjectEnv(prefix + ".models", NElement.ofString(models.get()), NaruVisibility.PUBLIC);
         }
         if (!chatPath.isNull() && !NBlankable.isBlank(chatPath.get())) {
-            session.setProjectEnv(prefix + ".chatPath", NElement.ofString(chatPath.get()), NAruVisibility.PUBLIC);
+            session.setProjectEnv(prefix + ".chatPath", NElement.ofString(chatPath.get()), NaruVisibility.PUBLIC);
         }
         if (!contextLength.isNull() && contextLength.get() != null) {
-            session.setProjectEnv(prefix + ".contextLength", NElement.of(contextLength.get()), NAruVisibility.PUBLIC);
+            session.setProjectEnv(prefix + ".contextLength", NElement.of(contextLength.get()), NaruVisibility.PUBLIC);
         }
         if (!tools.isNull() && tools.get() != null) {
-            session.setProjectEnv(prefix + ".tools", NElement.of(tools.get()), NAruVisibility.PUBLIC);
+            session.setProjectEnv(prefix + ".tools", NElement.of(tools.get()), NaruVisibility.PUBLIC);
         }
         if (!probe.isNull() && probe.get() != null) {
-            session.setProjectEnv(prefix + ".probe", NElement.of(probe.get()), NAruVisibility.PUBLIC);
+            session.setProjectEnv(prefix + ".probe", NElement.of(probe.get()), NaruVisibility.PUBLIC);
         }
 
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("endpoint '%s' added (type=%s, url=%s)",
@@ -625,16 +625,16 @@ public class NaruModelDirective extends NaruDirectiveBase {
             task.log(NaruLogMode.AGENT_RESPONSE, msg);
             return NaruStmtResult.ofError(msg.toString());
         }
-        session.setProjectEnv("custom.endpoints", NElement.ofString(String.join(",", eps)), NAruVisibility.PUBLIC);
+        session.setProjectEnv("custom.endpoints", NElement.ofString(String.join(",", eps)), NaruVisibility.PUBLIC);
         String prefix = "custom.endpoints." + name.get();
-        session.setProjectEnv(prefix + ".url", null, NAruVisibility.PUBLIC);
-        session.setProjectEnv(prefix + ".type", null, NAruVisibility.PUBLIC);
-        session.setProjectEnv(prefix + ".apiKey", null, NAruVisibility.PRIVATE);
-        session.setProjectEnv(prefix + ".models", null, NAruVisibility.PUBLIC);
-        session.setProjectEnv(prefix + ".chatPath", null, NAruVisibility.PUBLIC);
-        session.setProjectEnv(prefix + ".contextLength", null, NAruVisibility.PUBLIC);
-        session.setProjectEnv(prefix + ".tools", null, NAruVisibility.PUBLIC);
-        session.setProjectEnv(prefix + ".probe", null, NAruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".url", null, NaruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".type", null, NaruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".apiKey", null, NaruVisibility.PRIVATE);
+        session.setProjectEnv(prefix + ".models", null, NaruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".chatPath", null, NaruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".contextLength", null, NaruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".tools", null, NaruVisibility.PUBLIC);
+        session.setProjectEnv(prefix + ".probe", null, NaruVisibility.PUBLIC);
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("endpoint '%s' removed.", NMsg.ofStyledPrimary1(name.get())));
         return NaruStmtResult.ofSuccess(null);
     }

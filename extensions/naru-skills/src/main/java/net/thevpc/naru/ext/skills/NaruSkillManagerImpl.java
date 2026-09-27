@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.skills;
 
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.io.NPath;
@@ -37,18 +37,18 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     @Override
     public List<NaruResourceInfo> available() {
         Map<String, NaruResourceInfo> a = new HashMap<>();
-        for (NPath p : skillFiles(NAruVisibility.PUBLIC)) {
+        for (NPath p : skillFiles(NaruVisibility.PUBLIC)) {
             String goodName = NNameFormat.LOWER_KEBAB_CASE.format(skillNameFromPath(p));
             NaruResourceInfo s = a.computeIfAbsent(goodName, x -> new NaruResourceInfo().setName(goodName));
-            s.setVisibility(NAruVisibility.PUBLIC);
+            s.setVisibility(NaruVisibility.PUBLIC);
             s.setCreationInstant(p.creationInstant());
             s.setModificationInstant(p.lastModifiedInstant());
         }
-        for (NPath p : skillFiles(NAruVisibility.PRIVATE)) {
+        for (NPath p : skillFiles(NaruVisibility.PRIVATE)) {
             String goodName = NNameFormat.LOWER_KEBAB_CASE.format(skillNameFromPath(p));
             NaruResourceInfo s = a.computeIfAbsent(goodName, x -> new NaruResourceInfo().setName(goodName));
             // private wins
-            s.setVisibility(NAruVisibility.PRIVATE);
+            s.setVisibility(NaruVisibility.PRIVATE);
             s.setCreationInstant(p.creationInstant());
             s.setModificationInstant(p.lastModifiedInstant());
         }
@@ -65,14 +65,14 @@ class NaruSkillManagerImpl implements NaruSkillManager {
         return p.name().substring(0, p.name().length() - 3);
     }
 
-    private NPath skillsDir(NAruVisibility visibility) {
-        if (visibility == NAruVisibility.PUBLIC) {
+    private NPath skillsDir(NaruVisibility visibility) {
+        if (visibility == NaruVisibility.PUBLIC) {
             return session.projectDir().resolve(".naru/skills/");
         }
         return session.projectDir().resolve(".naru/local/skills/");
     }
 
-    private List<NPath> skillFiles(NAruVisibility visibility) {
+    private List<NPath> skillFiles(NaruVisibility visibility) {
         NPath dir = skillsDir(visibility);
         if (!dir.isDirectory()) {
             return List.of();
@@ -93,18 +93,18 @@ class NaruSkillManagerImpl implements NaruSkillManager {
         SkillFiles sf = new SkillFiles();
         sf.name = canonical;
 
-        NPath publicSkill = resolveFile(NAruVisibility.PUBLIC, canonical);
-        NPath privateSkill = resolveFile(NAruVisibility.PRIVATE, canonical);
+        NPath publicSkill = resolveFile(NaruVisibility.PUBLIC, canonical);
+        NPath privateSkill = resolveFile(NaruVisibility.PRIVATE, canonical);
 
         if (publicSkill != null && privateSkill != null) {
             // private wins: the local file replaces the checked-in one
-            sf.mode = NAruVisibility.PRIVATE;
+            sf.mode = NaruVisibility.PRIVATE;
             sf.privateSkill = privateSkill;
         } else if (publicSkill != null) {
-            sf.mode = NAruVisibility.PUBLIC;
+            sf.mode = NaruVisibility.PUBLIC;
             sf.publicSkill = publicSkill;
         } else if (privateSkill != null) {
-            sf.mode = NAruVisibility.PRIVATE;
+            sf.mode = NaruVisibility.PRIVATE;
             sf.privateSkill = privateSkill;
         } else {
             return null;
@@ -112,7 +112,7 @@ class NaruSkillManagerImpl implements NaruSkillManager {
         return sf;
     }
 
-    private NPath resolveFile(NAruVisibility visibility, String canonical) {
+    private NPath resolveFile(NaruVisibility visibility, String canonical) {
         NPath exact = skillsDir(visibility).resolve(canonical + ".md");
         if (exact.isRegularFile()) {
             return exact;
@@ -161,7 +161,7 @@ class NaruSkillManagerImpl implements NaruSkillManager {
 
     private static class SkillFiles {
         String name;
-        NAruVisibility mode;
+        NaruVisibility mode;
         NPath publicSkill;
         NPath privateSkill;
     }

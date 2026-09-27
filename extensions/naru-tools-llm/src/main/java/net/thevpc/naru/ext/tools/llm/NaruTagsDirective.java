@@ -7,12 +7,16 @@ import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.expr.NGlob;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NStringBuilder;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -46,8 +50,25 @@ public class NaruTagsDirective extends NaruDirectiveBase {
                     return NaruStmtResult.ofError(msg.toString());
                 }
                 int count = 0;
+                Set<String> toAdd=new HashSet<>();
                 while (!cmdLine.isEmpty()) {
                     String tag = cmdLine.next().get().image();
+                    if(tag.equals("*")) {
+                        Map<String, NaruToolTag> tags = task.session().registry().availableTags();
+                        toAdd.addAll(tags.keySet());
+                    }else if(tag.contains("*")){
+                        Pattern p = NGlob.of().toPattern(tag);
+                        Map<String, NaruToolTag> tags = task.session().registry().availableTags();
+                        for (String s : tags.keySet()) {
+                            if(p.matcher(s).matches()) {
+                                toAdd.add(s);
+                            }
+                        }
+                    }else{
+                        toAdd.add(tag);
+                    }
+                }
+                for (String tag : toAdd) {
                     task.addToolTag(tag);
                     task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("tag %s enabled", NMsg.ofStyledPrimary1(tag)));
                     count++;
@@ -55,27 +76,7 @@ public class NaruTagsDirective extends NaruDirectiveBase {
                 return NaruStmtResult.ofSuccess(count);
             }
         });
-        register(new AbstractSubCommand("add", NText.ofPlain("alias of enable"),
-                new SubCommandHelp("<tag-name>... [<tag-name>...]", "same as 'enable': add the given tags to the task's enabled tag set")
-        ) {
-            @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                NaruTask task = context.task();
-                if (cmdLine.isEmpty()) {
-                    NMsg msg = NMsg.ofC("missing tag");
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
-                }
-                int count = 0;
-                while (!cmdLine.isEmpty()) {
-                    String tag = cmdLine.next().get().image();
-                    task.addToolTag(tag);
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("tag %s enabled", NMsg.ofStyledPrimary1(tag)));
-                    count++;
-                }
-                return NaruStmtResult.ofSuccess(count);
-            }
-        });
+
         register(new AbstractSubCommand("disable", NText.ofPlain("exclude tools by name"),
                 new SubCommandHelp("<tool-name>... [<tool-name>...]", "add the given tools to the task's exclusion set")
         ) {
@@ -88,31 +89,27 @@ public class NaruTagsDirective extends NaruDirectiveBase {
                     return NaruStmtResult.ofError(msg.toString());
                 }
                 int count = 0;
+                Set<String> toRemove=new HashSet<>();
                 while (!cmdLine.isEmpty()) {
-                    String name = cmdLine.next().get().image();
-                    task.addToolExclusion(name);
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("tool %s disabled", NMsg.ofStyledPrimary1(name)));
-                    count++;
+                    String tag = cmdLine.next().get().image();
+                    if(tag.equals("*")) {
+                        Map<String, NaruToolTag> tags = task.session().registry().availableTags();
+                        toRemove.addAll(tags.keySet());
+                    }else if(tag.contains("*")){
+                        Pattern p = NGlob.of().toPattern(tag);
+                        Map<String, NaruToolTag> tags = task.session().registry().availableTags();
+                        for (String s : tags.keySet()) {
+                            if(p.matcher(s).matches()) {
+                                toRemove.add(s);
+                            }
+                        }
+                    }else{
+                        toRemove.add(tag);
+                    }
                 }
-                return NaruStmtResult.ofSuccess(count);
-            }
-        });
-        register(new AbstractSubCommand("remove", NText.ofPlain("alias of disable"),
-                new SubCommandHelp("<tool-name>... [<tool-name>...]", "same as 'disable': add the given tools to the task's exclusion set")
-        ) {
-            @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                NaruTask task = context.task();
-                if (cmdLine.isEmpty()) {
-                    NMsg msg = NMsg.ofC("missing tool");
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
-                }
-                int count = 0;
-                while (!cmdLine.isEmpty()) {
-                    String name = cmdLine.next().get().image();
-                    task.addToolExclusion(name);
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("tool %s disabled", NMsg.ofStyledPrimary1(name)));
+                for (String tag : toRemove) {
+                    task.removeToolTag(tag);
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("tag %s enabled", NMsg.ofStyledPrimary1(tag)));
                     count++;
                 }
                 return NaruStmtResult.ofSuccess(count);
@@ -145,7 +142,7 @@ public class NaruTagsDirective extends NaruDirectiveBase {
                 return NaruStmtResult.ofSuccess(sb.toString());
             }
         });
-        register(new AbstractSubCommand("tags", NText.ofPlain("list all available tags")) {
+        register(new AbstractSubCommand("available", NText.ofPlain("list all available tags")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();

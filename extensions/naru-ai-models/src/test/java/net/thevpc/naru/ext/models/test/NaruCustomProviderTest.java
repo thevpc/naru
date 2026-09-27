@@ -3,6 +3,7 @@ package net.thevpc.naru.ext.models.test;
 import net.thevpc.naru.api.agent.NaruAgent;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.ext.models.anthropic.NaruModelProtocolAnthropicCompat;
@@ -218,7 +219,7 @@ public class NaruCustomProviderTest {
             }
 
             @Override
-            public void put(String key, NElement value, net.thevpc.naru.api.agent.NAruVisibility visibility) {
+            public void put(String key, NElement value, NaruVisibility visibility) {
             }
         };
 

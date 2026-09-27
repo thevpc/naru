@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.engine.stmt;
 
-import net.thevpc.naru.api.agent.NAruInputMode;
+import net.thevpc.naru.api.agent.NaruInputMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NElement;
@@ -32,7 +32,7 @@ public class NaruReadlineStmt extends NaruStatement implements Cloneable{
             // prepend self copy — will process input when resumed
             task.prependStatement(selfCopy);
             task.requestInput(NMsg.ofC("%s%s ", NMsg.ofStyledPrimary1(DEFAULT_PROMPT),
-                task.inputMode()== NAruInputMode.LINE ? NMsg.ofStyledSeparator(DEFAULT_LINE_SEPARATOR): NMsg.ofStyledString(DEFAULT_BLOCK_SEPARATOR)
+                task.inputMode()== NaruInputMode.LINE ? NMsg.ofStyledSeparator(DEFAULT_LINE_SEPARATOR): NMsg.ofStyledString(DEFAULT_BLOCK_SEPARATOR)
             ));
             return;
         }
@@ -62,7 +62,7 @@ public class NaruReadlineStmt extends NaruStatement implements Cloneable{
             }
             case BLOC: {
                 if(line.trim().equals("/buffer")) {
-                    task.inputMode(task.inputMode() == NAruInputMode.LINE ? NAruInputMode.BLOC : NAruInputMode.LINE);
+                    task.inputMode(task.inputMode() == NaruInputMode.LINE ? NaruInputMode.BLOC : NaruInputMode.LINE);
                 }else if(line.trim().equals("/go")){
                     String b= task.inputBuffer();
                     task.inputBuffer("");

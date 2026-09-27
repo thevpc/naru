@@ -37,13 +37,13 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         register(new AbstractSubCommand("public", NText.ofPlain("change current session visibility to public")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                return executeChangeVisibility(NAruVisibility.PUBLIC, context, cmdLine);
+                return executeChangeVisibility(NaruVisibility.PUBLIC, context, cmdLine);
             }
         });
         register(new AbstractSubCommand("private", NText.ofPlain("change current session visibility to private")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                return executeChangeVisibility(NAruVisibility.PRIVATE, context, cmdLine);
+                return executeChangeVisibility(NaruVisibility.PRIVATE, context, cmdLine);
             }
         });
         register(new AbstractSubCommand("delete", NText.ofPlain("delete session")
@@ -301,7 +301,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         return NaruStmtResult.ofSuccess(sb.toString());
     }
 
-    public NaruStmtResult executeChangeVisibility(NAruVisibility makePublic, NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeChangeVisibility(NaruVisibility makePublic, NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         NaruSession session = task.session();
         if (session.getVisibility() == makePublic) {
@@ -309,7 +309,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         } else {
             session.setVisibility(makePublic);
             session.save();
-            if (makePublic == NAruVisibility.PUBLIC) {
+            if (makePublic == NaruVisibility.PUBLIC) {
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("make current session public: %s (%s)", session.name(), session.uuid()));
             } else {
                 task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("make current session private: %s (%s)", session.name(), session.uuid()));

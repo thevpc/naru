@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.skills;
 
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.agent.NaruAgent;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSession;
@@ -146,7 +146,7 @@ public class NaruSkillsExtensionTest {
         NaruSkill s = ext.skills().findSkill("git-flow");
         assertNotNull(s);
         assertEquals("git-flow", s.getName());
-        assertEquals(NAruVisibility.PUBLIC, s.getVisibility());
+        assertEquals(NaruVisibility.PUBLIC, s.getVisibility());
         assertEquals(List.of("follow git flow"), s.getLines());
     }
 
@@ -171,7 +171,7 @@ public class NaruSkillsExtensionTest {
         // the project ships a public javadoc.md, this developer has a local one
         NaruSkill s = ext.skills().findSkill("javadoc");
         assertNotNull(s);
-        assertEquals(NAruVisibility.PRIVATE, s.getVisibility());
+        assertEquals(NaruVisibility.PRIVATE, s.getVisibility());
         // the public lines must not leak in: a local file replaces, it does not append
         assertEquals(List.of("PRIVATE javadoc rules"), s.getLines());
     }
@@ -187,7 +187,7 @@ public class NaruSkillsExtensionTest {
         // javadoc appears once, and as private because that copy won
         NaruResourceInfo javadoc = all.stream()
                 .filter(i -> i.getName().equals("javadoc")).findFirst().orElseThrow();
-        assertEquals(NAruVisibility.PRIVATE, javadoc.getMode());
+        assertEquals(NaruVisibility.PRIVATE, javadoc.getMode());
     }
 
     @Test

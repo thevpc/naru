@@ -5,15 +5,15 @@ import java.time.Instant;
 public class NaruResourceInfo {
     private String uuid;
     private String name;
-    private NAruVisibility mode;
+    private NaruVisibility mode;
     private Instant creationInstant;
     private Instant modificationInstant;
 
-    public NAruVisibility getMode() {
+    public NaruVisibility getMode() {
         return mode;
     }
 
-    public NaruResourceInfo setVisibility(NAruVisibility mode) {
+    public NaruResourceInfo setVisibility(NaruVisibility mode) {
         this.mode = mode;
         return this;
     }

@@ -222,9 +222,9 @@ public interface NaruTask extends NToElement {
 
     NaruTask setProjectDir(NPath projectDir);
 
-    NAruInputMode inputMode();
+    NaruInputMode inputMode();
 
-    NaruTask inputMode(NAruInputMode inputMode);
+    NaruTask inputMode(NaruInputMode inputMode);
 
     NaruPromptMode promptMode();
 

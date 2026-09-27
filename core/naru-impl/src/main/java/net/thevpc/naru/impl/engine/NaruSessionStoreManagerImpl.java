@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NAruVisibility;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSessionStoreManager;
 import net.thevpc.nuts.elem.NElementReader;
@@ -35,12 +35,12 @@ public class NaruSessionStoreManagerImpl implements NaruSessionStoreManager {
         List<NaruResourceInfo> a = new ArrayList<>();
         for (NPath p : sessionDir(false).list().stream().filter(new NonSnapshotSessionFolder()).collect(Collectors.toList())) {
             NaruResourceInfo s = NElementReader.ofTson().read(p.resolve("session.tson"), NaruResourceInfo.class);
-            s.setVisibility(NAruVisibility.PRIVATE);
+            s.setVisibility(NaruVisibility.PRIVATE);
             a.add(s);
         }
         for (NPath p : sessionDir(true).list().stream().filter(new NonSnapshotSessionFolder()).collect(Collectors.toList())) {
             NaruResourceInfo s = NElementReader.ofTson().read(p.resolve("session.tson"), NaruResourceInfo.class);
-            s.setVisibility(NAruVisibility.PUBLIC);
+            s.setVisibility(NaruVisibility.PUBLIC);
             a.add(s);
         }
         // newest first. A session file with no recorded modification instant is treated as

@@ -61,12 +61,12 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NAruInputMode inputMode() {
+    public NaruInputMode inputMode() {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public NaruTask inputMode(NAruInputMode inputMode) {
+    public NaruTask inputMode(NaruInputMode inputMode) {
         throw new NUnsupportedOperationException();
     }
 

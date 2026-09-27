@@ -6,6 +6,6 @@ import net.thevpc.nuts.util.NOptional;
 public interface NaruEnv {
     NOptional<NElement> get(String key);
 
-    void put(String key, NElement value, NAruVisibility visibility);
+    void put(String key, NElement value, NaruVisibility visibility);
 
 }

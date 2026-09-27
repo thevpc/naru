@@ -45,7 +45,7 @@ public interface NaruSessionBuilder {
     /**
      * How the session reaches its user: a terminal, a stream, or anything else.
      * <p>
-     * Defaults to a {@link NaruTerminalInteraction} on the process terminal, which is what
+     * Defaults to a {@link NaruInteraction} on the process terminal, which is what
      * every caller relied on before this seam existed. A host that will supply input
      * itself should pass a headless interaction instead, so no thread is started and no
      * process stdin is claimed.
