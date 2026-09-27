@@ -15,10 +15,28 @@ public class NaruOpenApiRequestSerializer implements NaruModelRequestSerializer 
 
     @Override
     public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session) {
+        return serialize(request, model, session, false);
+    }
+
+    @Override
+    public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session, boolean stream) {
         NObjectElementBuilder body = NElement.ofObjectBuilder();
 
         body.set("model", model.model());
-        body.set("stream", false);
+        // Set explicitly rather than left to default: the whole point of the
+        // streaming call is that the server sends frames, and a body that merely
+        // omits the flag gets a single buffered document back.
+        body.set("stream", stream);
+        if (stream) {
+            // Without this most OpenAI-compatible servers omit usage from the
+            // stream, and a streamed turn would then be metered as free while
+            // the identical batched turn is charged. That asymmetry is a billing
+            // bug, not a missing field.
+            body.set("stream_options",
+                    NElement.ofObjectBuilder()
+                            .set("include_usage", true)
+                            .build());
+        }
 
         // Process Messages
         NArrayElementBuilder msgList = NElement.ofArrayBuilder();

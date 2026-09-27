@@ -11,6 +11,7 @@ import net.thevpc.naru.api.scheduler.NaruTaskMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.util.NaruTerminalFormatter;
+import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
 import net.thevpc.naru.impl.interaction.NaruTerminalInteraction;
 import net.thevpc.nuts.artifact.NVersion;
 import net.thevpc.nuts.io.NIO;
@@ -144,20 +145,27 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     }
 
     /**
-     * Turns on ANSI styling and command highlighting.
+     * Turns on ANSI styling, command highlighting, and tab completion.
      * <p>
      * <b>This is process-global and cannot be made per-session.</b> Nuts exposes
-     * {@code commandHighlighter} only on the system terminal singleton, with no
-     * per-instance setter, so two interactive sessions in one JVM necessarily share it and
-     * the last one configured wins. It is therefore off by default and should be enabled by
-     * a launcher that owns the console, not by a host running many sessions.
+     * {@code commandHighlighter} and {@code commandAutoCompleteResolver} only on the
+     * system terminal singleton, with no per-instance setters, so two interactive
+     * sessions in one JVM necessarily share them and the last one configured wins. It is
+     * therefore off by default and should be enabled by a launcher that owns the console,
+     * not by a host running many sessions.
      * <p>
-     * A headless session ignores it entirely — there is no terminal to decorate.
+     * A headless session gets no completer and no highlighter: it has no terminal
+     * to own, and taking the process-global one would decorate a console it is
+     * never reading from.
      */
     private void enableRichTerm(NaruInteraction useInteraction, NaruSession session) {
         NSystemTerminal.enableRichTerm();
         if (useInteraction instanceof NaruTerminalInteraction) {
             NIO.of().systemTerminal()
+                    // registered here because this is the only place that owns the
+                    // console: without it the REPL reads plain lines and tab does
+                    // nothing, even though the resolver itself is still available
+                    .commandAutoCompleteResolver(new NaruNArgCompleteResolver(session))
                     .commandHighlighter(new NaruTerminalFormatter(session));
         }
     }

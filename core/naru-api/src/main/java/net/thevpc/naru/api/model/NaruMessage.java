@@ -7,6 +7,7 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NCopiable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -39,8 +40,22 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
     /**
      * Model reasoning/thinking channel content (e.g. reasoning_content, <think> blocks),
      * kept separate from the user-visible content.
+     *
+     * <p>Superseded by {@link #thinkingSegments}, which additionally records how
+     * the reasoning was delimited, where it came from, and whether it finished.
+     * Retained because a session written before segments existed carries its
+     * reasoning here, and that history has to stay readable.
      */
     private String thinking;
+    /**
+     * Structured reasoning, one entry per contiguous stretch the model thought
+     * for, in the order produced.
+     *
+     * <p>Null rather than empty for the overwhelmingly common case of a
+     * non-reasoning model, so persisting an assistant turn that never thought
+     * adds nothing to a session file.
+     */
+    private List<NaruThinkingSegment> thinkingSegments;
     /**
      * Marks the first message of a user turn.
      *
@@ -109,6 +124,11 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
             if(e.toolCalls!=null){
                e.toolCalls=toolCalls.stream().map(x->x.copy()).collect(Collectors.toList());
             }
+            if (e.thinkingSegments != null) {
+                e.thinkingSegments = thinkingSegments.stream()
+                        .map(NaruThinkingSegment::copy)
+                        .collect(Collectors.toList());
+            }
         } catch (CloneNotSupportedException ex) {
             throw new RuntimeException(ex);
         }
@@ -146,6 +166,13 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
             }
         }
         this.thinking = o.getStringValue("thinking").orNull();
+        NElement thinkingSegments1 = o.get("thinkingSegments").orNull();
+        if (thinkingSegments1 != null && thinkingSegments1.isAnyArray()) {
+            thinkingSegments = new ArrayList<>();
+            for (NElement nElement : thinkingSegments1.asArray().get()) {
+                thinkingSegments.add(NaruThinkingSegment.of(nElement));
+            }
+        }
     }
 
     @Override
@@ -165,7 +192,19 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
             }
             o.set("toolCalls", _toolCalls.build());
         }
-        o.set("thinking", thinking);
+        if (thinkingSegments != null && !thinkingSegments.isEmpty()) {
+            // structured form wins when present: writing both would store the
+            // reasoning text twice, and it is the larger of the two fields
+            NArrayElementBuilder _thinkingSegments = NArrayElementBuilder.of();
+            for (NaruThinkingSegment segment : thinkingSegments) {
+                _thinkingSegments.add(segment.toElement());
+            }
+            o.set("thinkingSegments", _thinkingSegments.build());
+        } else {
+            // legacy sessions hold a single thinking string, and a model that
+            // never reasoned must not add the key at all
+            o.set("thinking", thinking);
+        }
         if (turnBoundary) {
             // omitted when false so existing session files stay byte-identical
             o.set("turnBoundary", true);
@@ -265,8 +304,75 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         this.toolCalls = toolCalls;
     }
 
+    /**
+     * All reasoning as one string, regardless of how it was stored.
+     *
+     * <p>Derives from {@link #getThinkingSegments()} when segments are present,
+     * so callers written against the original single-string field keep working
+     * against messages produced by the structured path. Returns null when there
+     * was no reasoning at all, which callers already treat as "did not think".
+     */
     public String getThinking() {
-        return thinking;
+        if (thinking != null) {
+            return thinking;
+        }
+        if (thinkingSegments == null || thinkingSegments.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (NaruThinkingSegment segment : thinkingSegments) {
+            if (sb.length() > 0) {
+                sb.append("\n");
+            }
+            sb.append(segment.getText());
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    /**
+     * Structured reasoning, or null when the model did not think.
+     */
+    public List<NaruThinkingSegment> getThinkingSegments() {
+        return thinkingSegments == null || thinkingSegments.isEmpty()
+                ? null
+                : Collections.unmodifiableList(thinkingSegments);
+    }
+
+    /**
+     * Whether this message carries any reasoning at all, in either form.
+     */
+    public boolean hasThinking() {
+        return thinking != null || (thinkingSegments != null && !thinkingSegments.isEmpty());
+    }
+
+    public NaruMessage setThinkingSegments(List<NaruThinkingSegment> thinkingSegments) {
+        this.thinkingSegments = thinkingSegments == null || thinkingSegments.isEmpty()
+                ? null
+                : new ArrayList<>(thinkingSegments);
+        // the two forms are alternatives, not a pair; leaving a stale legacy
+        // string behind would make the message serialize whichever it checks first
+        this.thinking = null;
+        return this;
+    }
+
+    /**
+     * Appends one reasoning segment, assigning it the next position.
+     */
+    public NaruMessage addThinkingSegment(NaruThinkingSegment segment) {
+        if (segment == null) {
+            return this;
+        }
+        if (thinkingSegments == null) {
+            thinkingSegments = new ArrayList<>();
+        }
+        int next = thinkingSegments.stream().mapToInt(NaruThinkingSegment::getIndex).max().orElse(-1) + 1;
+        if (segment.getIndex() != next) {
+            segment = new NaruThinkingSegment(next, segment.getText(), segment.getExtraction(),
+                    segment.getProvider(), segment.getThinkingTokens(), segment.isComplete());
+        }
+        thinkingSegments.add(segment);
+        this.thinking = null;
+        return this;
     }
 
     public boolean isTurnBoundary() {

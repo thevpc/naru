@@ -42,6 +42,18 @@ public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
 
 
     @Override
+    public NaruResponse chatStream(NaruModelRequest request, NaruTask task, NaruStreamHandler handler) {
+        if (!capabilities.isStreaming()) {
+            // Declared as unable to stream, so the body must not ask for it: some
+            // providers answer a streaming request with a single JSON body, and
+            // the reader would then see a document where it expects frames.
+            // Delivering it as a batch of chunks is still a valid stream shape.
+            return super.chatStream(request, task, handler);
+        }
+        return streamChat(request, task, new NaruOpenApiStreamParser(providerName(), handler, model));
+    }
+
+    @Override
     protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
         String apiKey = apiKey(task);
         if (!NBlankable.isBlank(apiKey)) {

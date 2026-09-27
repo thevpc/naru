@@ -3,6 +3,7 @@ package net.thevpc.naru.ext.models;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.ext.models.cache.NaruModelCaching;
+import net.thevpc.naru.ext.models.stream.NaruStreamResponseParser;
 import net.thevpc.naru.ext.models.util.NaruModelUtils;
 import net.thevpc.nuts.concurrent.NRetryCall;
 import net.thevpc.nuts.elem.*;
@@ -152,6 +153,46 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return mrequest;
     }
 
+    /**
+     * Classifies a response status into "proceed" or "this attempt failed".
+     *
+     * <p>Shared by the batched and the streamed path so that a 401, a 429 and a
+     * retryable 503 mean the same thing either way. Duplicating this is how a
+     * streaming client ends up retrying a 400 forever, or ignoring a 429 that the
+     * batched path honours.
+     *
+     * <p>On a 5xx {@code failFast} is called so a retry does not have to drain
+     * an error page before reusing the connection.
+     *
+     * @param dynamicRetryAfter collects a server-sent {@code Retry-After} when
+     *                          one is present, so the retry policy can honour it
+     * @return {@code null} when the response should be read normally, otherwise
+     *         the error body for the caller to log and report
+     */
+    protected String classifyStatus(NHttpResponse response, AtomicReference<NDuration> dynamicRetryAfter) {
+        if (response.statusCode().equals(NHttpCode.TOO_MANY_REQUESTS)) {
+            NDuration retryAfter = NaruModelUtils.parseRetryAfter(response);
+            if (retryAfter != null) {
+                dynamicRetryAfter.set(retryAfter);
+            }
+            return response.contentAsString();
+        }
+        if (response.isClientError()) {
+            // Fatal 4xx error (e.g. 400, 401, 403, 404) -> Do not retry
+            return response.contentAsString();
+        }
+        if (response.isError()) {
+            // 5xx error -> retryable, honouring Retry-After when the server sent one
+            NDuration retryAfter = NaruModelUtils.parseRetryAfter(response);
+            if (retryAfter != null) {
+                dynamicRetryAfter.set(retryAfter);
+            }
+            response.failFast();
+            return response.contentAsString();
+        }
+        return null;
+    }
+
     protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
         // Subclasses can inject headers, auth, etc.
     }
@@ -167,11 +208,19 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
      * to what a non-segmented request always produced.
      */
     protected NElement serialize(NaruModelRequest request, NaruCachePlanView plan, NaruTask task) {
+        return serialize(request, plan, task, false);
+    }
+
+    /**
+     * Serialise, adding the streaming flag when the body is going to be read
+     * incrementally.
+     */
+    protected NElement serialize(NaruModelRequest request, NaruCachePlanView plan, NaruTask task, boolean stream) {
         if (plan != null && plan.mode() != NaruCachingMode.NONE && serializer instanceof NaruCacheAwareRequestSerializer) {
             return ((NaruCacheAwareRequestSerializer) serializer).serialize(request, model,
-                    task == null ? null : task.session(), plan);
+                    task == null ? null : task.session(), plan, stream);
         }
-        return serializer.serialize(request, model, task == null ? null : task.session());
+        return serializer.serialize(request, model, task == null ? null : task.session(), stream);
     }
 
     protected void onResponseReceived(NHttpResponse response, NaruTask task) {
@@ -259,42 +308,35 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
             int attempt = attemptCounter.incrementAndGet();
             NChronometer chrono = NChronometer.of();
             java.time.Instant reqTime = java.time.Instant.now();
-            NHttpResponse response = null;
-            String responseString = null;
-            Throwable error = null;
-            try {
-                NaruModelUtils.logWebRequest(request, NMsg.ofC("chat with %s (attempt %s)", model, attempt), body);
-                response = request.run();
-                NHttpCode code = response.statusCode();
+                NHttpResponse response = null;
+                String responseString = null;
+                Throwable error = null;
+                try {
+                    NaruModelUtils.logWebRequest(request, NMsg.ofC("chat with %s (attempt %s)", model, attempt), body);
+                    response = request.run();
+                    NHttpCode code = response.statusCode();
 
-                if (code.equals(NHttpCode.TOO_MANY_REQUESTS)) {
-                    NDuration retryAfter = NaruModelUtils.parseRetryAfter(response);
-                    if (retryAfter != null) {
-                        dynamicRetryAfter.set(retryAfter);
+                    String errorBody = classifyStatus(response, dynamicRetryAfter);
+                    if (errorBody != null) {
+                        responseString = errorBody;
+                        if (response.isClientError()) {
+                            throw new NonRetryableWebException(new NHttpResponseException(
+                                    NMsg.ofC("Client error (HTTP %s) from %s: %s", code, provider().name(), response.statusMessage()),
+                                    null,
+                                    response.statusCode()
+                            ), responseString);
+                        }
+                        // 429 or a retryable 5xx
+                        throw new NHttpResponseException(
+                                NMsg.ofC("%s from %s: %s",
+                                        code.equals(NHttpCode.TOO_MANY_REQUESTS)
+                                                ? "Rate limit exceeded (HTTP 429)"
+                                                : "Server error (HTTP " + code + ")",
+                                        provider().name(), response.statusMessage()),
+                                null,
+                                response.statusCode()
+                        );
                     }
-                    responseString = response.contentAsString();
-                    throw new NHttpResponseException(
-                            NMsg.ofC("Rate limit exceeded (HTTP 429) from %s: %s", provider().name(), response.statusMessage()),
-                            null,
-                            response.statusCode()
-                    );
-                } else if (response.isClientError()) {
-                    // Fatal 4xx error (e.g. 400, 401, 403, 404) -> Do not retry
-                    responseString = response.contentAsString();
-                    throw new NonRetryableWebException(new NHttpResponseException(
-                            NMsg.ofC("Client error (HTTP %s) from %s: %s", code, provider().name(), response.statusMessage()),
-                            null,
-                            response.statusCode()
-                    ), responseString);
-                } else if (response.isError()) {
-                    // 5xx error or other error -> if 502/503/504 retryable, else retryable up to maxRetries
-                    NDuration retryAfter = NaruModelUtils.parseRetryAfter(response);
-                    if (retryAfter != null) {
-                        dynamicRetryAfter.set(retryAfter);
-                    }
-                    responseString = response.contentAsString();
-                    response.failFast();
-                }
 
                 responseString = response.contentAsString();
                 onResponseReceived(response, task);
@@ -362,6 +404,125 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                         NElementWriter.ofTson().formatPlain(body)
                 ).asError());
                 throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with %s at %s: %s", provider().name(), request.effectiveUri(), e.getMessage(), e));
+            }
+        }
+    }
+
+
+    // ── Streaming ──────────────────────────────────────────────────────────────
+
+    @Override
+    public String providerName() {
+        return provider == null ? null : provider.name();
+    }
+
+    /**
+     * Runs a streamed call, retrying only while nothing has been delivered.
+     *
+     * <p>Retrying a stream that has already emitted tokens would deliver them
+     * twice: the renderer has already drawn them and the transcript has already
+     * recorded them, and there is no way to un-send bytes to a third party. So a
+     * retry is allowed only while the attempt produced no chunk at all, which is
+     * exactly the case a retry fixes -- a connection refused, a 503 before the
+     * first token. Once anything has been delivered, the failure is reported.
+     *
+     * @param parser consumes events in order and assembles the response
+     */
+    protected NaruResponse streamChat(NaruModelRequest mrequest, NaruTask task,
+                                      NaruStreamResponseParser parser) {
+        Map<String, NElement> env = mrequest.env();
+        NaruModelRequest preparedModelRequest = preprocessRequest(mrequest, task);
+
+        NaruCachingMode cachingMode = capabilities.cachingMode();
+        final NaruCachePlanView cachePlan;
+        if (cachingMode != null && cachingMode != NaruCachingMode.NONE) {
+            cachePlan = NaruModelCaching.plan(task.session(), provider().name(), model.model(),
+                    cachingMode, preparedModelRequest);
+        } else {
+            cachePlan = NaruCachePlanView.none();
+        }
+        // The body is built once and retried verbatim, exactly as in the batched
+        // path: a retry must re-send the identical prefix, or it invalidates the
+        // very cache state it is relying on.
+        NElement body = serialize(preparedModelRequest, cachePlan, task, true);
+        NHttpClient http = NHttpClient.of()
+                .connectTimeout(connectTimeout(task, env))
+                .baseUri(url(task, env));
+        NHttpRequest request = http.POST(chatPath(task, env))
+                .timeout(readTimeout(task, env))
+                // Without this some servers buffer the whole event stream before
+                // flushing, and "streaming" degrades into a slow batch call.
+                .header("Accept", "text/event-stream")
+                .header("Cache-Control", "no-cache")
+                .jsonRequestBody(body);
+        prepareRequest(request, body, task);
+
+        int maxRetries = maxRetries(task, env);
+        NDuration baseDelay = retryPeriod(task, env);
+        AtomicReference<NDuration> dynamicRetryAfter = new AtomicReference<>();
+        NElement headersElements = NElement.of(request.headers());
+        int attempt = 0;
+        for (; ; ) {
+            attempt++;
+            NHttpResponse response = null;
+            Throwable error = null;
+            try {
+                NaruModelUtils.logWebRequest(request, NMsg.ofC("stream chat with %s (attempt %s)", model, attempt), body);
+                response = request.run();
+                String errorBody = classifyStatus(response, dynamicRetryAfter);
+                if (errorBody != null) {
+                    if (response.isClientError()) {
+                        throw new NonRetryableWebException(new NHttpResponseException(
+                                NMsg.ofC("Client error (HTTP %s) from %s: %s", response.statusCode(),
+                                        provider().name(), response.statusMessage()),
+                                null, response.statusCode()), errorBody);
+                    }
+                    throw new NHttpResponseException(
+                            NMsg.ofC("Server error (HTTP %s) from %s: %s", response.statusCode(),
+                                    provider().name(), response.statusMessage()),
+                            null, response.statusCode());
+                }
+                onResponseReceived(response, task);
+                NaruResponse result = parser.read(response);
+                commitCacheState(preparedModelRequest, cachePlan, cachingMode, task);
+                return result;
+            } catch (NonRetryableWebException nre) {
+                NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s\n-----HEADERS\n%s\n-----HEADERS\n-----BODY\n%s\n-----BODY\n-----RESPONSE\n%s\n-----RESPONSE",
+                        provider().name(), request.effectiveUri(), nre.getCause().getMessage(),
+                        NElementWriter.ofTson().formatPlain(headersElements),
+                        NElementWriter.ofTson().formatPlain(body),
+                        nre.getResponseString()
+                ).asError());
+                throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with %s at %s: %s",
+                        provider().name(), request.effectiveUri(), nre.getCause().getMessage(), nre.getCause()));
+            } catch (Exception e) {
+                error = e;
+                // Nothing delivered yet means the user saw nothing, so a retry is
+                // invisible to them; anything delivered and the failure stands.
+                if (!parser.hasDeliveredContent() && attempt <= maxRetries) {
+                    NDuration wait = dynamicRetryAfter.getAndSet(null);
+                    if (wait == null || wait.isZero()) {
+                        wait = baseDelay.mul(Math.pow(2.0, Math.max(0, attempt - 1)));
+                    }
+                    NLog.of(getClass()).log(NMsg.ofC(
+                            "Stream from %s failed before any output (attempt %s of %s): %s",
+                            provider().name(), attempt, maxRetries, e.getMessage()));
+                    try {
+                        Thread.sleep(Math.max(0L, wait.toMillis()));
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new NIllegalArgumentException(NMsg.ofC("Stream from %s was cancelled", provider().name()));
+                    }
+                    continue;
+                }
+                NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s",
+                        provider().name(), request.effectiveUri(), e.getMessage()).asError());
+                throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with %s at %s: %s",
+                        provider().name(), request.effectiveUri(), e.getMessage(), e));
+            } finally {
+                NaruModelUtils.logAudit(task, task != null ? task.session() : null,
+                        provider().name(), model.model(), request, body, response,
+                        null, error, attempt, NDuration.ofSeconds(0), java.time.Instant.now());
             }
         }
     }

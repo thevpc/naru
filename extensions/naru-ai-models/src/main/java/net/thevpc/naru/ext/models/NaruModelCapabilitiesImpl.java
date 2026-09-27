@@ -15,6 +15,7 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
     private final boolean embedding;
     private final long contextLength;
     private final NaruCachingMode cachingMode;
+    private final boolean streaming;
 
     public NaruModelCapabilitiesImpl(NElement element) {
         NObjectElement o = element.asObject().get();
@@ -26,6 +27,9 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
         cachingMode = o.getStringValue("cachingMode")
                 .map(NaruCachingMode::valueOf)
                 .orElse(NaruCachingMode.NONE);
+        // absent means true: capabilities written before streaming existed are
+        // models on the same wire protocols, which all stream
+        streaming = o.getBooleanValue("streaming").orElse(true);
     }
 
     /**
@@ -38,12 +42,22 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
     }
 
     public NaruModelCapabilitiesImpl(boolean vision, boolean tools, boolean thinking, boolean embedding, long contextLength, NaruCachingMode cachingMode) {
+        this(vision, tools, thinking, embedding, contextLength, cachingMode, true);
+    }
+
+    public NaruModelCapabilitiesImpl(boolean vision, boolean tools, boolean thinking, boolean embedding, long contextLength, NaruCachingMode cachingMode, boolean streaming) {
         this.vision = vision;
         this.tools = tools;
         this.thinking = thinking;
         this.embedding = embedding;
         this.contextLength = contextLength;
         this.cachingMode = cachingMode == null ? NaruCachingMode.NONE : cachingMode;
+        this.streaming = streaming;
+    }
+
+    @Override
+    public boolean isStreaming() {
+        return streaming;
     }
 
     public long contextLength() {
@@ -80,7 +94,8 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
         if (o == null || getClass() != o.getClass()) return false;
         NaruModelCapabilitiesImpl that = (NaruModelCapabilitiesImpl) o;
         return vision == that.vision && tools == that.tools && thinking == that.thinking && embedding == that.embedding
-                && contextLength == that.contextLength && cachingMode == that.cachingMode;
+                && contextLength == that.contextLength && cachingMode == that.cachingMode
+                && streaming == that.streaming;
     }
 
     @Override
@@ -106,6 +121,11 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
         if (cachingMode != NaruCachingMode.NONE) {
             k.add("cache:" + cachingMode.name().toLowerCase(Locale.ROOT));
         }
+        // streaming is deliberately absent: these keys describe what a model can
+        // do with the content it is given, and streaming says nothing about that.
+        // It is a property of the transport, true for nearly every model, so
+        // listing it would add a permanent extra entry to every model's summary
+        // without telling the reader anything.
         if (k.isEmpty()) {
             k.add("text-only");
         }
@@ -114,7 +134,7 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
 
     @Override
     public int hashCode() {
-        return Objects.hash(vision, tools, thinking, embedding, contextLength, cachingMode);
+        return Objects.hash(vision, tools, thinking, embedding, contextLength, cachingMode, streaming);
     }
 
     @Override
@@ -131,6 +151,7 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
                 .set("embedding", embedding)
                 .set("contextLength", contextLength)
                 .set("cachingMode", cachingMode.name())
+                .set("streaming", streaming)
                 .build()
                 ;
     }

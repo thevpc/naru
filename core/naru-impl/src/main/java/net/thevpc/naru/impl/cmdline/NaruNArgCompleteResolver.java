@@ -5,6 +5,7 @@ import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
 import net.thevpc.nuts.cmdline.*;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -35,12 +36,7 @@ public class NaruNArgCompleteResolver implements NArgCompleteResolver {
                         "/" + e.getKey() + " - " + e.getValue().getDescription()
                 ));
             }
-            for (String kw : NaruStatementHelper.STATEMENT_KEYWORDS) {
-                candidates.add(NArgCompleteCandidate.of(
-                        "/" + kw,
-                        kw + " - keyword"
-                ));
-            }
+            addKeywords(candidates, "");
         } else if (wordIndex == 0 && stringArray[0].startsWith("/")) {
             // Command completion - partial match for first command word
             String currentCommand = stringArray[0];
@@ -55,12 +51,7 @@ public class NaruNArgCompleteResolver implements NArgCompleteResolver {
                     ));
                 }
             }
-            for (String kw : NaruStatementHelper.STATEMENT_KEYWORDS) {
-                candidates.add(NArgCompleteCandidate.of(
-                        "/" + kw,
-                        kw + " - keyword"
-                ));
-            }
+            addKeywords(candidates, currentCommand);
         } else if (wordIndex > 0 && stringArray[0].startsWith("/")) {
             // Argument completion for specific commands
             String commandName = stringArray[0].substring(1); // Remove the leading "/"
@@ -71,6 +62,29 @@ public class NaruNArgCompleteResolver implements NArgCompleteResolver {
         }
 
         return NArgCompleteResult.ofCandidates(candidates);
+    }
+
+    /**
+     * Adds the statement keywords that can still become what has been typed so far.
+     *
+     * <p>Filtered like the directives are: offering every keyword while the user
+     * is midway through typing a command name lists things that cannot possibly
+     * match, which is the difference between completion helping and completion
+     * getting in the way. Sorted because {@code STATEMENT_KEYWORDS} is an
+     * unordered set, and a list that reorders between runs cannot be scanned.
+     *
+     * @param currentCommand the command word as typed so far, or empty when nothing
+     *                        has been typed and every keyword still applies
+     */
+    private void addKeywords(List<NArgCompleteCandidate> candidates, String currentCommand) {
+        List<String> keywords = new ArrayList<>(NaruStatementHelper.STATEMENT_KEYWORDS);
+        Collections.sort(keywords);
+        for (String kw : keywords) {
+            String value = "/" + kw;
+            if (value.startsWith(currentCommand)) {
+                candidates.add(NArgCompleteCandidate.of(value, kw + " - keyword"));
+            }
+        }
     }
 
 

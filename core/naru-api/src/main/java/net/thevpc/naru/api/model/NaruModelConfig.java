@@ -24,6 +24,16 @@ public class NaruModelConfig implements NToElement {
     private final Integer candidateCount;
     private final Integer maxTokens;   // num_predict in Ollama
     private final List<String> stop;
+    /**
+     * Delimiters this model wraps reasoning in, or null to use the protocol's
+     * default, or {@link NaruThinkingTags#NATIVE_ONLY} for a model that only
+     * reports reasoning out of band.
+     *
+     * <p>Three states rather than two on purpose: "not configured" has to be
+     * distinguishable from "configured to parse nothing", or a provider default
+     * would override an explicit request to leave the answer text alone.
+     */
+    private final NaruThinkingTags thinkingTags;
 
     public static NOptional<NaruModelConfig> of(NElement element) {
         if (element != null) {
@@ -92,6 +102,10 @@ public class NaruModelConfig implements NToElement {
     }
 
     public NaruModelConfig(String name, String provider, String model, Long contextLength, Float temperature, Float nucleusThreshold, Integer candidateCount, Integer maxTokens, List<String> stop) {
+        this(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, null);
+    }
+
+    public NaruModelConfig(String name, String provider, String model, Long contextLength, Float temperature, Float nucleusThreshold, Integer candidateCount, Integer maxTokens, List<String> stop, NaruThinkingTags thinkingTags) {
         this.name = name;
         this.provider = provider;
         this.model = model;
@@ -101,6 +115,7 @@ public class NaruModelConfig implements NToElement {
         this.candidateCount = candidateCount;
         this.maxTokens = maxTokens;
         this.stop = stop == null ? Collections.emptyList() : Collections.unmodifiableList(stop.stream().filter(x -> x != null).distinct().collect(Collectors.toList()));
+        this.thinkingTags = thinkingTags;
     }
 
     public NaruModelConfig(NElement element) {
@@ -115,6 +130,7 @@ public class NaruModelConfig implements NToElement {
             this.candidateCount = null;
             this.maxTokens = null;
             this.stop = Collections.emptyList();
+            this.thinkingTags = null;
         } else if (element.isListContainer()) {
             NListContainerElement o = element.asListContainer().get();
             this.name = o.getStringValue("name").orNull();
@@ -126,6 +142,7 @@ public class NaruModelConfig implements NToElement {
             this.candidateCount = o.getIntValue("candidateCount").orNull();
             this.maxTokens = o.getIntValue("maxTokens").orNull();
             this.stop = Collections.unmodifiableList(o.getArray("stop").map(x -> x.children().stream().map(y -> y.asStringValue().orNull()).filter(y -> y != null).collect(Collectors.toList())).orElse(new ArrayList<>()));
+            this.thinkingTags = o.get("thinkingTags").map(NaruThinkingTags::of).orNull();
         } else {
             throw new NIllegalArgumentException(NMsg.ofC("invalid config element %s", element));
         }
@@ -133,39 +150,51 @@ public class NaruModelConfig implements NToElement {
 
 
     public NaruModelConfig withName(String name) {
-        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop);
+        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
     }
 
     public NaruModelConfig withProvider(String provider) {
-        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop);
+        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
     }
 
     public NaruModelConfig withModel(String model) {
-        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop);
+        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
     }
 
     public NaruModelConfig withContextLength(Long contextLength) {
-        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop);
+        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
     }
 
     public NaruModelConfig withTemperature(Float temperature) {
-        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop);
+        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
     }
 
     public NaruModelConfig withNucleusThreshold(Float nucleusThreshold) {
-        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop);
+        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
     }
 
     public NaruModelConfig withCandidateCount(Integer candidateCount) {
-        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop);
+        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
     }
 
     public NaruModelConfig withMaxTokens(Integer maxTokens) {
-        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop);
+        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
     }
 
     public NaruModelConfig withStop(List<String> stop) {
-        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop);
+        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
+    }
+
+    public NaruModelConfig withThinkingTags(NaruThinkingTags thinkingTags) {
+        return new NaruModelConfig(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
+    }
+
+    /**
+     * The configured reasoning delimiters, or null when the protocol default
+     * should apply.
+     */
+    public NaruThinkingTags thinkingTags() {
+        return thinkingTags;
     }
 
     @Override
@@ -179,6 +208,7 @@ public class NaruModelConfig implements NToElement {
                 .set("nucleusThreshold", nucleusThreshold)
                 .set("candidateCount", candidateCount)
                 .set("maxTokens", maxTokens)
+                .set("thinkingTags", thinkingTags == null ? null : thinkingTags.toElement())
                 .build()
                 ;
     }
@@ -307,11 +337,11 @@ public class NaruModelConfig implements NToElement {
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         NaruModelConfig that = (NaruModelConfig) o;
-        return Objects.equals(name, that.name) && Objects.equals(provider, that.provider) && Objects.equals(model, that.model) && Objects.equals(contextLength, that.contextLength) && Objects.equals(temperature, that.temperature) && Objects.equals(nucleusThreshold, that.nucleusThreshold) && Objects.equals(candidateCount, that.candidateCount) && Objects.equals(maxTokens, that.maxTokens) && Objects.equals(stop, that.stop);
+        return Objects.equals(name, that.name) && Objects.equals(provider, that.provider) && Objects.equals(model, that.model) && Objects.equals(contextLength, that.contextLength) && Objects.equals(temperature, that.temperature) && Objects.equals(nucleusThreshold, that.nucleusThreshold) && Objects.equals(candidateCount, that.candidateCount) && Objects.equals(maxTokens, that.maxTokens) && Objects.equals(stop, that.stop) && Objects.equals(thinkingTags, that.thinkingTags);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop);
+        return Objects.hash(name, provider, model, contextLength, temperature, nucleusThreshold, candidateCount, maxTokens, stop, thinkingTags);
     }
 }
