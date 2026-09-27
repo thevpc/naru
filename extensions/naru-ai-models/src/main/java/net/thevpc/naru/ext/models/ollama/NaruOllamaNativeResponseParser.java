@@ -23,6 +23,13 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
             if (root.get("done").isPresent()) {
                 response.setDone(root.getBooleanValue("done").orElse(false));
             }
+            // The stop reason used to be dropped here, so it only ever appeared
+            // once a session was switched to streaming. Read it before the early
+            // returns below, which skip the token counters too.
+            String doneReason = root.getStringValue("done_reason").orNull();
+            if (doneReason != null) {
+                response.setStopReason(doneReason);
+            }
 
             NObjectElement msg = root.getObject("message").orNull();
             if (msg == null) {
@@ -32,6 +39,12 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
 
             String role = msg.getStringValue("role").orElse("assistant");
             String content = msg.getStringValue("content").orElse("");
+
+            // Reasoning models report thinking in their own field. Without this
+            // the batched path silently discarded it, so a thinking model looked
+            // identical to a non-thinking one -- and a streamed turn would have
+            // disagreed with the batched one for the same prompt.
+            String thinking = msg.getStringValue("thinking").orNull();
 
             // 2. Check for tool_calls array block (Native Ollama Spec)
             NOptional<NElement> toolCallsOpt = msg.get("tool_calls");
@@ -74,7 +87,7 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
                     calls.add(new NaruToolCall(id, name, args));
                 }
 
-                response.setMessage(NaruMessage.assistantWithToolCalls(content, calls));
+                response.setMessage(NaruMessage.assistantWithToolCalls(content, calls).setThinking(thinking));
             } else {
                 // 3. Document/XML string fallback parsing alternative methods
                 if (content.startsWith("<function=")) {
@@ -82,11 +95,32 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
                     if (a != null) {
                         List<NaruToolCall> calls = new ArrayList<>();
                         calls.add(a);
-                        response.setMessage(NaruMessage.assistantWithToolCalls(content, calls));
+                        response.setMessage(NaruMessage.assistantWithToolCalls(content, calls).setThinking(thinking));
                         return response;
                     }
                 }
-                response.setMessage(NaruMessage.assistant(content));
+                // Inline <think> blocks from models that were not started with
+                // reasoning enabled, and a reasoning model that inlined them
+                // anyway. Stripped so the answer is not polluted with the
+                // model's private reasoning.
+                String answer = content;
+                if (content.contains("<think>")) {
+                    java.util.regex.Matcher inline = java.util.regex.Pattern.compile(
+                            "<think>(.*?)</think>", java.util.regex.Pattern.DOTALL).matcher(content);
+                    StringBuilder merged = new StringBuilder();
+                    while (inline.find()) {
+                        if (merged.length() > 0) {
+                            merged.append("\n\n");
+                        }
+                        merged.append(inline.group(1).trim());
+                    }
+                    if (merged.length() > 0) {
+                        thinking = thinking == null ? merged.toString()
+                                : thinking + "\n\n" + merged;
+                    }
+                    answer = content.replaceAll("(?s)<think>.*?</think>", "").trim();
+                }
+                response.setMessage(NaruMessage.assistant(answer).setThinking(thinking));
             }
 
             // 4. Map native metrics tokens telemetry counters

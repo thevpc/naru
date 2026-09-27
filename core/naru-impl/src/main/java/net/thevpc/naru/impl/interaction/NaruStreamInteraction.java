@@ -33,6 +33,7 @@ public class NaruStreamInteraction implements NaruInteraction {
     private volatile InputListener inputListener;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong sequence = new AtomicLong();
+    private final NaruBufferedStreamWriter bufferedStream = new NaruBufferedStreamWriter();
 
     /**
      * The one request currently waiting for an answer, so that {@link #close()} can fail
@@ -119,11 +120,30 @@ public class NaruStreamInteraction implements NaruInteraction {
     }
 
     /**
+     * Joins streamed fragments and reports them as one output when the stream ends.
+     *
+     * <p>A host consuming {@link NaruOutput} gets whole messages and can render them
+     * as complete units -- a half-sentence per event would be useless to it. If it
+     * wants token-level updates it should consume the model's stream directly; this
+     * interaction is the log of what happened, not the wire.
+     */
+    @Override
+    public void writeStream(NaruLogMode mode, NMsg fragment, boolean end) {
+        if (closed.get() || listener == null) {
+            return;
+        }
+        bufferedStream.write(this, mode, fragment, end);
+    }
+
+    /**
      * Closes the interaction and fails any request still waiting, so a host shutting the
      * session down unblocks its workers instead of leaving them parked.
      */
     @Override
     public void close() {
+        // before closed: a turn that was still streaming must not have its text
+        // swallowed by the shutdown that interrupted it
+        bufferedStream.flushAll(this);
         closed.set(true);
         NaruInputRequest left = pending.getAndSet(null);
         if (left != null) {

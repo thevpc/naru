@@ -35,6 +35,20 @@ public interface NaruSession {
 
     void log(NaruLogMode mode, NMsg s);
 
+    /**
+     * Reports a fragment of output that is still being produced, for a user who is
+     * meant to watch it arrive. Fragments of one mode join in order; the last call
+     * for a mode passes {@code end=true}.
+     *
+     * <p>The default reports through {@link #log}, so a session that has no notion of
+     * streaming still shows every fragment -- as whole messages, and in the same text.
+     * Only the output is at stake here, never the work: this is a side channel, and a
+     * consumer that cannot draw incrementally must not lose the text.
+     */
+    default void logStream(NaruLogMode mode, NMsg fragment, boolean end) {
+        log(mode, fragment);
+    }
+
     NPath workingDir();
 
     NaruSession setWorkingDir(NPath workingDir);

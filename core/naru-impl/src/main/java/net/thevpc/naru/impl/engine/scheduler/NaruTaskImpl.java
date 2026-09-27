@@ -39,6 +39,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -95,6 +96,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private Instant modificationDate;
     private NaruModelConfig model;
     private String extraContext;
+
+    /**
+     * Whether the last {@link #chat} already drew its answer live. Read by the
+     * statement that made the call so it does not print it again; see
+     * {@link #isResponseStreamed()}.
+     */
+    private boolean responseStreamed;
     private final List<NaruEvent> awaitReceived = new ArrayList<>();
     private final Map<String, NaruEventSubscription> eventSubscriptions = new ConcurrentHashMap<>();
     private final Map<String, NOptional<Object>> env = new ConcurrentHashMap<>();
@@ -2233,7 +2241,63 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public NaruResponse chat(NaruModelConfig modelKey, NaruModelRequest request) {
         NChronometer chronometer = NChronometer.of();
-        NaruResponse r = session().registry().protocol(modelKey, session()).get().chat(request, this);
+        NaruModelProtocol protocol = session().registry().protocol(modelKey, session()).get();
+        NaruResponse r;
+        responseStreamed = false;
+        if (isStreamingEnabled(protocol)) {
+            // Both channels are drawn as they arrive. The answer is included: a
+            // non-thinking model produces no thinking at all, so streaming only the
+            // reasoning would mean the user watches a blank terminal and then gets
+            // the whole answer at once, which is precisely the complaint streaming
+            // exists to fix.
+            //
+            // Fragments are marked as already shown, so the statement that made this
+            // call does not log the same answer a second time when it is complete.
+            AtomicBoolean sawAnswer = new AtomicBoolean();
+            NaruStreamCollector collector = new NaruStreamCollector(this::isKillRequested);
+            java.util.EnumSet<NaruLogMode> open = java.util.EnumSet.noneOf(NaruLogMode.class);
+            NaruLogMode[] current = {null};
+            collector.addDelegate(chunk -> {
+                String text = chunk.text();
+                if (text == null || text.isEmpty()) {
+                    return;
+                }
+                // tool calls are shown by the statement that runs them; drawing
+                // their fragments here would duplicate a structured result as
+                // unparsed prose
+                NaruLogMode mode;
+                if (chunk.kind() == NaruChunkKind.THINKING) {
+                    mode = NaruLogMode.MODEL_THINKING;
+                } else if (chunk.kind() == NaruChunkKind.ANSWER) {
+                    sawAnswer.set(true);
+                    mode = NaruLogMode.MODEL_RESPONSE;
+                } else {
+                    return;
+                }
+                // a channel that stops must be closed before the next one starts,
+                // or reasoning runs straight into the reply
+                if (current[0] != null && current[0] != mode) {
+                    logStream(current[0], NMsg.ofC(""), true);
+                    open.remove(current[0]);
+                }
+                current[0] = mode;
+                open.add(mode);
+                logStream(mode, NMsg.ofC("%s", text), false);
+            });
+            try {
+                r = protocol.chatStream(request, this, collector);
+            } finally {
+                // close whatever is still open, even if the call failed: a dangling
+                // half-drawn line swallows whatever is printed next
+                for (NaruLogMode mode : open) {
+                    logStream(mode, NMsg.ofC(""), true);
+                }
+                open.clear();
+                responseStreamed = sawAnswer.get();
+            }
+        } else {
+            r = protocol.chat(request, this);
+        }
         // Announce what the provider reported, cache accounting included: the response
         // carries cacheWrite/cacheRead counts, and dropping them here is what used to make
         // every cached session look like a cold one in /stats. -1 means the provider does
@@ -2248,6 +2312,38 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 chronometer.stop().duration()
         );
         return r;
+    }
+
+    @Override
+    public boolean isResponseStreamed() {
+        return responseStreamed;
+    }
+
+    private void logStream(NaruLogMode mode, NMsg fragment, boolean end) {
+        session().logStream(mode, fragment, end);
+    }
+
+    /**
+     * Whether this call may be streamed.
+     *
+     * <p>Gated on the provider's declared capability, then on an explicit opt-out
+     * so a provider whose stream is broken -- or a user who needs the exact
+     * batched bytes for a test -- can turn it off without a code change. Without
+     * that escape hatch a bad stream takes the whole REPL with it.
+     */
+    private boolean isStreamingEnabled(NaruModelProtocol protocol) {
+        if (protocol.getCapabilities() == null || !protocol.getCapabilities().isStreaming()) {
+            return false;
+        }
+        Object disabled = session().getSessionEnv("model.noStream").orNull();
+        if (disabled == null) {
+            disabled = session().agent().env().get("model.noStream")
+                    .flatMap(NElement::asBooleanValue).orNull();
+        }
+        if (disabled instanceof Boolean) {
+            return !((Boolean) disabled);
+        }
+        return disabled == null || !Boolean.parseBoolean(disabled.toString());
     }
 
     List<MarkdownWithHeader> loadLoadModelAgentInfos(NaruSource... sources) {

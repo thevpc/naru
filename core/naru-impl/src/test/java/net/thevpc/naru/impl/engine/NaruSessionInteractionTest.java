@@ -65,6 +65,11 @@ public class NaruSessionInteractionTest {
         }
 
         @Override
+        public void writeStream(NaruLogMode mode, NMsg fragment, boolean end) {
+            output.add(fragment);
+        }
+
+        @Override
         public void close() {
         }
     }

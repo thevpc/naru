@@ -54,6 +54,24 @@ public interface NaruInteraction {
      */
     void write(NaruLogMode mode, NMsg message);
 
+    /**
+     * Reports a fragment of output that is still being produced, and that the user is
+     * meant to see as it arrives rather than after the work finishes.
+     *
+     * <p>Fragments of the same {@code mode} concatenate: the caller sends
+     * {@code end=false} for each piece and a final {@code end=true} for that mode, and
+     * what the user reads is the fragments joined in the order they arrived. A
+     * {@link #write} of any mode in between closes the open fragment first, so an
+     * unrelated log line can never land in the middle of a half-drawn sentence.
+     *
+     * <p>An implementation may show fragments the moment they arrive, or it may hold
+     * them and emit the joined text once at {@code end}: both are correct, and a
+     * headless host or a test harness has no reason to bother with the first. Neither
+     * may drop them -- a model turn that is streamed but never shown is a turn the
+     * user paid for and did not get.
+     */
+    void writeStream(NaruLogMode mode, NMsg fragment, boolean end);
+
     /** Called once when the session stops. Must not block. */
     void close();
 }

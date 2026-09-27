@@ -72,4 +72,17 @@ public class NaruModelRequest {
         r.cacheableContext = cacheableContext;
         return r;
     }
+
+    /**
+     * Returns a copy carrying different per-request settings, for a protocol that
+     * needs to add one of its own without mutating the caller's request.
+     */
+    public NaruModelRequest withEnv(Map<String, NElement> finalEnv) {
+        NaruModelRequest r = new NaruModelRequest(messages,
+                new ArrayList<>(tools),
+                new HashMap<>(finalEnv)
+        );
+        r.cacheableContext = cacheableContext;
+        return r;
+    }
 }

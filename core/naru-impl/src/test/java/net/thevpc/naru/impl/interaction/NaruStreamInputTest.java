@@ -92,6 +92,11 @@ public class NaruStreamInputTest {
         }
 
         @Override
+        public void writeStream(NaruLogMode mode, NMsg fragment, boolean end) {
+            stream.writeStream(mode, fragment, end);
+        }
+
+        @Override
         public void close() {
             stream.close();
         }

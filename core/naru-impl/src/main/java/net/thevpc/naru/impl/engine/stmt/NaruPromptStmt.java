@@ -127,9 +127,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             if (rounds >= maxSteps) {
                 task.log(NaruLogMode.PROGRESS, NMsg.ofC(
                         "Reached max tool-call rounds (%s); ending agent loop.", maxSteps));
-                if (!NBlankable.isBlank(assistantMsg.getContent())) {
-                    task.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
-                }
+                reportAnswer(task, assistantMsg);
                 task.setLastResult(assistantMsg);
                 task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
                 task.defaultAdvance(this);
@@ -142,15 +140,27 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             }
             task.addStatement(NaruStatementHelper.ofModelCall(null));
             task.addStatement(new NaruReturnStmt((String)null));
-            if (!NBlankable.isBlank(assistantMsg.getContent())) {
-                task.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
-            }
+            reportAnswer(task, assistantMsg);
             task.defaultAdvance(this);
             return;
         }
-        task.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
+        reportAnswer(task, assistantMsg);
         task.setLastResult(assistantMsg);
         task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
         task.defaultAdvance(this);
+    }
+
+    /**
+     * Shows the model's answer, unless {@link NaruTask#chat} already drew it live as it
+     * arrived. Printing it again after a stream would show the user the same words
+     * twice: once token by token, then once whole.
+     */
+    private static void reportAnswer(NaruTask task, NaruMessage assistantMsg) {
+        if (task.isResponseStreamed()) {
+            return;
+        }
+        if (!NBlankable.isBlank(assistantMsg.getContent())) {
+            task.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
+        }
     }
 }

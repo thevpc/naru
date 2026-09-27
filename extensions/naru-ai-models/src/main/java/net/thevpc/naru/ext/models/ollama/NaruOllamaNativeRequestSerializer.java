@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.*;
 
 import java.util.*;
@@ -12,10 +13,30 @@ public class NaruOllamaNativeRequestSerializer implements NaruModelRequestSerial
 
     @Override
     public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session) {
+        return serialize(request, model, session, false);
+    }
+
+    @Override
+    public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session, boolean stream) {
         NObjectElementBuilder body = NElement.ofObjectBuilder();
 
         body.set("model", model.model());
-        body.set("stream", false);
+        // Must be explicit: with stream:false Ollama buffers the entire
+        // generation and returns one JSON document, so asking for a stream and
+        // omitting the flag looks like a model with nothing to say.
+        body.set("stream", stream);
+
+        // Ollama returns no message.thinking unless the request asks for it, and
+        // rejects a model that cannot think if the request insists. Both the decision
+        // and its absence are deliberate: the protocol resolves it from the model's
+        // declared capability, and leaving it out entirely would mean never
+        // reasoning at all. See NaruModelProtocolOllamaNative#THINK_ENV.
+        if (request.env() != null) {
+            NElement think = request.env().get(NaruModelProtocolOllamaNative.THINK_ENV);
+            if (think != null && think.isBoolean()) {
+                body.set("think", think.asBooleanValue().orElse(false));
+            }
+        }
 
         // 1. Process Messages (Native Flat-Multimodal and Tool Context formatting)
         NArrayElementBuilder msgList = NElement.ofArrayBuilder();

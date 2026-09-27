@@ -344,6 +344,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
         }
 
         List<NaruModelInfo> models = new ArrayList<>();
+        NaruModelInfo exactMatch = null;
         for (NaruModelInfo m : allModels) {
             if (providerFilter != null && !m.provider().equalsIgnoreCase(providerFilter)) {
                 continue;
@@ -353,7 +354,17 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
             if (filter != null) {
                 String flc = filter.toLowerCase();
-                boolean match = m.model().toLowerCase().contains(flc)
+                // a full key such as "ollama/qwen2.5-coder:7b" is what /model prints and
+                // what users paste back; substring matching can never match it because the
+                // key contains the provider separator, so accept an exact key (or an exact
+                // "provider/model") before falling back to fuzzy matching.
+                boolean exact = m.key().toString().equalsIgnoreCase(filter)
+                        || (m.provider() + "/" + m.model()).equalsIgnoreCase(filter);
+                if (exact) {
+                    exactMatch = m;
+                }
+                boolean match = exact
+                        || m.model().toLowerCase().contains(flc)
                         || m.provider().toLowerCase().contains(flc)
                         || task.session().modelAliases().values().stream()
                         .filter(x -> x.key().equals(m.key()))
@@ -363,6 +374,18 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 }
             }
             models.add(m);
+        }
+
+        // an exact key is a selection, not a query: /model advertises "or a full
+        // provider/model", and a pasted key must switch models rather than print a
+        // listing. Fuzzy filters keep listing.
+        if (exactMatch != null) {
+            NaruModelConfig selected = task.session().findModel(exactMatch.key().toString()).orNull();
+            if (selected != null) {
+                task.setModel(selected);
+                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s", task.model().toText()));
+                return NaruStmtResult.ofSuccess(null);
+            }
         }
 
         if (models.isEmpty()) {

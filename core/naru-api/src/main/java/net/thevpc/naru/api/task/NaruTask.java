@@ -373,6 +373,19 @@ public interface NaruTask extends NToElement {
 
     NaruResponse chat(NaruModelConfig modelKey, NaruModelRequest request);
 
+    /**
+     * Whether the answer from the last {@link #chat} was already shown to the user as
+     * it arrived.
+     *
+     * <p>The statement that made the call still owns the response, and logging it
+     * again would print the same words twice: once token by token, then once whole.
+     * A caller that reports the answer should ask this first. False for a batched
+     * call, so the normal path is unchanged.
+     */
+    default boolean isResponseStreamed() {
+        return false;
+    }
+
     NaruSession session();
 
     NaruTask setWorkingDir(NPath workingDir);

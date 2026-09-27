@@ -1087,6 +1087,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         interaction.write(mode, s);
     }
 
+    @Override
+    public void logStream(NaruLogMode mode, NMsg fragment, boolean end) {
+        if (mode == NaruLogMode.SCHEDULER && !isTrace()) {
+            return;
+        }
+        interaction.writeStream(mode, fragment, end);
+    }
+
     /**
      * A problem the user needs to know about but that is not a statement to execute.
      * <p>
