@@ -45,16 +45,22 @@ public class NaruTerminalInteraction implements NaruInteraction {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong sequence = new AtomicLong();
 
-    /** The streamed line currently being drawn, or null when nothing is open. */
+    /**
+     * The streamed line currently being drawn, or null when nothing is open.
+     */
     private NaruLogMode streamMode;
     private boolean atLineStart = true;
 
-    /** Used only when there is no terminal to draw on; see {@link #writeStream}. */
+    /**
+     * Used only when there is no terminal to draw on; see {@link #writeStream}.
+     */
     private final NaruBufferedStreamWriter bufferedStream = new NaruBufferedStreamWriter();
 
     private Thread reader;
 
-    /** Uses the process terminal, writing through the terminal's own out. */
+    /**
+     * Uses the process terminal, writing through the terminal's own out.
+     */
     public NaruTerminalInteraction() {
         this(NTerminal.of(), null);
     }
@@ -177,6 +183,7 @@ public class NaruTerminalInteraction implements NaruInteraction {
         }
         String text = fragment == null ? "" : fragment.toString();
         int from = 0;
+        boolean wasNewLine = true;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             if (c == '\n') {
@@ -184,6 +191,9 @@ public class NaruTerminalInteraction implements NaruInteraction {
                 terminal.out().println();
                 from = i + 1;
                 atLineStart = true;
+                wasNewLine = true;
+            } else {
+                wasNewLine = false;
             }
         }
         print(text, from, text.length());
@@ -202,7 +212,12 @@ public class NaruTerminalInteraction implements NaruInteraction {
             terminal.out().print(streamPrefix(streamMode));
             atLineStart = false;
         }
-        terminal.out().print(NMsg.ofC("%s", text.substring(from, to)));
+        String s = text.substring(from, to);
+        if (streamMode == NaruLogMode.MODEL_THINKING) {
+            terminal.out().print(NMsg.ofC("%s", NMsg.ofStyledPale(s)));
+        } else {
+            terminal.out().print(NMsg.ofC("%s", s));
+        }
     }
 
     /**

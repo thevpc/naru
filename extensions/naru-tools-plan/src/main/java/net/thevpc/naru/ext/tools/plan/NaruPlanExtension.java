@@ -82,7 +82,7 @@ public class NaruPlanExtension implements NaruSessionExtension {
             return Collections.emptyList();
         }
         return List.of(NaruMessage.system(
-                "### ACTIVE PLAN:\n" + plan.render() + "\n" + PROGRESS_RULES));
+                "### ACTIVE PLAN:\n" + plan.render().filteredText() + "\n" + PROGRESS_RULES));
     }
 
     @Override

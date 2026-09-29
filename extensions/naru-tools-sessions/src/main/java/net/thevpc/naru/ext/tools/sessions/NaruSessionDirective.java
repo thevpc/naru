@@ -28,12 +28,37 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 return executeName(context, cmdLine);
             }
         });
-        register(new AbstractSubCommand("list", NText.ofPlain("list saved sessions")) {
+        register(new AbstractSubCommand("list", NText.ofPlain("list saved sessions")
+                , new SubCommandHelp("", "list the sessions saved for this project")
+        ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 return executeList(context, cmdLine);
             }
         });
+        //TODO FIX ME
+//        register(new AbstractSubCommand("rename", NText.ofPlain("rename the current session")
+//                , new SubCommandHelp("<name>", "give the current session a name (or a new one) and save it")
+//        ) {
+//            @Override
+//            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+//                return executeRename(context, cmdLine);
+//            }
+//
+//            @Override
+//            public List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+//                return sessionNameCandidates(cmdLine, pos, session);
+//            }
+//        });
+        //TODO FIX ME
+//        register(new AbstractSubCommand("continue", NText.ofPlain("load the most recently saved session")
+//                , new SubCommandHelp("", "load the session that was last updated on disk")
+//        ) {
+//            @Override
+//            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+//                return executeContinue(context, cmdLine);
+//            }
+//        });
         register(new AbstractSubCommand("public", NText.ofPlain("change current session visibility to public")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -53,24 +78,9 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 return executeDelete(context, cmdLine);
             }
-
             @Override
             public List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
-                List<NArgCompleteCandidate> candidates = new java.util.ArrayList<>();
-                String[] stringArray = cmdLine.toStringArray();
-                int wordIndex = pos.wordIndex();
-                if (wordIndex == 2) {
-                    String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
-                    for (NaruResourceInfo info : session.sessionStoreManager().list()) {
-                        if (info.getName() != null && !info.getName().isEmpty()) {
-                            addCandidates(candidates, currentArg, info.getName());
-                        }
-                        if (info.getUuid() != null && !info.getUuid().isEmpty()) {
-                            addCandidates(candidates, currentArg, info.getUuid());
-                        }
-                    }
-                }
-                return candidates;
+                return sessionNameCandidates(cmdLine, pos, session);
             }
         });
         register(new AbstractSubCommand("purge", NText.ofPlain("purge all sessions")
@@ -90,24 +100,13 @@ public class NaruSessionDirective extends NaruDirectiveBase {
 
             @Override
             public List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
-                List<NArgCompleteCandidate> candidates = new java.util.ArrayList<>();
-                String[] stringArray = cmdLine.toStringArray();
-                int wordIndex = pos.wordIndex();
-                if (wordIndex == 2) {
-                    String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
-                    for (NaruResourceInfo info : session.sessionStoreManager().list()) {
-                        if (info.getName() != null && !info.getName().isEmpty()) {
-                            addCandidates(candidates, currentArg, info.getName());
-                        }
-                        if (info.getUuid() != null && !info.getUuid().isEmpty()) {
-                            addCandidates(candidates, currentArg, info.getUuid());
-                        }
-                    }
-                }
-                return candidates;
+                return sessionNameCandidates(cmdLine, pos, session);
             }
         });
         register(new AbstractSubCommand("reload", NText.ofPlain("reload current session")
+                , new SubCommandHelp("", "re-read this session from its saved folder, "
+                + "or start a fresh one if it was never saved. "
+                + "use /session restore to go back to the crash snapshot instead")
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -152,6 +151,23 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         });
     }
 
+    private List<NArgCompleteCandidate> sessionNameCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+        List<NArgCompleteCandidate> candidates = new java.util.ArrayList<>();
+        String[] stringArray = cmdLine.toStringArray();
+        int wordIndex = pos.wordIndex();
+        if (wordIndex == 2) {
+            String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
+            for (NaruResourceInfo info : session.sessionStoreManager().list()) {
+                if (info.getName() != null && !info.getName().isEmpty()) {
+                    addCandidates(candidates, currentArg, info.getName());
+                }
+                if (info.getUuid() != null && !info.getUuid().isEmpty()) {
+                    addCandidates(candidates, currentArg, info.getUuid());
+                }
+            }
+        }
+        return candidates;
+    }
 
 
     public NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {

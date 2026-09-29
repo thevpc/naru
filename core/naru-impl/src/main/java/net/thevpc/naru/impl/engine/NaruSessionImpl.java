@@ -712,13 +712,21 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     private <T> T stopTheWorldAndWait(NCallable<T> e) {
-        Future<T> f = stopTheWorldAndDo(e);
+        NaruSchedulerImpl s = (NaruSchedulerImpl) scheduler;
+        // step out of the tick this runs in (if any) before waiting on the action:
+        // a worker blocked here would otherwise still be counted as ticking, and
+        // hold() would wait for itself forever.
+        boolean wasTicking = s.parkForStopTheWorld();
         try {
+            Future<T> f = stopTheWorldAndDo(e);
             return f.get();
         } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException(ex);
         } catch (ExecutionException ex) {
             throw new RuntimeException(ex);
+        } finally {
+            s.unparkAfterStopTheWorld(wasTicking);
         }
     }
 
@@ -729,10 +737,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                     if (!scheduler.isHeld()) {
                         log(NaruLogMode.SCHEDULER, NMsg.ofC("Stop the world..."));
                         scheduler.hold();
-                        T a = e.call();
-                        scheduler.resume();
-                        log(NaruLogMode.SCHEDULER, NMsg.ofC("Resume the world..."));
-                        return a;
+                        try {
+                            return e.call();
+                        } finally {
+                            scheduler.resume();
+                        }
                     } else {
                         return e.call();
                     }
@@ -869,7 +878,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     public NaruSession reload() {
         stopTheWorldAndWait(() -> {
             NPath publicFolder = publicFolder(uuid());
-            NPath privateFolder = publicFolder(uuid());
+            NPath privateFolder = privateFolder(uuid());
             if (loadTimeVisibility == null) {
                 if (isValidSessionFolder(privateFolder)) {
                     loadFolder(privateFolder);
@@ -918,7 +927,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         Boolean b = stopTheWorldAndWait(() -> {
             NPath snapshotFile = snapshotFile();
             if (snapshotFile.isFile()) {
-                loadFolder(snapshotFile);
+                // snapshotFile() is the session.tson inside the snapshot folder; loadFolder()
+                // appends that name itself, so the folder is what it must be given.
+                loadFolder(snapshotFile.parent());
                 ((NaruSchedulerImpl) scheduler).reloadState();
                 return true;
             }

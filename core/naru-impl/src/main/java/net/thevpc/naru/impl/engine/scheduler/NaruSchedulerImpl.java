@@ -25,15 +25,28 @@ public class NaruSchedulerImpl implements NaruScheduler {
 
     // ready queues
     private final BlockingQueue<NaruTask> readyQueue;
-    // scheduler-level hold
-    // full = not held, empty = held
-    private final Semaphore holdGate;
 
-    // counts workers currently inside tick()
+    // counts workers currently inside the worker loop (including ones parked on
+    // the hold below); reported by activeCount(), never used to decide when the
+    // world may stop
     private final AtomicInteger activeWorkers;
 
-    // latch to synchronize hold() caller with workers
-    private volatile CountDownLatch holdLatch;
+    // counts workers that are actually executing a task tick right now. This is
+    // the only number hold() waits on.
+    private final AtomicInteger tickingWorkers;
+
+    /**
+     * Guards {@link #held} and {@link #tickingWorkers}; {@link #hold()} waits here
+     * until every tick has ended, {@link #resume()} wakes it.
+     * <p>
+     * A lock rather than a semaphore-permit gate, because the old gate had to be
+     * drained and refilled by hand and every accounting slip on it ended with
+     * workers parked forever.
+     */
+    private final Object holdLock = new Object();
+
+    /** True for a worker thread while it is executing a tick. */
+    private final ThreadLocal<Boolean> inTick = ThreadLocal.withInitial(() -> false);
 
     // lifecycle
     private final boolean stopped;
@@ -45,6 +58,11 @@ public class NaruSchedulerImpl implements NaruScheduler {
     private volatile NaruSchedulerStatus schedulerStatus;
     private volatile boolean held;
 
+    // thread that currently owns the stopped world (guarded by holdLock). The
+    // stop-the-world executor is a cached pool, so two actions could otherwise
+    // both see !held and run their hold/call/resume sequence concurrently.
+    private Thread worldOwner;
+
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
@@ -52,8 +70,8 @@ public class NaruSchedulerImpl implements NaruScheduler {
     public NaruSchedulerImpl(NaruSession session) {
         this.session = session;
         this.readyQueue = new LinkedBlockingQueue<>();
-        this.holdGate = new Semaphore(Integer.MAX_VALUE);
         this.activeWorkers = new AtomicInteger(0);
+        this.tickingWorkers = new AtomicInteger(0);
         this.stopped = false;
         this.shutdownRequested = false;
         this.schedulerStatus = NaruSchedulerStatus.IDLE;
@@ -162,35 +180,117 @@ public class NaruSchedulerImpl implements NaruScheduler {
 
     @Override
     public void hold() {
-        if (held) {
-            return;
-        }
-        session.log(NaruLogMode.SCHEDULER, NMsg.ofC(">> HOLD"));
-        // drain permits — workers block after finishing current tick
-        holdGate.drainPermits();
-        this.held = true;
-        // wait synchronously until all active workers finish current tick
-        int active = activeWorkers.get();
-        if (active > 0) {
-            holdLatch = new CountDownLatch(active);
-            try {
-                holdLatch.await();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            } finally {
-                holdLatch = null;
+        boolean interrupted = false;
+        synchronized (holdLock) {
+            // only one stop-the-world at a time. Waits here are uninterruptible: a
+            // thread must never start its action without having taken the world.
+            while (worldOwner != null && worldOwner != Thread.currentThread()) {
+                try {
+                    holdLock.wait();
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
             }
+            if (!held) {
+                worldOwner = Thread.currentThread();
+                session.log(NaruLogMode.SCHEDULER, NMsg.ofC(">> HOLD"));
+                held = true;
+                // wait until every worker has finished the tick it is in. Workers that are
+                // parked waiting for this very stop-the-world, or that have not started a
+                // tick yet, are deliberately not counted: waiting for those is a wait on
+                // ourselves, and it is what used to wedge save/load/restore.
+                while (tickingWorkers.get() > 0) {
+                    try {
+                        holdLock.wait();
+                    } catch (InterruptedException e) {
+                        interrupted = true;
+                    }
+                }
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 
     @Override
     public void resume() {
-        if (!held) {
+        synchronized (holdLock) {
+            if (!held) {
+                return;
+            }
+            session.log(NaruLogMode.SCHEDULER, NMsg.ofC(">> UNHOLD"));
+            held = false;
+            worldOwner = null;
+            holdLock.notifyAll();
+        }
+    }
+
+    /**
+     * Waits out a stop-the-world. Called by a worker before it starts a tick.
+     */
+    private void awaitHold() throws InterruptedException {
+        synchronized (holdLock) {
+            while (held) {
+                holdLock.wait();
+            }
+        }
+    }
+
+    /**
+     * Announces that this thread is about to execute a task tick, waiting first if
+     * the world is currently stopped. Everything between this and {@link #endTick()}
+     * is the part a stop-the-world waits for.
+     */
+    private void beginTick() throws InterruptedException {
+        synchronized (holdLock) {
+            while (held) {
+                holdLock.wait();
+            }
+            tickingWorkers.incrementAndGet();
+            inTick.set(true);
+        }
+    }
+
+    private void endTick() {
+        synchronized (holdLock) {
+            if (Boolean.TRUE.equals(inTick.get())) {
+                inTick.set(false);
+                tickingWorkers.decrementAndGet();
+                holdLock.notifyAll();
+            }
+        }
+    }
+
+    /**
+     * Steps this thread out of its tick so a stop-the-world issued from inside that
+     * tick can complete. The tick is resumed by {@link #unparkAfterStopTheWorld(boolean)}
+     * once the action it is waiting on has run.
+     *
+     * @return this thread was ticking, and so must be put back
+     */
+    public boolean parkForStopTheWorld() {
+        synchronized (holdLock) {
+            if (!Boolean.TRUE.equals(inTick.get())) {
+                return false;
+            }
+            inTick.set(false);
+            tickingWorkers.decrementAndGet();
+            holdLock.notifyAll();
+            return true;
+        }
+    }
+
+    /** Re-enters the tick left by {@link #parkForStopTheWorld()}. */
+    public void unparkAfterStopTheWorld(boolean wasTicking) {
+        if (!wasTicking) {
             return;
         }
-        session.log(NaruLogMode.SCHEDULER, NMsg.ofC(">> UNHOLD"));
-        this.held = false;
-        holdGate.release(Integer.MAX_VALUE);
+        try {
+            beginTick();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -408,8 +508,8 @@ public class NaruSchedulerImpl implements NaruScheduler {
 
                 activeWorkers.incrementAndGet();
                 try {
-                    // 1. scheduler-level hold gate
-                    holdGate.acquire();
+                    // 1. scheduler-level hold: wait out a stop-the-world
+                    awaitHold();
                     if (stopped || shutdownRequested) break;
 
                     // 2. mode-dependent clearance (step/throttle)
@@ -417,25 +517,17 @@ public class NaruSchedulerImpl implements NaruScheduler {
                     if (stopped) break;
 
                     // 3. drain inbox before tick
-                    this.tick(task);
+                    beginTick();
+                    try {
+                        this.tick(task);
+                    } finally {
+                        endTick();
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
                 } finally {
                     int remaining = activeWorkers.decrementAndGet();
-                    // signal hold() caller if waiting
-                    CountDownLatch latch = holdLatch;
-                    if (latch != null) {
-                        latch.countDown();
-                    }
-                    // restore hold gate permit if not held
-                    if (!isHeld()) {
-                        try {
-                            holdGate.release();
-                        } catch (Throwable ex) {
-                            session.log(NaruLogMode.SCHEDULER, NMsg.ofC("unexpected : %s", ex));
-                        }
-                    }
 
                     // if last worker done and stopping
                     if (remaining == 0 && shutdownRequested) {

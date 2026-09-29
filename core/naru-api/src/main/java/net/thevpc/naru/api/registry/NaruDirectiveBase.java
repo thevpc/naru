@@ -244,8 +244,14 @@ public abstract class NaruDirectiveBase implements NaruDirective {
         if (wordIndex == 1) {
             addCandidates(candidates, currentArg, subCommands.keySet().stream().sorted().toArray(String[]::new));
         } else if (wordIndex >= 2) {
-            if (stringArray.length > 0) {
-                SubCommand s = subCommand(stringArray[0]).orNull();
+            // word 0 is the directive itself ("/session"), word 1 is the sub-command
+            // the user picked. Looking word 0 up here found no sub-command at all,
+            // which is why sub-command completion (and its arguments) never appeared.
+            if (stringArray.length > 1) {
+                SubCommand s = subCommand(stringArray[1]).orNull();
+                if (s == null) {
+                    s = subCommand("").orNull();
+                }
                 if (s != null) {
                     return s.resolveCandidates(cmdLine, pos, session);
                 }

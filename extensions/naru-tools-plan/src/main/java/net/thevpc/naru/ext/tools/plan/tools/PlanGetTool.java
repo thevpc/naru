@@ -52,7 +52,7 @@ public class PlanGetTool extends DefaultNaruTool {
         if (plan == null) {
             return "No active plan. " + listAll(task);
         }
-        return "Plan " + plan.id() + " [" + plan.status().name().toLowerCase() + "]:\n" + plan.render();
+        return "Plan " + plan.id() + " [" + plan.status().name().toLowerCase() + "]:\n" + plan.render().filteredText();
     }
 
     private String listAll(NaruTask task) {

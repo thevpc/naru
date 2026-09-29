@@ -84,6 +84,6 @@ public class PlanUpdateTool extends DefaultNaruTool {
         if (!updated.isPresent()) {
             return "ERROR: item " + item.id() + " not found in plan " + plan.id();
         }
-        return plan.render();
+        return plan.render().filteredText();
     }
 }

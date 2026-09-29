@@ -5,6 +5,10 @@ import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.elem.NPairElement;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.text.NTextBuilder;
+import net.thevpc.nuts.text.NTextStyle;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -221,7 +225,7 @@ public class NaruPlan {
     /**
      * Removes an item and every dependency edge pointing at it. Items that depended on
      * the removed item become unblocked only if they had no other unsatisfied edge;
-     * {@link NaruPlanManager#recomputeAndFill()} decides that.
+     * {@link NaruPlanManager#recomputeAndFill(String)} decides that.
      */
     public boolean removeItem(String itemId) {
         NaruPlanItem removed = null;
@@ -396,31 +400,31 @@ public class NaruPlan {
      * Dependency ids are rendered as short prefixes because full UUIDs in a system
      * prompt are both unreadable and easy for a model to mistype back.
      */
-    public String render() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Plan ").append(shortId()).append(" - ").append(goal).append('\n');
+    public NText render() {
+        NTextBuilder sb = NTextBuilder.of();
+        sb.append("Plan ").append(shortId(), NTextStyle.primary1()).append(" - ").append(goal,NTextStyle.primary2()).append('\n');
         for (NaruPlanItem s : items) {
-            sb.append("  ").append(s.id(), 0, Math.min(8, s.id().length()));
+            sb.append("  ").append(s.id().substring(0, Math.min(8, s.id().length())),NTextStyle.pale());
             if (s.validator().isGate()) {
-                sb.append(" [").append(s.validator().name().toLowerCase()).append(']');
+                sb.append(" [").append(s.validator().name().toLowerCase(),NTextStyle.primary8()).append(']');
             }
-            sb.append(" (").append(s.status().name().toLowerCase()).append(')');
+            sb.append(" (").append(s.status().name().toLowerCase(),NTextStyle.primary1()).append(')');
             sb.append(' ').append(s.description());
             if (!s.dependsOn().isEmpty()) {
                 sb.append("  <- after:");
                 for (String d : s.dependsOn()) {
-                    sb.append(' ').append(d, 0, Math.min(8, d.length()));
+                    sb.append(' ').append(d.substring(0, Math.min(8, d.length())));
                 }
             }
             if (s.taskId() != null) {
-                sb.append("  [task ").append(s.taskId()).append(']');
+                sb.append("  [task ").append(s.taskId(),NTextStyle.primary1()).append(']');
             }
             if (s.notes() != null) {
                 sb.append(" -- ").append(s.notes());
             }
             sb.append('\n');
         }
-        return sb.toString();
+        return sb.build();
     }
 
     private String shortId() {

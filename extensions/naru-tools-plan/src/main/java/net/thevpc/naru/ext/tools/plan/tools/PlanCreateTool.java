@@ -68,14 +68,15 @@ public class PlanCreateTool extends DefaultNaruTool {
         if (arr == null || !arr.isAnyArray()) {
             return "ERROR: items is required and must be an array";
         }
+        int itemIndex=0;
         for (NElement el : arr.asArray().get()) {
             NObjectLike o = NObjectLike.of(el);
             if (o == null) {
-                continue;
+                return "ERROR: items at index "+itemIndex+" is not valid";
             }
             String description = o.string("description");
             if (description == null) {
-                continue;
+                return "ERROR: items at index "+itemIndex+" is missing description parameter";
             }
             NaruPlanItemSpec spec = NaruPlanItemSpec.of(description);
             String key = o.string("key");
@@ -101,7 +102,7 @@ public class PlanCreateTool extends DefaultNaruTool {
         }
         try {
             NaruPlan plan = NaruPlanExtension.plans(context.task().session()).createPlan(goal, specs);
-            return "Plan created (id " + plan.id() + "):\n" + plan.render()
+            return "Plan created (id " + plan.id() + "):\n" + plan.render().filteredText()
                     + "\nNothing runs until a human activates it.";
         } catch (IllegalArgumentException e) {
             return "ERROR: " + e.getMessage();
