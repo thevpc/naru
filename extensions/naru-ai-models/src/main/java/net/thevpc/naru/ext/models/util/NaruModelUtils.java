@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.util;
 
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.artifact.NId;
 import net.thevpc.nuts.cmdline.NCmdLine;
@@ -27,7 +28,7 @@ import java.util.*;
 public class NaruModelUtils {
 
     public static NMsg formatDirective(String name) {
-        return NMsg.ofC("%s%s",NMsg.ofStyledSeparator("/"),NMsg.ofStyledPrimary1(name));
+        return NMsg.ofC("%s%s", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1(name));
     }
 
     public static void checkValidRoutineName(String text) {
@@ -197,7 +198,7 @@ public class NaruModelUtils {
         // 1. Session audit folder in projectDir
         if (finalSession != null && finalSession.projectDir() != null) {
             paths.add(finalSession.projectDir().resolve(".naru/local/sessions").resolve(sessionUuid).resolve("audit").resolve("task-" + taskId + ".tson"));
-            paths.add(finalSession.projectDir().resolve(".naru/local/logs").resolve("task-" + taskId + "-llm-audit.tson"));
+//            paths.add(finalSession.projectDir().resolve(".naru/local/logs").resolve("task-" + sessionUuid + "-" + taskId + "-llm-audit.tson"));
         } else {
             // 2. Workspace log fallback
             paths.add(NPath.of(NStoreKey.of(
@@ -229,7 +230,7 @@ public class NaruModelUtils {
     }
 
     public static void logAudit(NaruTask task,
-                                net.thevpc.naru.api.agent.NaruSession session,
+                                NaruSession session,
                                 String provider,
                                 String model,
                                 NHttpRequest request,
@@ -313,15 +314,16 @@ public class NaruModelUtils {
 
             String tsonRecord = NElementWriter.ofTson().formatPlain(auditMap);
             List<NPath> auditPaths = resolveTaskAuditPaths(task, session);
-            for (NPath p : auditPaths) {
-                p.mkParentDirs().writeString(tsonRecord + "\n\n", NPathOption.APPEND, NPathOption.CREATE);
+            synchronized (NaruModelUtils.class) {
+                for (NPath p : auditPaths) {
+                    p.mkParentDirs().writeString(tsonRecord + "\n\n", NPathOption.APPEND, NPathOption.CREATE);
+                }
             }
         } catch (Exception ex) {
             // Guard against failure in audit logging to never crash the main LLM flow
             log(NMsg.ofC("Failed to write audit log: %s", ex.getMessage()));
         }
     }
-
 
 
     public static boolean isPath(String command) {
@@ -423,8 +425,6 @@ public class NaruModelUtils {
         }
         return toShow;
     }
-
-
 
 
 }

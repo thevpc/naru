@@ -41,21 +41,49 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                 public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                     NaruTask task = context.task();
                     String ref = cmdLine.isEmpty() ? null : cmdLine.next().get().image();
-                    NOptional<NaruPlan> planOpt = NBlankable.isBlank(ref)
-                            ? NaruPlanExtension.plans(task.session()).activePlan()
-                            : NaruPlanExtension.plans(task.session()).findPlan(ref);
-                    if (planOpt.isError()) {
-                        return NaruStmtResult.ofError(planOpt.toString());
+                    NaruPlan currentPlan=null;
+                    if(NBlankable.isBlank(ref)){
+                        currentPlan = NaruPlanExtension.plans(task.session()).activePlan().orNull();
+                        if(currentPlan==null){
+                            List<NaruPlan> all = NaruPlanExtension.plans(task.session()).plans().values().stream().toList();
+                            int asize = all.size();
+                            if(asize ==1) {
+                                currentPlan = all.get(0);
+                            }else if(asize ==0){
+                                logInfo(context, NMsg.ofStyledError("no active plan"));
+                                return NaruStmtResult.ofError("no active plan");
+                            }else if(asize >1){
+                                List<NaruPlan> a = all.stream().filter(x ->
+                                        {
+                                            NaruPlanStatus status = x.status();
+                                            return status == NaruPlanStatus.BLOCKED
+                                            || status == NaruPlanStatus.OPEN
+                                            || status == NaruPlanStatus.PENDING;
+                                        }
+                                ).toList();
+                                if(a.size()==0){
+                                    logInfo(context, NMsg.ofStyledError("please specify which plan to show\n" + logListing(context)));
+                                    return NaruStmtResult.ofError("please specify which plan to show\n" + logListing(context));
+                                }else if(a.size()==1){
+                                    currentPlan = a.get(0);
+                                }else {
+                                    logInfo(context, NMsg.ofStyledError("multiple active plans exist; please specify which plan to show\n" + logListing(context)));
+                                    return NaruStmtResult.ofError("multiple active plans exist; please specify which plan to show\n" + logListing(context));
+                                }
+                            }
+                        }
+                    }else{
+                        currentPlan=NaruPlanExtension.plans(task.session()).findPlan(ref).orNull();
+                        if(currentPlan==null){
+                            logInfo(context, NMsg.ofStyledError("no such plan "+ref));
+                            return NaruStmtResult.ofError("no such plan "+ref);
+                        }
                     }
-                    NaruPlan p = planOpt.orNull();
-                    if (p == null) {
-                        logInfo(context, NMsg.ofStyledError("no active plan"));
-                        return NaruStmtResult.ofError("no active plan");
-                    }
+
                     logInfo(context,
-                            NMsg.ofC("plan %s [%s]:\n" + p.render(),
-                                    NMsg.ofStyledPrimary1(p.id()),
-                                    NaruPlanExtension.colorizePlanStatus(p.status())
+                            NMsg.ofC("plan %s [%s]:\n" + currentPlan.render(),
+                                    NMsg.ofStyledPrimary1(currentPlan.id()),
+                                    NaruPlanExtension.colorizePlanStatus(currentPlan.status())
                                     )
                             );
                     return NaruStmtResult.ofSuccess(null);
