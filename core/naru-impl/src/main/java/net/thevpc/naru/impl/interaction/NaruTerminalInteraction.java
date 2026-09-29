@@ -206,6 +206,10 @@ public class NaruTerminalInteraction implements NaruInteraction {
 
     private void print(String text, int from, int to) {
         if (to <= from) {
+            if (atLineStart) {
+                terminal.out().print(streamPrefix(streamMode));
+                atLineStart = false;
+            }
             return;
         }
         if (atLineStart) {

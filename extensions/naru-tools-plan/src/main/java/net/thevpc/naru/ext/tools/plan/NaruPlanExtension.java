@@ -70,6 +70,53 @@ public class NaruPlanExtension implements NaruSessionExtension {
                         "the plan extension is not installed in this session"));
     }
 
+    public static NMsg colorizePlanStatus(NaruPlanStatus status) {
+        if (status == null) {
+            return null;
+        }
+        switch (status) {
+            case OPEN:
+                return NMsg.ofStyledComments(status.name().toLowerCase());
+            case BLOCKED:
+                return NMsg.ofStyledError(status.name().toLowerCase());
+            case COMPLETED:
+                return NMsg.ofStyledSuccess(status.name().toLowerCase());
+            case PENDING:
+                return NMsg.ofStyledPale(status.name().toLowerCase());
+        }
+        return NMsg.ofC("%s", status.name().toLowerCase());
+    }
+
+    public static String trimStr(String any,int max) {
+        if(any.length()>max){
+            return any.substring(0,max-3)+"...";
+        }
+        return any;
+    }
+
+    public static NMsg colorizePlanItemStatus(NaruPlanItemStatus status) {
+        if (status == null) {
+            return null;
+        }
+        switch (status) {
+            case READY:
+                return NMsg.ofStyledPrimary1(status.name().toLowerCase());
+            case RUNNING:
+                return NMsg.ofStyledPrimary2(status.name().toLowerCase());
+            case FAILED:
+                return NMsg.ofStyledFail(status.name().toLowerCase());
+            case VALIDATING:
+                return NMsg.ofStyledWarn(status.name().toLowerCase());
+            case BLOCKED:
+                return NMsg.ofStyledError(status.name().toLowerCase());
+            case DONE:
+                return NMsg.ofStyledSuccess(status.name().toLowerCase());
+            case PENDING:
+                return NMsg.ofStyledPale(status.name().toLowerCase());
+        }
+        return NMsg.ofC("%s", status.name().toLowerCase());
+    }
+
     @Override
     public boolean isRelevant(NaruTask task) {
         return true;

@@ -39,7 +39,7 @@ public class NaruPlan {
 
     private final String id;
     private String goal;
-    private Instant creationInstant;
+    private final Instant creationInstant;
     private Instant modificationInstant;
     private final List<NaruPlanItem> items = new ArrayList<>();
     /**
@@ -381,7 +381,7 @@ public class NaruPlan {
             }
         }
         if (runnable) {
-            return NaruPlanStatus.ACTIVE;
+            return NaruPlanStatus.OPEN;
         }
         if (stuck) {
             return NaruPlanStatus.BLOCKED;
@@ -402,22 +402,42 @@ public class NaruPlan {
      */
     public NText render() {
         NTextBuilder sb = NTextBuilder.of();
-        sb.append("Plan ").append(shortId(), NTextStyle.primary1()).append(" - ").append(goal,NTextStyle.primary2()).append('\n');
+        sb.append("Plan ").append(shortId(), NTextStyle.primary1()).append(" - ").append(goal, NTextStyle.primary2()).append('\n');
         for (NaruPlanItem s : items) {
-            sb.append("  ").append(s.id().substring(0, Math.min(8, s.id().length())),NTextStyle.pale());
+            sb.append("  ").append(s.id().substring(0, Math.min(8, s.id().length())), NTextStyle.pale());
             if (s.validator().isGate()) {
-                sb.append(" [").append(s.validator().name().toLowerCase(),NTextStyle.primary8()).append(']');
+                sb.append(" [").append(s.validator().name().toLowerCase(), NTextStyle.primary8()).append(']');
             }
-            sb.append(" (").append(s.status().name().toLowerCase(),NTextStyle.primary1()).append(')');
+            sb.append(" (").append(NaruPlanExtension.colorizePlanItemStatus(s.status())).append(')');
             sb.append(' ').append(s.description());
             if (!s.dependsOn().isEmpty()) {
-                sb.append("  <- after:");
-                for (String d : s.dependsOn()) {
+                sb.append("  <- after:", NTextStyle.warn());
+                List<String> dependsOn = s.dependsOn();
+                for (int j = 0; j < dependsOn.size(); j++) {
+                    String d = dependsOn.get(j);
+                    if (j > 0) {
+                        sb.append(",");
+                    }
                     sb.append(' ').append(d.substring(0, Math.min(8, d.length())));
+                    NaruPlanItem referenced = items.stream().filter(i -> i.id().equals(d)).findFirst().orElse(null);
+                    if (referenced == null) {
+                        referenced = items.stream().filter(i -> i.id().startsWith(d)).findFirst().orElse(null);
+                    }
+                    if (referenced == null) {
+                        referenced = items.stream().filter(i -> i.id().contains(d)).findFirst().orElse(null);
+                    }
+                    if (referenced != null) {
+                        int ii = items.indexOf(referenced);
+                        if (ii == j - 1) {
+                            sb.append(" (previous...)");
+                        } else {
+                            sb.append(" (").append(NaruPlanExtension.trimStr(referenced.description(), 16)).append(")");
+                        }
+                    }
                 }
             }
             if (s.taskId() != null) {
-                sb.append("  [task ").append(s.taskId(),NTextStyle.primary1()).append(']');
+                sb.append("  [task ").append(s.taskId(), NTextStyle.primary1()).append(']');
             }
             if (s.notes() != null) {
                 sb.append(" -- ").append(s.notes());

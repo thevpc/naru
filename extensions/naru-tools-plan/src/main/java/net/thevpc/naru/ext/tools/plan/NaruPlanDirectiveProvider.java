@@ -55,7 +55,7 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                     logInfo(context,
                             NMsg.ofC("plan %s [%s]:\n" + p.render(),
                                     NMsg.ofStyledPrimary1(p.id()),
-                                    NMsg.ofStyledPrimary8(p.status().name().toLowerCase())
+                                    NaruPlanExtension.colorizePlanStatus(p.status())
                                     )
                             );
                     return NaruStmtResult.ofSuccess(null);

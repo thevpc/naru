@@ -19,7 +19,7 @@ public enum NaruPlanStatus {
      * At least one item is {@link NaruPlanItemStatus#READY},
      * {@link NaruPlanItemStatus#RUNNING} or {@link NaruPlanItemStatus#VALIDATING}.
      */
-    ACTIVE,
+    OPEN,
     /**
      * Nothing is runnable and at least one item is
      * {@link NaruPlanItemStatus#BLOCKED} or {@link NaruPlanItemStatus#FAILED}.

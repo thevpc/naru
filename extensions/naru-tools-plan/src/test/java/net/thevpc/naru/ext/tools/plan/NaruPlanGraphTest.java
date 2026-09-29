@@ -189,7 +189,7 @@ public class NaruPlanGraphTest {
         NaruPlanItem b = item(plan, "implement");
         Assertions.assertEquals(NaruPlanItemStatus.READY, a.status());
         Assertions.assertEquals(NaruPlanItemStatus.PENDING, b.status());
-        Assertions.assertEquals(NaruPlanStatus.ACTIVE, plan.status());
+        Assertions.assertEquals(NaruPlanStatus.OPEN, plan.status());
     }
 
     @Test
