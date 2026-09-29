@@ -1,7 +1,6 @@
 package net.thevpc.naru.impl.ia.mode;
 
 import net.thevpc.naru.api.mode.NaruPromptMode;
-import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
 
@@ -12,12 +11,7 @@ public class NaruModeRegistry {
     private final Map<String, String> aliases = new HashMap<>();
 
     public NaruModeRegistry() {
-        register(NaruStandardPromptModeImpl.ASK);
-        register(NaruStandardPromptModeImpl.AUDIT);
-        register(NaruStandardPromptModeImpl.DEBUG);
-        register(NaruStandardPromptModeImpl.PLANNING);
-        register(NaruStandardPromptModeImpl.IMPLEMENT);
-        register(NaruStandardPromptModeImpl.REVIEW);
+        register(NaruStandardPromptModeImpl.DEFAULT);
     }
 
     public void register(NaruPromptMode mode) {
@@ -49,10 +43,6 @@ public class NaruModeRegistry {
 
     public List<NaruPromptMode> modes() {
         return new ArrayList<>(modes.values());
-    }
-
-    public NOptional<NaruPromptMode> mode(NaruStandardMode name) {
-        return mode(name.name());
     }
 
     public NOptional<NaruPromptMode> mode(String name) {

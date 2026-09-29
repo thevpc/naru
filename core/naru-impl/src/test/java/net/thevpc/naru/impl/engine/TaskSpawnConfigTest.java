@@ -4,7 +4,6 @@ import net.thevpc.naru.api.agent.NaruAgent;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.mode.NaruPromptMode;
-import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.registry.DefaultNaruToolTag;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.registry.NaruToolTagProvider;
@@ -130,7 +129,7 @@ public class TaskSpawnConfigTest {
         }
     }
 
-    private NaruPromptMode mode(NaruStandardMode standard) {
+    private NaruPromptMode mode(String standard) {
         return session.registry().mode(standard).get();
     }
 
@@ -143,7 +142,7 @@ public class TaskSpawnConfigTest {
     @Test
     public void rootTaskDefaultsToPlanning() {
         NaruTask root = session.newTask(NaruTaskSpec.of());
-        Assertions.assertSame(mode(NaruStandardMode.PLANNING), root.promptMode());
+        Assertions.assertSame(mode("PLANNING"), root.promptMode());
     }
 
     @Test
@@ -152,28 +151,29 @@ public class TaskSpawnConfigTest {
         // IMPLEMENT executors. Before NaruTaskSpec.promptMode(..) this was impossible
         // without a post-creation flip that races the scheduler.
         NaruTask selector = session.newTask(NaruTaskSpec.of()
-                .promptMode(mode(NaruStandardMode.PLANNING)));
+                .promptMode(mode("PLANNING")));
         NaruTask executor = session.newTask(NaruTaskSpec.of()
                 .parentId(selector.id())
-                .promptMode(mode(NaruStandardMode.IMPLEMENT)));
+                .promptMode(mode("IMPLEMENT")));
 
-        Assertions.assertSame(mode(NaruStandardMode.PLANNING), selector.promptMode());
-        Assertions.assertSame(mode(NaruStandardMode.IMPLEMENT), executor.promptMode());
+        Assertions.assertSame(mode("PLANNING"), selector.promptMode());
+        Assertions.assertSame(mode("IMPLEMENT"), executor.promptMode());
     }
 
     @Test
     public void childInheritsParentModeWhenSpecDeclaresNone() {
+        String REVIEW="PLANNING";
         NaruTask parent = session.newTask(NaruTaskSpec.of()
-                .promptMode(mode(NaruStandardMode.REVIEW)));
+                .promptMode(mode(REVIEW)));
         NaruTask child = session.newTask(NaruTaskSpec.of().parentId(parent.id()));
-        Assertions.assertSame(mode(NaruStandardMode.REVIEW), child.promptMode());
+        Assertions.assertSame(mode(REVIEW), child.promptMode());
     }
 
     @Test
     public void specModeAppliesToRootTasksToo() {
         NaruTask root = session.newTask(NaruTaskSpec.of()
-                .promptMode(mode(NaruStandardMode.IMPLEMENT)));
-        Assertions.assertSame(mode(NaruStandardMode.IMPLEMENT), root.promptMode());
+                .promptMode(mode("IMPLEMENT")));
+        Assertions.assertSame(mode("IMPLEMENT"), root.promptMode());
     }
 
     // ── spawn-time tool tags ─────────────────────────────────────────────────

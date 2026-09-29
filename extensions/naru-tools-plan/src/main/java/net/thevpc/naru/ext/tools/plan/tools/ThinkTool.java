@@ -1,5 +1,6 @@
-package net.thevpc.naru.ext.tools.plan;
+package net.thevpc.naru.ext.tools.plan.tools;
 
+import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
@@ -7,6 +8,8 @@ import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NBlankable;
 
 /**
  * No-op scratchpad tool for models without a native thinking/reasoning channel.
@@ -51,6 +54,10 @@ public class ThinkTool extends DefaultNaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
+        Object thought = context.arg("thought").orNull();
+        if (!NBlankable.isBlank(thought)) {
+            context.task().log(NaruLogMode.MODEL_THINKING, NMsg.ofC("%s", thought));
+        }
         return "ok";
     }
 }

@@ -2,7 +2,6 @@ package net.thevpc.naru.impl.engine.scheduler;
 
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.mode.NaruPromptMode;
-import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
@@ -979,7 +978,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (promptMode != null) {
             return promptMode;
         }
-        return session().registry().mode(NaruStandardMode.PLANNING).get();
+        return session().registry().mode(NaruPromptMode.DEFAULT).get();
     }
 
     @Override
@@ -1092,7 +1091,10 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                     ).collect(Collectors.toList())
             );
         }
-        all.add(NaruMessage.system(promptMode().systemPrompt()).setSource(NaruSource.MODE).setSourceName(NNameFormat.LOWER_KEBAB_CASE.format(promptMode().name())));
+        String spmt = promptMode().systemPrompt();
+        if (!NStringUtils.isBlank(spmt)) {
+            all.add(NaruMessage.system(spmt).setSource(NaruSource.MODE).setSourceName(NNameFormat.LOWER_KEBAB_CASE.format(promptMode().name())));
+        }
         // No outer SYSTEM gate here: an extension declares the sources it needs, and the
         // per-extension test below is the filter. Gating on SYSTEM would silently drop
         // every extension that contributes under a source of its own, which is exactly

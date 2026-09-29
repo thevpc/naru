@@ -1,4 +1,4 @@
-package net.thevpc.naru.ext.tools.plan;
+package net.thevpc.naru.ext.tools.plan.tools;
 
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
@@ -7,6 +7,8 @@ import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.ext.tools.plan.*;
+import net.thevpc.naru.ext.tools.plan.tags.NaruPlanToolTagProvider;
 import net.thevpc.nuts.elem.NArrayElement;
 import net.thevpc.nuts.elem.NElement;
 

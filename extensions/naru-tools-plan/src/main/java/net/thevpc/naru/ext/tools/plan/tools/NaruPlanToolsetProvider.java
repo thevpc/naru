@@ -1,6 +1,5 @@
-package net.thevpc.naru.ext.tools.plan;
+package net.thevpc.naru.ext.tools.plan.tools;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.registry.DefaultNaruToolset;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolset;

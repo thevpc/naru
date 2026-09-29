@@ -169,23 +169,23 @@ That is `<plan id> [<active>] <status> <done>/<total> - <goal>`.
 These are model-callable, and all are tagged `plan`. A task only sees them once the
 `plan` tag has been granted — see [Activation is human-only](#8-activation-is-human-only).
 
-| Tool | Purpose |
-|---|---|
-| `plan_create` | Create a plan from a goal and a list of items |
-| `plan_update` | Report progress on one item |
-| `plan_get` | Read a plan's items, statuses and dependencies |
-| `think` | Untagged scratchpad; always available, changes nothing |
+| Tool          | Purpose                                                |
+|---------------|--------------------------------------------------------|
+| `plan_create` | Create a plan from a goal and a list of items          |
+| `plan_update` | Report progress on one item                            |
+| `plan_get`    | Read a plan's items, statuses and dependencies         |
+| `think`       | Untagged scratchpad; always available, changes nothing |
 
 ### `plan_create`
 
-| Argument | Type | Required | Meaning |
-|---|---|---|---|
-| `goal` | string | yes | Overall goal |
-| `items` | array | yes | The items of the plan |
-| `items[].description` | string | yes | What this item must accomplish |
-| `items[].key` | string | no | Short name other items reference in `dependsOn` |
-| `items[].dependsOn` | string[] | no | Keys of items that must finish first |
-| `items[].validator` | enum | no | `none`, `model_review`, `user_approval` |
+| Argument               | Type      | Required | Meaning                                         |
+|:-----------------------|-----------|----------|-------------------------------------------------|
+| `goal`                 | string    | yes      | Overall goal                                    |
+| `items`                | array     | yes      | The items of the plan                           |
+| `items[].description`  | string    | yes      | What this item must accomplish                  |
+| `items[].key`          | string    | no       | Short name other items reference in `dependsOn` |
+| `items[].dependsOn`    | string[]  | no       | Keys of items that must finish first            |
+| `items[].validator`    | enum      | no       | `none`, `model_review`, `user_approval`         |
 
 Give an item a `key` whenever another item must wait for it, and list those keys in
 `dependsOn`. A plan is rejected outright if the result would contain a cycle, and a
@@ -194,21 +194,21 @@ the plan, so a later batch can still refer to `survey` rather than a UUID.
 
 ### `plan_update`
 
-| Argument | Type | Required | Meaning |
-|---|---|---|---|
-| `item` | string | yes | Item id, or a unique prefix of it |
-| `status` | enum | yes | `running`, `validating` or `blocked` |
-| `notes` | string | no | Progress notes, or the reason you are blocked |
-| `plan_id` | string | no | Defaults to the active plan |
+| Argument  | Type   | Required | Meaning                                       |
+|-----------|--------|----------|-----------------------------------------------|
+| `item`    | string | yes      | Item id, or a unique prefix of it             |
+| `status`  | enum   | yes      | `running`, `validating` or `blocked`          |
+| `notes`   | string | no       | Progress notes, or the reason you are blocked |
+| `plan_id` | string | no       | Defaults to the active plan                   |
 
 `done` is deliberately absent. Asking for it returns an error explaining that
 completion goes through the validator.
 
 ### `plan_get`
 
-| Argument | Type | Required | Meaning |
-|---|---|---|---|
-| `plan_id` | string | no | Defaults to the active plan; `all` lists every plan |
+| Argument | Type    | Required | Meaning                                             |
+|-----------|--------|----------|-----------------------------------------------------|
+| `plan_id` | string | no       | Defaults to the active plan; `all` lists every plan |
 
 ---
 

@@ -1,4 +1,4 @@
-package net.thevpc.naru.ext.tools.plan;
+package net.thevpc.naru.ext.tools.plan.tags;
 
 import net.thevpc.naru.api.registry.DefaultNaruToolTag;
 import net.thevpc.naru.api.registry.NaruToolTag;

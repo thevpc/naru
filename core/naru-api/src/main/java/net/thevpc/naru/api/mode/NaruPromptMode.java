@@ -1,10 +1,12 @@
 package net.thevpc.naru.api.mode;
 
+import net.thevpc.nuts.spi.NComponent;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.Set;
 
-public interface NaruPromptMode {
+public interface NaruPromptMode extends NComponent {
+    String DEFAULT = "default";
     String name();
 
     String[] aliases();
@@ -13,5 +15,4 @@ public interface NaruPromptMode {
 
     boolean acceptToolTags(Set<String> tags);
 
-    NOptional<NaruStandardMode> asStandardMode();
 }

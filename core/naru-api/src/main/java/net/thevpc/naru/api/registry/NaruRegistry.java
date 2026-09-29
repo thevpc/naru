@@ -3,7 +3,6 @@ package net.thevpc.naru.api.registry;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.mode.NaruPromptMode;
-import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.nuts.util.NOptional;
 
@@ -59,8 +58,6 @@ public interface NaruRegistry {
     List<String> modeNamesAndAliases();
 
     void declareMode(NaruPromptMode mode);
-
-    NOptional<NaruPromptMode> mode(NaruStandardMode mode);
 
     NOptional<NaruPromptMode> mode(String mode);
 

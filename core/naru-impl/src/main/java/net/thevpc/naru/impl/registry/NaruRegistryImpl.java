@@ -4,7 +4,6 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.mode.NaruPromptMode;
-import net.thevpc.naru.api.mode.NaruStandardMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.impl.ia.mode.NaruModeRegistry;
@@ -78,11 +77,6 @@ public class NaruRegistryImpl implements NaruRegistry {
     @Override
     public void declareMode(NaruPromptMode mode) {
         modeRegistry.register(mode);
-    }
-
-    @Override
-    public NOptional<NaruPromptMode> mode(NaruStandardMode mode) {
-        return modeRegistry.mode(mode);
     }
 
     @Override
@@ -425,6 +419,9 @@ public class NaruRegistryImpl implements NaruRegistry {
         }
         for (NaruModelProvider provider : NExtensions.of().createAllSupported(NaruModelProvider.class, null)) {
             this.registerModelProvider(provider);
+        }
+        for (NaruPromptMode mode : NExtensions.of().createAllSupported(NaruPromptMode.class, null)) {
+            this.declareMode(mode);
         }
         // Unlike the loops above, these instances are retained: a session extension owns
         // mutable per-session state, so the very same object has to answer the prompt,

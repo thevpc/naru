@@ -1,7 +1,7 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.*;
-import net.thevpc.naru.api.mode.NaruStandardMode;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
@@ -255,7 +255,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setInputMode(NaruInputMode.LINE);
             natuTask._setWorkingDir(cwd == null ? workingDir : cwd);
             natuTask._setProjectDir(projectDir);
-            natuTask._setMode(NUtils.firstNonNull(taskBuilder.promptMode(), registry().mode(NaruStandardMode.PLANNING).get()));
+            natuTask._setMode(NUtils.firstNonNull(taskBuilder.promptMode(), registry().mode(NaruPromptMode.DEFAULT).get()));
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);
@@ -266,7 +266,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setProjectDir(parent.projectDir());
             // an explicit mode on the spec wins over the inherited one, so that a
             // plan can spawn implement-type executors from a PLANNING parent
-            natuTask._setMode(NUtils.firstNonNull(taskBuilder.promptMode(), parent.promptMode(), registry().mode(NaruStandardMode.PLANNING).get()));
+            natuTask._setMode(NUtils.firstNonNull(taskBuilder.promptMode(), parent.promptMode(), registry().mode(NaruPromptMode.DEFAULT).get()));
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);

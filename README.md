@@ -134,10 +134,10 @@ LangGraph has both but is Python-only with a static graph.
 - [X] Ollama
 - [X] Java Development (File indexing ...)
 - [X] Cloud LLM SPIs (Claude, OpenAI, Gemini, Groq, Open Router, Crebras, Mistral, Github, XAi, OpenAi/Ahthropic compatible,...)
+- [X] Streaming output
 
 ## Roadmap
 
-- [ ] Streaming output
 - [ ] Embedding SPI + pgvector
 - [ ] RAG pipeline
 
