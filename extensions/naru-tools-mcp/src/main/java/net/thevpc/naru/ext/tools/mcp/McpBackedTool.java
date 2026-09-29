@@ -4,35 +4,27 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.registry.NaruTool;
-import net.thevpc.naru.api.registry.NaruToolCallContext;
-import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.api.registry.NaruToolTags;
+import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.api.task.NaruTask;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class McpBackedTool implements NaruTool {
+public class McpBackedTool extends DefaultNaruTool {
 
     private final McpSchema.Tool mcpTool;
     private final McpSyncClient client;
 
     public McpBackedTool(McpSchema.Tool mcpTool, McpSyncClient client) {
+        super(mcpTool.name(), new String[]{NaruToolTags.MCP});
         this.mcpTool = mcpTool;
         this.client = client;
     }
 
     @Override
-    public Set<String> tags() {
-        return Set.of(NaruToolTags.MCP);
+    public String getDescription(NaruTask task) {
+        return mcpTool.description();
     }
-
-    @Override
-    public String name() { return mcpTool.name(); }
-
-    @Override
-    public String getDescription(NaruTask task) { return mcpTool.description(); }
 
     @Override
     public NaruToolDefinition getDefinition(NaruTask task) {
@@ -68,12 +60,24 @@ public class McpBackedTool implements NaruTool {
 
         NaruToolParameter.Builder b;
         switch (type) {
-            case "integer": b = parseInteger(name, desc, required, s); break;
-            case "number":  b = parseNumber(name, desc, required, s);  break;
-            case "boolean": b = NaruToolParameter.bool(name, desc, required); break;
-            case "array":   b = parseArray(name, desc, required, s);   break;
-            case "object":  b = parseObject(name, desc, required, s);  break;
-            default:        b = parseString(name, desc, required, s);  break;
+            case "integer":
+                b = parseInteger(name, desc, required, s);
+                break;
+            case "number":
+                b = parseNumber(name, desc, required, s);
+                break;
+            case "boolean":
+                b = NaruToolParameter.bool(name, desc, required);
+                break;
+            case "array":
+                b = parseArray(name, desc, required, s);
+                break;
+            case "object":
+                b = parseObject(name, desc, required, s);
+                break;
+            default:
+                b = parseString(name, desc, required, s);
+                break;
         }
 
         // ── common fields ─────────────────────────────────────────────────────
@@ -97,8 +101,8 @@ public class McpBackedTool implements NaruTool {
 
     private static NaruToolParameter.Builder parseString(String name, String desc, boolean required, Map<String, Object> s) {
         NaruToolParameter.Builder b = NaruToolParameter.string(name, desc, required);
-        if (s.containsKey("format"))    b.format(str(s, "format", null));
-        if (s.containsKey("pattern"))   b.pattern(str(s, "pattern", null));
+        if (s.containsKey("format")) b.format(str(s, "format", null));
+        if (s.containsKey("pattern")) b.pattern(str(s, "pattern", null));
         if (s.containsKey("minLength")) b.minLength(num(s, "minLength").intValue());
         if (s.containsKey("maxLength")) b.maxLength(num(s, "maxLength").intValue());
         return b;
@@ -117,12 +121,13 @@ public class McpBackedTool implements NaruTool {
     }
 
     private static void applyNumericConstraints(NaruToolParameter.Builder b, Map<String, Object> s) {
-        if (s.containsKey("minimum"))          b.minimum(num(s, "minimum"));
-        if (s.containsKey("maximum"))          b.maximum(num(s, "maximum"));
+        if (s.containsKey("minimum")) b.minimum(num(s, "minimum"));
+        if (s.containsKey("maximum")) b.maximum(num(s, "maximum"));
         if (s.containsKey("exclusiveMinimum")) b.exclusiveMinimum(num(s, "exclusiveMinimum"));
         if (s.containsKey("exclusiveMaximum")) b.exclusiveMaximum(num(s, "exclusiveMaximum"));
-        if (s.containsKey("multipleOf"))       b.multipleOf(num(s, "multipleOf"));
+        if (s.containsKey("multipleOf")) b.multipleOf(num(s, "multipleOf"));
     }
+
     private static NaruToolParameter.Builder parseArray(String name, String desc, boolean required, Map<String, Object> s) {
         Map<String, Object> items = (Map<String, Object>) s.get("items");
         NaruToolParameter itemType = items != null
@@ -130,8 +135,8 @@ public class McpBackedTool implements NaruTool {
                 : NaruToolParameter.string("item", "", true).build();
 
         NaruToolParameter.Builder b = NaruToolParameter.array(name, desc, required, itemType);
-        if (s.containsKey("minItems"))   b.minItems(num(s, "minItems").intValue());
-        if (s.containsKey("maxItems"))   b.maxItems(num(s, "maxItems").intValue());
+        if (s.containsKey("minItems")) b.minItems(num(s, "minItems").intValue());
+        if (s.containsKey("maxItems")) b.maxItems(num(s, "maxItems").intValue());
         if (s.containsKey("uniqueItems")) b.uniqueItems((Boolean) s.get("uniqueItems"));
         return b;
     }

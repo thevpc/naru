@@ -10,11 +10,11 @@
 # still hiding: working-dir wanderers, web (offline), git/index/search/semantic
 # and tag tools, plus the redundant maven_* shortcuts. A lean toolset keeps
 # even small models focused on the goal.
-/tags disable cd set_working_dir
-/tags disable search_web tag_add tag_remove
-/tags disable git_status git_diff git_log git_commit
-/tags disable project_map code_symbols find_symbol project_summary
-/tags disable semantic_search semantic_index maven_compile maven_test maven_package
+/tools disable cd set_working_dir
+/tools disable search_web tag_add tag_remove
+/tools disable git_status git_diff git_log git_commit
+/tools disable project_map code_symbols find_symbol project_summary
+/tools disable semantic_search semantic_index maven_compile maven_test maven_package
 # maxSteps bounds ONE model turn's tool-call rounds; the budget is reset whenever
 # a turn ends, so each /while re-invocation below gets a full one. It can never
 # run forever: the /while loop is capped at 12 attempts and the test preemptively

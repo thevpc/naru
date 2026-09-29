@@ -2,33 +2,21 @@ package net.thevpc.naru.ext.tools.tags;
 
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.registry.NaruTool;
-import net.thevpc.naru.api.registry.NaruToolCallContext;
-import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.util.NStringUtils;
 
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
-public class ToolTagAddTool implements NaruTool {
+public class ToolTagAddTool extends DefaultNaruTool {
 
-    @Override
-    public String name() {
-        return "tag_add";
+    public ToolTagAddTool() {
+        super("tag_add", new String[]{NaruToolTags.TAGS});
     }
 
     @Override
     public String getDescription(NaruTask task) {
         return "Add tools that define the given tag";
-    }
-
-    // empty set, it is always included
-    @Override
-    public Set<String> tags() {
-        return Set.of();
     }
 
     @Override
