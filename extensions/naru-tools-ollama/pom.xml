@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.thevpc.naru</groupId>
     <artifactId>naru-tools-ollama</artifactId>
-    <version>1.0.0.0</version>
+    <version>1.1.0.0</version>
     <packaging>jar</packaging>
     <name>naru-tools-ollama</name>
     <url>https://github.com/thevpc/naru</url>
@@ -23,12 +23,12 @@
         <dependency>
             <groupId>net.thevpc.naru</groupId>
             <artifactId>naru-api</artifactId>
-            <version>1.0.0.0</version>
+            <version>1.1.0.0</version>
         </dependency>
         <dependency>
             <groupId>net.thevpc.nuts</groupId>
             <artifactId>nuts-runtime</artifactId>
-            <version>1.0.0.0</version>
+            <version>1.1.0.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>

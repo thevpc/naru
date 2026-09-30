@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.thevpc.naru</groupId>
     <artifactId>naru-tools-routines</artifactId>
-    <version>1.0.0.0</version>
+    <version>1.1.0.0</version>
     <packaging>jar</packaging>
     <url>https://github.com/thevpc/naru</url>
     <description>Nuts AI Reasoning Unit</description>
@@ -18,12 +18,12 @@
     </properties>
 
     <dependencies>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-api</artifactId><version>1.0.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-api</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.0</version><scope>test</scope></dependency>
         <!-- test-only: the engine is needed to actually execute a script. /set and /return are
              the statements that carry a task's result, and the only way to test that contract
              end to end is to run one, which is impossible against the API alone. -->
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.0.0.0</version><scope>test</scope></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.1.0.0</version><scope>test</scope></dependency>
     </dependencies>
 
     <scm>

@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.thevpc.naru</groupId>
     <artifactId>naru-tools-web</artifactId>
-    <version>1.0.0.0</version>
+    <version>1.1.0.0</version>
     <packaging>jar</packaging>
     <url>https://github.com/thevpc/naru</url>
     <description>Nuts AI Reasoning Unit</description>
@@ -18,7 +18,7 @@
     </properties>
 
     <dependencies>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-api</artifactId><version>1.0.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-api</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.0</version><scope>test</scope></dependency>
     </dependencies>
 
