@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.plan.modes;
 
 import net.thevpc.naru.api.mode.NaruPromptMode;
+import net.thevpc.naru.api.mode.NaruPromptMode.ModeIntent;
 import net.thevpc.naru.api.registry.NaruToolTags;
 
 import java.util.Set;
@@ -32,6 +33,11 @@ public class PlanNaruPromptMode implements NaruPromptMode {
     public boolean acceptToolTags(Set<String> tags) {
         return !tags.contains(NaruToolTags.EXECUTE)
                 && !tags.contains(NaruToolTags.WRITE);
+    }
+
+    @Override
+    public ModeIntent modeIntent() {
+        return ModeIntent.PLANNING;
     }
 
 

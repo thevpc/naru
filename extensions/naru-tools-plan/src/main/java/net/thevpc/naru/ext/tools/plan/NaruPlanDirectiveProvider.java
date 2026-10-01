@@ -45,31 +45,19 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                     if(NBlankable.isBlank(ref)){
                         currentPlan = NaruPlanExtension.plans(task.session()).activePlan().orNull();
                         if(currentPlan==null){
-                            List<NaruPlan> all = NaruPlanExtension.plans(task.session()).plans().values().stream().toList();
-                            int asize = all.size();
-                            if(asize ==1) {
-                                currentPlan = all.get(0);
-                            }else if(asize ==0){
+                            // No active plan: fall back to the only unfinished one so
+                            // "/plan show" works right after a planning round without the
+                            // user having to remember an id. With several, ask rather than
+                            // guess which plan to run.
+                            List<NaruPlan> unfinished = NaruPlanExtension.unfinishedPlans(task.session());
+                            if(unfinished.isEmpty()){
                                 logInfo(context, NMsg.ofStyledError("no active plan"));
                                 return NaruStmtResult.ofError("no active plan");
-                            }else if(asize >1){
-                                List<NaruPlan> a = all.stream().filter(x ->
-                                        {
-                                            NaruPlanStatus status = x.status();
-                                            return status == NaruPlanStatus.BLOCKED
-                                            || status == NaruPlanStatus.OPEN
-                                            || status == NaruPlanStatus.PENDING;
-                                        }
-                                ).toList();
-                                if(a.size()==0){
-                                    logInfo(context, NMsg.ofStyledError("please specify which plan to show\n" + logListing(context)));
-                                    return NaruStmtResult.ofError("please specify which plan to show\n" + logListing(context));
-                                }else if(a.size()==1){
-                                    currentPlan = a.get(0);
-                                }else {
-                                    logInfo(context, NMsg.ofStyledError("multiple active plans exist; please specify which plan to show\n" + logListing(context)));
-                                    return NaruStmtResult.ofError("multiple active plans exist; please specify which plan to show\n" + logListing(context));
-                                }
+                            }else if(unfinished.size()==1){
+                                currentPlan = unfinished.get(0);
+                            }else{
+                                logInfo(context, NMsg.ofStyledError("multiple active plans exist; please specify which plan to show\n" + logListing(context)));
+                                return NaruStmtResult.ofError("multiple active plans exist; please specify which plan to show\n" + logListing(context));
                             }
                         }
                     }else{
@@ -105,12 +93,7 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                     NaruTask task = context.task();
                     if (cmdLine.isEmpty()) {
                         // No argument: activate the only non-finished plan if exactly one exists
-                        List<NaruPlan> plans = new ArrayList<>();
-                        for (NaruPlan p : NaruPlanExtension.plans(task.session()).plans().values()) {
-                            if (p.status() != NaruPlanStatus.COMPLETED) {
-                                plans.add(p);
-                            }
-                        }
+                        List<NaruPlan> plans = NaruPlanExtension.unfinishedPlans(task.session());
                         if (plans.isEmpty()) {
                             return NaruStmtResult.ofError("no non-finished plan to activate");
                         }

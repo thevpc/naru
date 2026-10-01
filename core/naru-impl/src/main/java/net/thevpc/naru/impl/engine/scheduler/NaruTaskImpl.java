@@ -984,7 +984,23 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public NaruTask promptMode(NaruPromptMode newMode) {
         if (newMode != null) {
-            this.promptMode = newMode;
+            NaruPromptMode oldMode = promptMode();
+            if (!newMode.equals(oldMode)) {
+                this.promptMode = newMode;
+                // Let session extensions react to a human mode switch. They are the only
+                // ones that know what a mode means for them, and the core does not.
+                for (NaruSessionExtension ext : session().registry().sessionExtensions()) {
+                    try {
+                        ext.onModeChanged(this, oldMode, newMode);
+                    } catch (Exception e) {
+                        // an extension must never be able to break a mode switch
+                        log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("session extension '%s' failed on mode change: %s",
+                                ext.name(), e));
+                    }
+                }
+            } else {
+                this.promptMode = newMode;
+            }
         }
         return this;
     }

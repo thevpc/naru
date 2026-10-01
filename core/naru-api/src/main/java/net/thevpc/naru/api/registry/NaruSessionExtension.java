@@ -3,6 +3,7 @@ package net.thevpc.naru.api.registry;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
@@ -77,6 +78,29 @@ public interface NaruSessionExtension extends NComponent {
      */
     default List<NaruMessage> contribute(NaruTask task) {
         return Collections.emptyList();
+    }
+
+    // ── reacting to task state ───────────────────────────────────────────────
+
+    /**
+     * Called after {@link NaruTask#promptMode(NaruPromptMode)} actually changes the mode
+     * of a task, with the mode it had before.
+     * <p>
+     * This exists so a feature can react to a <em>human</em> mode switch without the
+     * core (or another extension) knowing that the feature exists. A planning feature,
+     * for instance, uses it to notice that the user has just switched to an executing
+     * mode and to pick up the plan that is about to become runnable.
+     * <p>
+     * It is not fired when the mode is set to the value it already had, and not for
+     * mode changes made by a child task inheriting its parent's mode. Implementations
+     * must tolerate being called at any point in the session's life and must not throw:
+     * a misbehaving extension may not break a mode switch.
+     *
+     * @param task the task whose mode changed
+     * @param old  the mode in effect before the switch, never null
+     * @param now  the mode now in effect, never null
+     */
+    default void onModeChanged(NaruTask task, NaruPromptMode old, NaruPromptMode now) {
     }
 
     // ── durable state: <sessionFolder>/ext/<name>.tson ────────────────────────

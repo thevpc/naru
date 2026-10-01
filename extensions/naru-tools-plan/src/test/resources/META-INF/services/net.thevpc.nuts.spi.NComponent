@@ -1,0 +1,5 @@
+# Test-scope only. The production registrations live in the same-named file under
+# src/main/resources; ServiceLoader reads every matching resource on the classpath and
+# de-duplicates by provider class, so listing just the probe here is enough and keeps the
+# production list from having to be duplicated.
+net.thevpc.naru.ext.tools.plan.RecordingSessionExtension

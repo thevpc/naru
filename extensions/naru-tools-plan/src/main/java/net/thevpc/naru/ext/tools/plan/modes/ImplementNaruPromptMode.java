@@ -31,5 +31,10 @@ public class ImplementNaruPromptMode implements NaruPromptMode {
         return true;
     }
 
+    @Override
+    public ModeIntent modeIntent() {
+        return ModeIntent.EXECUTING;
+    }
+
 
 }

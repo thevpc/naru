@@ -148,7 +148,6 @@ public class NaruModeDirective extends NaruDirectiveBase {
                 session.promptMode(m.get());
                 context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Changed mode : %s", name));
                 session.addHistory(NaruMessage.user(NMsg.ofC("Changed mode : %s", name)));
-                 // Check if this is an implementation mode and there is a plan available\                 if ("implement".equals(m.get().name())) {\                     if (!NaruPlanExtension.plans(session.session()).plans().isEmpty()) {\                         context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("There is a plan available. Use \/plan
             }
         } else {
             NMsg msg = NMsg.ofC("not found mode : %s", name);

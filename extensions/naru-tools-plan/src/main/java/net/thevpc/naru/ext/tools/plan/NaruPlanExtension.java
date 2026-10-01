@@ -1,7 +1,10 @@
 package net.thevpc.naru.ext.tools.plan;
 
+import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSource;
+import net.thevpc.naru.api.mode.NaruPromptMode;
+import net.thevpc.naru.api.mode.NaruPromptMode.ModeIntent;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
 import net.thevpc.naru.api.task.NaruTask;
@@ -10,6 +13,7 @@ import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NOptional;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
@@ -120,6 +124,62 @@ public class NaruPlanExtension implements NaruSessionExtension {
     @Override
     public boolean isRelevant(NaruTask task) {
         return true;
+    }
+
+    /**
+     * Whether the mode declares itself to exist for carrying out decided work.
+     *
+     * <p>Read from {@link NaruPromptMode#modeIntent()} rather than inferred from
+     * {@link NaruPromptMode#acceptToolTags(Set)}: the default mode accepts every tag
+     * without meaning to build anything, so tool permissions cannot carry intent.
+     */
+    private static boolean isExecutingMode(NaruPromptMode mode) {
+        return mode != null && mode.modeIntent() == ModeIntent.EXECUTING;
+    }
+
+    /**
+     * Plans that still have work to do, in creation order. The set a human can still
+     * choose to run, which is why every "which plan did you mean" path filters on it.
+     */
+    public static List<NaruPlan> unfinishedPlans(NaruSession session) {
+        List<NaruPlan> out = new ArrayList<>();
+        for (NaruPlan p : plans(session).plans().values()) {
+            if (p.status() != NaruPlanStatus.COMPLETED) {
+                out.add(p);
+            }
+        }
+        return out;
+    }
+
+    @Override
+    public void onModeChanged(NaruTask task, NaruPromptMode old, NaruPromptMode now) {
+        if (!isExecutingMode(now) || isExecutingMode(old)) {
+            // only entering an executing mode counts, and re-entering one that was
+            // already active changes nothing: the user did not just decide to build
+            return;
+        }
+        // The user just said "go implement". If a plan was waiting to be activated and
+        // there is no doubt about which one it is, run it rather than making them
+        // type /plan activate as well: activation exists to stop a model holding the
+        // plan tag from starting work on its own, and a human mode switch is exactly
+        // that consent.
+        if (plans.activePlanId() != null) {
+            return;
+        }
+        List<NaruPlan> unfinished = unfinishedPlans(task.session());
+        if (unfinished.size() > 1) {
+            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+                    "there are unfinished plans; activate the one you mean with /plan activate <id>"));
+            return;
+        }
+        if (unfinished.isEmpty()) {
+            return;
+        }
+        NaruPlan candidate = unfinished.get(0);
+        plans.setActivePlanId(candidate.id());
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+                "activated plan %s (%s) since you switched to %s mode",
+                candidate.id(), candidate.goal(), now.name()));
     }
 
     @Override
