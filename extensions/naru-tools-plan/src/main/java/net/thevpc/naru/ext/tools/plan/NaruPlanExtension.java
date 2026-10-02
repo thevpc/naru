@@ -193,9 +193,8 @@ public class NaruPlanExtension implements NaruSessionExtension {
     }
 
     @Override
-    public NOptional<NElement> load(NaruSession session, NPath file) {
-        plans.loadFrom(file);
-        return NOptional.ofNamedEmpty(NMsg.ofC("no plan state at %s", file));
+    public void load(NaruSession session, NElement state) {
+        plans.loadFrom(state);
     }
 
     @Override

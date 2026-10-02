@@ -8,10 +8,8 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NArrayElement;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.util.NIllegalArgumentException;
-import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NNameFormat;
@@ -228,25 +226,22 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         return result;
     }
 
-    // ── persistence: <sessionFolder>/ext/skills.tson ─────────────────────────
+    // ── persistence ───────────────────────────────────────────────────────────
 
     @Override
-    public NOptional<NElement> load(NaruSession session, NPath file) {
+    public void load(NaruSession session, NElement state) {
         selection.clear();
-        if (file == null || !file.exists()) {
-            return NOptional.ofNamedEmpty(NMsg.ofC("no skill selection at %s", file));
+        if (state == null) {
+            return;
         }
         try {
-            NElement e = NElementReader.ofTson().ntf(false).read(file);
-            NObjectElement root = e.asObject().orNull();
-            // hand back what was actually read, so a caller inspecting the returned
-            // element sees the same state this extension restored
+            NObjectElement root = state.asObject().orNull();
             if (root == null) {
-                return NOptional.ofNamedEmpty(NMsg.ofC("%s is not an object", file));
+                return;
             }
             NArrayElement tasks = root.getArray("selection").orNull();
             if (tasks == null) {
-                return NOptional.ofNamedEmpty(NMsg.ofC("no skill selection in %s", file));
+                return;
             }
             for (NElement t : tasks.children()) {
                 NObjectElement to = t.asObject().orNull();
@@ -265,11 +260,13 @@ public class NaruSkillsExtension implements NaruSessionExtension {
                 }
             }
         } catch (Exception ex) {
+            // a selection that will not parse is worth complaining about, but not worth
+            // failing the session load over: the user can re-select, and losing the whole
+            // conversation to a malformed selection is not a trade anyone wants
+            selection.clear();
             throw new NIllegalArgumentException(
-                    NMsg.ofC("failed to load skill selection from %s: %s", file, ex.getMessage(), ex));
+                    NMsg.ofC("failed to load skill selection: %s", ex.getMessage(), ex));
         }
-        return NOptional.of(save(session),
-                NMsg.ofC("restored skill selection for %s task(s)", selection.size()));
     }
 
     private static void readNames(NArrayElement arr, Map<String, Boolean> into, Boolean value) {

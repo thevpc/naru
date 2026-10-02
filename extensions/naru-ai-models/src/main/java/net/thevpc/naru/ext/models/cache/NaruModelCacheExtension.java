@@ -115,16 +115,15 @@ public class NaruModelCacheExtension implements NaruSessionExtension {
     }
 
     @Override
-    public NOptional<NElement> load(NaruSession session, NPath file) {
+    public void load(NaruSession session, NElement state) {
         baselines.clear();
-        if (file == null || !file.exists()) {
-            return NOptional.ofNamedEmpty(NMsg.ofC("no model cache state at %s", file));
+        if (state == null) {
+            return;
         }
         try {
-            NElement e = NElementReader.ofTson().ntf(false).read(file);
-            NObjectElement o = e.asObject().orNull();
+            NObjectElement o = state.asObject().orNull();
             if (o == null) {
-                return NOptional.ofNamedEmpty(NMsg.ofC("no model cache state at %s", file));
+                return;
             }
 
             NElement entries = o.get("baselines").orNull();
@@ -145,7 +144,6 @@ public class NaruModelCacheExtension implements NaruSessionExtension {
             // failure mode is a cold cache, which is always safe.
             baselines.clear();
         }
-        return NOptional.ofNamedEmpty(NMsg.ofC("no model cache state at %s", file));
     }
 
     @Override

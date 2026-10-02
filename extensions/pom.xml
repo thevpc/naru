@@ -22,6 +22,7 @@
         <module>naru-tools-llm</module>
         <module>naru-skills</module>
         <module>naru-budget</module>
+        <module>naru-tools-compact</module>
         <module>naru-tools-sessions</module>
         <module>naru-tools-routines</module>
         <module>naru-tools-plan</module>

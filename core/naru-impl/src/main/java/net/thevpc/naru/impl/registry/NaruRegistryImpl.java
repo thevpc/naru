@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.registry;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.context.NaruContextCompactor;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.*;
@@ -35,6 +36,7 @@ public class NaruRegistryImpl implements NaruRegistry {
     private final Map<String, String> directiveAliases = new LinkedHashMap<>();
     private final Map<String, NaruModelProvider> modelProviders = new HashMap<>();
     private final List<NaruSessionExtension> sessionExtensions = new ArrayList<>();
+    private final List<NaruContextCompactor> compactors = new ArrayList<>();
     private final NaruModeRegistry modeRegistry = new NaruModeRegistry();
     private final NaruSession session;
     private final Predicate<NaruDirective> directiveFilter;
@@ -433,7 +435,28 @@ public class NaruRegistryImpl implements NaruRegistry {
             sessionExtensions.add(extension);
         }
         sessionExtensions.sort(Comparator.comparingInt(NaruSessionExtension::order));
+        // Compactors are session-agnostic and stateless between calls, so unlike session
+        // extensions they are resolved per lookup rather than retained. That keeps a
+        // compactor free of session state it would otherwise be tempted to cache, which is
+        // what lets one instance serve sibling tasks concurrently.
+        for (NaruContextCompactor compactor : NExtensions.of().createAllSupported(NaruContextCompactor.class, null)) {
+            if (!compactors.isEmpty()) {
+                // first discovered wins, matching the registration order of every other SPI
+                // here: a second compactor on the classpath would otherwise silently
+                // depend on ServiceLoader ordering to be the chosen one
+                continue;
+            }
+            compactors.add(compactor);
+        }
         return this;
+    }
+
+    @Override
+    public NOptional<NaruContextCompactor> compactor() {
+        if (compactors.isEmpty()) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("no context compactor is installed"));
+        }
+        return NOptional.of(compactors.get(0));
     }
 
     // ── Convenience factory ────────────────────────────────────────────────────

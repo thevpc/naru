@@ -258,6 +258,48 @@ public interface NaruTask extends NToElement {
 
     NaruModelRequest context(NaruSource... sources);
 
+    /**
+     * The full history: every item, in order, including items a summary stands in for.
+     *
+     * <p>This is the view every display, export and versioning path reads, and it never
+     * shrinks. Compaction does not delete.
+     *
+     * @return an unmodifiable snapshot; mutate the task through its history methods
+     */
+    List<NaruMessage> history();
+
+    /**
+     * The context view: history minus the items an active summary stands in for, with each
+     * summary rendered as the delimited block the model receives.
+     *
+     * <p>This is what {@link #context(NaruSource...)} builds the conversation from, so it is
+     * also what every size estimate and request log reflects.
+     *
+     * @return an unmodifiable snapshot
+     */
+    List<NaruMessage> contextView();
+
+    /**
+     * Replaces the whole history, in one write.
+     *
+     * <p>Exists because compaction has to insert a summary item at a position and flag the
+     * items around it atomically. Doing that through {@link #addHistory(NaruMessage)} and
+     * {@link #removeHistoryAt(int)} would persist after every step, so a crash in between
+     * would leave a summary with no exclusions -- the context view silently missing
+     * everything the summary claims to cover.
+     *
+     * @param messages the new history, in order; entries with {@code excludedBy} set are
+     *                 skipped by the context view
+     */
+    void setHistory(List<NaruMessage> messages);
+
+    /**
+     * Inserts a history item at a position, in one write.
+     *
+     * @return the inserted message
+     */
+    NaruMessage insertHistory(int index, NaruMessage message);
+
     boolean removeHistoryAt(int index);
 
     int pc();

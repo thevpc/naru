@@ -71,6 +71,33 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
      */
     private boolean turnBoundary;
 
+    /**
+     * Store id of the summary item that stands in for this one, or null when the item is
+     * part of the context view.
+     *
+     * <p>Exclusion is a flag on the covered item rather than a separate list of covered
+     * ranges, and that is the whole design: writing an item is a local change to one
+     * message, so inserting a summary costs one new file plus one rewrite per covered
+     * message, whereas a range stored on the summary would need the summary's file to be
+     * consulted to know what is in scope -- and the covered items could not be recognised
+     * as excluded without it.
+     *
+     * <p>It also makes undo exact. Clearing the flags restores the previous context view
+     * with no reconstruction step, because nothing was ever removed from the history.
+     *
+     * <p>Not part of the wire format and not part of the cache content hash: an excluded
+     * message is not sent, so its content cannot affect what the provider caches. It is
+     * persisted so that a reloaded session rebuilds the same context view without having to
+     * re-derive it, and so that the exclusion survives being read by a build that does not
+     * have the compaction extension installed.
+     */
+    private String excludedBy;
+    /**
+     * Summary metadata, non-null exactly when {@link #role} is
+     * {@link NaruRole#summary}.
+     */
+    private NaruSummaryInfo summary;
+
     public NaruMessage() {
     }
 
@@ -84,10 +111,34 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         this.toolName = toolName;
         this.toolCalls = toolCalls;
     }
-    public NaruMessage withContent(String content){
-        return new NaruMessage(sourceName, source, role, content, images==null?null:new ArrayList<>(images),
+    /**
+     * The same message with different visible content.
+     *
+     * <p>Everything else survives: the reasoning, its segmentation, the turn boundary and
+     * the images. The Mistral protocol uses this to merge streamed deltas into one message
+     * ({@code NaruModelProtocolMistral:151,171}), and the message it produces is still a
+     * participant in the same conversation — dropping {@code turnBoundary} there would
+     * silently move a prompt-cache boundary, and dropping the reasoning would lose the
+     * model's own account of how it got to that content.
+     *
+     * <p>Tool calls are copied rather than shared, so the returned message is independent
+     * of the original and cannot be mutated through it.
+     */
+    public NaruMessage withContent(String content) {
+        NaruMessage m = new NaruMessage(sourceName, source, role, content,
+                images == null ? null : new ArrayList<>(images),
                 toolCallId,
-                toolName, toolCalls==null?null:new ArrayList<>(toolCalls));
+                toolName, toolCalls == null ? null : toolCalls.stream()
+                        .map(NaruToolCall::copy).collect(Collectors.toList()));
+        m.thinking = thinking;
+        m.thinkingSegments = thinkingSegments == null ? null
+                : thinkingSegments.stream().map(NaruThinkingSegment::copy).collect(Collectors.toList());
+        m.turnBoundary = turnBoundary;
+        // deliberately shared, not copied: NaruSummaryInfo is immutable, and copying it per
+        // message would be pure waste on the hot path that copies the whole context view
+        m.excludedBy = excludedBy;
+        m.summary = summary;
+        return m;
     }
 
     public String getSourceName() {
@@ -150,7 +201,18 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         this.content = o.getStringValue("content").orNull();
         this.toolCallId = o.getStringValue("toolCallId").orNull();
         this.toolName = o.getStringValue("toolName").orNull();
+        this.sourceName = o.getStringValue("sourceName").orNull();
+        // `source` is written only when it differs from the role-derived default, so a
+        // session file written by an older version -- which never wrote it -- still reads
+        // back with the same source the factory helpers would have given the message.
+        String source1 = o.getStringValue("source").orNull();
+        this.source = source1 == null ? defaultSourceFor(role) : NaruSource.valueOf(source1);
         this.turnBoundary = o.getBooleanValue("turnBoundary").orElse(false);
+        this.excludedBy = o.getStringValue("excludedBy").orNull();
+        NElement summary1 = o.get("summary").orNull();
+        if (summary1 != null) {
+            this.summary = NaruSummaryInfo.of(summary1);
+        }
         NElement images1 = o.get("images").orNull();
         if (images1 != null && images1.isAnyArray()) {
             images = new ArrayList<>();
@@ -180,10 +242,22 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         NObjectElementBuilder o = NObjectElementBuilder.of();
         o.set("role", role.name());
         o.set("content", content);
-        o.set("content", content);
         o.set("toolName", toolName);
+        if (toolCallId != null) {
+            // omitted when null so existing session files stay byte-identical; without it
+            // a reloaded tool message cannot be matched to the call that produced it
+            o.set("toolCallId", toolCallId);
+        }
         if (images != null) {
             o.set("images", NElement.ofStringArray(images.toArray(new String[0])));
+        }
+        if (sourceName != null) {
+            o.set("sourceName", sourceName);
+        }
+        if (source != defaultSourceFor(role)) {
+            // only a deviation is stored, so a message built by one of the factory helpers
+            // below serializes exactly as it did before this field became persistable
+            o.set("source", source.name());
         }
         if (toolCalls != null) {
             NArrayElementBuilder _toolCalls = NArrayElementBuilder.of();
@@ -209,12 +283,50 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
             // omitted when false so existing session files stay byte-identical
             o.set("turnBoundary", true);
         }
+        if (excludedBy != null) {
+            // omitted when null, for the same byte-compatibility reason as every other
+            // optional key above: a message nobody has compacted is written exactly as it
+            // was before excludedBy existed
+            o.set("excludedBy", excludedBy);
+        }
+        if (summary != null) {
+            o.set("summary", summary.toElement());
+        }
         return o.build();
     }
 
     private NaruMessage(NaruRole role, String content) {
         this.role = role;
         this.content = content;
+    }
+
+    /**
+     * The source a message of this role has unless something said otherwise.
+     *
+     * <p>Mirrors the factory helpers below. It is what makes {@code source} omittable:
+     * storing it unconditionally would add a key to every message ever persisted, and
+     * storing nothing at all would lose the attribution of the roles that deviate.
+     */
+    private static NaruSource defaultSourceFor(NaruRole role) {
+        if (role == null) {
+            return NaruSource.USER;
+        }
+        switch (role) {
+            case assistant:
+                return NaruSource.ASSISTANT;
+            case tool:
+                return NaruSource.AGENT;
+            case system:
+                return NaruSource.SYSTEM;
+            case summary:
+                // A summary is derived from the conversation rather than authored in it, and
+                // attributing it to the agent would read as "the agent wrote this", which is
+                // not what happened.
+                return NaruSource.SYSTEM;
+            case user:
+            default:
+                return NaruSource.USER;
+        }
     }
 
     // ── factory helpers ──────────────────────────────────────────────────────
@@ -251,6 +363,15 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         NaruMessage m = new NaruMessage(NaruRole.tool, result).setSource(NaruSource.AGENT);
         m.toolName = toolName;
         m.toolCallId = callId;
+        return m;
+    }
+
+    /**
+     * A summary item: the text is the message content, the metadata says what it replaced.
+     */
+    public static NaruMessage summary(String text, NaruSummaryInfo summary) {
+        NaruMessage m = new NaruMessage(NaruRole.summary, text);
+        m.summary = summary;
         return m;
     }
 
@@ -384,8 +505,105 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         return this;
     }
 
+    /**
+     * Store id of the summary item standing in for this one, or null when this item is
+     * part of the context view.
+     */
+    public String getExcludedBy() {
+        return excludedBy;
+    }
+
+    public NaruMessage setExcludedBy(String excludedBy) {
+        this.excludedBy = excludedBy;
+        return this;
+    }
+
+    /**
+     * Whether this item has been folded into a summary and should not be sent to the model.
+     *
+     * <p>The item is still in the history, which is what every display, version and export
+     * view reads. Only the context view consults this.
+     */
+    public boolean isExcluded() {
+        return excludedBy != null;
+    }
+
+    /**
+     * Summary metadata, non-null exactly when this is a {@code summary}-role item.
+     *
+     * <p>Defined on {@code naru-api} rather than in the compaction extension so that the
+     * core can read and render a summary item in a session opened by a build that does not
+     * have that extension installed.
+     */
+    public NaruSummaryInfo getSummary() {
+        return summary;
+    }
+
+    public NaruMessage setSummary(NaruSummaryInfo summary) {
+        this.summary = summary;
+        return this;
+    }
+
+    public boolean isSummary() {
+        return role == NaruRole.summary;
+    }
+
+    /**
+     * Whether this item is a summary that is still standing in for what it covers.
+     *
+     * <p>Only an active summary is sent to the model, so this is the test that decides
+     * whether a summary participates in the context view.
+     */
+    public boolean isActiveSummary() {
+        return role == NaruRole.summary && summary != null && summary.isActive();
+    }
+
     public NaruMessage setThinking(String thinking) {
         this.thinking = (thinking == null || thinking.isBlank()) ? null : thinking;
+        return this;
+    }
+
+    /**
+     * This message as plain user content, for the provider wire.
+     *
+     * <p>Used for {@link NaruRole#summary} items in the context view. A summary is a NARU
+     * storage role, not one a provider's chat schema knows: a serializer that maps roles by
+     * name would send {@code "role": "summary"} and be rejected with a message that mentions
+     * nothing about compaction. So at the boundary the role becomes {@code user} and the
+     * summary's own metadata is dropped -- the rendered text already carries the item count,
+     * the trigger and the truncation flag, so keeping the structured copy would put the same
+     * information on the wire twice.
+     *
+     * <p>Tool identity is cleared as well. It is meaningless for a summary, and a message
+     * carrying a tool call id without the assistant turn that made the call is an orphaned
+     * tool result, which several providers reject.
+     *
+     * <p>{@code turnBoundary} is kept as-is, so a summary does not silently move a
+     * prompt-cache boundary: it sits at the position in the conversation where the compacted
+     * span was.
+     */
+    public NaruMessage asPlainUserContent(String plainContent) {
+        NaruMessage m = new NaruMessage(sourceName, NaruSource.USER, NaruRole.user, plainContent,
+                images == null ? null : new ArrayList<>(images),
+                null,
+                null,
+                null);
+        m.turnBoundary = turnBoundary;
+        return m;
+    }
+
+    /**
+     * Drops both forms of reasoning from this message, leaving the answer.
+     *
+     * <p>Exists for the summarizer's input, where reasoning is cost with no benefit: it is
+     * not reproduced in the summary, so including it only inflates the input and the number
+     * of chunks needed. Deliberately a method rather than something callers do by hand,
+     * because the two forms are alternatives -- clearing one and not the other would leave
+     * the message still serializing the form that was not cleared.
+     */
+    public NaruMessage clearThinking() {
+        this.thinking = null;
+        this.thinkingSegments = null;
         return this;
     }
 

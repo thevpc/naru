@@ -54,3 +54,4 @@ documentation/.naru
 .aider*
 /extensions/naru-skills/target/
 /extensions/naru-budget/target/
+/extensions/naru-tools-compact/target/

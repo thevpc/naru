@@ -6,7 +6,6 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.spi.NComponent;
 import net.thevpc.nuts.util.NOptional;
@@ -103,23 +102,56 @@ public interface NaruSessionExtension extends NComponent {
     default void onModeChanged(NaruTask task, NaruPromptMode old, NaruPromptMode now) {
     }
 
-    // ── durable state: <sessionFolder>/ext/<name>.tson ────────────────────────
+    // ── reacting to the request itself ──────────────────────────────────────
 
     /**
-     * Restores state from {@code file}, which may not exist. Returning
-     * {@link NOptional#empty()} leaves the extension at its initial state. Called once
-     * per session load, before {@link #open(NaruSession)}.
+     * Called immediately before a model request is built, at a statement boundary with no
+     * tool call in flight.
+     *
+     * <p>The seam for anything that has to happen while the request does not yet exist.
+     * {@link #contribute(NaruTask)} can only add messages to a context that is being
+     * assembled, which is enough to inject instructions but not enough to react to the
+     * request's size -- by the time a caller can measure it, the messages are already
+     * fixed. An implementation that needs to change which history items are sent, or to
+     * compact them, does it here, mutating the task; the request is built from the task
+     * immediately afterwards and so picks the change up.
+     *
+     * <p>Must not throw. A misbehaving extension may not turn a model call into an error,
+     * and a feature that cannot act must leave the request exactly as it found it: the core
+     * swallows any exception and continues.
+     *
+     * <p>Called once per model request, including the extra requests an agent loop makes
+     * while working through tool calls. Each of those is a fresh opportunity to compact, and
+     * each is a safe boundary.
      */
-    default NOptional<NElement> load(NaruSession session, NPath file) {
-        return NOptional.ofNamedEmpty(NMsg.ofC("session extension '%s' has no persisted state", name()));
+    default void beforeModelRequest(NaruTask task) {
+    }
+
+    // ── durable state ────────────────────────────────────────────────────────
+
+    /**
+     * Restores state previously returned by {@link #save(NaruSession)}.
+     *
+     * <p>{@code state} is null for a session that has never been saved, and for an
+     * extension that had nothing to persist last time. Either way the extension starts at
+     * its initial state: a state of null and a missing call are the same thing.
+     *
+     * <p>The state is handed over as a value rather than a location because extensions
+     * must not depend on the store's layout. An extension that knew the file name could
+     * not be moved to a different backend, and would have to reimplement whatever
+     * durability the store provides.
+     *
+     * <p>Called once per session load, before {@link #open(NaruSession)}.
+     */
+    default void load(NaruSession session, NElement state) {
     }
 
     /**
-     * Snapshots state for persistence. Returning null writes nothing, and causes any
-     * stale state file to be deleted.
-     * <p>
-     * This is called far more often than a user-initiated save (session env changes
-     * trigger a snapshot), so it must be cheap and idempotent.
+     * Returns state for persistence, or null to persist nothing -- which also removes any
+     * state saved earlier.
+     *
+     * <p>Called far more often than a user-initiated save (it runs on every persist, which
+     * happens after every statement), so it must be cheap and idempotent.
      */
     default NElement save(NaruSession session) {
         return null;

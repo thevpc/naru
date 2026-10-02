@@ -104,16 +104,16 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("reload", NText.ofPlain("reload current session")
-                , new SubCommandHelp("", "re-read this session from its saved folder, "
+                , new SubCommandHelp("", "re-read this session from the store, "
                 + "or start a fresh one if it was never saved. "
-                + "use /session restore to go back to the crash snapshot instead")
+                + "changes made since the last write are discarded")
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 return executeReload(context, cmdLine);
             }
         });
-        register(new AbstractSubCommand("restore", NText.ofPlain("resume from last snapshot")
+        register(new AbstractSubCommand("restore", NText.ofPlain("restore from the store")
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -257,7 +257,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
 
     public NaruStmtResult executeRestore(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        task.session().restoreSnapshot();
+        task.session().restoreFromStore();
         context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", task.session().name()));
         return NaruStmtResult.ofSuccess(null);
     }

@@ -8,6 +8,7 @@ import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.*;
+import net.thevpc.naru.api.store.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
 
@@ -21,6 +22,8 @@ import net.thevpc.naru.impl.engine.routine.RoutineHelper;
 import net.thevpc.naru.impl.engine.scheduler.NaruSchedulerImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruSessionEventLogImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
+import net.thevpc.naru.impl.store.NaruFileSessionStore;
+import net.thevpc.naru.impl.store.NaruStoreFactory;
 import net.thevpc.naru.impl.util.ImplNaruUtils;
 import net.thevpc.nuts.concurrent.NCallable;
 import net.thevpc.nuts.elem.*;
@@ -51,6 +54,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final Set<NPath> alreadyLoadedFiles = new HashSet<>();
 
     private final NaruSessionStoreManagerImpl sessionStoreManager;
+    /**
+     * Where this session's state is written and read from.
+     *
+     * <p>Resolved once, at construction, from the store SPI. Nothing else in the engine
+     * knows which store this is -- the layout, the file names and the scope roots all live
+     * behind this one object, which is what makes swapping the backend a configuration
+     * change rather than a code change.
+     */
+    private final NaruSessionStore store;
 
     private String uuid = UUID.randomUUID().toString();
     private String name = "NO_NAME";
@@ -96,7 +108,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final List<NaruSessionUsageListener> usageListeners = new CopyOnWriteArrayList<>();
     private boolean stopped;
     private final Map<String, NaruRoutine> routines = new ConcurrentHashMap<>();
-    private NaruVisibility loadTimeVisibility;
+    private NaruSessionScope loadTimeScope;
     private int schedulerThreadCount = 1;
     private volatile long schedulerThrottleDelayMs = 500;
     /**
@@ -120,6 +132,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.projectDir = projectDir.normalize();
         this.workingDir = projectDir.normalize();
         this.sessionStoreManager = new NaruSessionStoreManagerImpl(this);
+        this.store = NaruStoreFactory.open(storeConfig(), storeName());
         this.registry = new NaruRegistryImpl(this,directiveFilter, toolFilter, tagFilter);
         this.sessionListener = sessionListener;
         NaruModelConfig model0 = null;
@@ -569,70 +582,102 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     public void fireChanged() {
 //        ensureNotStopped();
         this.modificationInstant = Instant.now();
-        saveSnapshot();
+        persist();
     }
 
-    private NaruSession loadFolder(NPath folder) {
+    /**
+     * Replaces this session's state with what the store holds for {@code uuid} in
+     * {@code scope}.
+     *
+     * <p>Scope is passed rather than read from the field, because the scope is the answer
+     * to where the state is and that is exactly what is being decided here: loading from
+     * the private root and then reporting the session as public would put a private
+     * conversation in a shareable folder.
+     */
+    private NaruSession loadFromStore(String uuid, NaruSessionScope scope) {
         ensureNotStopped();
-        NPath path = folder.resolve("session.tson");
-        NElement element = NElementReader.ofTson().read(path);
+        NaruSessionData data = store.loadData(uuid, scope).orElseThrow(
+                () -> new NIllegalArgumentException(NMsg.ofC("Session '%s' not found in scope %s", uuid, scope)));
         ensureNotStopped();
-        NObjectElement o = element.asObject().get();
+        NObjectElement o = data.toElement().asObject().get();
         this.uuid = NStringUtils.firstNonBlankStripped(o.getStringValue("uuid").orElse(null), UUID.randomUUID().toString());
         this.name = NStringUtils.firstNonBlankStripped(o.getStringValue("name").orElse(null), "NO_NAME");
         this.creationInstant = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
         this.modificationInstant = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationInstant);
-        this.visibility = NaruVisibility.parse(o.getStringValue("visibility").orElse(null)).orElse(NaruVisibility.PRIVATE);
-        if (this.visibility != NaruVisibility.PRIVATE && this.visibility != NaruVisibility.PUBLIC) {
-            this.visibility = NaruVisibility.PRIVATE;
-        }
+        // the scope the state came from is the scope the session is in; visibility is not
+        // stored anywhere, because it *is* the location
+        this.visibility = scope == NaruSessionScope.PUBLIC ? NaruVisibility.PUBLIC : NaruVisibility.PRIVATE;
+        this.loadTimeScope = scope;
         NElement mv = o.get("model").orElse(null);
         this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
-        this.projectDir = o.getStringValue("projectDir").map(x -> NPath.of(x)).orElse(projectDir);
-        this.workingDir = o.getStringValue("workingDir").map(x -> NPath.of(x)).orElse(workingDir);
-        NListContainerElement env1 = o.get("env").flatMap(x -> x.isNull() ? null : x.asListContainer()).orNull();
+        this.projectDir = data.projectDir() == null ? projectDir : NPath.of(data.projectDir());
+        this.workingDir = data.workingDir() == null ? workingDir : NPath.of(data.workingDir());
         env.clear();
-        if (env1 != null) {
-            for (NPairElement nElement : env1.asListContainer().get().namedPairs()) {
-                env.put(nElement.key().asStringValue().orNull(),
-                        NOptional.ofNullable(NElement.simpleOf(nElement.value()))
-                );
-            }
+        for (Map.Entry<String, Object> e : data.env().entrySet()) {
+            env.put(e.getKey(), NOptional.ofNullable(e.getValue()));
         }
 
         routines.clear();
-        path.resolveSibling("routines").list().stream().filter(x -> x.name().endsWith(".tson")).forEach(x -> {
-            String n = x.name().substring(0, x.name().length() - 5);
-            NaruRoutineMem r = loadRoutineTson(x);
+        for (String name : store.routineNames(uuid, scope)) {
+            NElement r = store.loadRoutine(uuid, scope, name).orNull();
             if (r != null) {
-                routines.put(n, r);
+                NaruRoutineMem rm = new NaruRoutineMem(r);
+                if (rm != null) {
+                    routines.put(name, rm);
+                }
             }
-        });
-
+        }
 
         tasks.clear();
         NLongRef maxLong = NRef.ofLong(0);
-        path.resolveSibling("tasks").list().stream().filter(x -> x.name().endsWith(".tson")).forEach(x -> {
-            NElement elem = NElementReader.ofTson().ntf(false).read(x);
-            NaruTaskImpl t = new NaruTaskImpl(elem, this);
+        for (long taskId : store.taskIds(uuid, scope)) {
+            NaruTaskState state = store.loadTask(uuid, scope, taskId).orNull();
+            if (state == null) {
+                continue;
+            }
+            NaruTaskImpl t = new NaruTaskImpl(withHistory(state), this);
             maxLong.set(Math.max(maxLong.get(), t.id()));
             tasks.put(t.id(), t);
-        });
+        }
         long finalMaxLong = maxLong.get() == 0 ? 0 : maxLong.get() + 1;
         maxTaskId.updateAndGet(current -> Math.max(current, finalMaxLong));
-        loadSessionExtensions(folder);
+        loadSessionExtensions(uuid, scope);
         return this;
     }
 
     /**
+     * Puts the history back inline on a task element.
+     *
+     * <p>The engine works with {@link NaruMessage}s in a list; the store keeps them one
+     * file per message. This is the join between the two, and it is the only place that
+     * knows both shapes.
+     */
+    private static NElement withHistory(NaruTaskState state) {
+        NObjectElementBuilder b = NObjectElementBuilder.of();
+        for (NElement child : state.skeleton().asObject().get().children()) {
+            if (child.isNamedPair()) {
+                b.add(child.asPair().get());
+            }
+        }
+        NArrayElementBuilder history = NArrayElementBuilder.of();
+        for (NaruMessage m : state.history()) {
+            history.add(m.toElement());
+        }
+        b.set("history", history.build());
+        return b.build();
+    }
+
+    /**
      * Brings extensions up on a session that has nothing to restore, so a new session
-     * reaches the same state a reloaded one does, minus the saved data. Each extension is
-     * handed a path that does not exist, which {@code load} is required to tolerate.
+     * reaches the same state a reloaded one does, minus the saved data.
+     *
+     * <p>Null state means "nothing persisted", so an extension sees exactly what it would
+     * see if it had never saved anything.
      */
     private void openSessionExtensions() {
         for (NaruSessionExtension extension : registry.sessionExtensions()) {
             try {
-                extension.load(this, projectDir.resolve(".naru/never-saved").resolve(extension.name() + ".tson"));
+                extension.load(this, null);
                 extension.open(this);
             } catch (Exception ex) {
                 // one broken extension must not cost the user the whole session
@@ -643,14 +688,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     /**
-     * Hands each installed feature extension its slice of the session folder. Extensions
-     * own their state file, so the core neither knows nor cares what is in it.
+     * Hands each installed feature extension the state it saved. Extensions own their
+     * state, so the core neither knows nor cares what is in it.
      */
-    private void loadSessionExtensions(NPath folder) {
-        NPath extDir = folder.resolve("ext");
+    private void loadSessionExtensions(String uuid, NaruSessionScope scope) {
         for (NaruSessionExtension extension : registry.sessionExtensions()) {
             try {
-                extension.load(this, extDir.resolve(extension.name() + ".tson"));
+                extension.load(this, store.loadExtensionState(uuid(), scope, extension.name()).orNull());
                 extension.open(this);
             } catch (Exception ex) {
                 // one broken extension must not cost the user the whole session
@@ -703,7 +747,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         //clearHistory();
         maxTaskId.set(0);
-        saveSnapshot();
+        persist();
         fireReloaded();
         for (NaruSessionListener listener : sessionListeners) {
             listener.onSessionReloaded(this);
@@ -749,10 +793,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         );
     }
 
-    public NaruSession saveSnapshot() {
+    @Override
+    public NaruSession persist() {
         stopTheWorldAndDo(() -> {
-            NPath snapshotFolder = snapshotFile().parent();
-            saveFolder(snapshotFolder);
+            writeToStore(scopeForNewState());
             return null;
         });
         return this;
@@ -761,67 +805,106 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     @Override
     public NaruSession save() {
         stopTheWorldAndWait(() -> {
-            NPath publicFolder = projectDir.resolve(".naru/sessions/" + uuid());
-            NPath privateFolder = projectDir.resolve(".naru/local/sessions/" + uuid());
-            if (getVisibility() == NaruVisibility.PUBLIC) {
-                saveFolder(publicFolder);
-                if (privateFolder.exists()) {
-                    privateFolder.deleteTree();
-                }
-            } else {
-                saveFolder(privateFolder);
-                if (publicFolder.exists()) {
-                    publicFolder.deleteTree();
-                }
-            }
+            NaruSessionScope wanted = getVisibility() == NaruVisibility.PUBLIC
+                    ? NaruSessionScope.PUBLIC : NaruSessionScope.PRIVATE;
+            writeToStore(wanted);
             return null;
         });
         return this;
     }
 
-    private void saveFolder(NPath folder) {
-        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
-                .write(toElement(), folder.mkdirs().resolve("session.tson"));
-        NPath r = folder.resolve("routines");
-        r.mkdirs();
-        r.list().stream().filter(x -> x.name().endsWith(".tson")).forEach(x -> x.delete());
-        for (Map.Entry<String, NaruRoutine> e : routines.entrySet()) {
-            NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
-                    .write(e.getValue().toElement(), r.resolve(e.getKey() + ".tson"));
-        }
-        r = folder.resolve("tasks");
-        r.mkdirs();
-        r.list().stream().filter(x -> x.name().endsWith(".tson")).forEach(x -> x.delete());
-        for (Map.Entry<Long, NaruTask> e : tasks.entrySet()) {
-            NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
-                    .write(e.getValue().toElement(), r.resolve(e.getKey() + ".tson"));
-        }
-        saveSessionExtensions(folder);
+    /**
+     * Where a session's state goes, given its visibility.
+     *
+     * <p>Kept in one place because two callers need it and they must agree: {@link #save()}
+     * writes here, and {@link #persist()} writes here too. A session that had been loaded
+     * from one scope and then changed visibility writes to the new scope, so the old
+     * folder is moved aside rather than left to be found by a later {@code /session list}.
+     */
+    private NaruSessionScope scopeForNewState() {
+        return getVisibility() == NaruVisibility.PUBLIC ? NaruSessionScope.PUBLIC : NaruSessionScope.PRIVATE;
     }
 
     /**
-     * Asks each installed feature extension to snapshot its state. Note this runs on
-     * every snapshot, not only on a user-initiated save, so extension save hooks are
-     * expected to be cheap and idempotent.
+     * Writes the whole session, and moves it to the requested scope if it is not there.
+     *
+     * <p>Order matters. State is written into the current scope first, because that folder
+     * exists and is known good; only then is it moved. Moving first would mean writing into
+     * a directory the store had not yet been told about, and a crash between the two would
+     * leave the session in a scope the user asked to leave.
      */
-    private void saveSessionExtensions(NPath folder) {
-        NPath extDir = folder.mkdirs().resolve("ext");
+    private void writeToStore(NaruSessionScope scope) {
+        NaruSessionScope current = store.scopeOf(uuid()).orElse(null);
+        if (current == scope) {
+            writeStateInPlace(scope);
+        } else {
+            writeStateInPlace(current == null ? scope : current);
+            if (current != null) {
+                store.move(uuid(), current, scope);
+            }
+            this.loadTimeScope = scope;
+        }
+    }
+
+    private void writeStateInPlace(NaruSessionScope scope) {
+        if (!store.exists(uuid(), scope)) {
+            store.create(sessionData(), scope);
+        } else {
+            store.saveData(sessionData(), scope);
+        }
+        for (NaruTask t : tasks.values()) {
+            store.saveTask(uuid(), scope, taskState((NaruTaskImpl) t));
+        }
+        for (Map.Entry<String, NaruRoutine> e : routines.entrySet()) {
+            store.saveRoutine(uuid(), scope, e.getKey(), e.getValue().toElement());
+        }
+        saveSessionExtensions(scope);
+    }
+
+    /** This session's metadata as the store's own value type. */
+    private NaruSessionData sessionData() {
+        Map<String, Object> values = new LinkedHashMap<>();
+        for (Map.Entry<String, NOptional<Object>> e : env.entrySet()) {
+            values.put(e.getKey(), e.getValue().orNull());
+        }
+        return new NaruSessionData()
+                .uuid(uuid())
+                .name(name())
+                .creationInstant(creationInstant)
+                .modificationInstant(modificationInstant)
+                .model(model == null ? null : model.toElement())
+                .projectDir(projectDir.toString())
+                .workingDir(workingDir == null ? null : workingDir.toString())
+                .env(values);
+    }
+
+    /**
+     * A task as the store's own value type: skeleton without history, plus the messages.
+     */
+    private NaruTaskState taskState(NaruTaskImpl task) {
+        NElement element = task.toElement();
+        return NaruTaskState.ofInline(task.id(), element);
+    }
+
+    /**
+     * Asks each installed feature extension to persist its state.
+     *
+     * <p>This runs on every {@link #persist()}, not only on a user-initiated save, so
+     * extension save hooks are expected to be cheap and idempotent.
+     */
+    private void saveSessionExtensions(NaruSessionScope scope) {
         for (NaruSessionExtension extension : registry.sessionExtensions()) {
             try {
                 NElement state = extension.save(this);
-                NPath file = extDir.resolve(extension.name() + ".tson");
                 if (state == null) {
-                    // an extension with nothing to persist must not leave a stale file
+                    // an extension with nothing to persist must not leave a stale record
                     // behind, or a later load would resurrect discarded state
-                    if (file.exists()) {
-                        file.delete();
-                    }
+                    store.deleteExtensionState(uuid(), scope, extension.name());
                 } else {
-                    NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
-                            .write(state, file);
+                    store.saveExtensionState(uuid(), scope, extension.name(), state);
                 }
             } catch (Exception ex) {
-                // failing to snapshot one extension must not fail the whole session save
+                // failing to persist one extension must not fail the whole session save
                 log(NaruLogMode.SCRIPT, NMsg.ofC(
                         "session extension '%s' failed to save: %s", extension.name(), ex.getMessage()).asError());
             }
@@ -830,20 +913,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     public NaruSession load(String otherUuid) {
         stopTheWorldAndWait(() -> {
-            NPath publicFolder = publicFolder(otherUuid);
-            NPath privateFolder = privateFolder(otherUuid);
-
-            if (isValidSessionFolder(privateFolder)) {
-                loadFolder(privateFolder);
-                setVisibility(NaruVisibility.PRIVATE);
-                this.loadTimeVisibility = NaruVisibility.PRIVATE;
-            } else if (isValidSessionFolder(publicFolder)) {
-                loadFolder(publicFolder);
-                setVisibility(NaruVisibility.PUBLIC);
-                this.loadTimeVisibility = NaruVisibility.PUBLIC;
-            } else {
-                throw new NIllegalArgumentException(NMsg.ofC("Session '%s' not found", otherUuid));
-            }
+            NaruSessionScope scope = store.scopeOf(otherUuid).orElseThrow(
+                    () -> new NIllegalArgumentException(NMsg.ofC("Session '%s' not found", otherUuid)));
+            loadFromStore(otherUuid, scope);
+            setVisibility(scope == NaruSessionScope.PUBLIC ? NaruVisibility.PUBLIC : NaruVisibility.PRIVATE);
             ((NaruSchedulerImpl) scheduler).reloadState();
             return this;
         });
@@ -854,64 +927,23 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return this;
     }
 
-//    private NPath publicFile(String uuid) {
-//        return projectDir.resolve(".naru/sessions/" + uuid + "/session.tson");
-//    }
-//    private NPath privateFile(String uuid) {
-//        return projectDir.resolve(".naru/local/sessions/" + uuid + "/session.tson");
-//    }
-
-    private boolean isValidSessionFolder(NPath path) {
-        return path.resolve("session.tson").isFile();
-    }
-
-    private NPath publicFolder(String uuid) {
-        return projectDir.resolve(".naru/sessions/" + uuid);
-    }
-
-    private NPath privateFolder(String uuid) {
-        return projectDir.resolve(".naru/local/sessions/" + uuid);
-    }
-
 
     @Override
     public NaruSession reload() {
         stopTheWorldAndWait(() -> {
-            NPath publicFolder = publicFolder(uuid());
-            NPath privateFolder = privateFolder(uuid());
-            if (loadTimeVisibility == null) {
-                if (isValidSessionFolder(privateFolder)) {
-                    loadFolder(privateFolder);
-                    setVisibility(NaruVisibility.PRIVATE);
-                    this.loadTimeVisibility = NaruVisibility.PRIVATE;
-                } else {
-                    if (isValidSessionFolder(publicFolder)) {
-                        loadFolder(publicFolder);
-                        setVisibility(NaruVisibility.PUBLIC);
-                        this.loadTimeVisibility = NaruVisibility.PUBLIC;
-                    } else {
-                        this.uuid = UUID.randomUUID().toString();
-                        this._prepareInit();
-                    }
-                }
-            } else if (loadTimeVisibility == NaruVisibility.PUBLIC) {
-                if (isValidSessionFolder(publicFolder)) {
-                    loadFolder(publicFolder);
-                    setVisibility(NaruVisibility.PUBLIC);
-                    this.loadTimeVisibility = NaruVisibility.PUBLIC;
-                } else {
-                    this.uuid = UUID.randomUUID().toString();
-                    this._prepareInit();
-                }
+            // The scope to reload from is the one this session was last loaded from or
+            // written to. Looking in "both, private first" instead would make a session
+            // that was deliberately made public silently come back private if a stale
+            // private folder survived a move.
+            NaruSessionScope scope = loadTimeScope != null ? loadTimeScope : scopeForNewState();
+            if (store.exists(uuid(), scope)) {
+                loadFromStore(uuid(), scope);
+                setVisibility(scope == NaruSessionScope.PUBLIC ? NaruVisibility.PUBLIC : NaruVisibility.PRIVATE);
             } else {
-                if (isValidSessionFolder(privateFolder)) {
-                    loadFolder(privateFolder);
-                    setVisibility(NaruVisibility.PRIVATE);
-                    this.loadTimeVisibility = NaruVisibility.PRIVATE;
-                } else {
-                    this.uuid = UUID.randomUUID().toString();
-                    this._prepareInit();
-                }
+                // nothing stored under this uuid: this session has never been saved, so
+                // it is a new session rather than a broken one
+                this.uuid = UUID.randomUUID().toString();
+                this._prepareInit();
             }
             ((NaruSchedulerImpl) scheduler).reloadState();
             return null;
@@ -923,13 +955,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return this;
     }
 
-    public NaruSession restoreSnapshot() {
+    @Override
+    public NaruSession restoreFromStore() {
         Boolean b = stopTheWorldAndWait(() -> {
-            NPath snapshotFile = snapshotFile();
-            if (snapshotFile.isFile()) {
-                // snapshotFile() is the session.tson inside the snapshot folder; loadFolder()
-                // appends that name itself, so the folder is what it must be given.
-                loadFolder(snapshotFile.parent());
+            NaruSessionScope scope = loadTimeScope != null ? loadTimeScope : scopeForNewState();
+            if (store.exists(uuid(), scope)) {
+                loadFromStore(uuid(), scope);
+                setVisibility(scope == NaruSessionScope.PUBLIC ? NaruVisibility.PUBLIC : NaruVisibility.PRIVATE);
                 ((NaruSchedulerImpl) scheduler).reloadState();
                 return true;
             }
@@ -945,17 +977,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     /**
-     * The working snapshot this session saves itself to as it runs.
-     * <p>
-     * Namespaced by session uuid. It used to be one path shared by the whole project, so
-     * two concurrent sessions in a project overwrote and deleted each other's task
-     * snapshots.
-     * <p>
-     * Kept outside {@code .naru/local/sessions/} on purpose: that folder is what
-     * {@code save()} writes and what the store manager lists, so a scratch file living
-     * inside it would be picked up as a saved session and copied around by restore.
-     */
-    /**
      * Tells the owning agent this session's state was reloaded. A session built without an
      * agent listener is legitimate (tests embed one directly), so the callback is optional.
      */
@@ -965,16 +986,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
     }
 
-    private NPath snapshotFile() {
-        return projectDir().resolve(".naru/local/snapshot/" + uuid() + "/session.tson");
-    }
-
     private void _prepareInit() {
         this.name = "NO_NAME";
         this.creationInstant = Instant.now();
         this.modificationInstant = creationInstant;
         this.maxTaskId.set(0);
-        this.loadTimeVisibility = NaruVisibility.PRIVATE;
+        this.loadTimeScope = null;
     }
 
     @Override
@@ -1192,6 +1209,42 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return this;
     }
 
+
+    /**
+     * The store configuration for this project.
+     *
+     * <p>The store directory is derived from the project directory, so a store can be
+     * relocated wholesale without touching anything above it. Scope comes from project
+     * configuration, which is the only place a default belongs -- the brief calls for
+     * private, and a project that wants its sessions shared says so in one line.
+     */
+    private NaruStoreConfig storeConfig() {
+        // a misspelled or absent scope key falls back to the default rather than failing:
+        // refusing to start over a typo in a config key is a poor trade
+        NaruSessionScope defaultScope = NaruSessionScope.parse(
+                getProjectEnv("session.defaultScope").flatMap(x -> x.asStringValue()).orNull());
+        if (defaultScope == null) {
+            defaultScope = NaruSessionScope.PRIVATE;
+        }
+        return new NaruStoreConfig(projectDir.normalize(),
+                projectDir.normalize().resolve(".naru"), defaultScope);
+    }
+
+    /**
+     * The configured store name, or null for the default implementation.
+     *
+     * <p>Read from the session's own environment rather than from a field, because it
+     * decides where this very object will write and so cannot be read back out of one.
+     * The system property is the escape hatch for a one-off run against a different
+     * backend, which is exactly the case a config file is the wrong tool for.
+     */
+    private String storeName() {
+        String fromProperty = System.getProperty("naru.session.store");
+        if (fromProperty != null && !fromProperty.trim().isEmpty()) {
+            return fromProperty.trim();
+        }
+        return getProjectEnv("session.store").flatMap(x -> x.asStringValue()).orNull();
+    }
 
     @Override
     public NPath projectDir() {
@@ -1606,15 +1659,27 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return NOptional.ofEmpty(NMsg.ofC("Error statement: routine not found %s", nameOrPath));
     }
 
+    /**
+     * Writes one task, without the rest of the session.
+     *
+     * <p>Cheaper than {@link #persist()}, and the store's history reconciliation is what
+     * makes it cheap: only the messages that are new get written, so appending to a long
+     * conversation costs one file rather than the whole conversation.
+     */
     public void fireChangedTask(long id) {
         NaruTask t = tasks.get(id);
-        if (t != null) {
-            NPath r = snapshotFile().parent().resolve("tasks");
-            r.mkdirs();
-            r.list().stream().filter(x -> x.name().endsWith(".tson")).forEach(x -> x.delete());
-            NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
-                    .write(t.toElement(), r.resolve(t.id() + ".tson"));
-
+        if (t == null) {
+            return;
+        }
+        NaruSessionScope scope = store.scopeOf(uuid()).orElse(scopeForNewState());
+        if (!store.exists(uuid(), scope)) {
+            return;
+        }
+        try {
+            store.saveTask(uuid(), scope, taskState((NaruTaskImpl) t));
+        } catch (Exception ex) {
+            log(NaruLogMode.SCHEDULER, NMsg.ofC(
+                    "could not persist task %s: %s", id, ex.getMessage()).asError());
         }
     }
 }

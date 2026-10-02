@@ -14,6 +14,7 @@ import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
@@ -442,11 +443,10 @@ public class NaruPlanGraphTest {
         b.setAttempts(1);
         plans(session).setActivePlanId(plan.id());
 
-        NPath folder = NPath.ofTempFolder("naru-plan-persist");
-        save(session, folder);
+        NElement saved = save(session, null);
 
         NaruPlanManagerHolder reloaded = new NaruPlanManagerHolder();
-        reloaded.manager.loadFrom(stateFile(folder));
+        reload(reloaded, saved);
 
         NaruPlan back = reloaded.manager.findPlan(plan.id()).orNull();
         Assertions.assertNotNull(back);
@@ -467,15 +467,13 @@ public class NaruPlanGraphTest {
 
     @Test
     public void legacyFlatPlanIsSkippedRatherThanMisread() {
-        // the state file written by the pre-DAG build: taskId + steps, no id + items
-        NPath folder = NPath.ofTempFolder("naru-plan-legacy").resolve("ext").mkdirs();
+        // the state written by the pre-DAG build: taskId + steps, no id + items
         String tson = "{ plans: [ { taskId: 7, goal: \"old\", creationInstant: \"2020-01-01T00:00:00Z\","
                 + " modificationInstant: \"2020-01-01T00:00:00Z\","
                 + " steps: [ { id: 1, description: \"step one\", status: \"pending\" } ] } ] }";
-        folder.resolve(NaruPlanExtension.NAME + ".tson").writeString(tson);
 
         NaruPlanManagerHolder holder = new NaruPlanManagerHolder();
-        holder.manager.loadFrom(folder.resolve("ext").resolve(NaruPlanExtension.NAME + ".tson"));
+        holder.manager.loadFrom(NElementReader.ofTson().ntf(false).read(tson));
         Assertions.assertTrue(holder.manager.plans().isEmpty());
     }
 
@@ -530,11 +528,10 @@ public class NaruPlanGraphTest {
     public void aPlanWithNoItemsSurvivesARoundTrip() {
         // an empty plan is legal: it is a goal the architect has not broken down yet
         NaruPlan plan = plans(session).createPlan("not broken down yet", List.of());
-        NPath folder = NPath.ofTempFolder("naru-plan-empty-persist");
-        save(session, folder);
+        NElement saved = save(session, null);
 
         NaruPlanManagerHolder reloaded = new NaruPlanManagerHolder();
-        reloaded.manager.loadFrom(stateFile(folder));
+        reload(reloaded, saved);
         NaruPlan back = reloaded.manager.findPlan(plan.id()).orNull();
         Assertions.assertNotNull(back, "an empty plan must not be dropped on reload");
         Assertions.assertEquals("not broken down yet", back.goal());
@@ -554,10 +551,9 @@ public class NaruPlanGraphTest {
         NaruPlanItem b = item(plan, "second");
         Assertions.assertEquals(List.of(a.id()), b.dependsOn());
 
-        NPath folder = NPath.ofTempFolder("naru-plan-keys-persist");
-        save(session, folder);
+        NElement saved = save(session, null);
         NaruPlanManagerHolder reloaded = new NaruPlanManagerHolder();
-        reloaded.manager.loadFrom(stateFile(folder));
+        reload(reloaded, saved);
         NaruPlan back = reloaded.manager.findPlan(plan.id()).orNull();
         Assertions.assertNotNull(back);
         Assertions.assertEquals("a", back.keyOf(a.id()));
@@ -575,22 +571,23 @@ public class NaruPlanGraphTest {
         return NaruPlanExtension.plans(session);
     }
 
-    /** Drives a real save through the session so the SPI's file contract is exercised. */
-    private static void save(NaruSession session, NPath folder) {
-        NPath extDir = folder.mkdirs().resolve("ext");
-        NElement state = ((NaruPlanManagerImpl) NaruPlanExtension.plans(session)).toElement();
-        NPath file = extDir.resolve(NaruPlanExtension.NAME + ".tson");
-        if (state == null) {
-            if (file.exists()) {
-                file.delete();
-            }
-        } else {
-            NElementWriter.ofTson().ntf(false).write(state, file);
-        }
+    /**
+     * The extension's own saved state, as the core would hand it to {@code load}.
+     *
+     * <p>Going through the extension's {@code save}/{@code load} rather than writing a file
+     * is the point: state crosses the SPI as a value, and a round trip that wrote its own
+     * file would keep passing even if the real contract changed underneath it.
+     */
+    private static NElement save(NaruSession session, NPath folder) {
+        // the extension installed in this session, not a fresh one: a fresh one has its own
+        // empty plan manager and would serialise nothing
+        return session.registry().extension(NaruPlanExtension.NAME, NaruPlanExtension.class)
+                .map(ext -> ext.save(session))
+                .orElseThrow(() -> new IllegalStateException("no plan extension"));
     }
 
-    private static NPath stateFile(NPath folder) {
-        return folder.resolve("ext").resolve(NaruPlanExtension.NAME + ".tson");
+    private static void reload(NaruPlanManagerHolder holder, NElement state) {
+        holder.manager.loadFrom(state);
     }
 
     @Test
@@ -682,7 +679,8 @@ public class NaruPlanGraphTest {
         NPath missing = NPath.ofTempFolder("naru-plan-state-missing").resolve("ext")
                 .resolve(NaruPlanExtension.NAME + ".tson");
         Assertions.assertFalse(missing.exists());
-        Assertions.assertFalse(ext.load(session, missing).isPresent());
+        // null is what the core passes when the session has never been saved
+        ext.load(session, null);
         Assertions.assertTrue(ext.plans().plans().isEmpty());
         Assertions.assertNotNull(ext.plans().createPlan("fresh", List.of(NaruPlanItemSpec.of("a", "work"))));
 

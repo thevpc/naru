@@ -9,6 +9,7 @@ import net.thevpc.naru.api.model.NaruCacheableContext;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruSegmentContent;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
@@ -57,25 +58,20 @@ public class NaruModelCacheExtensionTest {
                 .build();
     }
 
-    private static void writeTo(NPath file, NaruModelCacheExtension ext) {
+    private static NElement stateOf(NaruModelCacheExtension ext) {
         NElement saved = ext.save(null);
         Assertions.assertNotNull(saved, "expected state to be written");
-        file.writeString(NElementWriter.ofTson().formatPlain(saved));
+        return saved;
     }
 
     @Test
-    public void survivesRoundTrip() throws Exception {
-        Path dir = Files.createTempDirectory("naru-cache");
-        NPath file = NPath.of(dir.resolve("model-cache.tson"));
-
+    public void survivesRoundTrip() {
         NaruModelCacheExtension writer = new NaruModelCacheExtension();
         List<String> keys = NaruCacheKeyChain.chain(context().segments());
         writer.commit("openrouter", "gpt-x", NaruCachingMode.AUTOMATIC_PREFIX, keys, 1000L);
-        writer.save(null);
-        writeTo(file, writer);
 
         NaruModelCacheExtension reader = new NaruModelCacheExtension();
-        reader.load(null, file);
+        reader.load(null, stateOf(writer));
 
         NaruCacheBaseline restored = reader.baseline("openrouter", "gpt-x", NaruCachingMode.AUTOMATIC_PREFIX);
         Assertions.assertNotNull(restored, "baseline should have been restored");
@@ -106,13 +102,11 @@ public class NaruModelCacheExtensionTest {
     }
 
     @Test
-    public void corruptStateDegradesToColdCache() throws Exception {
-        Path dir = Files.createTempDirectory("naru-cache-bad");
-        Files.writeString(dir.resolve("model-cache.tson"), "{ this is not the tson you are looking for");
-        NPath file = NPath.of(dir.resolve("model-cache.tson"));
-
+    public void corruptStateDegradesToColdCache() {
         NaruModelCacheExtension ext = new NaruModelCacheExtension();
-        ext.load(null, file);
+        // parsed outside the extension on purpose: the point is that the extension cannot
+        // tell a broken element from a good one until it tries to read it
+        ext.load(null, NElementReader.ofTson().ntf(false).read("{ this is not the tson you are looking for"));
 
         // The only acceptable outcome: no state, so a full resend. A corrupt
         // hint must never be allowed to fail a session.
@@ -120,10 +114,10 @@ public class NaruModelCacheExtensionTest {
     }
 
     @Test
-    public void missingFileIsNotAnError() {
+    public void missingStateIsNotAnError() {
         NaruModelCacheExtension ext = new NaruModelCacheExtension();
-        NOptional<NElement> r = ext.load(null, null);
-        Assertions.assertFalse(r.isPresent());
+        // null is what the core passes for a session that has never been saved
+        ext.load(null, null);
         Assertions.assertNull(ext.baseline("openrouter", "gpt-x", NaruCachingMode.AUTOMATIC_PREFIX));
     }
 

@@ -11,6 +11,7 @@
 | [Sessions and tasks](content/sessions.md)                | ✅ |
 | [Config-driven custom models](content/config-driven-custom-providers.md) | ✅ |
 | [Planning](content/planning.md)                           | ✅ |
+| [Context compaction](content/compaction.md)             | ✅ |
 | More guides (routines, tools, ...)                | 🚧 coming |
 
 ---
@@ -34,3 +35,5 @@
 - [Plan a goal as a dependency graph, and activate it](content/planning.md)
 - [`/plan` directive reference](content/planning.md#4-directives)
 - [Planning tools the model can call](content/planning.md#5-tools)
+- [Summarize an old conversation without losing it](content/compaction.md)
+- [`/compact` directive reference](content/compaction.md#7-directives)

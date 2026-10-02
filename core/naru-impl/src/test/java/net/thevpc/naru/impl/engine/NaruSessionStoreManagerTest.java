@@ -79,20 +79,24 @@ public class NaruSessionStoreManagerTest {
     }
 
     /**
-     * The regression: a running session leaves a snapshot behind, and that snapshot used to
-     * sit inside the very directory this catalog scans.
+     * The regression this test exists for: a running session writes state as it goes, and
+     * that state used to sit inside a scratch directory that the catalog scanned anyway,
+     * so a half-finished conversation showed up as a saved session.
+     *
+     * <p>There is no scratch directory any more -- a running session writes to the same
+     * place a saved one does -- so what is asserted here is the thing that actually has to
+     * hold: persisting does not publish. {@code /session list} reflects {@code save()},
+     * not {@code persist()}.
      */
     @Test
-    public void aRunningSessionsSnapshotIsNotMistakenForASavedSession() {
+    public void aRunningSessionsPersistedStateIsNotMistakenForASavedSession() {
         NaruSessionImpl session = newSession();
         session.newTask(NaruTaskSpec.of().statements("noop"));
-        session.saveSnapshot();
+        session.persist();
         session.start();
 
-        Assertions.assertTrue(projectDir.resolve(".naru/local/snapshot/" + session.uuid()).exists(),
-                "the working snapshot should have been written");
         Assertions.assertTrue(session.sessionStoreManager().list().isEmpty(),
-                "scratch state must never appear as a saved session, got "
+                "a merely persisted session is not a saved session, got "
                         + session.sessionStoreManager().list().size());
     }
 
@@ -105,8 +109,8 @@ public class NaruSessionStoreManagerTest {
 
         a.newTask(NaruTaskSpec.of().statements("noop"));
         b.newTask(NaruTaskSpec.of().statements("noop"));
-        a.saveSnapshot();
-        b.saveSnapshot();
+        a.persist();
+        b.persist();
         a.save();
         b.save();
 

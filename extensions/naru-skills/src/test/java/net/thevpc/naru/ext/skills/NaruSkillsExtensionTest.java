@@ -352,16 +352,15 @@ public class NaruSkillsExtensionTest {
         ext.load(a, "git-flow");
         ext.load(a, "javadoc");
 
-        NPath file = projectDir.resolve("ext/skills.tson");
         NElement saved = ext.save(session);
         assertNotNull(saved);
-        writeTson(saved, file);
 
         ext.unload(a, "git-flow");
         ext.unload(a, "javadoc");
         assertEquals(Set.of(), ext.activeNames(a));
 
-        ext.load(session, file);
+        // the state element is handed straight back, exactly as the core does
+        ext.load(session, saved);
         assertEquals(Set.of("git-flow", "javadoc"), ext.activeNames(a));
     }
 
@@ -372,20 +371,18 @@ public class NaruSkillsExtensionTest {
         NaruTask child = task(parent);
         ext.unload(child, "git-flow");
 
-        NPath file = projectDir.resolve("ext/skills.tson");
-        writeTson(ext.save(session), file);
-
-        ext.load(session, file);
+        ext.load(session, ext.save(session));
         // the child still masks the parent's skill after a reload
         assertEquals(Set.of(), ext.activeNames(child));
         assertEquals(Set.of("git-flow"), ext.activeNames(parent));
     }
 
     @Test
-    public void loadingAMissingStateFileLeavesTheExtensionAtItsInitialState() {
+    public void loadingNoStateLeavesTheExtensionAtItsInitialState() {
         NaruTask a = task();
         ext.load(a, "git-flow");
-        ext.load(session, projectDir.resolve("ext/does-not-exist.tson"));
+        // null is what the core passes for a session that has never been saved
+        ext.load(session, null);
         assertEquals(Set.of(), ext.activeNames(a));
     }
 

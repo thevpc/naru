@@ -1268,7 +1268,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
 
         if (sourcesOk.contains(NaruSource.USER)) {
-            all.addAll(history.stream().map(x -> x.copy().setSource(NaruSource.USER)).collect(Collectors.toList()));
+            // wireContextView, not renderedContextView: this is the list that becomes a
+            // provider request, so a summary has to leave here as a role a provider knows.
+            all.addAll(NaruContextViews.wireContextView(history).stream()
+                    .map(x -> x.copy().setSource(NaruSource.USER))
+                    .collect(Collectors.toList()));
         }
         return new NaruModelRequest(
                 all,
@@ -1394,6 +1398,37 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             fireChanged();
         }
         return count;
+    }
+
+    @Override
+    public List<NaruMessage> history() {
+        return Collections.unmodifiableList(new ArrayList<>(history));
+    }
+
+    @Override
+    public List<NaruMessage> contextView() {
+        return Collections.unmodifiableList(NaruContextViews.renderedContextView(history));
+    }
+
+    @Override
+    public void setHistory(List<NaruMessage> messages) {
+        history.clear();
+        if (messages != null) {
+            history.addAll(messages);
+        }
+        // One fireChanged for the whole replacement. Doing this item by item would persist
+        // a partial compaction after every step, and a crash in between would leave a
+        // summary item with no exclusions -- the context view quietly missing everything the
+        // summary claims to stand for, with nothing in the session recording why.
+        fireChanged();
+    }
+
+    @Override
+    public NaruMessage insertHistory(int index, NaruMessage message) {
+        int at = Math.max(0, Math.min(index, history.size()));
+        history.add(at, message);
+        fireChanged();
+        return message;
     }
 
     @Override

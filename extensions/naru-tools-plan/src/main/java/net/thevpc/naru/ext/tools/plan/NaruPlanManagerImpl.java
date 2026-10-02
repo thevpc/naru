@@ -293,18 +293,17 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
     }
 
     /**
-     * Replaces the in-memory state with whatever the file holds. A missing file is not
-     * an error: it just means this session has no plans yet.
+     * Replaces the in-memory state with whatever the state element holds. Null state is
+     * not an error: it just means this session has no plans yet.
      */
-    public void loadFrom(NPath file) {
+    public void loadFrom(NElement state) {
         plans.clear();
         activePlanId = null;
-        if (file == null || !file.exists()) {
+        if (state == null) {
             return;
         }
         try {
-            NElement e = NElementReader.ofTson().ntf(false).read(file);
-            NObjectElement o = e.asObject().get();
+            NObjectElement o = state.asObject().get();
             List<NaruPlan> loaded = new ArrayList<>();
             NArrayElement arr = o.getArray("plans").orNull();
             if (arr != null) {
@@ -335,7 +334,7 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
                 activePlanId = act;
             }
         } catch (Exception ex) {
-            throw new NIllegalArgumentException(NMsg.ofC("failed to load plans from %s: %s", file, ex.getMessage(), ex));
+            throw new NIllegalArgumentException(NMsg.ofC("failed to load plans: %s", ex.getMessage(), ex));
         }
     }
 }

@@ -61,7 +61,15 @@ public interface NaruSession {
 
     String uuid();
 
-    NaruSession restoreSnapshot();
+    /**
+     * Reloads this session's state from the store it was last written to, discarding
+     * anything in memory that is not there.
+     *
+     * <p>This is not a version restore: it reloads the current state, exactly as
+     * {@code /session reload} does. To go back to an earlier state, use
+     * {@code /session restore <version>}.
+     */
+    NaruSession restoreFromStore();
 
     NaruSession load(String otherUuid);
 
@@ -69,7 +77,14 @@ public interface NaruSession {
 
     NaruSession save();
 
-    NaruSession saveSnapshot();
+    /**
+     * Writes this session's state to the store, without waiting for the write to finish.
+     *
+     * <p>The fire-and-forget counterpart of {@link #save()}. Called after every statement of
+     * every turn, so its cost has to be proportional to what changed -- which is why the
+     * store writes history one message at a time rather than rewriting the conversation.
+     */
+    NaruSession persist();
 
     NaruSession copy();
 
@@ -106,7 +121,7 @@ public interface NaruSession {
     /**
      * Snapshot of the models displayed by the last {@code /model} listing, in display
      * order. Positional indexes ({@code /model use <n>}) are resolved against this
-     * snapshot first, so that a filtered listing such as {@code /model --free} or
+     * persisted state first, so that a filtered listing such as {@code /model --free} or
      * {@code /model --provider=x} keeps its indexes valid even though filtering
      * renumbers the rows.
      *

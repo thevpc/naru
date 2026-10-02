@@ -106,6 +106,26 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
+    public List<NaruMessage> history() {
+        return List.of();
+    }
+
+    @Override
+    public List<NaruMessage> contextView() {
+        return List.of();
+    }
+
+    @Override
+    public void setHistory(List<NaruMessage> messages) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruMessage insertHistory(int index, NaruMessage message) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
     public boolean removeHistoryAt(int index) {
         return false;
     }

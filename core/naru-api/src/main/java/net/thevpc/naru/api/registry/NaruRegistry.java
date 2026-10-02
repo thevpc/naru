@@ -1,6 +1,8 @@
 package net.thevpc.naru.api.registry;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.context.NaruCompactors;
+import net.thevpc.naru.api.context.NaruContextCompactor;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.*;
@@ -78,6 +80,15 @@ public interface NaruRegistry {
      * installed, which is the normal case for an optional feature.
      */
     <T extends NaruSessionExtension> NOptional<T> extension(String name, Class<T> as);
+
+    /**
+     * The installed context compactor, if any.
+     *
+     * <p>Empty is the normal state for a build with no compaction extension, and callers
+     * that require compaction must treat it as an error rather than as "nothing to do" --
+     * see {@link NaruCompactors#find}.
+     */
+    NOptional<NaruContextCompactor> compactor();
 
     /**
      * Closes every session extension. Called when a session terminates.

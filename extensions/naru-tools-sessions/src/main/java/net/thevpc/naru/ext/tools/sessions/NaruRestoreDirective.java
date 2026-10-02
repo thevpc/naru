@@ -10,12 +10,12 @@ import net.thevpc.nuts.text.NMsg;
 
 public class NaruRestoreDirective extends NaruDirectiveBase {
     public NaruRestoreDirective() {
-        super("restore","session", "resume from last snapshot");
+        super("restore", "session", "reload this session from the store, discarding changes made since");
         register(new AbstractSubCommand() {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                task.session().restoreSnapshot();
+                task.session().restoreFromStore();
                 context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", task.session().name()));
                 return NaruStmtResult.ofSuccess(null);
             }

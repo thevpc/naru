@@ -1,0 +1,4 @@
+net.thevpc.naru.ext.tools.compact.NaruCompactExtension
+net.thevpc.naru.ext.tools.compact.NaruCompactContextCompactor
+net.thevpc.naru.ext.tools.compact.NaruCompactDirectiveProvider
+net.thevpc.naru.ext.tools.compact.NaruCompactToolsetProvider

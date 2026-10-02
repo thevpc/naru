@@ -30,11 +30,44 @@ public class NaruToolCall implements NToElement, NCopiable, Cloneable {
                 if (child.isNamedPair()) {
                     NPairElement p = child.asPair().get();
                     String k = p.key().asStringValue().orNull();
-                    Object v = NElement.simpleOf(p.value());
-                    arguments.put(k, v);
+                    arguments.put(k, readArgumentValue(p.value()));
                 }
             }
         }
+    }
+
+    /**
+     * Reads one argument value back to the {@link Object} it was written from.
+     *
+     * <p>{@link NElement#simpleOf} is not usable here: on a string value it hands back the
+     * node's rendered form, so {@code {path:"A.java"}} reads as {@code "\"A.java\""} and a
+     * tool is dispatched with quotes glued to its path. Numbers and booleans come back as
+     * nodes too, which leaves {@code getString}/{@code getInt} parsing text they should
+     * not have to. Each type is therefore read through its own accessor, and anything
+     * richer than a scalar is kept as the element it is -- an argument may legitimately be
+     * a nested object, and flattening it would change what the model asked for.
+     */
+    private static Object readArgumentValue(NElement value) {
+        if (value == null) {
+            return null;
+        }
+        if (value.isString()) {
+            return value.asStringValue().orNull();
+        }
+        if (value.isBoolean()) {
+            return value.asBooleanValue().orNull();
+        }
+        if (value.isNumber()) {
+            // integral values come back as Integer: model-written line numbers and indices
+            // are compared against int-typed APIs far more often than anything uses a Long
+            Double d = value.asDoubleValue().orNull();
+            if (d != null && d == Math.rint(d) && !d.isInfinite()
+                    && d >= Integer.MIN_VALUE && d <= Integer.MAX_VALUE) {
+                return (int) (double) d;
+            }
+            return d;
+        }
+        return value;
     }
 
     public NaruToolCall(String id, String name, Map<String, Object> arguments) {
@@ -66,7 +99,9 @@ public class NaruToolCall implements NToElement, NCopiable, Cloneable {
         return NObjectElementBuilder.of()
                 .set("id", id)
                 .set("name", name)
-                .set("arguments", NElement.of(arguments == null ? new HashMap<>() : arguments))
+                // a LinkedHashMap, not a HashMap: argument order must depend on the model,
+                // not on hash order, or the same call would hash differently between runs
+                .set("arguments", NElement.of(arguments == null ? new LinkedHashMap<>() : arguments))
                 .build();
     }
 
