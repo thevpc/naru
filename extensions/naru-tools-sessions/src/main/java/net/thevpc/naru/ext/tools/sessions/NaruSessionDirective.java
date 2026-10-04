@@ -37,28 +37,28 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             }
         });
         //TODO FIX ME
-//        register(new AbstractSubCommand("rename", NText.ofPlain("rename the current session")
-//                , new SubCommandHelp("<name>", "give the current session a name (or a new one) and save it")
-//        ) {
-//            @Override
-//            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-//                return executeRename(context, cmdLine);
-//            }
-//
-//            @Override
-//            public List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
-//                return sessionNameCandidates(cmdLine, pos, session);
-//            }
-//        });
+        register(new AbstractSubCommand("rename", NText.ofPlain("rename the current session")
+                , new SubCommandHelp("<name>", "give the current session a name (or a new one) and save it")
+        ) {
+            @Override
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeRename(context, cmdLine);
+            }
+
+            @Override
+            public List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+                return sessionNameCandidates(cmdLine, pos, session);
+            }
+        });
         //TODO FIX ME
-//        register(new AbstractSubCommand("continue", NText.ofPlain("load the most recently saved session")
-//                , new SubCommandHelp("", "load the session that was last updated on disk")
-//        ) {
-//            @Override
-//            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-//                return executeContinue(context, cmdLine);
-//            }
-//        });
+        register(new AbstractSubCommand("continue", NText.ofPlain("load the most recently saved session")
+                , new SubCommandHelp("", "load the session that was last updated on disk")
+        ) {
+            @Override
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeContinue(context, cmdLine);
+            }
+        });
         register(new AbstractSubCommand("public", NText.ofPlain("change current session visibility to public")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
