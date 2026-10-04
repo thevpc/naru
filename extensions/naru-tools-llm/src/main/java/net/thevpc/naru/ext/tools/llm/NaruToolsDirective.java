@@ -12,6 +12,7 @@ import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NStringBuilder;
 import net.thevpc.nuts.util.NStringUtils;
@@ -293,16 +294,67 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                     context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
                     sb.println(msg.toString());
                     for (NaruToolParameter param : params) {
-                        msg = NMsg.ofC("      %s - %s",
-                                NMsg.ofStyledPrimary1(param.getName())
-                                , param.getDescription());
-                        context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                        sb.println(msg.toString());
+                        describeParam(param, sb, context, "      ");
                     }
                     return NaruStmtResult.ofSuccess(sb.toString());
                 }
             }
         });
+    }
+
+    private NMsg formattedTypeName(NaruToolParameter param) {
+        switch (param.getType()) {
+            case STRING:
+            case INTEGER:
+            case NUMBER:
+            case BOOLEAN:
+                return NMsg.ofStyledPrimary3(param.getType().name().toLowerCase());
+            case ARRAY: {
+                NaruToolParameter tt = param.getItemType();
+                return NMsg.ofC("%s%s", formattedTypeName(tt),NMsg.ofStyledSeparator("[]"));
+            }
+            case OBJECT: {
+                return NMsg.ofStyledPrimary4(param.getName());
+            }
+        }
+        return NMsg.ofStyledPrimary1(param.getType().name().toLowerCase());
+    }
+
+    private void describeParam(NaruToolParameter param, NStringBuilder sb, NaruDirectiveCallContext context, String indent) {
+        NMsg msg = NMsg.ofC("%s%s : %s%s%s%s%s - %s",
+                indent,
+                NMsg.ofStyledPrimary1(param.getName()),
+                formattedTypeName(param),
+                param.isRequired()?NMsg.ofC(" %s",NMsg.ofStyledError("required")):"",
+                param.isNullable()?NMsg.ofC(" %s",NMsg.ofStyledWarn("nullable")):"",
+                !NBlankable.isBlank(param.getFormat()) ?NMsg.ofC(" (format: %s)",param.getFormat()):"",
+                !(param.getEnumValues()==null ||param.getEnumValues().isEmpty()) ?NMsg.ofC(" (values: %s)",param.getEnumValues()):"",
+                param.getDescription());
+
+        context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
+        sb.println(msg.toString());
+        if (param.getType() == NaruToolParameter.Type.ARRAY) {
+            if (param.getItemType().getType() == NaruToolParameter.Type.OBJECT) {
+                describeParam(param.getItemType(), sb, context, indent + "    ");
+            } else if (param.getItemType().getType() == NaruToolParameter.Type.ARRAY) {
+                NaruToolParameter tt = param.getItemType();
+                while (true) {
+                    NaruToolParameter tt1 = tt.getItemType();
+                    if (tt1 == null) {
+                        break;
+                    }
+                    tt = tt1;
+                    if (tt1.getType() != NaruToolParameter.Type.ARRAY) {
+                        break;
+                    }
+                }
+                describeParam(tt, sb, context, indent + "  ");
+            }
+        } else if (param.getType() == NaruToolParameter.Type.OBJECT) {
+            for (NaruToolParameter tt : param.getProperties()) {
+                describeParam(tt, sb, context, indent + "  ");
+            }
+        }
     }
 
     /**

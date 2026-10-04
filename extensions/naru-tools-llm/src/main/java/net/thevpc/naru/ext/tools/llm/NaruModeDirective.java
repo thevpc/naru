@@ -104,6 +104,7 @@ public class NaruModeDirective extends NaruDirectiveBase {
         NaruTask task = context.task();
         List<NaruPromptMode> modes = task.session().registry().modes().stream().sorted(Comparator.comparing(NaruPromptMode::name)).collect(Collectors.toList());
         NStringBuilder sb = NStringBuilder.of();
+        NaruPromptMode naruPromptMode = context.task().promptMode();
         for (NaruPromptMode m : modes) {
             NTextBuilder b = NTextBuilder.of();
             if (m.aliases().length > 0) {
@@ -116,7 +117,8 @@ public class NaruModeDirective extends NaruDirectiveBase {
                 );
                 b.append(")", NTextStyle.separator());
             }
-            NMsg msg = NMsg.ofC("%s %s",
+            NMsg msg = NMsg.ofC("%s %s %s",
+                    (naruPromptMode==m?NMsg.ofStyledSuccess("✅"): " "),
                     NMsg.ofStyledKeyword(NNameFormat.LOWER_KEBAB_CASE.format(m.name())),
                     b
             );
