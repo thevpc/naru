@@ -63,6 +63,17 @@ public class NaruModelDirectiveEndpointTest {
             }
 
             @Override
+            public NOptional<NElement> get(String key, NaruVisibility visibility) {
+                if (visibility == NaruVisibility.PRIVATE) {
+                    return NOptional.ofNullable(privateStore.get(key));
+                }
+                if (visibility == NaruVisibility.PUBLIC) {
+                    return NOptional.ofNullable(publicStore.get(key));
+                }
+                return get(key);
+            }
+
+            @Override
             public void put(String key, NElement value, NaruVisibility visibility) {
                 if (value == null) {
                     publicStore.remove(key);
@@ -87,7 +98,9 @@ public class NaruModelDirectiveEndpointTest {
                             env.put((String) args[0], (NElement) args[1], (NaruVisibility) args[2]);
                             return null;
                         case "getProjectEnv":
-                            return env.get((String) args[0]);
+                            return args.length > 1
+                                    ? env.get((String) args[0], (NaruVisibility) args[1])
+                                    : env.get((String) args[0]);
                         case "findModel":
                             return NOptional.ofEmpty();
                         default:

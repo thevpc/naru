@@ -19,12 +19,7 @@ public class ToolTagRemoveTool extends DefaultNaruTool {
         return "Removes tools that define the given tag";
     }
 
-    // empty set, it is always included
     @Override
-    public Set<String> tags() {
-        return new HashSet<>(Arrays.asList());
-    }
-
     public boolean isRelevant(NaruTask task){
         return !task.findToolTags().isEmpty();
     }

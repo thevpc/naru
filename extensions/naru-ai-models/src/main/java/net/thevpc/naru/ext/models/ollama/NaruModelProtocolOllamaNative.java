@@ -6,6 +6,7 @@ import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruStreamHandler;
+import net.thevpc.naru.api.model.NaruThinkingConfig;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.NElement;
@@ -34,12 +35,21 @@ public class NaruModelProtocolOllamaNative extends NaruModelProtocolBase {
     }
 
     /**
-     * Defaults {@code think} from the model's declared capability, and lets an
-     * explicit request or {@code ollama.think} setting win.
+     * Resolves the {@code think} flag, in decreasing precedence:
      *
-     * <p>The capability is the answer, not a guess: Ollama reports a reasoning model
-     * in {@code /api/show}, and that is the only thing that distinguishes a model
-     * which can be asked to think from one that will refuse the request.
+     * <ol>
+     *   <li>{@code ollama.think} already on the request, which is a per-request
+     *       override and beats configuration;</li>
+     *   <li>the {@code model.thinking} setting, published into the request env by
+     *       {@code NaruModelProtocolBase#applyThinking} -- an explicit
+     *       {@code false} here is how reasoning gets switched off for a model that
+     *       would otherwise reason;</li>
+     *   <li>the model's declared capability.</li>
+     * </ol>
+     *
+     * <p>The capability is the fallback, not a guess: Ollama reports a reasoning
+     * model in {@code /api/show}, and that is the only thing that distinguishes a
+     * model which can be asked to think from one that will refuse the request.
      */
     @Override
     protected NaruModelRequest preprocessRequest(NaruModelRequest mrequest, NaruTask task) {
@@ -47,9 +57,14 @@ public class NaruModelProtocolOllamaNative extends NaruModelProtocolBase {
         if (request.env() != null && request.env().containsKey(THINK_ENV)) {
             return request;
         }
+        NElement think = request.env() == null ? null : request.env().get(NaruThinkingConfig.THINKING_KEY);
         Map<String, NElement> env = new java.util.HashMap<>(
                 request.env() == null ? java.util.Collections.emptyMap() : request.env());
-        env.put(THINK_ENV, NElement.ofBoolean(capabilities.isThinking()));
+        if (think != null && think.isBoolean()) {
+            env.put(THINK_ENV, NElement.ofBoolean(think.asBooleanValue().orElse(false)));
+        } else {
+            env.put(THINK_ENV, NElement.ofBoolean(capabilities.isThinking()));
+        }
         return request.withMessages(request.messages()).withEnv(env);
     }
 

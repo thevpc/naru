@@ -413,6 +413,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
+    public NOptional<NElement> getProjectEnv(String key, NaruVisibility visibility) {
+        ensureNotStopped();
+        NaruEnv a = agent.env();
+        return a.get(key, visibility);
+    }
+
+    @Override
     public void setProjectEnv(String key, NElement value, NaruVisibility visibility) {
         ensureNotStopped();
         NaruEnv a = agent.env();

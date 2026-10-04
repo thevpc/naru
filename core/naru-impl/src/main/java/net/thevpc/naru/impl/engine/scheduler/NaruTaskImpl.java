@@ -1069,6 +1069,15 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             if (!mode.acceptToolTags(t.tags())) {
                 continue;
             }
+            // isRelevant is the tool's own veto: the one gate a tool needs for a
+            // decision only it can make (is there anything to remove, is the
+            // feature behind it switched on). Honoured here so the single list
+            // this returns -- the tools sent to the model, the "Available tools"
+            // prompt line and /tools list all read it -- cannot disagree with
+            // what a tool believes about itself.
+            if (!t.isRelevant(this)) {
+                continue;
+            }
             Set<String> tt = t.tags();
             if (!excludedTools.contains(t.name())) {
                 if (tt.isEmpty()) {

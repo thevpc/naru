@@ -14,6 +14,7 @@ public class NaruLlmDirectiveProvider extends NaruDirectiveProviderBase {
         this.registerDirective(new NaruHistoryDirective());
         // /skill moved to the naru-skills extension, which owns the state it reports on
         this.registerDirective(new NaruContextDirective());
+        this.registerDirective(new NaruSettingsDirective());
     }
 
 }

@@ -17,6 +17,8 @@ import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NStringUtils;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -150,7 +152,32 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         if (!capabilities.isTools() && !mrequest.tools().isEmpty() || emulate_tool_calls) {
             mrequest = NoToolWrapHelper.wrapRequest(mrequest, NoToolWrapHelper.TOOL_CALL_SEP, NoToolWrapHelper.TOOL_RESULT_SEP);
         }
-        return mrequest;
+        return applyThinking(mrequest, task);
+    }
+
+    /**
+     * Publish an explicit {@code model.thinking} into the request env.
+     *
+     * <p>Here rather than in each protocol because the setting is provider-neutral
+     * while its wire spelling is not: Ollama wants {@code think}, Anthropic-style
+     * endpoints want a budget object, and most OpenAI-compatible servers want
+     * nothing at all. Resolving it once means a protocol that has a spelling reads
+     * one key instead of re-deriving the setting chain, and a protocol with no
+     * spelling costs nothing.
+     *
+     * <p>Only an explicitly configured value is published. Absent stays absent, so a
+     * protocol with no default of its own keeps its current behaviour instead of
+     * inheriting an invented "off".
+     */
+    protected NaruModelRequest applyThinking(NaruModelRequest mrequest, NaruTask task) {
+        NOptional<Boolean> thinking = NaruThinkingConfig.find(task);
+        if (thinking == null || !thinking.isPresent()) {
+            return mrequest;
+        }
+        Map<String, NElement> env = new HashMap<>(
+                mrequest.env() == null ? Collections.emptyMap() : mrequest.env());
+        env.put(NaruThinkingConfig.THINKING_KEY, NElement.ofBoolean(thinking.get()));
+        return mrequest.withEnv(env);
     }
 
     /**

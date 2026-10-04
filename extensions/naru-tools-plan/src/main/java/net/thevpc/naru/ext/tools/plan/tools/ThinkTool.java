@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
+import net.thevpc.naru.api.model.NaruThinkingConfig;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
@@ -26,7 +27,14 @@ public class ThinkTool extends DefaultNaruTool {
 
     @Override
     public boolean isRelevant(NaruTask task) {
-        // only expose to models that lack a native thinking/reasoning channel
+        // model.thinking=false takes the tool out of the schema entirely: an
+        // offered tool is an instruction to call it, so leaving a thinking tool
+        // in front of a model that was told not to think is how "thinking off"
+        // turns into "thinking, but narrated through tool calls instead".
+        if (!NaruThinkingConfig.isEnabled(task)) {
+            return false;
+        }
+        // otherwise only expose to models that lack a native thinking/reasoning channel
         NaruModelConfig mc = task.model();
         if (mc == null) {
             return true;

@@ -142,6 +142,15 @@ public interface NaruSession {
 
     NOptional<NElement> getProjectEnv(String key);
 
+    /**
+     * The config value for a key from one specific visibility, or empty.
+     *
+     * <p>{@link #getProjectEnv(String)} reports the value but not which file supplied
+     * it, and "which file" is what a person needs when an edit looks like it did
+     * nothing -- a private value silently shadows the public one they just wrote.
+     */
+    NOptional<NElement> getProjectEnv(String key, NaruVisibility visibility);
+
     void setProjectEnv(String key, NElement value, NaruVisibility visibility);
 
     NOptional<Object> getSessionEnv(String key);

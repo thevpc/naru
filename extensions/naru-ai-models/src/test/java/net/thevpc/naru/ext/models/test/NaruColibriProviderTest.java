@@ -110,6 +110,11 @@ public class NaruColibriProviderTest {
             }
 
             @Override
+            public NOptional<NElement> get(String key, NaruVisibility visibility) {
+                return get(key);
+            }
+
+            @Override
             public void put(String key, NElement value, NaruVisibility visibility) {
             }
         };
