@@ -935,32 +935,32 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
 
-    @Override
-    public NaruSession reload() {
-        stopTheWorldAndWait(() -> {
-            // The scope to reload from is the one this session was last loaded from or
-            // written to. Looking in "both, private first" instead would make a session
-            // that was deliberately made public silently come back private if a stale
-            // private folder survived a move.
-            NaruSessionScope scope = loadTimeScope != null ? loadTimeScope : scopeForNewState();
-            if (store.exists(uuid(), scope)) {
-                loadFromStore(uuid(), scope);
-                setVisibility(scope == NaruSessionScope.PUBLIC ? NaruVisibility.PUBLIC : NaruVisibility.PRIVATE);
-            } else {
-                // nothing stored under this uuid: this session has never been saved, so
-                // it is a new session rather than a broken one
-                this.uuid = UUID.randomUUID().toString();
-                this._prepareInit();
-            }
-            ((NaruSchedulerImpl) scheduler).reloadState();
-            return null;
-        });
-        fireReloaded();
-        for (NaruSessionListener listener : sessionListeners) {
-            listener.onSessionReloaded(this);
-        }
-        return this;
-    }
+//    @Override
+//    public NaruSession reload() {
+//        stopTheWorldAndWait(() -> {
+//            // The scope to reload from is the one this session was last loaded from or
+//            // written to. Looking in "both, private first" instead would make a session
+//            // that was deliberately made public silently come back private if a stale
+//            // private folder survived a move.
+//            NaruSessionScope scope = loadTimeScope != null ? loadTimeScope : scopeForNewState();
+//            if (store.exists(uuid(), scope)) {
+//                loadFromStore(uuid(), scope);
+//                setVisibility(scope == NaruSessionScope.PUBLIC ? NaruVisibility.PUBLIC : NaruVisibility.PRIVATE);
+//            } else {
+//                // nothing stored under this uuid: this session has never been saved, so
+//                // it is a new session rather than a broken one
+//                this.uuid = UUID.randomUUID().toString();
+//                this._prepareInit();
+//            }
+//            ((NaruSchedulerImpl) scheduler).reloadState();
+//            return null;
+//        });
+//        fireReloaded();
+//        for (NaruSessionListener listener : sessionListeners) {
+//            listener.onSessionReloaded(this);
+//        }
+//        return this;
+//    }
 
     @Override
     public NaruSession restoreFromStore() {

@@ -233,7 +233,7 @@ public abstract class NaruDirectiveBase implements NaruDirective {
     }
 
     @Override
-    public List<NArgCompleteCandidate> resolveCandidates(
+    public NArgCompleteResult resolveCandidates(
             NCmdLine cmdLine,
             NArgCompletePosition pos,
             NaruSession session) {
@@ -257,7 +257,7 @@ public abstract class NaruDirectiveBase implements NaruDirective {
                 }
             }
         }
-        return candidates;
+        return NArgCompleteResult.ofCandidates(candidates);
     }
 
     public class SubCommandHelp {
@@ -331,8 +331,8 @@ public abstract class NaruDirectiveBase implements NaruDirective {
         }
 
         @Override
-        public List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
-            return new ArrayList();
+        public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+            return NArgCompleteResult.ofBlank();
         }
     }
 
@@ -345,7 +345,7 @@ public abstract class NaruDirectiveBase implements NaruDirective {
 
         NaruStmtResult help(NaruDirectiveCallContext context);
 
-        List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session);
+        NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session);
     }
 
 }

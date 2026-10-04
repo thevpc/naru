@@ -11,6 +11,7 @@ import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.naru.impl.util.ImplNaruUtils;
 import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
 import net.thevpc.nuts.cmdline.NArgCompletePosition;
+import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
@@ -264,7 +265,7 @@ public class NaruHelpDirective extends NaruDirectiveBase {
     }
 
     @Override
-    public List<NArgCompleteCandidate> resolveCandidates(
+    public NArgCompleteResult resolveCandidates(
             NCmdLine cmdLine,
             NArgCompletePosition pos,
             NaruSession session) {
@@ -277,7 +278,7 @@ public class NaruHelpDirective extends NaruDirectiveBase {
         if (currentArg.startsWith("-")) {
             addCandidates(candidates, currentArg, "--full");
             addCandidates(candidates, currentArg, "--syntax");
-            return candidates;
+            return NArgCompleteResult.ofCandidates(candidates);
         }
 
         // Complete directive names on first non-option field location
@@ -291,7 +292,7 @@ public class NaruHelpDirective extends NaruDirectiveBase {
                 addCandidates(candidates, currentArg, dName);
             }
         }
-        return candidates;
+        return NArgCompleteResult.ofCandidates(candidates);
     }
 
     private record HelpExample(String number, String name, String description, String resourcePath) {

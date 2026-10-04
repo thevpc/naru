@@ -46,19 +46,11 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             }
 
             @Override
-            public List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
                 return sessionNameCandidates(cmdLine, pos, session);
             }
         });
-        //TODO FIX ME
-        register(new AbstractSubCommand("continue", NText.ofPlain("load the most recently saved session")
-                , new SubCommandHelp("", "load the session that was last updated on disk")
-        ) {
-            @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                return executeContinue(context, cmdLine);
-            }
-        });
+
         register(new AbstractSubCommand("public", NText.ofPlain("change current session visibility to public")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -79,7 +71,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 return executeDelete(context, cmdLine);
             }
             @Override
-            public List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
                 return sessionNameCandidates(cmdLine, pos, session);
             }
         });
@@ -99,20 +91,20 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             }
 
             @Override
-            public List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
                 return sessionNameCandidates(cmdLine, pos, session);
             }
         });
-        register(new AbstractSubCommand("reload", NText.ofPlain("reload current session")
-                , new SubCommandHelp("", "re-read this session from the store, "
-                + "or start a fresh one if it was never saved. "
-                + "changes made since the last write are discarded")
-        ) {
-            @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                return executeReload(context, cmdLine);
-            }
-        });
+//        register(new AbstractSubCommand("reload", NText.ofPlain("reload current session")
+//                , new SubCommandHelp("", "re-read this session from the store, "
+//                + "or start a fresh one if it was never saved. "
+//                + "changes made since the last write are discarded")
+//        ) {
+//            @Override
+//            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+//                return executeReload(context, cmdLine);
+//            }
+//        });
         register(new AbstractSubCommand("restore", NText.ofPlain("restore from the store")
         ) {
             @Override
@@ -151,7 +143,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         });
     }
 
-    private List<NArgCompleteCandidate> sessionNameCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+    private NArgCompleteResult sessionNameCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
         List<NArgCompleteCandidate> candidates = new java.util.ArrayList<>();
         String[] stringArray = cmdLine.toStringArray();
         int wordIndex = pos.wordIndex();
@@ -166,7 +158,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 }
             }
         }
-        return candidates;
+        return NArgCompleteResult.ofCandidates(candidates);
     }
 
 
@@ -230,12 +222,12 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         return NaruStmtResult.ofSuccess(count);
     }
 
-    public NaruStmtResult executeReload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        task.session().reload();
-        context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("Reloaded session."));
-        return NaruStmtResult.ofSuccess(null);
-    }
+//    public NaruStmtResult executeReload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+//        NaruTask task = context.task();
+//        task.session().reload();
+//        context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("Reloaded session."));
+//        return NaruStmtResult.ofSuccess(null);
+//    }
 
     public NaruStmtResult executeLoad(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
@@ -273,18 +265,36 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             List<NaruMessage> history = task.context(NaruSource.values()).messages();
             history.add(NaruMessage.user("can you suggest a name for this session? dont be verbose in your response, only return the suggested name please."));
             NaruModelConfig model = task.model();
-            NaruResponse chat = task.chat(model,
-                    new NaruModelRequest(history,
-                            task.context(NaruSource.values()).env()
-                    )
-            );
-            if (chat.getMessage() != null) {
-                session.setName(chat.getMessage().getContent());
+            try {
+                NaruResponse chat = task.chat(model,
+                        new NaruModelRequest(history,
+                                task.context(NaruSource.values()).env()
+                        )
+                );
+                if (chat.getMessage() != null) {
+                    session.setName(chat.getMessage().getContent());
+                }
+            } catch (Exception ex) {
+                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Unable ot evaluate session title using LLM : %s : %s", NMsg.ofStyledString(session.name()), ex));
             }
         }
         session.save();
         task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved session: %s", NMsg.ofStyledString(session.name())));
         return NaruStmtResult.ofSuccess(null);
+    }
+
+    public NaruStmtResult executeRename(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruTask task = context.task();
+        NaruSession session = task.session();
+        String n = String.join(" ",cmdLine.toStringArray());
+        if(!NBlankable.isBlank(n)){
+            session.setName(n);
+            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved renamed : %s", NMsg.ofStyledString(session.name())));
+            return NaruStmtResult.ofSuccess(null);
+        }else{
+            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("empty or invalid session name : %s", NMsg.ofStyledString(n)));
+            return NaruStmtResult.ofSuccess(NMsg.ofC("empty or invalid session name : %s", NMsg.ofStyledString(n)));
+        }
     }
 
     public NaruStmtResult executeNew(NaruDirectiveCallContext context, NCmdLine cmdLine) {

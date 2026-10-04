@@ -10,6 +10,7 @@ import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 
+import java.util.Arrays;
 import java.util.List;
 
 public class NaruCdDirective extends NaruDirectiveBase {
@@ -34,7 +35,7 @@ public class NaruCdDirective extends NaruDirectiveBase {
     }
 
     @Override
-    public List<NArgCompleteCandidate> resolveCandidates(
+    public NArgCompleteResult resolveCandidates(
             NCmdLine cmdLine,
             NArgCompletePosition pos,
             NaruSession session) {
@@ -79,6 +80,6 @@ public class NaruCdDirective extends NaruDirectiveBase {
                 }
             }
         }
-        return candidates;
+        return NArgCompleteResult.of(candidates, Arrays.asList(NArgCompleteFlag.NOSPACE));
     }
 }

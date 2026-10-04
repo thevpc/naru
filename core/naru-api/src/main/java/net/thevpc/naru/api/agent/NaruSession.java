@@ -73,7 +73,7 @@ public interface NaruSession {
 
     NaruSession load(String otherUuid);
 
-    NaruSession reload();
+//    NaruSession reload();
 
     NaruSession save();
 

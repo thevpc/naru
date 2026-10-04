@@ -53,7 +53,7 @@ public class NaruModeDirective extends NaruDirectiveBase {
             }
 
             @Override
-            public List<NArgCompleteCandidate> resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
                 List<NArgCompleteCandidate> candidates = new ArrayList<>();
                 String[] stringArray = cmdLine.toStringArray();
                 int wordIndex = pos.wordIndex();
@@ -67,7 +67,7 @@ public class NaruModeDirective extends NaruDirectiveBase {
                         }
                     }
                 }
-                return candidates;
+                return NArgCompleteResult.ofCandidates(candidates);
             }
         });
         register(new AbstractSubCommand("", NText.ofPlain("change active mode by name"),

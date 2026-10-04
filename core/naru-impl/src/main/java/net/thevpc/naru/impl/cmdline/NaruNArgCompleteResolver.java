@@ -25,6 +25,7 @@ public class NaruNArgCompleteResolver implements NArgCompleteResolver {
         List<NArgCompleteCandidate> candidates = new ArrayList<>();
         String[] stringArray = cmdLine.toStringArray();
         int wordIndex = pos.wordIndex();
+        ArrayList<NArgCompleteFlag> flags = new ArrayList<>();
 
         if (stringArray.length == 0 || (stringArray.length == 1 && stringArray[0].isEmpty())) {
             // First word - show all directive commands
@@ -57,11 +58,13 @@ public class NaruNArgCompleteResolver implements NArgCompleteResolver {
             String commandName = stringArray[0].substring(1); // Remove the leading "/"
             NaruDirective directive = session.registry().directives().get(commandName);
             if (directive != null) {
-                candidates.addAll(directive.resolveCandidates(cmdLine, pos, session));
+                NArgCompleteResult a = directive.resolveCandidates(cmdLine, pos, session);
+                candidates.addAll(a.candidates());
+                flags.addAll(a.flags());
             }
         }
 
-        return NArgCompleteResult.ofCandidates(candidates);
+        return NArgCompleteResult.of(candidates, flags);
     }
 
     /**
@@ -82,7 +85,7 @@ public class NaruNArgCompleteResolver implements NArgCompleteResolver {
         for (String kw : keywords) {
             String value = "/" + kw;
             if (value.startsWith(currentCommand)) {
-                candidates.add(NArgCompleteCandidate.of(value, kw + " - keyword"));
+                candidates.add(NArgCompleteCandidate.of(value, value + " - keyword"));
             }
         }
     }
