@@ -10,8 +10,8 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
         <github.global.server>github</github.global.server>
         <nuts.application>true</nuts.application>
         <nuts.gui>false</nuts.gui>
@@ -106,7 +106,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>3.16.0</version>
                 <executions>
                     <execution>
                         <id>compile</id>
@@ -144,7 +144,7 @@
                 <configuration>
                     <toolchains>
                         <jdk>
-                            <version>17</version>
+                            <version>25</version>
                             <vendor>openjdk</vendor>
                         </jdk>
                     </toolchains>
@@ -202,7 +202,7 @@
                             </tags>
                             <debug>true</debug>
                             <jdkToolchain>
-                                <version>17</version>
+                                <version>25</version>
                             </jdkToolchain>
                         </configuration>
                         <executions>
@@ -295,7 +295,7 @@
                             </tags>
                             <debug>true</debug>
                             <jdkToolchain>
-                                <version>17</version>
+                                <version>25</version>
                             </jdkToolchain>
                         </configuration>
                         <executions>
