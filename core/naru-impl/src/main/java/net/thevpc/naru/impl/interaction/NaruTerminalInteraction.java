@@ -267,12 +267,15 @@ public class NaruTerminalInteraction implements NaruInteraction {
                         NText.ofStyled("  \u258C", NTextStyle.primary9())));
             }
             case AGENT_RESPONSE: {
+                // ▌
                 return logLines(message, 1, "\u258C", 4);
             }
             case SCRIPT: {
-                return logLines(message, 2, "\u2705\ufe0f", 5);
+                // ✅️ "\u2705\ufe0f"
+                return logLines(message, 2, "\u258C", 5);
             }
             case TRACE: {
+                // ▌
                 return logLines(message, 2, "\u258C", 6);
             }
             case PROGRESS: {

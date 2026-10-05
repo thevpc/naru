@@ -135,32 +135,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.store = NaruStoreFactory.open(storeConfig(), storeName());
         this.registry = new NaruRegistryImpl(this,directiveFilter, toolFilter, tagFilter);
         this.sessionListener = sessionListener;
-        NaruModelConfig model0 = null;
-        NaruModelConfig model = model0;
-        if (model == null) {
-            model = getProjectEnv("model").flatMap(x -> findModel(new NaruModelConfig(x))).orNull();
-        } else {
-            model = findModel(model0).orNull();
-        }
-        if (model == null) {
-            List<NaruModelInfo> any = registry.modelsInfos(this)
-                    .stream().filter(x -> x.capabilities().isTools()).collect(Collectors.toList());
-            if (any.isEmpty()) {
-                if (model0 == null) {
-                    warn(NMsg.ofC("no model (with tools capability) was found at all"));
-                } else {
-                    warn(NMsg.ofC("model %s not found. actually no model (with tools capability) was found at all", model0));
-                }
-            } else {
-                model = findModel(any.get(0).key().toString()).orNull();
-                if (model == null) {
-                    warn(NMsg.ofC("model %s not found.", model0));
-                } else {
-                    warn(NMsg.ofC("model %s not found. auto select %s", model0, model.toText()));
-                }
-            }
-        }
-        this.model = model;
         this.scheduler = new NaruSchedulerImpl(this);
         this.eventLog = new NaruSessionEventLogImpl(new NaruEventLogListener() {
             @Override
@@ -254,6 +228,37 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         ensureNotStopped();
         return new ArrayList<>(tasks.values());
     }
+    private NOptional<NaruModelConfig> resolveModel(){
+        if(this.model!=null){
+            return NOptional.of(this.model);
+        }
+        NaruModelConfig model0 = this.model;
+        NaruModelConfig model = model0;
+        if (model == null) {
+            model = getProjectEnv("model").flatMap(x -> findModel(new NaruModelConfig(x))).orNull();
+        } else {
+            model = findModel(model0).orNull();
+        }
+        if (model == null) {
+            List<NaruModelInfo> any = registry.modelsInfos(this)
+                    .stream().filter(x -> x.capabilities().isTools()).collect(Collectors.toList());
+            if (any.isEmpty()) {
+                if (model0 == null) {
+                    warn(NMsg.ofC("⚠ no model (with tools capability) was found at all"));
+                } else {
+                    warn(NMsg.ofC("⚠ model %s not found. actually no model (with tools capability) was found at all", model0));
+                }
+            } else {
+                model = findModel(any.get(0).key().toString()).orNull();
+                if (model == null) {
+                    warn(NMsg.ofC("model %s not found.", model0));
+                } else {
+                    warn(NMsg.ofC("model %s not found. auto select %s", model0, model.toText()));
+                }
+            }
+        }
+        return NOptional.ofNamed(model,"model");
+    }
 
     @Override
     public NaruTask newTask(NaruTaskSpec taskBuilder) {
@@ -272,7 +277,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);
-            natuTask._setModel(model);
+            natuTask._setModel(resolveModel().get());
         } else {
             natuTask._setInputMode(NaruInputMode.LINE);
             natuTask._setWorkingDir(cwd == null ? parent.workingDir() : cwd);

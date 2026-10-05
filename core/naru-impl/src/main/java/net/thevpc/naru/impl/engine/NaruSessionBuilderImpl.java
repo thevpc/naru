@@ -117,6 +117,9 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
 
     @Override
     public NaruSession build() {
+        if (banner) {
+            printBanner();
+        }
         NPath dir = directory != null ? directory : agent.defaultSessionDirectory();
         NaruInteraction useInteraction = interaction != null
                 ? interaction
@@ -138,9 +141,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
         if (richTerm) {
             enableRichTerm(useInteraction, session);
         }
-        if (banner) {
-            printBanner();
-        }
+
         return session;
     }
 
