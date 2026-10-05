@@ -190,19 +190,19 @@ public class NaruBudgetExtensionTest {
     }
 
     /**
-     * Registration for /stats moved out of naru-tools-llm and into this module's own
-     * provider, so this is the assertion that the command did not simply disappear.
-     * Aliases resolve through findDirective rather than the directives() map, so both
-     * spellings are checked the way a user would actually reach them.
+     * Registration moved out of naru-tools-llm and into this module's own provider,
+     * and the command was renamed with it: what used to be {@code /stat} reports a
+     * budget, so it is {@code /budget} now. This assertion says the directive did not
+     * simply disappear in that move -- it used to be checking for a name the code had
+     * stopped answering to, and failing on every run since the rename.
      */
     @Test
-    public void theStatsDirectiveIsStillRegisteredUnderBothNames() {
+    public void theBudgetDirectiveIsRegisteredUnderItsCurrentName() {
         NaruSessionImpl session = newSession("directive");
 
-        Assertions.assertTrue(session.registry().directives().containsKey("stat"),
-                "/stat is the primary name and must be registered");
-        Assertions.assertTrue(session.registry().findDirective("stats").isPresent(),
-                "/stats is the alias and must still resolve after the move");
-        Assertions.assertTrue(session.registry().findDirective("stat").isPresent());
+        Assertions.assertTrue(session.registry().directives().containsKey("budget"),
+                "/budget is the name the directive answers to and must be registered");
+        Assertions.assertTrue(session.registry().findDirective("budget").isPresent(),
+                "and it must resolve the way a user reaches it");
     }
 }

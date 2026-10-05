@@ -5,7 +5,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.naru.ext.models.openapi.NaruOpenApiResponseParser;
 import net.thevpc.naru.ext.models.util.NaruModelUtils;
-import net.thevpc.naru.ext.models.util.NaruToolSchema;
+import net.thevpc.naru.api.registry.NaruToolSchema;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.concurrent.NRetryCall;
 import net.thevpc.nuts.elem.*;

@@ -4,7 +4,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.ext.models.util.NaruToolSchema;
+import net.thevpc.naru.api.registry.NaruToolSchema;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
 

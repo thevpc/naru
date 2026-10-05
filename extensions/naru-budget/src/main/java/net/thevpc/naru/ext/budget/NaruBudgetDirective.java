@@ -9,6 +9,7 @@ import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NStringBuilder;
 
@@ -53,34 +54,18 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
             task.log(NaruLogMode.AGENT_RESPONSE, msg);
             sb.println(msg.toString());
             for (NaruRateLimitBucket requestBucket : s.requestBuckets()) {
-                NMsg bmsg = NMsg.ofC("      request limits / %s : %s %s, %s %s, %s %s, %s %s",
-                                NMsg.ofStyledPrimary2(requestBucket.getWindow().name().toLowerCase()),
-                                "limit",
-                                requestBucket.getLimit().orNull(),
-                                "used",
-                                (requestBucket.getLimit().orNull() != null && requestBucket.getRemaining().orNull() != null) ? (requestBucket.getLimit().orNull() - requestBucket.getRemaining().orNull()) : null,
-                                "remaining",
-                                requestBucket.getRemaining().orNull(),
-                                requestBucket.getResetTime().orNull() == null ? "" : "resetTime",
-                                requestBucket.getResetTime().orNull()
-                        )
-                ;
+                NMsg bmsg = bucketMsg("request", requestBucket);
+                if (bmsg == null) {
+                    continue;
+                }
                 task.log(NaruLogMode.AGENT_RESPONSE, bmsg);
                 sb.println(bmsg.toString());
             }
-            for (NaruRateLimitBucket requestBucket : s.tokenBuckets()) {
-                NMsg tmsg = NMsg.ofC("      token   limits / %s : %s %s, %s %s, %s %s, %s %s",
-                                NMsg.ofStyledPrimary2(requestBucket.getWindow().name().toLowerCase()),
-                                "limit",
-                                requestBucket.getLimit().orNull(),
-                                "used",
-                                (requestBucket.getLimit().orNull() != null && requestBucket.getRemaining().orNull() != null) ? (requestBucket.getLimit().orNull() - requestBucket.getRemaining().orNull()) : null,
-                                "remaining",
-                                requestBucket.getRemaining().orNull(),
-                                requestBucket.getResetTime().orNull() == null ? "" : "resetTime",
-                                requestBucket.getResetTime().orNull()
-                        )
-                ;
+            for (NaruRateLimitBucket tokenBucket : s.tokenBuckets()) {
+                NMsg tmsg = bucketMsg("token  ", tokenBucket);
+                if (tmsg == null) {
+                    continue;
+                }
                 task.log(NaruLogMode.AGENT_RESPONSE, tmsg);
                 sb.println(tmsg.toString());
             }
@@ -90,16 +75,16 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
             NMsg msg = NMsg.ofC("%s", modelStat.getModel().toMsg()).asError();
             task.log(NaruLogMode.AGENT_RESPONSE, msg);
             sb.println(msg.toString());
-            double userPercent = modelStat.getContextUsage() * 1.0 / modelStat.getContextSize();
-            double peakPercent = modelStat.getPeakContextUsage() * 1.0 / modelStat.getContextSize();
             NMsg ctxMsg = NMsg.ofC("  %s  | %s %s, %s %s, %s %s",
                             NMsg.ofStyledPrimary1("context"),
                             "used",
-                            NMsg.ofStyledNumber(new DecimalFormat("0.00%").format(userPercent)),
+                            contextShare(modelStat.getContextUsage(), modelStat.getContextSize()),
                             "peak",
-                            NMsg.ofStyledNumber(new DecimalFormat("0.00%").format(peakPercent)),
+                            contextShare(modelStat.getPeakContextUsage(), modelStat.getContextSize()),
                             "available",
-                            NaruUtils.formattedTokensSize(modelStat.getContextSize())
+                            modelStat.getContextSize() > 0
+                                    ? NaruUtils.formattedTokensSize(modelStat.getContextSize())
+                                    : NMsg.ofC("%s", "unknown")
                     )
             ;
             task.log(NaruLogMode.AGENT_RESPONSE, ctxMsg);
@@ -128,8 +113,10 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
             ;
             task.log(NaruLogMode.AGENT_RESPONSE, tokMsg);
             sb.println(tokMsg.toString());
+            // "budget" next to a spend figure read as an allowance; what this is is the
+            // money already spent, unit price times tokens
             NMsg budgMsg = NMsg.ofC("  %s   | %s",
-                            NMsg.ofStyledPrimary1("budget"),
+                            NMsg.ofStyledPrimary1("cost"),
                             modelStat.getTotalTokensBudget()
                     )
             ;
@@ -138,104 +125,244 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
 
         }
         PromptStats promptStats = estimateTokens(task);
-        NMsg toolsMsg = NMsg.ofC("  tools : %s | messages : %s",
-                        promptStats.tools,
-                        promptStats.messages
+        NMsg toolsMsg = NMsg.ofC("  tool defs : %s | messages : %s | tool calls : %s",
+                        promptStats.toolDefs,
+                        promptStats.messages,
+                        promptStats.toolCalls
                 )
         ;
         task.log(NaruLogMode.AGENT_RESPONSE, toolsMsg);
         sb.println(toolsMsg.toString());
-        NMsg tokensMsg = NMsg.ofC("  tokens : %s | system : %s | user : %s | tools : %s | assistant : %s | agent : %s",
+        NMsg tokensMsg = NMsg.ofC("  estimated tokens : %s | system : %s, user : %s, agent : %s, assistant : %s, tool defs : %s, tool results : %s",
                         promptStats.tokens,
-                        NMsg.ofStyledNumber(percent(promptStats.systemTokens, promptStats.tokens)),
-                        NMsg.ofStyledNumber(percent(promptStats.userTokens, promptStats.tokens)),
-                        NMsg.ofStyledNumber(percent(promptStats.toolsTokens, promptStats.tokens)),
-                        NMsg.ofStyledNumber(percent(promptStats.assistantTokens, promptStats.tokens)),
-                        NMsg.ofStyledNumber(percent(promptStats.agentTokens, promptStats.tokens))
+                        share(promptStats.tokens(Bucket.SYSTEM), promptStats.tokens),
+                        share(promptStats.tokens(Bucket.USER), promptStats.tokens),
+                        share(promptStats.tokens(Bucket.AGENT), promptStats.tokens),
+                        share(promptStats.tokens(Bucket.ASSISTANT), promptStats.tokens),
+                        share(promptStats.tokens(Bucket.TOOL_DEFS), promptStats.tokens),
+                        share(promptStats.tokens(Bucket.TOOL_RESULTS), promptStats.tokens)
                 )
         ;
         task.log(NaruLogMode.AGENT_RESPONSE, tokensMsg);
         sb.println(tokensMsg.toString());
+        // The estimate is only as good as its calibration, and there is no other way
+        // to see that: the provider reported this many prompt tokens for the last call
+        // it billed, against the request we would send now.
+        NaruModelBudgetStats lastCall = lastCalledModel(modelStats);
+        if (lastCall != null && lastCall.getContextUsage() > 0) {
+            long reported = lastCall.getContextUsage();
+            NMsg calibMsg = NMsg.ofC("  reported last call : %s prompt tokens for %s (estimate / reported : %s)",
+                            reported,
+                            lastCall.getModel().toMsg(),
+                            new DecimalFormat("#.##").format((double) promptStats.tokens / reported)
+                    )
+            ;
+            task.log(NaruLogMode.AGENT_RESPONSE, calibMsg);
+            sb.println(calibMsg.toString());
+        }
         return NaruStmtResult.ofSuccess(sb.toString());
     }
 
-    private String percent(long q, long max) {
-        if (q == 0 || max == 0) {
-            return "0.00%";
+    /**
+     * The share of a bucket as a number plus a literal {@code %}.
+     *
+     * <p>The sign used to be inside the styled run, so the percent marker took the
+     * numeric style; and a zero total reported {@code 0%} for every bucket rather
+     * than admitting there is nothing to divide.
+     */
+    private NMsg share(long part, long total) {
+        if (total <= 0) {
+            return NMsg.ofC("%s", "n/a");
         }
-        return new DecimalFormat("#.###").format(100.0 * q / (double) max)+"%";
+        return NMsg.ofC("%s%s", NMsg.ofStyledNumber(percent(part, total)), "%");
     }
 
-    private static class PromptStats {
-        long toolsTokens;
-        long systemTokens;
-        long assistantTokens;
-        long userTokens;
-        long agentTokens;
-        long tokens;
-        long tools;
+    private NMsg contextShare(long used, long size) {
+        return share(used, size);
+    }
+
+    private static NaruModelBudgetStats lastCalledModel(List<NaruModelBudgetStats> modelStats) {
+        NaruModelBudgetStats best = null;
+        for (NaruModelBudgetStats s : modelStats) {
+            if (best == null || s.getContextUsage() > best.getContextUsage()) {
+                best = s;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * A rate-limit bucket with neither a limit nor a remaining count carries no
+     * information, and printing it anyway filled the report with
+     * {@code limit null, used null, remaining null} lines that read like missing
+     * accounting rather than like "this provider told us nothing".
+     */
+    private NMsg bucketMsg(String kind, NaruRateLimitBucket bucket) {
+        Integer limit = bucket.getLimit().orNull();
+        Integer remaining = bucket.getRemaining().orNull();
+        if (limit == null && remaining == null) {
+            return null;
+        }
+        return NMsg.ofC("      %s limits / %s : %s %s, %s %s, %s %s, %s %s",
+                        kind,
+                        NMsg.ofStyledPrimary2(bucket.getWindow().name().toLowerCase()),
+                        "limit",
+                        limit,
+                        "used",
+                        (limit != null && remaining != null) ? limit - remaining : null,
+                        "remaining",
+                        remaining,
+                        "resetTime",
+                        bucket.getResetTime().orNull()
+                );
+    }
+
+    private String percent(long q, long max) {
+        if (max == 0) {
+            return "n/a";
+        }
+        return new DecimalFormat("#.###").format(100.0 * q / (double) max);
+    }
+
+    /**
+     * Where the characters in an outgoing request are attributed.
+     *
+     * <p>The split has to be decided here rather than left to the reader: "tools" used
+     * to mean two different things at once -- the schemas of the tools being offered
+     * (sent on every call) and the results tools handed back (sent once) -- so a
+     * context that looked tool-heavy could not be told which half was growing.
+     */
+    enum Bucket {
+        SYSTEM,
+        USER,
+        AGENT,
+        ASSISTANT,
+        TOOL_RESULTS,
+        TOOL_DEFS
+    }
+
+    static final class PromptStats {
+        final long[] chars = new long[Bucket.values().length];
+        final long[] bucketTokens = new long[Bucket.values().length];
+
+        long toolDefs;
         long messages;
+        long tokens;
+        long toolResults;
+        long toolCalls;
+
+        long chars(Bucket b) {
+            return chars[b.ordinal()];
+        }
+
+        long tokens(Bucket b) {
+            return bucketTokens[b.ordinal()];
+        }
+
+        void add(Bucket b, long n) {
+            chars[b.ordinal()] += n;
+        }
     }
 
-    private PromptStats estimateTokens(NaruTask session) {
+    /**
+     * Rough per-message framing the provider charges for on top of the text: the role
+     * marker, the turn separators, the structural keys. Ignored before, which made
+     * short conversations look far cheaper than they are billed.
+     */
+    static final int MSG_OVERHEAD_CHARS = 16;
+
+    /**
+     * Characters per token. A coarse average over prose and code; the reported
+     * figure is what the provider billed, so this exists to be calibrated against,
+     * not to replace it.
+     */
+    static final double CHARS_PER_TOKEN = 4.0;
+
+    /**
+     * The character cost of {@code toString()} on the arguments, so a tool call with a
+     * large object argument is not priced as if it were empty.
+     */
+    private static int chars(Object o) {
+        return o == null ? 0 : o.toString().length();
+    }
+
+    /**
+     * Bucketed character estimate of the request {@code context(...)} would produce.
+     */
+    static PromptStats estimateTokens(NaruTask session) {
+        return estimateTokens(session.context(NaruSource.values()));
+    }
+
+    static PromptStats estimateTokens(NaruModelRequest r) {
         PromptStats s = new PromptStats();
-        NaruModelRequest r = session.context(NaruSource.values());
-        s.tools = r.tools().size();
-        NaruModelRequest estimatedMessage = new NaruModelRequest(
-                r.messages(),
-                r.tools(), new LinkedHashMap<>());
-        s.messages = estimatedMessage.messages().size();
-        for (NaruMessage msg : estimatedMessage.messages()) {
-            if (msg.getContent() != null) {
-                int c = msg.getContent().length();
-                s.tokens += c;
-                switch (msg.getRole()) {
-                    case tool: {
-                        s.toolsTokens += c;
-                        break;
-                    }
-                    case system: {
-                        s.systemTokens += c;
-                        break;
-                    }
-                    case assistant: {
-                        s.assistantTokens += c;
-                        break;
-                    }
-                    case user: {
-                        switch (msg.getSource()) {
-                            case USER: {
-                                s.userTokens += c;
-                                break;
-                            }
-                            default: {
-                                s.agentTokens += c;
-                                break;
-                            }
-                        }
-                        break;
+        s.toolDefs = r.tools() == null ? 0 : r.tools().size();
+        List<NaruMessage> messages = r.messages();
+        if (messages != null) {
+            s.messages = messages.size();
+            for (NaruMessage msg : messages) {
+                Bucket b = bucketOf(msg);
+                s.add(b, MSG_OVERHEAD_CHARS);
+                if (msg.getContent() != null) {
+                    s.add(b, msg.getContent().length());
+                }
+                // a tool call is assistant text the provider still tokenizes: the name
+                // plus the serialized arguments, and it stays in the history on every
+                // later call
+                if (msg.getToolCalls() != null) {
+                    for (NaruToolCall call : msg.getToolCalls()) {
+                        s.toolCalls++;
+                        s.add(b, chars(call.getName()) + chars(call.getArguments()));
                     }
                 }
             }
         }
-        for (NaruToolDefinition tool : r.tools()) {
-            if (tool.getName() != null) {
-                s.toolsTokens += tool.getName().length();
-                s.tokens += tool.getName().length();
-            }
-            if (tool.getDescription() != null) {
-                s.toolsTokens += tool.getDescription().length();
-                s.tokens += tool.getDescription().length();
+        if (r.tools() != null) {
+            for (NaruToolDefinition tool : r.tools()) {
+                s.add(Bucket.TOOL_DEFS, chars(tool.getName()) + chars(tool.getDescription()));
+                if (tool instanceof NaruToolDefinitionFunction f) {
+                    s.add(Bucket.TOOL_DEFS, schemaChars(f.getParams()));
+                }
             }
         }
-        s.tokens = s.tokens / 4;
-        s.systemTokens = s.systemTokens / 4;
-        s.toolsTokens = s.toolsTokens / 4;
-        s.userTokens = s.userTokens / 4;
-        s.assistantTokens = s.assistantTokens / 4;
-        s.agentTokens = s.agentTokens / 4;
+        for (Bucket b : Bucket.values()) {
+            // rounded per bucket, not on the grand total: a system prompt of 6 chars is
+            // 2 tokens of overhead to the provider, and hiding that inside a large sum
+            // is what let the shares stop adding up to the headline
+            s.bucketTokens[b.ordinal()] = Math.round(s.chars(b) / CHARS_PER_TOKEN);
+            s.tokens += s.bucketTokens[b.ordinal()];
+        }
+        s.toolResults = s.tokens(Bucket.TOOL_RESULTS);
         return s;
     }
 
+    private static Bucket bucketOf(NaruMessage msg) {
+        switch (msg.getRole()) {
+            case tool:
+                return Bucket.TOOL_RESULTS;
+            case system:
+                return Bucket.SYSTEM;
+            case assistant:
+                return Bucket.ASSISTANT;
+            case user:
+                return msg.getSource() == NaruSource.USER ? Bucket.USER : Bucket.AGENT;
+            default:
+                // summary blocks stand in for conversation, and they are replayed on
+                // every call like any other context
+                return Bucket.SYSTEM;
+        }
+    }
 
+    /**
+     * The size of the {@code parameters} block the protocol will actually send,
+     * rendered by the same writer the serializers use. Counting the parameter names
+     * instead would miss the descriptions and constraints, which are most of it.
+     */
+    private static int schemaChars(List<net.thevpc.naru.api.registry.NaruToolParameter> params) {
+        if (params == null || params.isEmpty()) {
+            return 0;
+        }
+        return NElementWriter.ofJson()
+                .formatPlain(net.thevpc.naru.api.registry.NaruToolSchema.functionSchema(params))
+                .length();
+    }
 }

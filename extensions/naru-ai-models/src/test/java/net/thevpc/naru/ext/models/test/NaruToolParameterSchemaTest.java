@@ -6,7 +6,7 @@ import net.thevpc.naru.ext.models.anthropic.NaruAnthropicRequestSerializer;
 import net.thevpc.naru.ext.models.gemini.NaruGeminiNativeRequestSerializer;
 import net.thevpc.naru.ext.models.ollama.NaruOllamaNativeRequestSerializer;
 import net.thevpc.naru.ext.models.openapi.NaruOpenApiRequestSerializer;
-import net.thevpc.naru.ext.models.util.NaruToolSchema;
+import net.thevpc.naru.api.registry.NaruToolSchema;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NArrayElement;
