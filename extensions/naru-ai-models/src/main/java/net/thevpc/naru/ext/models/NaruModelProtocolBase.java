@@ -5,6 +5,7 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.ext.models.cache.NaruModelCaching;
 import net.thevpc.naru.ext.models.stream.NaruStreamResponseParser;
 import net.thevpc.naru.ext.models.util.NaruModelUtils;
+import net.thevpc.nuts.concurrent.NCallable;
 import net.thevpc.nuts.concurrent.NRetryCall;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.log.NLog;
@@ -331,78 +332,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         AtomicReference<NDuration> dynamicRetryAfter = new AtomicReference<>();
         AtomicInteger attemptCounter = new AtomicInteger(0);
         NElement headersElements = NElement.of(request.headers());
-        try (NRetryCall<NaruResponse> retryCall = NRetryCall.of("llm-" + provider().name() + "-" + UUID.randomUUID(), () -> {
-            int attempt = attemptCounter.incrementAndGet();
-            NChronometer chrono = NChronometer.of();
-            java.time.Instant reqTime = java.time.Instant.now();
-                NHttpResponse response = null;
-                String responseString = null;
-                Throwable error = null;
-                try {
-                    NaruModelUtils.logWebRequest(request, NMsg.ofC("chat with %s (attempt %s)", model, attempt), body);
-                    response = request.run();
-                    NHttpCode code = response.statusCode();
-
-                    String errorBody = classifyStatus(response, dynamicRetryAfter);
-                    if (errorBody != null) {
-                        responseString = errorBody;
-                        if (response.isClientError()) {
-                            throw new NonRetryableWebException(new NHttpResponseException(
-                                    NMsg.ofC("Client error (HTTP %s) from %s: %s", code, provider().name(), response.statusMessage()),
-                                    null,
-                                    response.statusCode()
-                            ), responseString);
-                        }
-                        // 429 or a retryable 5xx
-                        throw new NHttpResponseException(
-                                NMsg.ofC("%s from %s: %s",
-                                        code.equals(NHttpCode.TOO_MANY_REQUESTS)
-                                                ? "Rate limit exceeded (HTTP 429)"
-                                                : "Server error (HTTP " + code + ")",
-                                        provider().name(), response.statusMessage()),
-                                null,
-                                response.statusCode()
-                        );
-                    }
-
-                responseString = response.contentAsString();
-                onResponseReceived(response, task);
-                NElement responseElement = null;
-                try {
-                    responseElement = NElementReader.ofJson().read(responseString);
-                } catch (Exception ignored) {
-                }
-                NaruModelUtils.logWebResponse(request, NMsg.ofC("chat with %s (attempt %s)", model, attempt), body, responseElement != null ? responseElement : responseString, chrono);
-                NaruResponse naruResponse = parseResponse(responseString);
-                if (toolsWrapped || emulate_tool_calls) {
-                    naruResponse = NoToolWrapHelper.unwrapResponse(naruResponse, NoToolWrapHelper.TOOL_CALL_SEP, task);
-                }
-                // Only now that the provider has accepted the request is the
-                // prefix genuinely stored. Committing earlier — say, right after
-                // serialising — would record a prefix that a failed call never
-                // cached, and the next turn would trust a lie.
-                commitCacheState(preparedModelRequest, cachePlan, cachingMode, task);
-                return naruResponse;
-            } catch (Throwable t) {
-                error = t instanceof NonRetryableWebException ? t.getCause() : t;
-                throw t;
-            } finally {
-                NaruModelUtils.logAudit(
-                        task,
-                        task != null ? task.session() : null,
-                        provider().name(),
-                        model.model(),
-                        request,
-                        body,
-                        response,
-                        responseString,
-                        error,
-                        attempt,
-                        chrono.duration(),
-                        reqTime
-                );
-            }
-        })) {
+        try (NRetryCall<NaruResponse> retryCall = NRetryCall.of("llm-" + provider().name() + "-" + UUID.randomUUID(), new NaruProtocolChatWebCall(attemptCounter, request, body, dynamicRetryAfter, task, toolsWrapped, emulate_tool_calls, preparedModelRequest, cachePlan, cachingMode))) {
             retryCall.maxRetries(maxRetries)
                     .retryPeriod(attempt -> {
                         NDuration custom = dynamicRetryAfter.getAndSet(null);
@@ -415,27 +345,28 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
 
             try {
                 return retryCall.call();
-            } catch (NonRetryableWebException nre) {
-                Throwable cause = nre.getCause();
-                NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s\n-----HEADERS\n%s\n-----HEADERS\n-----BODY\n%s\n-----BODY\n-----RESPONSE\n%s\n-----RESPONSE",
-                        provider().name(), request.effectiveUri(), cause.getMessage(),
-                        NElementWriter.ofTson().formatPlain(headersElements),
-                        NElementWriter.ofTson().formatPlain(body),
-                        nre.getResponseString()
-                ).asError());
-                throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with %s at %s: %s", provider().name(), request.effectiveUri(), cause.getMessage(), cause));
             } catch (Exception e) {
-                NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s\n-----HEADERS\n%s\n-----HEADERS\n-----BODY\n%s\n-----BODY",
-                        provider().name(), request.effectiveUri(), e.getMessage(),
-                        NElementWriter.ofTson().formatPlain(headersElements),
-                        NElementWriter.ofTson().formatPlain(body)
-                ).asError());
-                throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with %s at %s: %s", provider().name(), request.effectiveUri(), e.getMessage(), e));
+                throw createAndLogWebError(request.effectiveUri(),headersElements,body,e);
             }
         }
     }
 
-
+    private RuntimeException createAndLogWebError(String effectiveUri, NElement headersElements, NElement body, Throwable error){
+        Throwable cause=error;
+        String responseString=null;
+        if(error instanceof NonRetryableWebException) {
+            cause = error.getCause();
+            responseString=((NonRetryableWebException)error).getResponseString();
+        }
+        NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s\n-----HEADERS\n%s\n-----HEADERS\n-----BODY\n%s\n-----BODY%s",
+                provider().name(), effectiveUri, cause.getMessage(),
+                NElementWriter.ofTson().formatPlain(headersElements),
+                NElementWriter.ofTson().formatPlain(body),
+                responseString==null?"":
+                        NMsg.ofC("\n-----RESPONSE\n%s\n-----RESPONSE",responseString)
+        ).asError());
+        return new NIllegalArgumentException(NMsg.ofC("Failed to communicate with %s at %s: %s", provider().name(), effectiveUri, cause.getMessage(), cause));
+    }
     // ── Streaming ──────────────────────────────────────────────────────────────
 
     @Override
@@ -514,14 +445,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 commitCacheState(preparedModelRequest, cachePlan, cachingMode, task);
                 return result;
             } catch (NonRetryableWebException nre) {
-                NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s\n-----HEADERS\n%s\n-----HEADERS\n-----BODY\n%s\n-----BODY\n-----RESPONSE\n%s\n-----RESPONSE",
-                        provider().name(), request.effectiveUri(), nre.getCause().getMessage(),
-                        NElementWriter.ofTson().formatPlain(headersElements),
-                        NElementWriter.ofTson().formatPlain(body),
-                        nre.getResponseString()
-                ).asError());
-                throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with %s at %s: %s",
-                        provider().name(), request.effectiveUri(), nre.getCause().getMessage(), nre.getCause()));
+                throw createAndLogWebError(request.effectiveUri(),headersElements,body,nre);
             } catch (Exception e) {
                 error = e;
                 // Nothing delivered yet means the user saw nothing, so a retry is
@@ -542,10 +466,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                     }
                     continue;
                 }
-                NLog.of(getClass()).log(NMsg.ofC("Failed to communicate with %s at %s: %s",
-                        provider().name(), request.effectiveUri(), e.getMessage()).asError());
-                throw new NIllegalArgumentException(NMsg.ofC("Failed to communicate with %s at %s: %s",
-                        provider().name(), request.effectiveUri(), e.getMessage(), e));
+                throw createAndLogWebError(request.effectiveUri(),headersElements,body,e);
             } finally {
                 NaruModelUtils.logAudit(task, task != null ? task.session() : null,
                         provider().name(), model.model(), request, body, response,
@@ -587,5 +508,103 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return capabilities;
     }
 
+    private class NaruProtocolChatWebCall implements NCallable<NaruResponse> {
+        private final AtomicInteger attemptCounter;
+        private final NHttpRequest request;
+        private final NElement body;
+        private final AtomicReference<NDuration> dynamicRetryAfter;
+        private final NaruTask task;
+        private final boolean toolsWrapped;
+        private final boolean emulate_tool_calls;
+        private final NaruModelRequest preparedModelRequest;
+        private final NaruCachePlanView cachePlan;
+        private final NaruCachingMode cachingMode;
 
+        public NaruProtocolChatWebCall(AtomicInteger attemptCounter, NHttpRequest request, NElement body, AtomicReference<NDuration> dynamicRetryAfter, NaruTask task, boolean toolsWrapped, boolean emulate_tool_calls, NaruModelRequest preparedModelRequest, NaruCachePlanView cachePlan, NaruCachingMode cachingMode) {
+            this.attemptCounter = attemptCounter;
+            this.request = request;
+            this.body = body;
+            this.dynamicRetryAfter = dynamicRetryAfter;
+            this.task = task;
+            this.toolsWrapped = toolsWrapped;
+            this.emulate_tool_calls = emulate_tool_calls;
+            this.preparedModelRequest = preparedModelRequest;
+            this.cachePlan = cachePlan;
+            this.cachingMode = cachingMode;
+        }
+
+        @Override
+        public NaruResponse call() {
+            int attempt = attemptCounter.incrementAndGet();
+            NChronometer chrono = NChronometer.of();
+            java.time.Instant reqTime = java.time.Instant.now();
+            NHttpResponse response = null;
+            String responseString = null;
+            Throwable error = null;
+            try {
+                NaruModelUtils.logWebRequest(request, NMsg.ofC("chat with %s (attempt %s)", model, attempt), body);
+                response = request.run();
+                NHttpCode code = response.statusCode();
+
+                String errorBody = NaruModelProtocolBase.this.classifyStatus(response, dynamicRetryAfter);
+                if (errorBody != null) {
+                    responseString = errorBody;
+                    if (response.isClientError()) {
+                        throw new NonRetryableWebException(new NHttpResponseException(
+                                NMsg.ofC("Client error (HTTP %s) from %s: %s", code, NaruModelProtocolBase.this.provider().name(), response.statusMessage()),
+                                null,
+                                response.statusCode()
+                        ), responseString);
+                    }
+                    // 429 or a retryable 5xx
+                    throw new NHttpResponseException(
+                            NMsg.ofC("%s from %s: %s",
+                                    code.equals(NHttpCode.TOO_MANY_REQUESTS)
+                                            ? "Rate limit exceeded (HTTP 429)"
+                                            : "Server error (HTTP " + code + ")",
+                                    NaruModelProtocolBase.this.provider().name(), response.statusMessage()),
+                            null,
+                            response.statusCode()
+                    );
+                }
+
+                responseString = response.contentAsString();
+                NaruModelProtocolBase.this.onResponseReceived(response, task);
+                NElement responseElement = null;
+                try {
+                    responseElement = NElementReader.ofJson().read(responseString);
+                } catch (Exception ignored) {
+                }
+                NaruModelUtils.logWebResponse(request, NMsg.ofC("chat with %s (attempt %s)", model, attempt), body, responseElement != null ? responseElement : responseString, chrono);
+                NaruResponse naruResponse = NaruModelProtocolBase.this.parseResponse(responseString);
+                if (toolsWrapped || emulate_tool_calls) {
+                    naruResponse = NoToolWrapHelper.unwrapResponse(naruResponse, NoToolWrapHelper.TOOL_CALL_SEP, task);
+                }
+                // Only now that the provider has accepted the request is the
+                // prefix genuinely stored. Committing earlier — say, right after
+                // serialising — would record a prefix that a failed call never
+                // cached, and the next turn would trust a lie.
+                NaruModelProtocolBase.this.commitCacheState(preparedModelRequest, cachePlan, cachingMode, task);
+                return naruResponse;
+            } catch (Throwable t) {
+                error = t instanceof NonRetryableWebException ? t.getCause() : t;
+                throw t;
+            } finally {
+                NaruModelUtils.logAudit(
+                        task,
+                        task != null ? task.session() : null,
+                        NaruModelProtocolBase.this.provider().name(),
+                        model.model(),
+                        request,
+                        body,
+                        response,
+                        responseString,
+                        error,
+                        attempt,
+                        chrono.duration(),
+                        reqTime
+                );
+            }
+        }
+    }
 }
