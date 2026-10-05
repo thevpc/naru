@@ -124,10 +124,10 @@ class NaruBudgetServiceImpl implements NaruBudgetService {
             into.setCacheReadTokens(into.getCacheReadTokens() + part.getCacheReadTokens());
         }
 
-        into.setContextUsage(into.getCompletionTokens() + part.getPromptTokens());
-        into.setTotalTokens(into.getTotalTokens() + into.getContextUsage());
-        long old = into.getPeakContextUsage();
-        into.setPeakContextUsage(Math.max(old, into.getContextUsage()));
+        long callTokens = part.getPromptTokens() + part.getCompletionTokens();
+        into.setContextUsage(callTokens);
+        into.setTotalTokens(into.getTotalTokens() + callTokens);
+        into.setPeakContextUsage(Math.max(into.getPeakContextUsage(), callTokens));
         into.setCalls(into.getCalls() + 1);
         into.setAccumulatedDuration(into.getAccumulatedDuration() + part.getDuration().toMillis());
         if (into.getMinDuration() == 0) {
