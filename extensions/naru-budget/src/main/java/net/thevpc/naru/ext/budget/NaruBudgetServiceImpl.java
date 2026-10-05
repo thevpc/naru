@@ -141,7 +141,10 @@ class NaruBudgetServiceImpl implements NaruBudgetService {
             into.setPeakContextUsage(Math.max(into.getPeakContextUsage(), callTokens));
             into.setCalls(into.getCalls() + 1);
             into.setAccumulatedDuration(into.getAccumulatedDuration() + part.getDuration().toMillis());
-            if (into.getMinDuration() == 0) {
+            // "no duration recorded yet" is calls == 0, not minDuration == 0: a call
+            // that really took 0 ms is a legitimate minimum, and testing for 0 would
+            // keep re-adopting every such call and make min duration hover at zero.
+            if (into.getCalls() == 1) {
                 into.setMinDuration(part.getDuration().toMillis());
             } else {
                 into.setMinDuration(Math.min(into.getMinDuration(), part.getDuration().toMillis()));

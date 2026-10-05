@@ -119,6 +119,11 @@ public class NaruBudgetAccumulationTest {
                 Instant.now(), NDuration.ofMillis(10));
     }
 
+    private static NaruTokenTransaction tx(long prompt, long completion, long millis) {
+        return new NaruTokenTransaction("s1", null, CONFIG, prompt, completion,
+                Instant.now(), NDuration.ofMillis(millis));
+    }
+
     private static NaruTokenTransaction userTx(String userId, long prompt, long completion) {
         return new NaruTokenTransaction("s1", userId, CONFIG, prompt, completion,
                 Instant.now(), NDuration.ofMillis(10));
@@ -287,6 +292,46 @@ public class NaruBudgetAccumulationTest {
         Assertions.assertEquals(2L * threads * perThread, stats.getTotalTokens());
         Assertions.assertEquals((long) threads * perThread, stats.getPromptTokens());
         Assertions.assertEquals((long) threads * perThread, stats.getCompletionTokens());
+    }
+
+    /**
+     * A call that really took 0 ms is a valid minimum, not the absence of one. Reading
+     * {@code minDuration == 0} as "unset" made every later 0 ms call overwrite the
+     * minimum, so a session with one slow call and several instant ones reported a
+     * minimum of zero.
+     */
+    @Test
+    public void aZeroMillisecondCallIsARealMinimum() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+
+        svc.trackTransaction(tx(10, 1, 0));
+        svc.trackTransaction(tx(10, 1, 250));
+        svc.trackTransaction(tx(10, 1, 40));
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL, null);
+        // compared in millis rather than by equality: normalize() may render a
+        // zero-length duration differently from the NDuration.ZERO constant while
+        // describing the same instant
+        Assertions.assertEquals(0, stats.getMinDuration().toMillis(),
+                "0 ms was genuinely observed and must be reported as the minimum");
+        Assertions.assertEquals(250, stats.getMaxDuration().toMillis());
+    }
+
+    /**
+     * With no calls at all there is no minimum to report, and that stays a plain zero
+     * rather than a fabricated value.
+     */
+    @Test
+    public void noCallsMeansNoDurationsAtAll() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL, null);
+        Assertions.assertEquals(0, stats.getCallsCount());
+        Assertions.assertEquals(0, stats.getMinDuration().toMillis());
+        Assertions.assertEquals(0, stats.getAvgDuration().toMillis());
+        Assertions.assertEquals(0, stats.getMaxDuration().toMillis());
     }
 
     @Test
