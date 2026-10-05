@@ -71,7 +71,7 @@ class NaruBudgetServiceImpl implements NaruBudgetService {
         accumulate(t, a);
     }
 
-    private synchronized NaruModelStatsAccumulator statsFor(NaruModelKey m, String userId) {
+    private NaruModelStatsAccumulator statsFor(NaruModelKey m, String userId) {
         ModelAndUser k = new ModelAndUser(m, NStringUtils.stripToNull(userId));
         NaruModelStatsAccumulator o = statsByAndUser.get(k);
         if (o == null) {
@@ -106,66 +106,81 @@ class NaruBudgetServiceImpl implements NaruBudgetService {
         return a;
     }
 
+    /**
+     * Folds one call into an accumulator, atomically.
+     *
+     * <p>The map is concurrent but the accumulator is a mutable bag of counters, so
+     * {@code get} + {@code set} on two fields is not atomic: two parallel calls could
+     * both read the same total and one increment would vanish. Nothing here is a lock
+     * over the whole service -- unrelated models accumulate in parallel -- so the
+     * accumulator instance itself is the monitor, and a read takes the same monitor to
+     * get a snapshot that is internally consistent rather than a mix of two calls.
+     */
     private void accumulate(NaruTokenTransaction part, NaruModelStatsAccumulator into) {
-        // These are running totals across every call made against this
-        // model/user pair, so they must add. Assigning here would silently
-        // report only the most recent call's prompt and completion sizes,
-        // making a busy session look like a single-request one and understating
-        // spend for budget purposes.
-        into.setPromptTokens(into.getPromptTokens() + part.getPromptTokens());
-        into.setCompletionTokens(into.getCompletionTokens() + part.getCompletionTokens());
+        synchronized (into) {
+            // These are running totals across every call made against this
+            // model/user pair, so they must add. Assigning here would silently
+            // report only the most recent call's prompt and completion sizes,
+            // making a busy session look like a single-request one and understating
+            // spend for budget purposes.
+            into.setPromptTokens(into.getPromptTokens() + part.getPromptTokens());
+            into.setCompletionTokens(into.getCompletionTokens() + part.getCompletionTokens());
 
-        // A provider that does not report cache accounting uses -1. Treat that
-        // as zero so it cannot drag a running total backwards.
-        if (part.getCacheWriteTokens() > 0) {
-            into.setCacheWriteTokens(into.getCacheWriteTokens() + part.getCacheWriteTokens());
-        }
-        if (part.getCacheReadTokens() > 0) {
-            into.setCacheReadTokens(into.getCacheReadTokens() + part.getCacheReadTokens());
-        }
+            // A provider that does not report cache accounting uses -1. Treat that
+            // as zero so it cannot drag a running total backwards.
+            if (part.getCacheWriteTokens() > 0) {
+                into.setCacheWriteTokens(into.getCacheWriteTokens() + part.getCacheWriteTokens());
+            }
+            if (part.getCacheReadTokens() > 0) {
+                into.setCacheReadTokens(into.getCacheReadTokens() + part.getCacheReadTokens());
+            }
 
-        long callTokens = part.getPromptTokens() + part.getCompletionTokens();
-        into.setContextUsage(callTokens);
-        into.setTotalTokens(into.getTotalTokens() + callTokens);
-        into.setPeakContextUsage(Math.max(into.getPeakContextUsage(), callTokens));
-        into.setCalls(into.getCalls() + 1);
-        into.setAccumulatedDuration(into.getAccumulatedDuration() + part.getDuration().toMillis());
-        if (into.getMinDuration() == 0) {
-            into.setMinDuration(part.getDuration().toMillis());
-        } else {
-            into.setMinDuration(Math.min(into.getMinDuration(), part.getDuration().toMillis()));
+            long callTokens = part.getPromptTokens() + part.getCompletionTokens();
+            into.setContextUsage(callTokens);
+            into.setTotalTokens(into.getTotalTokens() + callTokens);
+            into.setPeakContextUsage(Math.max(into.getPeakContextUsage(), callTokens));
+            into.setCalls(into.getCalls() + 1);
+            into.setAccumulatedDuration(into.getAccumulatedDuration() + part.getDuration().toMillis());
+            if (into.getMinDuration() == 0) {
+                into.setMinDuration(part.getDuration().toMillis());
+            } else {
+                into.setMinDuration(Math.min(into.getMinDuration(), part.getDuration().toMillis()));
+            }
+            into.setMaxDuration(Math.max(into.getMaxDuration(), part.getDuration().toMillis()));
         }
-        into.setMaxDuration(Math.max(into.getMaxDuration(), part.getDuration().toMillis()));
     }
 
     @Override
     public NaruModelBudgetStats findModelBudgetStats(NaruModelKey model, String user) {
         NaruModelStatsAccumulator m = statsFor(model, user);
-        BigDecimal ub = m.getUnitBudget();
-        if (ub == null) {
-            ub = BigDecimal.ZERO;
+        // same monitor as accumulate, so the snapshot cannot straddle an update
+        synchronized (m) {
+            BigDecimal ub = m.getUnitBudget();
+            if (ub == null) {
+                ub = BigDecimal.ZERO;
+            }
+            BigDecimal all = ub.multiply(BigDecimal.valueOf(m.getTotalTokens()));
+            long accumulatedDuration = m.getAccumulatedDuration();
+            long calls = m.getCalls();
+            return new NaruModelBudgetStats(
+                    m.getModel(),
+                    m.getUserId(),
+                    m.getPromptTokens(),
+                    m.getCompletionTokens(),
+                    m.getContextUsage(),
+                    m.getPeakContextUsage(),
+                    m.getContextSize(),
+                    m.getTotalTokens(),
+                    m.getCacheWriteTokens(),
+                    m.getCacheReadTokens(),
+                    ub,
+                    all,
+                    calls,
+                    calls == 0 ? NDuration.ZERO : NDuration.ofMillis(m.getMinDuration()).normalize(),
+                    calls == 0 ? NDuration.ZERO : NDuration.ofMillis(accumulatedDuration / calls).normalize(),
+                    calls == 0 ? NDuration.ZERO : NDuration.ofMillis(m.getMaxDuration()).normalize()
+            );
         }
-        BigDecimal all = ub.multiply(BigDecimal.valueOf(m.getTotalTokens()));
-        long accumulatedDuration = m.getAccumulatedDuration();
-        long calls = m.getCalls();
-        return new NaruModelBudgetStats(
-                m.getModel(),
-                m.getUserId(),
-                m.getPromptTokens(),
-                m.getCompletionTokens(),
-                m.getContextUsage(),
-                m.getPeakContextUsage(),
-                m.getContextSize(),
-                m.getTotalTokens(),
-                m.getCacheWriteTokens(),
-                m.getCacheReadTokens(),
-                ub,
-                all,
-                calls,
-                calls == 0 ? NDuration.ZERO : NDuration.ofMillis(m.getMinDuration()).normalize(),
-                calls == 0 ? NDuration.ZERO : NDuration.ofMillis(accumulatedDuration / calls).normalize(),
-                calls == 0 ? NDuration.ZERO : NDuration.ofMillis(m.getMaxDuration()).normalize()
-        );
     }
 
     @Override

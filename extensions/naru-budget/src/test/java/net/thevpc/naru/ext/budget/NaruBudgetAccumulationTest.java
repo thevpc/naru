@@ -245,6 +245,50 @@ public class NaruBudgetAccumulationTest {
                 "the call must appear exactly once in the listing, not be dropped by the userId filter");
     }
 
+    /**
+     * {@code statsByAndUser} is a {@link java.util.concurrent.ConcurrentHashMap}, but the
+     * accumulator it holds is a mutable bag of longs: {@code get} then {@code set} is not
+     * atomic, so parallel increments overwrite each other. Several actors (or a
+     * {@code delegate_to_model} call alongside the main task) really do fold transactions
+     * in from different threads.
+     */
+    @Test
+    public void parallelTransactionsDoNotLoseUpdates() throws Exception {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+
+        int threads = 8;
+        int perThread = 1000;
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(threads);
+        for (int t = 0; t < threads; t++) {
+            Thread th = new Thread(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < perThread; i++) {
+                        svc.trackTransaction(tx(1, 1));
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    done.countDown();
+                }
+            });
+            th.setDaemon(true);
+            th.start();
+        }
+        start.countDown();
+        Assertions.assertTrue(done.await(60, java.util.concurrent.TimeUnit.SECONDS),
+                "the workers did not finish in time");
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL, null);
+        Assertions.assertEquals((long) threads * perThread, stats.getCallsCount(),
+                "a lost update shows up as a call count below the number of calls made");
+        Assertions.assertEquals(2L * threads * perThread, stats.getTotalTokens());
+        Assertions.assertEquals((long) threads * perThread, stats.getPromptTokens());
+        Assertions.assertEquals((long) threads * perThread, stats.getCompletionTokens());
+    }
+
     @Test
     public void totalTokensGrowsWithEveryCall() {
         NaruSession session = stubSession();
