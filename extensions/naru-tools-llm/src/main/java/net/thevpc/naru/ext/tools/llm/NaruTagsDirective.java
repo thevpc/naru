@@ -53,7 +53,7 @@ public class NaruTagsDirective extends NaruDirectiveBase {
                 Set<String> toAdd=new HashSet<>();
                 while (!cmdLine.isEmpty()) {
                     String tag = cmdLine.next().get().image();
-                    if(tag.equals("*")) {
+                    if(tag.equals("*") || "all".equalsIgnoreCase(tag.trim())) {
                         Map<String, NaruToolTag> tags = task.session().registry().availableTags();
                         toAdd.addAll(tags.keySet());
                     }else if(tag.contains("*")){
