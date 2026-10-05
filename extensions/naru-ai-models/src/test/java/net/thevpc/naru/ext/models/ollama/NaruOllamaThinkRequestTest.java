@@ -9,6 +9,7 @@ import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
+import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.Assertions;
@@ -33,21 +34,7 @@ public class NaruOllamaThinkRequestTest {
 
     @BeforeAll
     public static void setUp() {
-        try {
-            net.thevpc.nuts.core.NWorkspace ws =
-                    net.thevpc.nuts.Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                net.thevpc.nuts.core.NWorkspace ws = net.thevpc.nuts.Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
+        Nuts.require();
     }
 
     private static NaruModelRequest request(Map<String, NElement> env) {

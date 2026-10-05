@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.ext.models.util.NaruToolSchema;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementWriter;
@@ -78,29 +79,7 @@ public class NaruOpenApiRequestSerializer implements NaruModelRequestSerializer 
         NObjectElementBuilder functionBlock = NElement.ofObjectBuilder();
         functionBlock.set("name", fct.getName());
         functionBlock.set("description", fct.getDescription() != null ? fct.getDescription() : "");
-
-        NObjectElementBuilder paramsObj = NElement.ofObjectBuilder();
-        paramsObj.set("type", "object");
-
-        NObjectElementBuilder propertiesObj = NElement.ofObjectBuilder();
-        NArrayElementBuilder requiredArr = NElement.ofArrayBuilder();
-
-        if (fct.getParams() != null) {
-            for (NaruToolParameter p : fct.getParams()) {
-                propertiesObj.set(p.getName(), paramToSchema(p));
-
-                if (p.isRequired()) {
-                    requiredArr.add(NElement.ofString(p.getName()));
-                }
-            }
-        }
-
-        paramsObj.set("properties", propertiesObj.build());
-        if (!requiredArr.children().isEmpty()) {
-            paramsObj.set("required", requiredArr.build());
-        }
-
-        functionBlock.set("parameters", paramsObj.build());
+        functionBlock.set("parameters", NaruToolSchema.functionSchema(fct.getParams()));
 
         return NElement.ofObjectBuilder()
                 .set("type", "function")
@@ -108,47 +87,14 @@ public class NaruOpenApiRequestSerializer implements NaruModelRequestSerializer 
                 .build();
     }
 
+    /**
+     * @deprecated use {@link NaruToolSchema#paramToSchema(NaruToolParameter)}. Kept
+     * because this is a published entry point; it delegates so that every protocol
+     * shares one writer instead of each keeping a copy of it.
+     */
+    @Deprecated
     public static NElement paramToSchema(NaruToolParameter p) {
-        NObjectElementBuilder paramSchema = NElement.ofObjectBuilder();
-        paramSchema.set("type", p.getType() != null ? p.getType().name().toLowerCase() : "string");
-        if (p.getDescription() != null) {
-            paramSchema.set("description", p.getDescription());
-        }
-        if (p.getDefaultValue() != null) {
-            paramSchema.set("default", NElement.of(p.getDefaultValue()));
-        }
-        if (p.getEnumValues() != null && !p.getEnumValues().isEmpty()) {
-            NArrayElementBuilder enumArr = NElement.ofArrayBuilder();
-            for (Object val : p.getEnumValues()) {
-                enumArr.add(NElement.of(val));
-            }
-            paramSchema.set("enum", enumArr.build());
-        }
-        if (p.getType() == NaruToolParameter.Type.ARRAY) {
-            if (p.getItemType() != null) {
-                paramSchema.set("items", paramToSchema(p.getItemType()));
-            } else {
-                NObjectElementBuilder itemSchema = NElement.ofObjectBuilder();
-                itemSchema.set("type", "string");
-                paramSchema.set("items", itemSchema.build());
-            }
-        } else if (p.getType() == NaruToolParameter.Type.OBJECT) {
-            NObjectElementBuilder nestedProps = NElement.ofObjectBuilder();
-            NArrayElementBuilder nestedReq = NElement.ofArrayBuilder();
-            if (p.getProperties() != null) {
-                for (NaruToolParameter np : p.getProperties()) {
-                    nestedProps.set(np.getName(), paramToSchema(np));
-                    if (np.isRequired()) {
-                        nestedReq.add(NElement.ofString(np.getName()));
-                    }
-                }
-            }
-            paramSchema.set("properties", nestedProps.build());
-            if (!nestedReq.children().isEmpty()) {
-                paramSchema.set("required", nestedReq.build());
-            }
-        }
-        return paramSchema.build();
+        return NaruToolSchema.paramToSchema(p);
     }
 
     private NElement messageToElement(NaruMessage m) {

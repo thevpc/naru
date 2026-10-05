@@ -3,9 +3,10 @@ package net.thevpc.naru.ext.models.test;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
-import net.thevpc.naru.ext.models.openapi.NaruOpenApiRequestSerializer;
 import net.thevpc.naru.ext.models.openapi.NaruOpenApiResponseParser;
 import net.thevpc.naru.ext.models.util.NaruModelUtils;
+import net.thevpc.naru.ext.models.util.NaruToolSchema;
+import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.concurrent.NRetryCall;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.io.NInputSource;
@@ -34,20 +35,7 @@ public class NaruModelRetryAndAuditTest {
 
     @BeforeAll
     public static void setUp() {
-        try {
-            net.thevpc.nuts.core.NWorkspace ws = net.thevpc.nuts.Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                net.thevpc.nuts.core.NWorkspace ws = net.thevpc.nuts.Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
+        Nuts.require();
     }
 
     @Test
@@ -127,19 +115,19 @@ public class NaruModelRetryAndAuditTest {
     @Test
     public void testToolParameterSchemaGeneration() {
         NaruToolParameter paramString = NaruToolParameter.string("query", "Search term", true).defaultValue("test").build();
-        NElement schemaString = NaruOpenApiRequestSerializer.paramToSchema(paramString);
+        NElement schemaString = NaruToolSchema.paramToSchema(paramString);
         Assertions.assertEquals("string", schemaString.asObject().get().getStringValue("type").orElse(""));
         Assertions.assertEquals("Search term", schemaString.asObject().get().getStringValue("description").orElse(""));
         Assertions.assertEquals("test", schemaString.asObject().get().getStringValue("default").orElse(""));
 
         NaruToolParameter paramArray = NaruToolParameter.array("tags", "List of tags", true, NaruToolParameter.string("tag", "single tag", true).build()).build();
-        NElement schemaArray = NaruOpenApiRequestSerializer.paramToSchema(paramArray);
+        NElement schemaArray = NaruToolSchema.paramToSchema(paramArray);
         Assertions.assertEquals("array", schemaArray.asObject().get().getStringValue("type").orElse(""));
         Assertions.assertTrue(schemaArray.asObject().get().getObject("items").isPresent());
         Assertions.assertEquals("string", schemaArray.asObject().get().getObject("items").get().getStringValue("type").orElse(""));
 
         NaruToolParameter paramEnum = NaruToolParameter.string("mode", "Operation mode", false).enumValues("fast", "precise").build();
-        NElement schemaEnum = NaruOpenApiRequestSerializer.paramToSchema(paramEnum);
+        NElement schemaEnum = NaruToolSchema.paramToSchema(paramEnum);
         Assertions.assertTrue(schemaEnum.asObject().get().getArray("enum").isPresent());
         Assertions.assertEquals(2, schemaEnum.asObject().get().getArray("enum").get().size());
     }

@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.ext.models.util.NaruToolSchema;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
 
@@ -67,9 +68,15 @@ public class NoToolWrapHelper {
                 toolsPrompt.append(tool.getDescription()).append("\n");
                 if (tool instanceof NaruToolDefinitionFunction) {
                     NaruToolDefinitionFunction f = (NaruToolDefinitionFunction) tool;
-                    toolsPrompt.append("Parameters:\n");
-                    // serialize the parameters schema as JSON so the model understands the shape
-                    toolsPrompt.append(NElementWriter.ofJson().formatPlain(f.getParams()));
+                    toolsPrompt.append("Parameters (JSON Schema):\n");
+                    // The same schema the tool-capable protocols send on the wire.
+                    // Serialising the parameter objects directly used to dump their
+                    // Java getters into the prompt -- "type":"STRING", "itemType":{...},
+                    // requiredness carried per field instead of in a schema-level
+                    // list -- which is a description of the class, not of the shape
+                    // the model has to produce.
+                    toolsPrompt.append(NElementWriter.ofJson().formatPlain(
+                            NaruToolSchema.functionSchema(f.getParams())));
                     toolsPrompt.append("\n\n");
                 }
             }

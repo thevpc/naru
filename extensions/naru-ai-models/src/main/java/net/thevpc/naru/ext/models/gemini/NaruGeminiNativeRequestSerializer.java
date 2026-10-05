@@ -3,8 +3,7 @@ package net.thevpc.naru.ext.models.gemini;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.ext.models.openapi.NaruOpenApiRequestSerializer;
+import net.thevpc.naru.ext.models.util.NaruToolSchema;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
@@ -216,24 +215,7 @@ public class NaruGeminiNativeRequestSerializer implements NaruCacheAwareRequestS
         NObjectElementBuilder d = NElement.ofObjectBuilder();
         d.set("name", fct.getName());
         d.set("description", fct.getDescription() != null ? fct.getDescription() : "");
-
-        NObjectElementBuilder properties = NElement.ofObjectBuilder();
-        NArrayElementBuilder required = NElement.ofArrayBuilder();
-        if (fct.getParams() != null) {
-            for (NaruToolParameter p : fct.getParams()) {
-                properties.set(p.getName(), NaruOpenApiRequestSerializer.paramToSchema(p));
-                if (p.isRequired()) {
-                    required.add(NElement.ofString(p.getName()));
-                }
-            }
-        }
-        NObjectElementBuilder schema = NElement.ofObjectBuilder();
-        schema.set("type", "object");
-        schema.set("properties", properties.build());
-        if (!required.children().isEmpty()) {
-            schema.set("required", required.build());
-        }
-        d.set("parameters", schema.build());
+        d.set("parameters", NaruToolSchema.functionSchema(fct.getParams()));
         return d.build();
     }
 }

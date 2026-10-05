@@ -3,8 +3,8 @@ package net.thevpc.naru.ext.models.ollama;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
+import net.thevpc.naru.ext.models.util.NaruToolSchema;
 import net.thevpc.nuts.elem.*;
 
 import java.util.*;
@@ -71,44 +71,16 @@ public class NaruOllamaNativeRequestSerializer implements NaruModelRequestSerial
         // {"type":"function","function":{...}}. Emitting the function object bare
         // makes ollama silently drop the tool (the model then sees an empty tools
         // list and can emit malformed tool calls with an empty name).
+        //
+        // The parameters block is written by the shared writer for the same reason:
+        // an inline copy of it used to emit only type+description per parameter,
+        // which stripped every nested shape. plan_create reached ollama with
+        // items:{"type":"array"} and no element schema, so the model had no way to
+        // learn what a plan item is.
         NObjectElementBuilder functionBlock = NElement.ofObjectBuilder();
         functionBlock.set("name", fct.getName());
-        functionBlock.set("description", fct.getDescription());
-
-        NObjectElementBuilder paramsObj = NElement.ofObjectBuilder();
-        paramsObj.set("type", "object");
-
-        NObjectElementBuilder propertiesObj = NElement.ofObjectBuilder();
-        NArrayElementBuilder requiredArr = NElement.ofArrayBuilder();
-
-        if (fct.getParams() != null) {
-            for (NaruToolParameter p : fct.getParams()) {
-                NObjectElementBuilder paramSchema = NElement.ofObjectBuilder();
-                paramSchema.set("type", p.getType().name().toLowerCase());
-                paramSchema.set("description", p.getDescription());
-                propertiesObj.set(p.getName(), paramSchema.build());
-
-                if (p.isRequired()) {
-                    requiredArr.add(NElement.ofString(p.getName()));
-                }
-            }
-        }
-
-        paramsObj.set("properties", propertiesObj.build());
-        // Ollama rejects an EMPTY "required" array with a 400 Bad Request; only
-        // emit it when there is at least one required parameter.
-        if (!requiredArr.children().isEmpty()) {
-            paramsObj.set("required", requiredArr.build());
-        }
-
-        if (!propertiesObj.children().isEmpty()) {
-            functionBlock.set("parameters", paramsObj.build());
-        }else {
-            NObjectElementBuilder emptyParams = NElement.ofObjectBuilder();
-            emptyParams.set("type", "object");
-            emptyParams.set("properties", NElement.ofObjectBuilder().build());
-            functionBlock.set("parameters", emptyParams.build());
-        }
+        functionBlock.set("description", fct.getDescription() != null ? fct.getDescription() : "");
+        functionBlock.set("parameters", NaruToolSchema.functionSchema(fct.getParams()));
 
         return NElement.ofObjectBuilder()
                 .set("type", "function")

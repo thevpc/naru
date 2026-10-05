@@ -3,8 +3,7 @@ package net.thevpc.naru.ext.models.anthropic;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.ext.models.openapi.NaruOpenApiRequestSerializer;
+import net.thevpc.naru.ext.models.util.NaruToolSchema;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
@@ -240,27 +239,7 @@ public class NaruAnthropicRequestSerializer implements NaruCacheAwareRequestSeri
         NObjectElementBuilder tool = NElement.ofObjectBuilder();
         tool.set("name", fct.getName());
         tool.set("description", fct.getDescription() != null ? fct.getDescription() : "");
-
-        NObjectElementBuilder inputSchema = NElement.ofObjectBuilder();
-        inputSchema.set("type", "object");
-
-        NObjectElementBuilder propertiesObj = NElement.ofObjectBuilder();
-        NArrayElementBuilder requiredArr = NElement.ofArrayBuilder();
-
-        if (fct.getParams() != null) {
-            for (NaruToolParameter p : fct.getParams()) {
-                propertiesObj.set(p.getName(), NaruOpenApiRequestSerializer.paramToSchema(p));
-                if (p.isRequired()) {
-                    requiredArr.add(NElement.ofString(p.getName()));
-                }
-            }
-        }
-
-        inputSchema.set("properties", propertiesObj.build());
-        if (!requiredArr.children().isEmpty()) {
-            inputSchema.set("required", requiredArr.build());
-        }
-        tool.set("input_schema", inputSchema.build());
+        tool.set("input_schema", NaruToolSchema.functionSchema(fct.getParams()));
         if (markCache) {
             markCache(tool);
         }
