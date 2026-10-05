@@ -11,7 +11,7 @@ import net.thevpc.nuts.time.NDuration;
 import java.time.Instant;
 
 /**
- * Makes token metering available to a session, without the core knowing what a token costs.
+ * Makes token budget available to a session, without the core knowing what a token costs.
  * <p>
  * The core's only involvement is the {@link NaruSessionUsageListener} seam: it announces what
  * a provider reported, and this extension decides what that means. Removing
@@ -34,7 +34,7 @@ public class NaruBudgetExtension implements NaruSessionExtension, NaruSessionUsa
     public static final String NAME = "budget";
 
     private NaruSession session;
-    private NaruMeteringService metering;
+    private NaruBudgetService budgetService;
 
     @Override
     public String name() {
@@ -47,39 +47,39 @@ public class NaruBudgetExtension implements NaruSessionExtension, NaruSessionUsa
      * The accessor and the extension ship in the same jar and are registered together, so
      * the lookup only fails if a caller deliberately removed the extension mid-session.
      */
-    public static NaruMeteringService metering(NaruSession session) {
+    public static NaruBudgetService budget(NaruSession session) {
         return session.registry().extension(NAME, NaruBudgetExtension.class)
-                .map(NaruBudgetExtension::metering)
+                .map(NaruBudgetExtension::budget)
                 .orElseThrow(() -> new IllegalStateException(
                         "the budget extension is not installed in this session"));
     }
 
-    NaruMeteringService metering() {
-        if (metering == null) {
-            throw new IllegalStateException("metering accessed before the extension was opened");
+    NaruBudgetService budget() {
+        if (budgetService == null) {
+            throw new IllegalStateException("budget accessed before the extension was opened");
         }
-        return metering;
+        return budgetService;
     }
 
     @Override
     public void open(NaruSession session) {
         // Idempotent on purpose. A listener registered twice would report every call twice,
         // and a doubled total is a worse bug than a missing one.
-        if (this.session == session && metering != null) {
+        if (this.session == session && budgetService != null) {
             return;
         }
         this.session = session;
-        this.metering = new NaruMeteringServiceImpl(session);
+        this.budgetService = new NaruBudgetServiceImpl(session);
         session.addUsageListener(this);
     }
 
     @Override
     public void onModelCall(NaruModelKey model, long promptTokens, long completionTokens,
                             long cacheWriteTokens, long cacheReadTokens, NDuration duration) {
-        if (metering == null) {
+        if (budgetService == null) {
             return;
         }
-        metering.trackTransaction(new NaruTokenTransaction(
+        budgetService.trackTransaction(new NaruTokenTransaction(
                 null,
                 null,
                 new NaruModelConfig(model),
@@ -97,8 +97,8 @@ public class NaruBudgetExtension implements NaruSessionExtension, NaruSessionUsa
 
     @Override
     public void onProviderRateLimits(NaruProviderRateLimitInfo info) {
-        if (metering != null) {
-            metering.trackProviderStats(info);
+        if (budgetService != null) {
+            budgetService.trackProviderStats(info);
         }
     }
 
@@ -112,6 +112,6 @@ public class NaruBudgetExtension implements NaruSessionExtension, NaruSessionUsa
             session.removeUsageListener(this);
         }
         this.session = null;
-        this.metering = null;
+        this.budgetService = null;
     }
 }

@@ -5,7 +5,7 @@ import net.thevpc.nuts.time.NDuration;
 
 import java.math.BigDecimal;
 
-public class NaruModelStats {
+public class NaruModelBudgetStats {
     private final NaruModelKey model;
     private final String userId;
     private final long promptTokens;
@@ -32,18 +32,18 @@ public class NaruModelStats {
     private NDuration maxDuration;
     private NDuration minDuration;
 
-    public NaruModelStats(NaruModelKey model, String userId, long promptTokens, long completionTokens, long contextUsage, long peakContextUsage,
-                          long contextSize, long totalTokens, BigDecimal unitBudget, BigDecimal totalTokensBudget,
-                          long callsCount,NDuration minDuration,NDuration avgDuration,NDuration maxDuration) {
+    public NaruModelBudgetStats(NaruModelKey model, String userId, long promptTokens, long completionTokens, long contextUsage, long peakContextUsage,
+                                long contextSize, long totalTokens, BigDecimal unitBudget, BigDecimal totalTokensBudget,
+                                long callsCount, NDuration minDuration, NDuration avgDuration, NDuration maxDuration) {
         this(model, userId, promptTokens, completionTokens, contextUsage, peakContextUsage,
                 contextSize, totalTokens, -1, -1, unitBudget, totalTokensBudget,
                 callsCount, minDuration, avgDuration, maxDuration);
     }
 
-    public NaruModelStats(NaruModelKey model, String userId, long promptTokens, long completionTokens, long contextUsage, long peakContextUsage,
-                          long contextSize, long totalTokens, long cacheWriteTokens, long cacheReadTokens,
-                          BigDecimal unitBudget, BigDecimal totalTokensBudget,
-                          long callsCount,NDuration minDuration,NDuration avgDuration,NDuration maxDuration) {
+    public NaruModelBudgetStats(NaruModelKey model, String userId, long promptTokens, long completionTokens, long contextUsage, long peakContextUsage,
+                                long contextSize, long totalTokens, long cacheWriteTokens, long cacheReadTokens,
+                                BigDecimal unitBudget, BigDecimal totalTokensBudget,
+                                long callsCount, NDuration minDuration, NDuration avgDuration, NDuration maxDuration) {
         this.model = model;
         this.userId = userId;
         this.promptTokens = promptTokens;

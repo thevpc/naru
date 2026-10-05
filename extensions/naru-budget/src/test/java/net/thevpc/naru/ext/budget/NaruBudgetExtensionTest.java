@@ -20,7 +20,7 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * Covers the extension half of metering: that a session gets its own totals, that the
+ * Covers the extension half of budget: that a session gets its own totals, that the
  * listener is registered exactly once, and that provider-reported numbers land in the store.
  */
 public class NaruBudgetExtensionTest {
@@ -61,12 +61,12 @@ public class NaruBudgetExtensionTest {
     @Test
     public void usageReportedOnTheSessionIsVisibleThroughTheExtension() {
         NaruSessionImpl session = newSession("visible");
-        NaruMeteringService svc = NaruBudgetExtension.metering(session);
+        NaruBudgetService svc = NaruBudgetExtension.budget(session);
 
         call(session, MODEL_A, 100, 10);
         call(session, MODEL_A, 200, 20);
 
-        NaruModelStats stats = svc.findModelStats(MODEL_A, null);
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL_A, null);
         Assertions.assertEquals(300, stats.getPromptTokens());
         Assertions.assertEquals(30, stats.getCompletionTokens());
         Assertions.assertEquals(2, stats.getCallsCount());
@@ -83,20 +83,20 @@ public class NaruBudgetExtensionTest {
 
         call(one, MODEL_A, 500, 50);
 
-        Assertions.assertEquals(500, NaruBudgetExtension.metering(one).findModelStats(MODEL_A, null).getPromptTokens());
-        Assertions.assertEquals(0, NaruBudgetExtension.metering(two).findModelStats(MODEL_A, null).getPromptTokens(),
+        Assertions.assertEquals(500, NaruBudgetExtension.budget(one).findModelBudgetStats(MODEL_A, null).getPromptTokens());
+        Assertions.assertEquals(0, NaruBudgetExtension.budget(two).findModelBudgetStats(MODEL_A, null).getPromptTokens(),
                 "a second session must start at zero, not inherit the first session's spend");
     }
 
     @Test
     public void cacheTokensFromTheCoreSeamReachTheTotals() {
         NaruSessionImpl session = newSession("cache");
-        NaruMeteringService svc = NaruBudgetExtension.metering(session);
+        NaruBudgetService svc = NaruBudgetExtension.budget(session);
 
         session.fireModelCallUsage(MODEL_A, 1000, 20, 1000, 0, NDuration.ofMillis(10));
         session.fireModelCallUsage(MODEL_A, 1000, 20, 100, 900, NDuration.ofMillis(10));
 
-        NaruModelStats stats = svc.findModelStats(MODEL_A, null);
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL_A, null);
         Assertions.assertEquals(1100, stats.getCacheWriteTokens());
         Assertions.assertEquals(900, stats.getCacheReadTokens());
     }
@@ -117,7 +117,7 @@ public class NaruBudgetExtensionTest {
 
         call(session, MODEL_A, 400, 40);
 
-        NaruModelStats stats = NaruBudgetExtension.metering(session).findModelStats(MODEL_A, null);
+        NaruModelBudgetStats stats = NaruBudgetExtension.budget(session).findModelBudgetStats(MODEL_A, null);
         Assertions.assertEquals(400, stats.getPromptTokens());
         Assertions.assertEquals(1, stats.getCallsCount());
     }
@@ -125,20 +125,20 @@ public class NaruBudgetExtensionTest {
     @Test
     public void modelsAreTrackedSeparately() {
         NaruSessionImpl session = newSession("models");
-        NaruMeteringService svc = NaruBudgetExtension.metering(session);
+        NaruBudgetService svc = NaruBudgetExtension.budget(session);
 
         call(session, MODEL_A, 100, 1);
         call(session, MODEL_B, 700, 7);
 
-        Assertions.assertEquals(100, svc.findModelStats(MODEL_A, null).getPromptTokens());
-        Assertions.assertEquals(700, svc.findModelStats(MODEL_B, null).getPromptTokens());
-        Assertions.assertEquals(2, svc.findModelStats().size());
+        Assertions.assertEquals(100, svc.findModelBudgetStats(MODEL_A, null).getPromptTokens());
+        Assertions.assertEquals(700, svc.findModelBudgetStats(MODEL_B, null).getPromptTokens());
+        Assertions.assertEquals(2, svc.findModelBudgetStats().size());
     }
 
     @Test
     public void providerRateLimitsAreRecordedAndReplacedPerProvider() {
         NaruSessionImpl session = newSession("ratelimits");
-        NaruMeteringService svc = NaruBudgetExtension.metering(session);
+        NaruBudgetService svc = NaruBudgetExtension.budget(session);
 
         session.reportProviderRateLimits(limits(session, 100, "corr-1"));
         Assertions.assertEquals(1, svc.findProviderRateLimitInfos().size());
@@ -176,7 +176,7 @@ public class NaruBudgetExtensionTest {
         // a second session over the same project dir is what a reload amounts to
         NaruSessionImpl reloaded = newSession("persist");
         Assertions.assertEquals(0,
-                NaruBudgetExtension.metering(reloaded).findModelStats(MODEL_A, null).getPromptTokens(),
+                NaruBudgetExtension.budget(reloaded).findModelBudgetStats(MODEL_A, null).getPromptTokens(),
                 "a reloaded session must not inherit the previous session's spend");
     }
 
@@ -186,7 +186,7 @@ public class NaruBudgetExtensionTest {
         Assertions.assertTrue(
                 session.registry().extension(NaruBudgetExtension.NAME, NaruBudgetExtension.class).isPresent(),
                 "the /stats directive resolves the extension this way, so it must be registered");
-        Assertions.assertDoesNotThrow(() -> NaruBudgetExtension.metering(session));
+        Assertions.assertDoesNotThrow(() -> NaruBudgetExtension.budget(session));
     }
 
     /**

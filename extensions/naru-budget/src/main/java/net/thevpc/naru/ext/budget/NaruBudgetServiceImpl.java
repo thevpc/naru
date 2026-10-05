@@ -23,14 +23,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * yesterday's totals into today's report would misstate current cost. A reload starts from
  * zero, which is also what makes the number trustworthy.
  */
-class NaruMeteringServiceImpl implements NaruMeteringService {
+class NaruBudgetServiceImpl implements NaruBudgetService {
 
     private final NaruSession session;
     private final Map<ModelAndUser, NaruModelStatsAccumulator> statsByAndUser = new ConcurrentHashMap<>();
     /** Keyed by sessionId/provider, but this instance only ever sees one session. */
     private final Map<String, NaruProviderRateLimitInfo> latestInfoByProvider = new ConcurrentHashMap<>();
 
-    NaruMeteringServiceImpl(NaruSession session) {
+    NaruBudgetServiceImpl(NaruSession session) {
         this.session = session;
     }
 
@@ -139,7 +139,7 @@ class NaruMeteringServiceImpl implements NaruMeteringService {
     }
 
     @Override
-    public NaruModelStats findModelStats(NaruModelKey model, String user) {
+    public NaruModelBudgetStats findModelBudgetStats(NaruModelKey model, String user) {
         NaruModelStatsAccumulator m = statsFor(model, user);
         BigDecimal ub = m.getUnitBudget();
         if (ub == null) {
@@ -148,7 +148,7 @@ class NaruMeteringServiceImpl implements NaruMeteringService {
         BigDecimal all = ub.multiply(BigDecimal.valueOf(m.getTotalTokens()));
         long accumulatedDuration = m.getAccumulatedDuration();
         long calls = m.getCalls();
-        return new NaruModelStats(
+        return new NaruModelBudgetStats(
                 m.getModel(),
                 m.getUserId(),
                 m.getPromptTokens(),
@@ -169,12 +169,12 @@ class NaruMeteringServiceImpl implements NaruMeteringService {
     }
 
     @Override
-    public List<NaruModelStats> findModelStats() {
-        List<NaruModelStats> all = new ArrayList<>();
+    public List<NaruModelBudgetStats> findModelBudgetStats() {
+        List<NaruModelBudgetStats> all = new ArrayList<>();
         for (Map.Entry<ModelAndUser, NaruModelStatsAccumulator> e : statsByAndUser.entrySet()) {
             // only the model-wide rows; a per-user row would double-count
             if (e.getValue().getUserId() == null) {
-                all.add(findModelStats(e.getValue().getModel(), null));
+                all.add(findModelBudgetStats(e.getValue().getModel(), null));
             }
         }
         return all;

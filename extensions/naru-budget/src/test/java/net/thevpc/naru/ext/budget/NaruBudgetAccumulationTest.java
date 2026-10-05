@@ -10,10 +10,9 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.time.Instant;
-import java.util.Collections;
 
 /**
- * Guards the arithmetic in {@link NaruMeteringServiceImpl#accumulate}, now that the
+ * Guards the arithmetic in {@link NaruBudgetServiceImpl#accumulate}, now that the
  * feature lives in the naru-budget extension rather than the core.
  *
  * <p>This path used to assign rather than add, so a model that had served ten
@@ -70,13 +69,13 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void promptAndCompletionTokensAccumulateAcrossCalls() {
         NaruSession session = stubSession();
-        NaruMeteringServiceImpl svc = new NaruMeteringServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
 
         svc.trackTransaction(tx(100, 10));
         svc.trackTransaction(tx(200, 20));
         svc.trackTransaction(tx(300, 30));
 
-        NaruModelStats stats = svc.findModelStats(MODEL, null);
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL, null);
         Assertions.assertEquals(600, stats.getPromptTokens(),
                 "prompt tokens must be the sum across calls, not the last call");
         Assertions.assertEquals(60, stats.getCompletionTokens());
@@ -86,12 +85,12 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void totalTokensGrowsWithEveryCall() {
         NaruSession session = stubSession();
-        NaruMeteringServiceImpl svc = new NaruMeteringServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
 
         svc.trackTransaction(tx(100, 10));
-        long afterFirst = svc.findModelStats(MODEL, null).getTotalTokens();
+        long afterFirst = svc.findModelBudgetStats(MODEL, null).getTotalTokens();
         svc.trackTransaction(tx(100, 10));
-        long afterSecond = svc.findModelStats(MODEL, null).getTotalTokens();
+        long afterSecond = svc.findModelBudgetStats(MODEL, null).getTotalTokens();
 
         Assertions.assertTrue(afterSecond > afterFirst,
                 "a second identical call must add spend, not replace it");
@@ -100,14 +99,14 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void cacheTokensAccumulateAndDoNotGoBackwards() {
         NaruSession session = stubSession();
-        NaruMeteringServiceImpl svc = new NaruMeteringServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
 
         // a cold turn: everything is a cache write
         svc.trackTransaction(cacheTx(1000, 20, 1000, 0));
         // a warm turn: most of the prefix is a cache read
         svc.trackTransaction(cacheTx(1000, 20, 100, 900));
 
-        NaruModelStats stats = svc.findModelStats(MODEL, null);
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL, null);
         Assertions.assertEquals(1100, stats.getCacheWriteTokens());
         Assertions.assertEquals(900, stats.getCacheReadTokens());
         Assertions.assertTrue(stats.getCacheHitRatio() > 0 && stats.getCacheHitRatio() < 1,
@@ -121,12 +120,12 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void unreportedCacheTokensAreTreatedAsZero() {
         NaruSession session = stubSession();
-        NaruMeteringServiceImpl svc = new NaruMeteringServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
 
         svc.trackTransaction(cacheTx(1000, 20, 1000, 0));
         svc.trackTransaction(tx(50, 5));
 
-        NaruModelStats stats = svc.findModelStats(MODEL, null);
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL, null);
         Assertions.assertEquals(1000, stats.getCacheWriteTokens(),
                 "a -1 from a non-reporting provider must not wipe the running total");
         Assertions.assertEquals(0, stats.getCacheReadTokens());

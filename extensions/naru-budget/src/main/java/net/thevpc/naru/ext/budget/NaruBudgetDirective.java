@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 
 public class NaruBudgetDirective extends NaruDirectiveBase {
     public NaruBudgetDirective() {
-        super("stat", "ai", "show and manage stats", "stats");
+        super("budget", "ai", "show and manage budget");
         register(new AbstractSubCommand() {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -31,18 +31,18 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
 
     public NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        List<NaruModelStats> modelStats = NaruBudgetExtension.metering(context.task().session()).findModelStats()
+        List<NaruModelBudgetStats> modelStats = NaruBudgetExtension.budget(context.task().session()).findModelBudgetStats()
                 .stream()
                 .filter(a -> a.getCallsCount() > 0)
                 .sorted(Comparator
-                        .<NaruModelStats, BigDecimal>comparing(a -> a.getTotalTokensBudget()).reversed()
+                        .<NaruModelBudgetStats, BigDecimal>comparing(a -> a.getTotalTokensBudget()).reversed()
                         .thenComparing(a -> a.getModel().provider())
                         .thenComparing(a -> a.getModel().model())
                 )
                 .collect(Collectors.toList());
 
         NStringBuilder sb = NStringBuilder.of();
-        for (NaruProviderRateLimitInfo s : NaruBudgetExtension.metering(context.task().session()).findProviderRateLimitInfos()) {
+        for (NaruProviderRateLimitInfo s : NaruBudgetExtension.budget(context.task().session()).findProviderRateLimitInfos()) {
             NMsg msg = NMsg.ofC("%s (%s)%s%s",
                             NMsg.ofStyledPrimary9(s.providerName()),
                             s.serverTime(),
@@ -86,7 +86,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
             }
         }
 
-        for (NaruModelStats modelStat : modelStats) {
+        for (NaruModelBudgetStats modelStat : modelStats) {
             NMsg msg = NMsg.ofC("%s", modelStat.getModel().toMsg()).asError();
             task.log(NaruLogMode.AGENT_RESPONSE, msg);
             sb.println(msg.toString());
@@ -163,7 +163,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         if (q == 0 || max == 0) {
             return "0.00%";
         }
-        return new DecimalFormat("#.###").format(100.0 * q / (double) max);
+        return new DecimalFormat("#.###").format(100.0 * q / (double) max)+"%";
     }
 
     private static class PromptStats {
