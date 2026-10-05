@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Guards the arithmetic in {@link NaruBudgetServiceImpl#accumulate}, now that the
@@ -31,6 +32,15 @@ public class NaruBudgetAccumulationTest {
      * that defaulting without needing a real agent.
      */
     private static NaruSession stubSession() {
+        return stubSession(0);
+    }
+
+    /**
+     * @param contextLength what the stubbed protocol reports as the model's context
+     *                     length; 0 means "no protocol", so nothing is defaulted
+     */
+    private static NaruSession stubSession(long contextLength) {
+        Object protocol = contextLength > 0 ? stubProtocol(contextLength) : null;
         return (NaruSession) Proxy.newProxyInstance(
                 NaruSession.class.getClassLoader(),
                 new Class<?>[]{NaruSession.class},
@@ -40,7 +50,7 @@ public class NaruBudgetAccumulationTest {
                                 NaruSession.class.getClassLoader(),
                                 new Class<?>[]{net.thevpc.naru.api.registry.NaruRegistry.class},
                                 (p2, m2, a2) -> "protocol".equals(m2.getName())
-                                        ? NOptional.ofEmpty()
+                                        ? (protocol == null ? NOptional.ofEmpty() : NOptional.of(protocol))
                                         : null);
                     }
                     if ("toString".equals(method.getName())) {
@@ -56,8 +66,61 @@ public class NaruBudgetAccumulationTest {
                 });
     }
 
+    /**
+     * A protocol whose only answer that matters is the context length, which is what
+     * {@code fillDefaults} asks the registry for.
+     */
+    private static Object stubProtocol(long contextLength) {
+        Object capabilities = Proxy.newProxyInstance(
+                NaruSession.class.getClassLoader(),
+                new Class<?>[]{net.thevpc.naru.api.model.NaruModelCapabilities.class},
+                (p, m, a) -> {
+                    switch (m.getName()) {
+                        case "contextLength":
+                            return contextLength;
+                        case "keys":
+                            return java.util.Set.of();
+                        case "toString":
+                            return "stub-capabilities";
+                        case "hashCode":
+                            return 0;
+                        case "equals":
+                            return p == a[0];
+                        case "toElement":
+                            return null;
+                        default:
+                            // isTools/isVision/... default to false, which is a valid answer
+                            return m.getReturnType() == boolean.class ? Boolean.FALSE : null;
+                    }
+                });
+        return Proxy.newProxyInstance(
+                NaruSession.class.getClassLoader(),
+                new Class<?>[]{net.thevpc.naru.api.model.NaruModelProtocol.class},
+                (p, m, a) -> {
+                    switch (m.getName()) {
+                        case "getCapabilities":
+                            return capabilities;
+                        case "providerName":
+                            return "stub";
+                        case "toString":
+                            return "stub-protocol";
+                        case "hashCode":
+                            return 0;
+                        case "equals":
+                            return p == a[0];
+                        default:
+                            return null;
+                    }
+                });
+    }
+
     private static NaruTokenTransaction tx(long prompt, long completion) {
         return new NaruTokenTransaction("s1", null, CONFIG, prompt, completion,
+                Instant.now(), NDuration.ofMillis(10));
+    }
+
+    private static NaruTokenTransaction userTx(String userId, long prompt, long completion) {
+        return new NaruTokenTransaction("s1", userId, CONFIG, prompt, completion,
                 Instant.now(), NDuration.ofMillis(10));
     }
 
@@ -128,6 +191,58 @@ public class NaruBudgetAccumulationTest {
         Assertions.assertEquals(150, stats.getContextUsage(),
                 "context usage follows the most recent call, larger or smaller");
         Assertions.assertEquals(550, stats.getTotalTokens());
+    }
+
+    /**
+     * A per-user row is created before the model-wide row is touched, and the only
+     * thing it can borrow at creation is the model-wide context size -- which does
+     * not exist yet. So the row used to be stuck at {@code contextSize == 0} for the
+     * whole session and every context percentage for that user read as a
+     * division by zero.
+     */
+    @Test
+    public void perUserRowInheritsTheContextSizeOfItsModel() {
+        NaruSession session = stubSession(8192);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+
+        svc.trackTransaction(userTx("alice", 100, 10));
+
+        NaruModelBudgetStats perUser = svc.findModelBudgetStats(MODEL, "alice");
+        Assertions.assertEquals(8192, perUser.getContextSize(),
+                "a per-user row must be able to report how full the context is");
+        Assertions.assertEquals("alice", perUser.getUserId());
+        Assertions.assertEquals(110, perUser.getTotalTokens());
+        Assertions.assertEquals(1, perUser.getCallsCount());
+
+        // the same call is counted once for the model as a whole, not twice
+        NaruModelBudgetStats overall = svc.findModelBudgetStats(MODEL, null);
+        Assertions.assertEquals(110, overall.getTotalTokens());
+        Assertions.assertEquals(1, overall.getCallsCount());
+        Assertions.assertEquals(8192, overall.getContextSize());
+    }
+
+    /**
+     * A blank id must not produce a row that the model-wide listing skips: the key
+     * was null but {@code userId} was stored raw, so {@code findModelBudgetStats()}
+     * filtered the row out and the call vanished from {@code /budget} while still
+     * counting towards the model.
+     */
+    @Test
+    public void blankUserIdIsStoredStrippedSoTheModelRowOwnsTheCall() {
+        NaruSession session = stubSession(4096);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+
+        svc.trackTransaction(userTx("  ", 200, 20));
+
+        NaruModelBudgetStats modelRow = svc.findModelBudgetStats(MODEL, null);
+        Assertions.assertNull(modelRow.getUserId());
+        Assertions.assertEquals(220, modelRow.getTotalTokens(),
+                "a blank user id belongs to the model-wide row");
+        Assertions.assertEquals(4096, modelRow.getContextSize());
+
+        List<NaruModelBudgetStats> all = svc.findModelBudgetStats();
+        Assertions.assertEquals(1, all.size(),
+                "the call must appear exactly once in the listing, not be dropped by the userId filter");
     }
 
     @Test
