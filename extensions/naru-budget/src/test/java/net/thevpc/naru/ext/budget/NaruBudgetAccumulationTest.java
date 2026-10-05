@@ -82,6 +82,54 @@ public class NaruBudgetAccumulationTest {
         Assertions.assertEquals(3, stats.getCallsCount());
     }
 
+    /**
+     * The exact numbers a three-call run must produce.
+     *
+     * <p>{@code contextUsage} used to be computed as cumulative-completion plus this call's
+     * prompt, so each call added the running total back into the request size. A 9-call
+     * session reported 81974 tokens against 75029 actually spent. Both fields are now
+     * per-call values: {@code contextUsage} is the last call's size, {@code peakContextUsage}
+     * the largest one seen, and only {@code totalTokens} accumulates.
+     */
+    @Test
+    public void contextUsageIsPerCallWhileTotalTokensAccumulates() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+
+        svc.trackTransaction(tx(100, 10));
+        svc.trackTransaction(tx(200, 20));
+        svc.trackTransaction(tx(300, 30));
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL, null);
+        Assertions.assertEquals(600, stats.getPromptTokens());
+        Assertions.assertEquals(60, stats.getCompletionTokens());
+        Assertions.assertEquals(660, stats.getTotalTokens(),
+                "total is the running sum of prompt plus completion");
+        Assertions.assertEquals(330, stats.getContextUsage(),
+                "context usage is the size of the last call, not a total that absorbs history");
+        Assertions.assertEquals(330, stats.getPeakContextUsage());
+        Assertions.assertEquals(3, stats.getCallsCount());
+    }
+
+    /**
+     * A later, smaller call must not pull the peak down: 400 then 150.
+     */
+    @Test
+    public void peakContextUsageKeepsTheLargestCall() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+
+        svc.trackTransaction(tx(300, 100));
+        svc.trackTransaction(tx(100, 50));
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL, null);
+        Assertions.assertEquals(400, stats.getPeakContextUsage(),
+                "the peak is the largest single call and must not shrink");
+        Assertions.assertEquals(150, stats.getContextUsage(),
+                "context usage follows the most recent call, larger or smaller");
+        Assertions.assertEquals(550, stats.getTotalTokens());
+    }
+
     @Test
     public void totalTokensGrowsWithEveryCall() {
         NaruSession session = stubSession();
