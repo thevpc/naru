@@ -6,7 +6,9 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
+import net.thevpc.nuts.log.NLog;
 import net.thevpc.nuts.net.NHttpResponse;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NLiteral;
@@ -100,8 +102,35 @@ public class NaruModelProtocolMistral extends NaruModelProtocolOpenAICompat {
                             providerLastResultInfo.build()
                     )
             );
+            if (tokensPerMinute == null && remainingTokensPerMinute == null) {
+                // A call against api.mistral.ai does answer with the four rate-limit
+                // headers read above (verified 2026-10), so empty buckets here mean the
+                // response came from somewhere else: a gateway, a proxy, or an
+                // OpenAI-compatible endpoint wearing the mistral provider name. Guessing
+                // is useless there, so the header names are printed once to make the
+                // difference visible instead of leaving an unexplained blank in /budget.
+                logHeadersOnce(headers);
+            }
         } catch (Exception ignored) {
         }
+    }
+
+    private static final java.util.Set<String> REPORTED_HEADER_NAMES = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+
+    /**
+     * One line per distinct set of response header names, not one per response: this is
+     * a diagnostic for "why are the buckets empty", and a per-response line would cost
+     * more than it explains.
+     */
+    private void logHeadersOnce(Map<String, String> headers) {
+        String key = String.valueOf(headers.keySet());
+        if (!REPORTED_HEADER_NAMES.add(key)) {
+            return;
+        }
+        NLog.of(getClass()).log(NMsg.ofC(
+                "no mistral rate-limit headers on this response; header names were %s",
+                key
+        ));
     }
 
     /**
