@@ -63,19 +63,19 @@ class NaruBudgetServiceImpl implements NaruBudgetService {
 
     @Override
     public void trackTransaction(NaruTokenTransaction t) {
-        NaruModelStatsAccumulator a = statsFor(t.getModel().key(), t.getUserId());
-        accumulate(t, a);
         if (!NBlankable.isBlank(t.getUserId())) {
             // a per-user call also counts towards the model as a whole
             accumulate(t, statsFor(t.getModel().key(), null));
         }
+        NaruModelStatsAccumulator a = statsFor(t.getModel().key(), t.getUserId());
+        accumulate(t, a);
     }
 
     private NaruModelStatsAccumulator statsFor(NaruModelKey m, String userId) {
         ModelAndUser k = new ModelAndUser(m, NStringUtils.stripToNull(userId));
         NaruModelStatsAccumulator o = statsByAndUser.get(k);
         if (o == null) {
-            o = fillDefaults(new NaruModelStatsAccumulator().setModel(m).setUserId(userId));
+            o = fillDefaults(new NaruModelStatsAccumulator().setModel(m).setUserId(NStringUtils.stripToNull(userId)));
             NaruModelStatsAccumulator prev = statsByAndUser.putIfAbsent(k, o);
             if (prev != null) {
                 o = prev;
