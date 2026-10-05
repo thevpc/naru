@@ -71,7 +71,7 @@ class NaruBudgetServiceImpl implements NaruBudgetService {
         accumulate(t, a);
     }
 
-    private NaruModelStatsAccumulator statsFor(NaruModelKey m, String userId) {
+    private synchronized NaruModelStatsAccumulator statsFor(NaruModelKey m, String userId) {
         ModelAndUser k = new ModelAndUser(m, NStringUtils.stripToNull(userId));
         NaruModelStatsAccumulator o = statsByAndUser.get(k);
         if (o == null) {
