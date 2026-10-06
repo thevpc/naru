@@ -6,6 +6,7 @@ import net.thevpc.nuts.time.NDuration;
 import java.time.Instant;
 
 public class NaruTokenTransaction {
+    private final Labels labels;
     private final String sessionId;
     private final String userId;
     private final NaruModelConfig model;
@@ -31,6 +32,13 @@ public class NaruTokenTransaction {
 
     public NaruTokenTransaction(String sessionId, String userId, NaruModelConfig model, long promptTokens, long completionTokens,
                                 long cacheWriteTokens, long cacheReadTokens, Instant timestamp, NDuration duration) {
+        this(buildLabels(sessionId, userId, model), sessionId, userId, model, promptTokens, completionTokens,
+                cacheWriteTokens, cacheReadTokens, timestamp, duration);
+    }
+
+    public NaruTokenTransaction(Labels labels, String sessionId, String userId, NaruModelConfig model, long promptTokens, long completionTokens,
+                                long cacheWriteTokens, long cacheReadTokens, Instant timestamp, NDuration duration) {
+        this.labels = labels == null ? buildLabels(sessionId, userId, model) : labels;
         this.sessionId = sessionId;
         this.userId = userId;
         this.model = model;
@@ -40,6 +48,29 @@ public class NaruTokenTransaction {
         this.cacheReadTokens = cacheReadTokens;
         this.timestamp = timestamp;
         this.duration = duration;
+    }
+
+    private static Labels buildLabels(String sessionId, String userId, NaruModelConfig model) {
+        Labels.Builder b = Labels.builder();
+        if (sessionId != null) {
+            b.add("session", sessionId);
+        }
+        if (userId != null) {
+            b.add("user", userId);
+        }
+        if (model != null) {
+            if (model.provider() != null) {
+                b.add("provider", model.provider());
+            }
+            if (model.model() != null) {
+                b.add("model", model.model());
+            }
+        }
+        return b.build();
+    }
+
+    public Labels getLabels() {
+        return labels;
     }
 
     public NDuration getDuration() {

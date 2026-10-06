@@ -5,6 +5,7 @@ import net.thevpc.naru.api.model.DefaultNaruProviderRateLimitInfo;
 import net.thevpc.naru.api.model.DefaultNaruRateLimitBucket;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruRateLimitWindow;
+import net.thevpc.naru.ext.budget.store.DefaultNaruBudgetStoreQuery;
 import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
@@ -66,10 +67,10 @@ public class NaruBudgetExtensionTest {
         call(session, MODEL_A, 100, 10);
         call(session, MODEL_A, 200, 20);
 
-        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL_A, null);
-        Assertions.assertEquals(300, stats.getPromptTokens());
-        Assertions.assertEquals(30, stats.getCompletionTokens());
-        Assertions.assertEquals(2, stats.getCallsCount());
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_A));
+        Assertions.assertEquals(300, stats.promptTokens());
+        Assertions.assertEquals(30, stats.completionTokens());
+        Assertions.assertEquals(2, stats.calls());
     }
 
     /**
@@ -83,8 +84,8 @@ public class NaruBudgetExtensionTest {
 
         call(one, MODEL_A, 500, 50);
 
-        Assertions.assertEquals(500, NaruBudgetExtension.budget(one).findModelBudgetStats(MODEL_A, null).getPromptTokens());
-        Assertions.assertEquals(0, NaruBudgetExtension.budget(two).findModelBudgetStats(MODEL_A, null).getPromptTokens(),
+        Assertions.assertEquals(500, NaruBudgetExtension.budget(one).findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_A)).promptTokens());
+        Assertions.assertEquals(0, NaruBudgetExtension.budget(two).findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_A)).promptTokens(),
                 "a second session must start at zero, not inherit the first session's spend");
     }
 
@@ -96,9 +97,9 @@ public class NaruBudgetExtensionTest {
         session.fireModelCallUsage(MODEL_A, 1000, 20, 1000, 0, NDuration.ofMillis(10));
         session.fireModelCallUsage(MODEL_A, 1000, 20, 100, 900, NDuration.ofMillis(10));
 
-        NaruModelBudgetStats stats = svc.findModelBudgetStats(MODEL_A, null);
-        Assertions.assertEquals(1100, stats.getCacheWriteTokens());
-        Assertions.assertEquals(900, stats.getCacheReadTokens());
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_A));
+        Assertions.assertEquals(1100, stats.cacheWriteTokens());
+        Assertions.assertEquals(900, stats.cacheReadTokens());
     }
 
     /**
@@ -117,9 +118,9 @@ public class NaruBudgetExtensionTest {
 
         call(session, MODEL_A, 400, 40);
 
-        NaruModelBudgetStats stats = NaruBudgetExtension.budget(session).findModelBudgetStats(MODEL_A, null);
-        Assertions.assertEquals(400, stats.getPromptTokens());
-        Assertions.assertEquals(1, stats.getCallsCount());
+        NaruModelBudgetStats stats = NaruBudgetExtension.budget(session).findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_A));
+        Assertions.assertEquals(400, stats.promptTokens());
+        Assertions.assertEquals(1, stats.calls());
     }
 
     @Test
@@ -130,9 +131,9 @@ public class NaruBudgetExtensionTest {
         call(session, MODEL_A, 100, 1);
         call(session, MODEL_B, 700, 7);
 
-        Assertions.assertEquals(100, svc.findModelBudgetStats(MODEL_A, null).getPromptTokens());
-        Assertions.assertEquals(700, svc.findModelBudgetStats(MODEL_B, null).getPromptTokens());
-        Assertions.assertEquals(2, svc.findModelBudgetStats().size());
+        Assertions.assertEquals(100, svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_A)).promptTokens());
+        Assertions.assertEquals(700, svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_B)).promptTokens());
+        Assertions.assertEquals(2, svc.findByModelBudgetStats(null).size());
     }
 
     @Test
@@ -176,7 +177,7 @@ public class NaruBudgetExtensionTest {
         // a second session over the same project dir is what a reload amounts to
         NaruSessionImpl reloaded = newSession("persist");
         Assertions.assertEquals(0,
-                NaruBudgetExtension.budget(reloaded).findModelBudgetStats(MODEL_A, null).getPromptTokens(),
+                NaruBudgetExtension.budget(reloaded).findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_A)).promptTokens(),
                 "a reloaded session must not inherit the previous session's spend");
     }
 

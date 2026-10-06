@@ -3,6 +3,7 @@ package net.thevpc.naru.ext.budget;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
+import net.thevpc.naru.ext.budget.store.NaruBudgetStoreQuery;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -26,18 +27,15 @@ public interface NaruBudgetService {
      *
      * @param user may be null, meaning "all users"
      */
-    NaruModelBudgetStats findModelBudgetStats(NaruModelKey model, String user);
+    NaruModelBudgetStats findModelBudgetStats(NaruModelKey model, String user, Labels labels);
+
+    NaruModelBudgetStats findModelBudgetStats(NaruBudgetStoreQuery query);
 
     /**
      * Totals for every model with at least one recorded call. One row per model, with users
      * already folded in.
      */
-    List<NaruModelBudgetStats> findModelBudgetStats();
-
-    /** Price charged per token for a model, or zero when none was configured. */
-    void setUnitPrice(NaruModelKey model, BigDecimal value);
-
-    BigDecimal getUnitPrice(NaruModelKey model);
+    List<NaruModelBudgetStats> findByModelBudgetStats(NaruBudgetStoreQuery query);
 
     /**
      * Records a provider's self-reported rate limits, replacing any previous report from
@@ -45,6 +43,8 @@ public interface NaruBudgetService {
      */
     void trackProviderStats(NaruProviderRateLimitInfo stats);
 
-    /** The most recent rate-limit report per provider for this session. */
+    /**
+     * The most recent rate-limit report per provider for this session.
+     */
     List<NaruProviderRateLimitInfo> findProviderRateLimitInfos();
 }

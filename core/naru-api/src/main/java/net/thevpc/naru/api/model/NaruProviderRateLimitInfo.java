@@ -9,15 +9,21 @@ import java.util.List;
 
 public interface NaruProviderRateLimitInfo {
     String sessionId();
+
     String userId();
 
     String providerName();
 
     Instant serverTime();
+
     List<NaruRateLimitBucket> tokenBuckets();
+
     List<NaruRateLimitBucket> requestBuckets();
+
     NOptional<String> correlationId();
+
     NOptional<NDuration> retryAfter();
+
     // Raw provider-specific extras
     NObjectElement rawProviderInfo();
 }
