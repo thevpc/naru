@@ -5,15 +5,16 @@ import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
+import net.thevpc.naru.ext.budget.store.DefaultNaruBudgetStoreQuery;
+import net.thevpc.naru.ext.budget.store.InMemoryNaruBudgetStore;
+import net.thevpc.naru.ext.budget.store.NaruBudgetStore;
+import net.thevpc.naru.ext.budget.store.NaruBudgetStoreQuery;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -23,190 +24,68 @@ import java.util.concurrent.ConcurrentHashMap;
  * yesterday's totals into today's report would misstate current cost. A reload starts from
  * zero, which is also what makes the number trustworthy.
  */
-class NaruBudgetServiceImpl implements NaruBudgetService {
+class NaruBudgetServiceImpl implements NaruBudgetService, NAruUnitBudgetSupplier {
 
     private final NaruSession session;
-    private final Map<ModelAndUser, NaruModelStatsAccumulator> statsByAndUser = new ConcurrentHashMap<>();
-    /** Keyed by sessionId/provider, but this instance only ever sees one session. */
+    private final NaruBudgetStore store = new InMemoryNaruBudgetStore();
+    /**
+     * Keyed by sessionId/provider, but this instance only ever sees one session.
+     */
     private final Map<String, NaruProviderRateLimitInfo> latestInfoByProvider = new ConcurrentHashMap<>();
 
     NaruBudgetServiceImpl(NaruSession session) {
         this.session = session;
     }
 
-    private static class ModelAndUser {
-        final NaruModelKey model;
-        final String user;
-
-        ModelAndUser(NaruModelKey model, String user) {
-            this.model = model;
-            this.user = user;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            ModelAndUser that = (ModelAndUser) o;
-            return Objects.equals(model, that.model) && Objects.equals(user, that.user);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(model, user);
-        }
-    }
-
     @Override
     public void trackTransaction(NaruTokenTransaction t) {
-        if (!NBlankable.isBlank(t.getUserId())) {
-            // a per-user call also counts towards the model as a whole
-            accumulate(t, statsFor(t.getModel().key(), null));
-        }
-        NaruModelStatsAccumulator a = statsFor(t.getModel().key(), t.getUserId());
-        accumulate(t, a);
+        store.saveTransaction(t);
     }
 
-    private NaruModelStatsAccumulator statsFor(NaruModelKey m, String userId) {
-        ModelAndUser k = new ModelAndUser(m, NStringUtils.stripToNull(userId));
-        NaruModelStatsAccumulator o = statsByAndUser.get(k);
-        if (o == null) {
-            o = fillDefaults(new NaruModelStatsAccumulator().setModel(m).setUserId(NStringUtils.stripToNull(userId)));
-            NaruModelStatsAccumulator prev = statsByAndUser.putIfAbsent(k, o);
-            if (prev != null) {
-                o = prev;
-            }
-        }
-        return o;
-    }
 
-    /**
-     * Seeds the context size, which the accumulator cannot know on its own. A per-user row
-     * borrows the model-wide row's value; the model-wide row asks the protocol.
-     */
-    private NaruModelStatsAccumulator fillDefaults(NaruModelStatsAccumulator a) {
-        if (a.getContextSize() > 0) {
-            return a;
+    @Override
+    public NaruModelBudgetStats findModelBudgetStats(NaruModelKey model, String user, Labels labels) {
+        HashMap<String, String> map = new HashMap<>();
+        if (labels != null) {
+            map.putAll(labels.asMap());
         }
-        if (a.getUserId() != null) {
-            NaruModelStatsAccumulator overall = statsByAndUser.get(new ModelAndUser(a.getModel(), null));
-            if (overall != null && overall.getContextSize() > 0) {
-                a.setContextSize(overall.getContextSize());
-            }
-            return a;
+        if (model != null) {
+            map.put("model", model.model());
+            map.put("provider", model.provider());
         }
-        NaruModelProtocol p = session.registry().protocol(new NaruModelConfig(a.getModel()), session).orNull();
-        if (p != null) {
-            a.setContextSize(p.getCapabilities().contextLength());
+        if (!NBlankable.isBlank(user)) {
+            map.put("user", user);
         }
-        return a;
-    }
-
-    /**
-     * Folds one call into an accumulator, atomically.
-     *
-     * <p>The map is concurrent but the accumulator is a mutable bag of counters, so
-     * {@code get} + {@code set} on two fields is not atomic: two parallel calls could
-     * both read the same total and one increment would vanish. Nothing here is a lock
-     * over the whole service -- unrelated models accumulate in parallel -- so the
-     * accumulator instance itself is the monitor, and a read takes the same monitor to
-     * get a snapshot that is internally consistent rather than a mix of two calls.
-     */
-    private void accumulate(NaruTokenTransaction part, NaruModelStatsAccumulator into) {
-        synchronized (into) {
-            // These are running totals across every call made against this
-            // model/user pair, so they must add. Assigning here would silently
-            // report only the most recent call's prompt and completion sizes,
-            // making a busy session look like a single-request one and understating
-            // spend for budget purposes.
-            into.setPromptTokens(into.getPromptTokens() + part.getPromptTokens());
-            into.setCompletionTokens(into.getCompletionTokens() + part.getCompletionTokens());
-
-            // A provider that does not report cache accounting uses -1. Treat that
-            // as zero so it cannot drag a running total backwards.
-            if (part.getCacheWriteTokens() > 0) {
-                into.setCacheWriteTokens(into.getCacheWriteTokens() + part.getCacheWriteTokens());
-            }
-            if (part.getCacheReadTokens() > 0) {
-                into.setCacheReadTokens(into.getCacheReadTokens() + part.getCacheReadTokens());
-            }
-
-            long callTokens = part.getPromptTokens() + part.getCompletionTokens();
-            into.setContextUsage(callTokens);
-            into.setTotalTokens(into.getTotalTokens() + callTokens);
-            into.setPeakContextUsage(Math.max(into.getPeakContextUsage(), callTokens));
-            into.setCalls(into.getCalls() + 1);
-            into.setAccumulatedDuration(into.getAccumulatedDuration() + part.getDuration().toMillis());
-            // "no duration recorded yet" is calls == 0, not minDuration == 0: a call
-            // that really took 0 ms is a legitimate minimum, and testing for 0 would
-            // keep re-adopting every such call and make min duration hover at zero.
-            if (into.getCalls() == 1) {
-                into.setMinDuration(part.getDuration().toMillis());
-            } else {
-                into.setMinDuration(Math.min(into.getMinDuration(), part.getDuration().toMillis()));
-            }
-            into.setMaxDuration(Math.max(into.getMaxDuration(), part.getDuration().toMillis()));
-        }
+        Labels labels2 = Labels.of(map);
+        return store.aggregate(new DefaultNaruBudgetStoreQuery()
+                        .whereLabels(labels2),
+                this
+        );
     }
 
     @Override
-    public NaruModelBudgetStats findModelBudgetStats(NaruModelKey model, String user) {
-        NaruModelStatsAccumulator m = statsFor(model, user);
-        // same monitor as accumulate, so the snapshot cannot straddle an update
-        synchronized (m) {
-            BigDecimal ub = m.getUnitBudget();
-            if (ub == null) {
-                ub = BigDecimal.ZERO;
-            }
-            BigDecimal all = ub.multiply(BigDecimal.valueOf(m.getTotalTokens()));
-            long accumulatedDuration = m.getAccumulatedDuration();
-            long calls = m.getCalls();
-            return new NaruModelBudgetStats(
-                    m.getModel(),
-                    m.getUserId(),
-                    m.getPromptTokens(),
-                    m.getCompletionTokens(),
-                    m.getContextUsage(),
-                    m.getPeakContextUsage(),
-                    m.getContextSize(),
-                    m.getTotalTokens(),
-                    m.getCacheWriteTokens(),
-                    m.getCacheReadTokens(),
-                    ub,
-                    all,
-                    calls,
-                    calls == 0 ? NDuration.ZERO : NDuration.ofMillis(m.getMinDuration()).normalize(),
-                    calls == 0 ? NDuration.ZERO : NDuration.ofMillis(accumulatedDuration / calls).normalize(),
-                    calls == 0 ? NDuration.ZERO : NDuration.ofMillis(m.getMaxDuration()).normalize()
-            );
+    public NaruModelBudgetStats findModelBudgetStats(NaruBudgetStoreQuery query) {
+        if (query == null) {
+            query = new DefaultNaruBudgetStoreQuery();
         }
+        return store.aggregate(query,
+                this
+        );
     }
 
     @Override
-    public List<NaruModelBudgetStats> findModelBudgetStats() {
+    public List<NaruModelBudgetStats> findByModelBudgetStats(NaruBudgetStoreQuery q) {
+        if(q==null){
+            q=new DefaultNaruBudgetStoreQuery();
+        }
         List<NaruModelBudgetStats> all = new ArrayList<>();
-        for (Map.Entry<ModelAndUser, NaruModelStatsAccumulator> e : statsByAndUser.entrySet()) {
-            // only the model-wide rows; a per-user row would double-count
-            if (e.getValue().getUserId() == null) {
-                all.add(findModelBudgetStats(e.getValue().getModel(), null));
+        for (String e : store.findLabelValues("model", null)) {
+            NaruModelConfig a = session.findModel(e).orNull();
+            if (a != null) {
+                all.add(findModelBudgetStats(q.copy().whereModel(a.key())));
             }
         }
         return all;
-    }
-
-    @Override
-    public BigDecimal getUnitPrice(NaruModelKey model) {
-        BigDecimal ub = statsFor(model, null).getUnitBudget();
-        return ub == null ? BigDecimal.ZERO : ub;
-    }
-
-    @Override
-    public void setUnitPrice(NaruModelKey model, BigDecimal value) {
-        statsFor(model, null).setUnitBudget(value == null ? BigDecimal.ZERO : value);
     }
 
     @Override

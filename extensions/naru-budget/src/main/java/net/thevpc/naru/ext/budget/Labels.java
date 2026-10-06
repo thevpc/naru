@@ -14,20 +14,41 @@ public final class Labels {
     private final int hashCode;
 
     private Labels(Map<String, String> entries) {
-        // Unmodifiable map ensures immutability and safe hashCode/equals behavior
         this.entries = Collections.unmodifiableMap(new HashMap<>(entries));
         this.hashCode = this.entries.hashCode();
+    }
+
+    public static Labels of(String k1, String v1) {
+        return builder().add(k1, v1).build();
+    }
+
+    public static Labels of(String k1, String v1, String k2, String v2) {
+        return builder().add(k1, v1).add(k2, v2).build();
+    }
+
+    public static Labels of(String k1, String v1, String k2, String v2, String k3, String v3) {
+        return builder().add(k1, v1).add(k2, v2).add(k3, v3).build();
+    }
+
+    public static Labels of(Map<String, String> map) {
+        if (map == null || map.isEmpty()) {
+            return builder().build();
+        }
+        Builder b = builder();
+        for (Map.Entry<String, String> e : map.entrySet()) {
+            b.add(e.getKey(), e.getValue());
+        }
+        return b.build();
     }
 
     public static Builder builder() {
         return new Builder();
     }
 
-    /**
-     * Checks if these recorded labels contain all key-value pairs of the query.
-     * Example: recorded {app="a", module="b"} matches query {app="a"}.
-     */
     public boolean matches(Labels query) {
+        if (query == null || query.entries.isEmpty()) {
+            return true;
+        }
         for (Map.Entry<String, String> e : query.entries.entrySet()) {
             if (!Objects.equals(e.getValue(), this.entries.get(e.getKey()))) {
                 return false;
@@ -67,10 +88,12 @@ public final class Labels {
 
         public Builder add(String key, String value) {
             if (key == null || key.trim().isEmpty()) {
-                throw new IllegalArgumentException("Label key cannot be null or empty");
+                return this;
             }
             if (value != null) {
                 entries.put(key, value);
+            } else {
+                entries.remove(key);
             }
             return this;
         }

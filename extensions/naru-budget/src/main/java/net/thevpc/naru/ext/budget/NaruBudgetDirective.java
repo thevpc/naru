@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.budget;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.task.NaruTask;
@@ -11,6 +12,8 @@ import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.time.NDuration;
+import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NStringBuilder;
 
 import java.math.BigDecimal;
@@ -32,18 +35,19 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
 
     public NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        List<NaruModelBudgetStats> modelStats = NaruBudgetExtension.budget(context.task().session()).findModelBudgetStats()
+        NaruSession session = context.task().session();
+        List<NaruModelBudgetStats> modelStats = NaruBudgetExtension.budget(session).findByModelBudgetStats(null)
                 .stream()
-                .filter(a -> a.getCallsCount() > 0)
+                .filter(a -> a.calls() > 0)
                 .sorted(Comparator
-                        .<NaruModelBudgetStats, BigDecimal>comparing(a -> a.getTotalTokensBudget()).reversed()
-                        .thenComparing(a -> a.getModel().provider())
-                        .thenComparing(a -> a.getModel().model())
+                        .<NaruModelBudgetStats, BigDecimal>comparing(a -> a.spending().total()).reversed()
+                        .thenComparing(a -> a.providerKey())
+                        .thenComparing(a -> a.modelKey())
                 )
                 .collect(Collectors.toList());
 
         NStringBuilder sb = NStringBuilder.of();
-        for (NaruProviderRateLimitInfo s : NaruBudgetExtension.budget(context.task().session()).findProviderRateLimitInfos()) {
+        for (NaruProviderRateLimitInfo s : NaruBudgetExtension.budget(session).findProviderRateLimitInfos()) {
             NMsg msg = NMsg.ofC("%s (%s)%s%s",
                             NMsg.ofStyledPrimary9(s.providerName()),
                             s.serverTime(),
@@ -72,58 +76,58 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         }
 
         for (NaruModelBudgetStats modelStat : modelStats) {
-            NMsg msg = NMsg.ofC("%s", modelStat.getModel().toMsg()).asError();
+            NaruModelConfig model = session.findModel(modelStat.fullModelKey()).orNull();
+            long contextSize=-1;
+            if(model!=null){
+                contextSize=model.contextLength();
+            }
+            NMsg msg = NMsg.ofC("%s", modelStat.fullModelKey()).asError();
             task.log(NaruLogMode.AGENT_RESPONSE, msg);
             sb.println(msg.toString());
             NMsg ctxMsg = NMsg.ofC("  %s  | %s %s, %s %s, %s %s",
-                            NMsg.ofStyledPrimary1("context"),
-                            "used",
-                            contextShare(modelStat.getContextUsage(), modelStat.getContextSize()),
-                            "peak",
-                            contextShare(modelStat.getPeakContextUsage(), modelStat.getContextSize()),
-                            "available",
-                            modelStat.getContextSize() > 0
-                                    ? NaruUtils.formattedTokensSize(modelStat.getContextSize())
-                                    : NMsg.ofC("%s", "unknown")
-                    )
-            ;
+                    NMsg.ofStyledPrimary1("context"),
+                    "used",
+                    contextShare(modelStat.contextUsage(), contextSize),
+                    "peak",
+                    contextShare(modelStat.peakContextUsage(), contextSize),
+                    "available",
+                    contextSize > 0
+                            ? NaruUtils.formattedTokensSize(contextSize)
+                            : NMsg.ofC("%s", "unknown")
+            );
             task.log(NaruLogMode.AGENT_RESPONSE, ctxMsg);
             sb.println(ctxMsg.toString());
             NMsg callsMsg = NMsg.ofC("  %s    | %s",
                     NMsg.ofStyledPrimary1("calls"),
-                    modelStat.getCallsCount()
+                    modelStat.calls()
             );
             task.log(NaruLogMode.AGENT_RESPONSE, callsMsg);
             sb.println(callsMsg.toString());
-            NMsg durMsg = NMsg.ofC("  %s | min %s, avg %s, max %s",
-                            NMsg.ofStyledPrimary1("duration"),
-                            modelStat.getMinDuration(),
-                            modelStat.getAvgDuration(),
-                            modelStat.getMaxDuration()
-                    )
-            ;
+            NMsg durMsg = NMsg.ofC("  %s | min %s, max %s",
+                    NMsg.ofStyledPrimary1("duration"),
+                    NDuration.ofMillis(modelStat.minDuration()),
+                    NDuration.ofMillis(modelStat.maxDuration())
+            );
             task.log(NaruLogMode.AGENT_RESPONSE, durMsg);
             sb.println(durMsg.toString());
             NMsg tokMsg = NMsg.ofC("  %s   | %s, prompt %s, eval %s",
-                            NMsg.ofStyledPrimary1("tokens"),
-                            modelStat.getTotalTokens(),
-                            modelStat.getPromptTokens(),
-                            modelStat.getCompletionTokens()
-                    )
-            ;
+                    NMsg.ofStyledPrimary1("tokens"),
+                    modelStat.totalTokens(),
+                    modelStat.promptTokens(),
+                    modelStat.completionTokens()
+            );
             task.log(NaruLogMode.AGENT_RESPONSE, tokMsg);
             sb.println(tokMsg.toString());
             // "budget" next to a spend figure read as an allowance; what this is is the
             // money already spent, unit price times tokens
             NMsg budgMsg = NMsg.ofC("  %s   | %s",
-                            NMsg.ofStyledPrimary1("cost"),
-                            modelStat.getTotalTokensBudget()
-                    )
-            ;
+                    NMsg.ofStyledPrimary1("cost"),
+                    modelStat.spending().total()
+            );
             task.log(NaruLogMode.AGENT_RESPONSE, budgMsg);
             sb.println(budgMsg.toString());
-
         }
+
         PromptStats promptStats = estimateTokens(task);
         NMsg toolsMsg = NMsg.ofC("  tool defs : %s | messages : %s | tool calls : %s",
                         promptStats.toolDefs,
@@ -149,11 +153,11 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         // to see that: the provider reported this many prompt tokens for the last call
         // it billed, against the request we would send now.
         NaruModelBudgetStats lastCall = lastCalledModel(modelStats);
-        if (lastCall != null && lastCall.getContextUsage() > 0) {
-            long reported = lastCall.getContextUsage();
+        if (lastCall != null && lastCall.contextUsage() > 0) {
+            long reported = lastCall.contextUsage();
             NMsg calibMsg = NMsg.ofC("  reported last call : %s prompt tokens for %s (estimate / reported : %s)",
                             reported,
-                            lastCall.getModel().toMsg(),
+                            lastCall.fullModelKey(),
                             new DecimalFormat("#.##").format((double) promptStats.tokens / reported)
                     )
             ;
@@ -184,7 +188,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
     private static NaruModelBudgetStats lastCalledModel(List<NaruModelBudgetStats> modelStats) {
         NaruModelBudgetStats best = null;
         for (NaruModelBudgetStats s : modelStats) {
-            if (best == null || s.getContextUsage() > best.getContextUsage()) {
+            if (best == null || s.contextUsage() > best.contextUsage()) {
                 best = s;
             }
         }
