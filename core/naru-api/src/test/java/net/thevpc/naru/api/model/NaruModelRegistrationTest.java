@@ -18,8 +18,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The value type behind /model add|registered|update: provider required, wire-id
- * shorthands normalized, $NAME resolved on read, literal secrets masked.
+ * The value type behind /model add|registered|update: provider required, wire
+ * ids written as provider rejected, protocol normalized, $NAME resolved on read,
+ * literal secrets masked.
  */
 public class NaruModelRegistrationTest {
 
@@ -54,35 +55,41 @@ public class NaruModelRegistrationTest {
     }
 
     @Test
-    public void genericEndpointHasProviderWireAndNoProviderParam() {
+    public void genericEndpointHasProviderCustomAndNoProviderParam() {
         // --protocol alone: a generic endpoint with no stored provider
         NaruModelRegistration r = NaruModelRegistration.of("ep", Map.of(
                 "protocol", NElement.ofString("openai"),
                 "url", NElement.ofString("https://x"),
                 "models", NElement.ofString("a,b")));
-        Assertions.assertEquals("wire", r.provider(), "no provider param means the internal wire type");
+        Assertions.assertEquals("custom", r.provider(), "no provider param means the internal custom type");
         Assertions.assertEquals("openai", r.protocol().get());
-        Assertions.assertFalse(r.param("provider").isPresent(), "nothing persists provider=wire");
+        Assertions.assertFalse(r.param("provider").isPresent(), "nothing persists provider=custom");
         Assertions.assertEquals(r, NaruModelRegistration.of(r.id(), r.params()), "generic endpoint round-trips");
     }
 
     @Test
-    public void wireShorthandsAreRejected() {
-        // wire ids written as a provider are rejected, never normalized (clean cut)
-        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep",
-                Map.of("provider", NElement.ofString("openapi"))));
-        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep",
-                Map.of("provider", NElement.ofString("openai"))));
+    public void nonProviderIdsAreRejected() {
+        // openai is a provider type now: accepted, stored as-is
+        NaruModelRegistration o = NaruModelRegistration.of("ep",
+                Map.of("provider", NElement.ofString("openai")));
+        Assertions.assertEquals("openai", o.provider());
+
+        // wire protocol ids without a provider type are rejected, never normalized (clean cut)
         Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep",
                 Map.of("provider", NElement.ofString("anthropic"))));
         Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep",
-                Map.of("provider", NElement.ofString("wire"))));
-        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep", "openai"));
+                Map.of("provider", NElement.ofString("custom"))));
+        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep", "anthropic"));
 
-        // the openapi rejection carries the rename hint
+        // the openapi rejection carries the rename hint (openai is now a type too)
         NIllegalArgumentException ex = Assertions.assertThrows(NIllegalArgumentException.class,
                 () -> NaruModelRegistration.of("ep", Map.of("provider", NElement.ofString("openapi"))));
         Assertions.assertTrue(ex.getMessage().contains("openai"));
+
+        // 'wire' is the pre-rename spelling of the internal custom type: rejected with a hint
+        NIllegalArgumentException wireEx = Assertions.assertThrows(NIllegalArgumentException.class,
+                () -> NaruModelRegistration.of("ep", Map.of("provider", NElement.ofString("wire"))));
+        Assertions.assertTrue(wireEx.getMessage().contains("custom"));
 
         // gemini as a provider is the built-in provider, never a shorthand
         NaruModelRegistration r = NaruModelRegistration.of("personal", "gemini");
@@ -151,7 +158,7 @@ public class NaruModelRegistrationTest {
         b.set("temperature", 0.7f);
         NaruModelRegistration r = NaruModelRegistration.of("example", b.build());
 
-        Assertions.assertEquals("wire", r.provider());
+        Assertions.assertEquals("custom", r.provider());
         Assertions.assertEquals("openai", r.protocol().get());
         Assertions.assertEquals(r, NaruModelRegistration.of(r.id(), r.toElement()));
         Assertions.assertEquals(r, NaruModelRegistration.of(r.id(), r.params()));

@@ -48,13 +48,17 @@ public class NaruModelRegistration implements NToElement {
     private static final Set<String> SECRET_PARAMS = Set.of("apikey", "api_key", "key");
 
     /**
-     * Provider values that are not provider types: wire protocol ids, written as
-     * a provider they would silently rewrite the registration's identity. The
-     * generic endpoint is spelled {@code protocol: "..."} with no provider (design
-     * doc §8). {@code openapi} gets its own branch because it is the pre-rename
-     * spelling of {@code openai} and deserves a migration hint.
+     * Provider values that are not provider types: the internal {@code custom}
+     * endpoint type and wire protocol ids with no provider type of their own
+     * (only {@code anthropic} today). Written as a provider they would silently
+     * rewrite the registration's identity. The generic endpoint is spelled
+     * {@code protocol: "..."} with no provider (design doc §8). {@code openapi}
+     * gets its own branch because it is the pre-rename spelling of
+     * {@code openai} — now a real provider type — and deserves a migration
+     * hint; so does {@code wire}, the pre-rename spelling of the internal
+     * {@code custom} type.
      */
-    private static final Set<String> FORBIDDEN_PROVIDERS = Set.of("wire", "openai", "anthropic");
+    private static final Set<String> FORBIDDEN_PROVIDERS = Set.of("custom", "anthropic");
 
     private final String id;
     private final Map<String, NElement> params;
@@ -70,13 +74,14 @@ public class NaruModelRegistration implements NToElement {
 
     /**
      * Validates and normalizes a parameter map. {@code provider} is optional: a
-     * registration without one is a generic endpoint (internal {@code wire}
+     * registration without one is a generic endpoint (internal {@code custom}
      * type) whose wire shape comes from {@code protocol}. A registration must
      * carry one of the two — its identity — so a bare parameter shell (a
      * hand-edited {@code url}-only entry, say) fails loudly instead of silently
      * registering a generic endpoint nobody asked for. A {@code provider} value
-     * must be a real provider type — wire ids are rejected so nothing ever
-     * persists {@code provider: "wire"} or one of the protocol shorthands.
+     * must be a real provider type — the internal {@code custom} type and wire
+     * protocol ids without a provider type are rejected so nothing ever
+     * persists {@code provider: "custom"} or {@code provider: "anthropic"}.
      */
     private static Map<String, NElement> normalize(String id, Map<String, NElement> params) {
         Map<String, NElement> m = new LinkedHashMap<>(params == null ? Map.of() : params);
@@ -107,7 +112,21 @@ public class NaruModelRegistration implements NToElement {
             String lower = provider.toLowerCase();
             if (lower.equals("openapi")) {
                 throw new NIllegalArgumentException(NMsg.ofC(
-                        "invalid provider '%s' in registration '%s': the wire id is now 'openai' — "
+                        "invalid provider '%s' in registration '%s': 'openai' is now both a wire id and a built-in "
+                                + "provider type — write provider: \"openai\" for OpenAI's API itself, or "
+                                + "protocol: \"openai\" with no provider for a generic endpoint",
+                        provider, id));
+            }
+            if (lower.equals("wire")) {
+                throw new NIllegalArgumentException(NMsg.ofC(
+                        "invalid provider '%s' in registration '%s': it is the pre-rename spelling of the internal "
+                                + "custom endpoint type — a generic endpoint is written protocol: \"openai\" "
+                                + "with no provider",
+                        provider, id));
+            }
+            if (lower.equals("custom")) {
+                throw new NIllegalArgumentException(NMsg.ofC(
+                        "invalid provider '%s' in registration '%s': it is the internal custom endpoint type — "
                                 + "a generic endpoint is written protocol: \"openai\" with no provider",
                         provider, id));
             }
@@ -165,15 +184,16 @@ public class NaruModelRegistration implements NToElement {
     }
 
     /**
-     * The provider type this instance serves ({@code gemini}, {@code ollama},
-     * ...), or the internal {@code wire} type when the registration carries no
-     * {@code provider} param — a generic endpoint selected with
-     * {@code --protocol} alone. Nothing stores {@code wire} as a provider value.
+     * The provider type this instance serves ({@code gemini}, {@code openai},
+     * ...), or the internal {@code custom} type when the registration carries
+     * no {@code provider} param — a generic endpoint selected with
+     * {@code --protocol} alone. Nothing stores {@code custom} as a provider
+     * value.
      */
     public String provider() {
         NElement p = params.get("provider");
         if (p == null || p.isNull()) {
-            return "wire";
+            return "custom";
         }
         return p.asStringValue().orNull();
     }

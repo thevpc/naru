@@ -97,7 +97,8 @@ A model key is always `<instance id>/<model id>` — two segments, no exceptions
 |-----|-------------|---------------|--------------|
 | `gemini/gemini-3.8-flash` | `gemini` (built-in) | `gemini` | `gemini.apiKey` → `GEMINI_API_KEY` |
 | `personal/gemini-3.8-flash` | `personal` (registration) | `gemini` | registration's key → `$GEMINI_KEY_A` |
-| `litellm/qwen3-32b` | `litellm` (registration) | `wire` (protocol `openai`) | registration's key |
+| `cpt/gpt-4o` | `cpt` (registration) | `openai` | registration's key → `OPENAI_API_KEY` |
+| `litellm/qwen3-32b` | `litellm` (registration) | `custom` (protocol `openai`) | registration's key |
 | `gpu/llama3.1:8b` | `gpu` (registration) | `ollama` | registration's `url` |
 
 Selection accepts, in this order:
@@ -172,14 +173,17 @@ Rules:
 
 Both files are plain TSON — hand-editable, and the directive writes the same thing
 you would. A generic endpoint is written with `protocol` and **no** `provider`
-(the internal `wire` type is implied: `provider()` reports `wire`, but no
-`provider` param is ever stored). Writing a wire id as a `provider` is rejected
-outright — `provider: "openai"` / `provider: "anthropic"` can only mean a generic
-wire from §8, no built-in provider class corresponds, and a hand-edited file must
-fail loudly. `openapi` (the old spelling) is rejected with a hint to write
-`protocol: "openai"`. `gemini` is deliberately not among the rejected ids: as a
-provider it means the built-in gemini provider, and its native wire shape is
-selected with `protocol: "gemini"` on top of it (§8).
+(the internal `custom` type is implied: `provider()` reports `custom`, but no
+`provider` param is ever stored). Writing the internal `custom` type — or a wire
+id that has no provider type — as a `provider` is rejected outright:
+`provider: "custom"` and `provider: "anthropic"` can only mean a generic wire
+from §8, and a hand-edited file must fail loudly. `openai` is a built-in
+provider type now, so `provider: "openai"` is valid and registers OpenAI's own
+API. The pre-rename spellings are rejected with hints: `provider: "openapi"`
+(→ `openai` is now both a wire id and a provider type) and
+`provider: "wire"` (→ the internal type is `custom`). `gemini` is deliberately
+not among the rejected ids: as a provider it means the built-in gemini provider,
+and its native wire shape is selected with `protocol: "gemini"` on top of it (§8).
 
 ## 6. Config resolution order
 
@@ -247,18 +251,19 @@ A registration has two independent knobs:
 
 | Knob | Meaning |
 |------|---------|
-| `--provider=<type>` | **Who** serves the model: enumerates its models, resolves capabilities, provides the default key. A built-in provider type (`gemini`, `ollama`, `openrouter`, ...) or the generic `wire` type for an endpoint with no provider class. |
+| `--provider=<type>` | **Who** serves the model: enumerates its models, resolves capabilities, provides the default key. A built-in provider type (`gemini`, `openai`, `ollama`, `openrouter`, ...) or the generic `custom` type for an endpoint with no provider class (§8). |
 | `--protocol=<wire>` | **How** the request is shaped: `openai`, `anthropic`, or `gemini` (native `generateContent`). Optional — defaults to the provider's own wire shape. |
 
 The two knobs are orthogonal: `--provider` picks *who*, `--protocol` picks *how*,
 and a registration only needs the one it variations on.
 
 Pointing NARU at an HTTP endpoint with no built-in provider class is a generic
-`wire` registration — `--protocol` alone, no `--provider=`:
+`custom` registration — `--protocol` alone, no `--provider=`:
 
 ```text
 /model add litellm  --protocol=openai    --url=http://localhost:4000/v1 --models=qwen3-32b --apiKey=$LITELLM_KEY       ← generic endpoint, no provider class
 /model add claude2  --protocol=anthropic --url=https://api.anthropic.com --models=claude-sonnet-4 --apiKey=$ANTHROPIC_KEY
+/model add cpt      --provider=openai    [--url=http://myproxy:4000/v1]  --apiKey=$OPENAI_API_KEY                   ← OpenAI's own API, --url= re-points it
 /model use litellm/qwen3-32b
 ```
 
@@ -269,7 +274,7 @@ Pointing NARU at an HTTP endpoint with no built-in provider class is a generic
   level, required `max_tokens`, `tool_use`/`tool_result` content blocks)
 - `gemini` — Google's native `POST {url}/models/{model}:generateContent`
 
-A generic `wire` registration exposes only the models you declare with
+A generic `custom` registration exposes only the models you declare with
 `--models=`/`--model=` (there is no provider class to list them for you), and no
 `--models` means nothing to list. Wire types are ordinary registration parameters
 (§7): `url`, `models`, `chatPath`, `contextLength`, `tools`, `probe`, and the
@@ -287,7 +292,7 @@ that matters today is speaking native Gemini against Google's API (required for
 Wire ids are what the providers themselves declare, not a central registry: every
 provider has a `defaultProtocol()` — the wire it speaks when none is configured —
 and a `supportedProtocols()` set — its own default plus any override shapes it has
-code for (§11). The generic `wire` type declares `openai`, `anthropic` and
+code for (§11). The generic `custom` type declares `openai`, `anthropic` and
 `gemini`; a dialect provider (`mistral`, `openrouter`) declares its own id plus
 `openai`; `ollama` declares none, so its single `api/chat` shape cannot be
 re-pointed. Unknown `--protocol` values are **rejected** by `/model add`; a wire

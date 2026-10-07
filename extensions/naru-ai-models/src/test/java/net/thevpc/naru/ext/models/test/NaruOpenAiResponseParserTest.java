@@ -2,7 +2,7 @@ package net.thevpc.naru.ext.models.test;
 
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruToolCall;
-import net.thevpc.naru.ext.models.openapi.NaruOpenApiResponseParser;
+import net.thevpc.naru.ext.models.openai.NaruOpenAiResponseParser;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElementReader;
@@ -11,10 +11,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * Wire-protocol tests for the OpenAI-compatible ({@code openapi}) response shape,
+ * Wire-protocol tests for the OpenAI-compatible ({@code openai}) response shape,
  * exercising the same coverage as {@link NaruAnthropicResponseParserTest}.
  */
-public class NaruOpenApiResponseParserTest {
+public class NaruOpenAiResponseParserTest {
 
     @BeforeAll
     public static void setUp() {
@@ -23,7 +23,7 @@ public class NaruOpenApiResponseParserTest {
 
     private NaruResponse parse(String json) {
         NElementReader reader = NElementReader.ofJson();
-        reader.mapperStore().setDeserializer(NaruResponse.class, new NaruOpenApiResponseParser());
+        reader.mapperStore().setDeserializer(NaruResponse.class, new NaruOpenAiResponseParser());
         return reader.read(json, NaruResponse.class);
     }
 

@@ -7,8 +7,8 @@ import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.ext.models.anthropic.NaruModelProtocolAnthropicCompat;
-import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
-import net.thevpc.naru.ext.models.wire.NaruWireProvider;
+import net.thevpc.naru.ext.models.custom.NaruCustomProvider;
+import net.thevpc.naru.ext.models.openai.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NOptional;
@@ -22,25 +22,26 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Wire provider tests: the registration-backed endpoint type behind
- * {@code /model add <id> --provider=wire} (and its openapi/anthropic
- * shorthands). Configuration lives in the instance's params (the registration),
- * with the {@code <instance id>.<key>} agent env as the §6 fallback.
+ * Custom endpoint provider tests: the registration-backed endpoint type behind
+ * {@code /model add <id> --protocol=openai --url=… --models=a,b} (no
+ * {@code --provider} — the internal {@code custom} type). Configuration lives
+ * in the instance's params (the registration), with the
+ * {@code <instance id>.<key>} agent env as the §6 fallback.
  *
  * <p>Reachability probing is disabled for the mapping tests ({@code probe=false})
  * and exercised explicitly against a never-listening localhost port for the
  * availability tests.
  */
-public class NaruWireProviderTest {
+public class NaruCustomProviderTest {
 
     @BeforeAll
     public static void setUp() {
         Nuts.require();
     }
 
-    /** A fresh wire instance {@code endpointA} carrying the given params. */
-    private NaruWireProvider wire(Map<String, String> params) {
-        NaruWireProvider p = (NaruWireProvider) new NaruWireProvider().newInstance("endpointA");
+    /** A fresh custom endpoint instance {@code endpointA} carrying the given params. */
+    private NaruCustomProvider wire(Map<String, String> params) {
+        NaruCustomProvider p = (NaruCustomProvider) new NaruCustomProvider().newInstance("endpointA");
         for (Map.Entry<String, String> e : params.entrySet()) {
             p.setParam(e.getKey(), e.getValue());
         }
@@ -53,7 +54,7 @@ public class NaruWireProviderTest {
 
     @Test
     public void testFindModelIdsUsesDeclaredModels() {
-        NaruWireProvider provider = wire(Map.of(
+        NaruCustomProvider provider = wire(Map.of(
                 "url", "http://127.0.0.1:9",
                 "models", "model-a,model-b",
                 "probe", "false"));
@@ -64,7 +65,7 @@ public class NaruWireProviderTest {
     @Test
     public void testFindModelIdsEmptyWithoutUrl() {
         // no url: the registration declares an endpoint nothing can talk to
-        NaruWireProvider provider = wire(Map.of("models", "model-a"));
+        NaruCustomProvider provider = wire(Map.of("models", "model-a"));
         Assertions.assertEquals(Collections.emptyList(),
                 provider.findModelIds(createMockSession(Collections.emptyMap())));
     }
@@ -72,7 +73,7 @@ public class NaruWireProviderTest {
     @Test
     public void testFindModelIdsFromAgentEnvWhenParamAbsent() {
         // §6 fallback: <instance id>.<key> agent env feeds unpacked registrations
-        NaruWireProvider provider = (NaruWireProvider) new NaruWireProvider().newInstance("endpointA");
+        NaruCustomProvider provider = (NaruCustomProvider) new NaruCustomProvider().newInstance("endpointA");
         Map<String, String> env = new HashMap<>();
         env.put("endpointA.url", "http://127.0.0.1:9");
         env.put("endpointA.models", "model-a,model-b");
@@ -82,7 +83,7 @@ public class NaruWireProviderTest {
 
     @Test
     public void testIsAvailableWithProbeDisabled() {
-        NaruWireProvider provider = wire(Map.of(
+        NaruCustomProvider provider = wire(Map.of(
                 "url", "http://127.0.0.1:9",
                 "probe", "false"));
         Assertions.assertTrue(provider.isAvailable(createMockSession(Collections.emptyMap())));
@@ -90,14 +91,14 @@ public class NaruWireProviderTest {
 
     @Test
     public void testIsAvailableFalseWithoutUrl() {
-        NaruWireProvider provider = wire(Map.of("probe", "false"));
+        NaruCustomProvider provider = wire(Map.of("probe", "false"));
         Assertions.assertFalse(provider.isAvailable(createMockSession(Collections.emptyMap())));
     }
 
     @Test
     public void testIsAvailableFalseWhenProbeFails() {
         // probe=true against a port where nothing listens: connection refused
-        NaruWireProvider provider = wire(Map.of(
+        NaruCustomProvider provider = wire(Map.of(
                 "url", "http://127.0.0.1:9",
                 "probe", "true"));
         Assertions.assertFalse(provider.isAvailable(createMockSession(Collections.emptyMap())));
@@ -105,7 +106,7 @@ public class NaruWireProviderTest {
 
     @Test
     public void testGetProtocolDefaultOpenApi() {
-        NaruWireProvider provider = wire(Map.of(
+        NaruCustomProvider provider = wire(Map.of(
                 "url", "http://127.0.0.1:9",
                 "models", "model-a",
                 "probe", "false"));
@@ -117,7 +118,7 @@ public class NaruWireProviderTest {
 
     @Test
     public void testGetProtocolAnthropic() {
-        NaruWireProvider provider = wire(Map.of(
+        NaruCustomProvider provider = wire(Map.of(
                 "url", "http://127.0.0.1:9",
                 "models", "model-a",
                 "protocol", "anthropic",
@@ -134,7 +135,7 @@ public class NaruWireProviderTest {
         // /model add rejects it at the directive level, but a hand-edited (or
         // env-configured) registration makes createProtocol warn and fall back
         // to the provider's default wire, so the endpoint keeps working
-        NaruWireProvider provider = wire(Map.of(
+        NaruCustomProvider provider = wire(Map.of(
                 "url", "http://127.0.0.1:9",
                 "models", "model-a",
                 "protocol", "bogus",

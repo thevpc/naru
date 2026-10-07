@@ -1,4 +1,4 @@
-package net.thevpc.naru.ext.models.openapi;
+package net.thevpc.naru.ext.models.openai;
 
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.ext.models.stream.NaruSseReader;
@@ -44,7 +44,7 @@ import java.util.Map;
  * {@link #finish()}. It does not read the network itself, so the whole protocol
  * is testable against a captured body.
  */
-public class NaruOpenApiStreamParser extends NaruSseResponseParser {
+public class NaruOpenAiStreamParser extends NaruSseResponseParser {
 
     /**
      * Per-stream call state. A model may emit more than one tool call, and the
@@ -79,7 +79,7 @@ public class NaruOpenApiStreamParser extends NaruSseResponseParser {
     private int cacheWriteTokens = -1;
     private boolean sawToolCalls;
 
-    public NaruOpenApiStreamParser(String provider, NaruStreamHandler handler, NaruModelConfig model) {
+    public NaruOpenAiStreamParser(String provider, NaruStreamHandler handler, NaruModelConfig model) {
         this.provider = provider;
         this.handler = handler;
         NaruThinkingTags tags = model == null ? null : model.thinkingTags();
@@ -245,7 +245,7 @@ public class NaruOpenApiStreamParser extends NaruSseResponseParser {
                 if (NBlankable.isBlank(builder.name)) {
                     continue;
                 }
-                Map<String, Object> arguments = NaruOpenApiResponseParser.parseArguments(
+                Map<String, Object> arguments = NaruOpenAiResponseParser.parseArguments(
                         toJsonElement(builder.arguments.toString()));
                 calls.add(new NaruToolCall(
                         builder.id != null ? builder.id : "call_" + java.util.UUID.randomUUID(),
@@ -278,7 +278,7 @@ public class NaruOpenApiStreamParser extends NaruSseResponseParser {
 
     /**
      * The collected argument fragments as an element, or {@code null} when there
-     * are none -- which {@link NaruOpenApiResponseParser#parseArguments} already
+     * are none -- which {@link NaruOpenAiResponseParser#parseArguments} already
      * treats as "no arguments", and which is the correct reading of a call whose
      * arguments the stream never delivered.
      */

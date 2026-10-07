@@ -1,4 +1,4 @@
-package net.thevpc.naru.ext.models.openapi;
+package net.thevpc.naru.ext.models.openai;
 
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
@@ -12,7 +12,7 @@ import net.thevpc.nuts.elem.NObjectElementBuilder;
 
 import java.util.*;
 
-public class NaruOpenApiRequestSerializer implements NaruModelRequestSerializer {
+public class NaruOpenAiRequestSerializer implements NaruModelRequestSerializer {
 
     @Override
     public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session) {

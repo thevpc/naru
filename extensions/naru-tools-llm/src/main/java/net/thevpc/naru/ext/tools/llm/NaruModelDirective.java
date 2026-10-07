@@ -308,10 +308,10 @@ public class NaruModelDirective extends NaruDirectiveBase {
         String key = normalizeOptionKey(prefix);
         switch (key) {
             case "provider":
-                // the internal wire type and the (gone) wire-shorthand ids are
-                // never offered: --provider=wire|openai|... is rejected at parse
+                // the internal custom type is never offered: --provider=custom is
+                // rejected at parse (as are wire protocol ids with no provider type)
                 for (String t : providerTypes(session)) {
-                    if ("wire".equalsIgnoreCase(t)) {
+                    if ("custom".equalsIgnoreCase(t)) {
                         continue;
                     }
                     addValueCandidate(candidates, prefix, t, t, current);
@@ -746,7 +746,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
         // and leave a parameter-less shell behind.
         String providerValue = rawStringParam(params, "provider");
         String protocolValue = rawStringParam(params, "protocol");
-        if (existing != null && providerValue == null && !"wire".equalsIgnoreCase(existing.provider())) {
+        if (existing != null && providerValue == null && !"custom".equalsIgnoreCase(existing.provider())) {
             return fail(context, NMsg.ofC(
                     "Error: cannot clear '%s's provider with '--provider=' (an update only merges) — to turn it "
                             + "into a generic endpoint, remove it and add it again with '--protocol=<wire> --url=\u2026 --models=a,b'.",
@@ -762,15 +762,22 @@ public class NaruModelDirective extends NaruDirectiveBase {
             String lower = providerValue.trim().toLowerCase();
             if (lower.equals("openapi")) {
                 return fail(context, NMsg.ofC(
-                        "Error: '--provider=openapi' is gone — the wire id is now 'openai': a generic endpoint "
-                                + "spells it as '--protocol=openai --url=\u2026 --models=a,b'."));
+                        "Error: '--provider=openapi' is gone — 'openai' is now both a wire id and a built-in "
+                                + "provider type: use '--provider=openai' for OpenAI's API itself, or "
+                                + "'--protocol=openai --url=\u2026 --models=a,b' for a generic endpoint."));
             }
             if (lower.equals("wire")) {
                 return fail(context, NMsg.ofC(
-                        "Error: '--provider=wire' is internal to registrations — a generic endpoint spells its "
+                        "Error: '--provider=wire' was the old name of the internal endpoint type (now 'custom') — "
+                                + "a generic endpoint spells its wire shape with '--protocol=<wire> --url=\u2026 "
+                                + "--models=a,b', no --provider."));
+            }
+            if (lower.equals("custom")) {
+                return fail(context, NMsg.ofC(
+                        "Error: '--provider=custom' is internal to registrations — a generic endpoint spells its "
                                 + "wire shape with '--protocol=<wire> --url=\u2026 --models=a,b', no --provider."));
             }
-            if (lower.equals("openai") || lower.equals("anthropic")) {
+            if (lower.equals("anthropic")) {
                 return fail(context, NMsg.ofC(
                         "Error: '--provider=%s' is a wire protocol id, not a provider type — a generic endpoint "
                                 + "spells it as '--protocol=%s --url=\u2026 --models=a,b'.",
@@ -797,7 +804,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
         }
 
         // --provider names a *type*, never an instance id; a generic endpoint
-        // (no provider param) resolves to the internal wire type
+        // (no provider param) resolves to the internal custom type
         NaruModelProvider typeProvider = findProviderType(session, reg.provider());
         if (typeProvider == null) {
             return fail(context, NMsg.ofC(
@@ -852,7 +859,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
 
         // a generic endpoint has no provider class to enumerate or address — it
         // needs a base url and the models it serves, or there is nothing to call
-        boolean generic = "wire".equalsIgnoreCase(reg.provider());
+        boolean generic = "custom".equalsIgnoreCase(reg.provider());
         if (generic) {
             if (NBlankable.isBlank(reg.stringValue("url").orNull())) {
                 return fail(context, NMsg.ofC(
@@ -1081,11 +1088,11 @@ public class NaruModelDirective extends NaruDirectiveBase {
     /**
      * The type column of {@code /model registered}: a provider-based registration
      * names its type; a generic endpoint (no provider param) names the wire
-     * protocol it speaks instead of the internal {@code wire} type.
+     * protocol it speaks instead of the internal {@code custom} type.
      */
     private static String registrationTypeColumn(NaruModelRegistration r) {
-        if ("wire".equalsIgnoreCase(r.provider())) {
-            return r.protocol().orElse("wire");
+        if ("custom".equalsIgnoreCase(r.provider())) {
+            return r.protocol().orElse("custom");
         }
         return r.provider();
     }

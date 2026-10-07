@@ -1,4 +1,4 @@
-package net.thevpc.naru.ext.models.openapi;
+package net.thevpc.naru.ext.models.openai;
 
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruResponse;
@@ -38,7 +38,7 @@ import java.util.*;
  * }
  * }
  */
-public class NaruOpenApiResponseParser implements NElementDeserializer<NaruResponse> {
+public class NaruOpenAiResponseParser implements NElementDeserializer<NaruResponse> {
     @Override
     public NaruResponse toObject(NElementDeserializerContext context) {
         NElement e = context.element();

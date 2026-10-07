@@ -2,7 +2,7 @@ package net.thevpc.naru.ext.models.test;
 
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.ext.models.openapi.NaruOpenApiRequestSerializer;
+import net.thevpc.naru.ext.models.openai.NaruOpenAiRequestSerializer;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
@@ -15,10 +15,10 @@ import org.junit.jupiter.api.Test;
 import java.util.*;
 
 /**
- * Wire-protocol tests for the OpenAI-compatible ({@code openapi}) request shape,
+ * Wire-protocol tests for the OpenAI-compatible ({@code openai}) request shape,
  * exercising the same coverage as {@link NaruAnthropicRequestSerializerTest}.
  */
-public class NaruOpenApiRequestSerializerTest {
+public class NaruOpenAiRequestSerializerTest {
 
     @BeforeAll
     public static void setUp() {
@@ -27,7 +27,7 @@ public class NaruOpenApiRequestSerializerTest {
 
     @Test
     public void testBasicShapeWithSystemMessage() {
-        NaruOpenApiRequestSerializer serializer = new NaruOpenApiRequestSerializer();
+        NaruOpenAiRequestSerializer serializer = new NaruOpenAiRequestSerializer();
         List<NaruMessage> messages = Arrays.asList(
                 NaruMessage.system("You are a helpful assistant."),
                 NaruMessage.user("Hello there"),
@@ -54,7 +54,7 @@ public class NaruOpenApiRequestSerializerTest {
 
     @Test
     public void testHyperparametersAtRoot() {
-        NaruOpenApiRequestSerializer serializer = new NaruOpenApiRequestSerializer();
+        NaruOpenAiRequestSerializer serializer = new NaruOpenAiRequestSerializer();
         NaruModelRequest request = new NaruModelRequest(
                 Collections.singletonList(NaruMessage.user("hi")), Collections.emptyMap());
         NaruModelConfig model = new NaruModelConfig("custom-llm", "llama-3.1-8b")
@@ -76,7 +76,7 @@ public class NaruOpenApiRequestSerializerTest {
 
     @Test
     public void testToolCallAndToolResultBlocks() {
-        NaruOpenApiRequestSerializer serializer = new NaruOpenApiRequestSerializer();
+        NaruOpenAiRequestSerializer serializer = new NaruOpenAiRequestSerializer();
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("q", "what is naru");
         NaruToolCall call = new NaruToolCall("call_01ABC", "web_search", args);
@@ -113,7 +113,7 @@ public class NaruOpenApiRequestSerializerTest {
 
     @Test
     public void testToolsSchema() {
-        NaruOpenApiRequestSerializer serializer = new NaruOpenApiRequestSerializer();
+        NaruOpenAiRequestSerializer serializer = new NaruOpenAiRequestSerializer();
         List<NaruToolDefinition> tools = Collections.singletonList(
                 new NaruToolDefinitionFunction("web_search",
                         "Search the web",
@@ -138,7 +138,7 @@ public class NaruOpenApiRequestSerializerTest {
 
     @Test
     public void testImageBlock() {
-        NaruOpenApiRequestSerializer serializer = new NaruOpenApiRequestSerializer();
+        NaruOpenAiRequestSerializer serializer = new NaruOpenAiRequestSerializer();
         NaruMessage user = NaruMessage.userWithImages("what is this?", Collections.singletonList("QUJD"));
         NaruModelRequest request = new NaruModelRequest(
                 Collections.singletonList(user), Collections.emptyMap());

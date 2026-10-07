@@ -3,7 +3,7 @@ package net.thevpc.naru.ext.models.mistral;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
+import net.thevpc.naru.ext.models.openai.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.log.NLog;

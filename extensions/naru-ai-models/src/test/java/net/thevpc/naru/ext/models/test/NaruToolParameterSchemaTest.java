@@ -5,7 +5,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.ext.models.anthropic.NaruAnthropicRequestSerializer;
 import net.thevpc.naru.ext.models.gemini.NaruGeminiNativeRequestSerializer;
 import net.thevpc.naru.ext.models.ollama.NaruOllamaNativeRequestSerializer;
-import net.thevpc.naru.ext.models.openapi.NaruOpenApiRequestSerializer;
+import net.thevpc.naru.ext.models.openai.NaruOpenAiRequestSerializer;
 import net.thevpc.naru.api.registry.NaruToolSchema;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
@@ -77,7 +77,7 @@ public class NaruToolParameterSchemaTest {
     }
 
     private static NObjectElement openApiSchema(NaruModelRequest request) {
-        return new NaruOpenApiRequestSerializer()
+        return new NaruOpenAiRequestSerializer()
                 .serialize(request, model(), null).asObject().get()
                 .getArray("tools").get().children().get(0).asObject().get()
                 .getObject("function").get()

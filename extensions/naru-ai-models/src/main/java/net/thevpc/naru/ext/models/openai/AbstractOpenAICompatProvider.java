@@ -1,4 +1,4 @@
-package net.thevpc.naru.ext.models.openapi;
+package net.thevpc.naru.ext.models.openai;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.AbstractNaruModelProvider;

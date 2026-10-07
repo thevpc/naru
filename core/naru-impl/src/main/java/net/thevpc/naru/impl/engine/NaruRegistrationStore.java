@@ -56,7 +56,7 @@ public class NaruRegistrationStore {
      * <p>A hand-edited entry that writes a wire protocol id as its
      * {@code provider}, or a provider with no matching type, fails here with a
      * named error rather than silently registering nothing. An entry without a
-     * {@code provider} is a generic endpoint (internal {@code wire} type).
+     * {@code provider} is a generic endpoint (internal {@code custom} type).
      */
     public Map<String, NaruModelRegistration> toMap() {
         Map<String, NElement> pub = publicStore.toMap();

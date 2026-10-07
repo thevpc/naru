@@ -1,4 +1,4 @@
-package net.thevpc.naru.ext.models.wire;
+package net.thevpc.naru.ext.models.custom;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruCachingMode;
@@ -6,8 +6,8 @@ import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.anthropic.NaruModelProtocolAnthropicCompat;
 import net.thevpc.naru.ext.models.gemini.NaruModelProtocolGeminiNative;
-import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
-import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
+import net.thevpc.naru.ext.models.openai.AbstractOpenAICompatProvider;
+import net.thevpc.naru.ext.models.openai.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
@@ -19,10 +19,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Generic wire provider: a class-less endpoint (OpenAI-compatible, Anthropic
- * Messages, native Gemini, ...) addressed through a registration instead of
- * code. This is the implementation type behind a {@code /model add} that passes
- * {@code --protocol} with no {@code --provider} (design doc §8).
+ * Generic endpoint provider: a class-less endpoint (OpenAI-compatible,
+ * Anthropic Messages, native Gemini, ...) addressed through a registration
+ * instead of code. This is the implementation type behind a {@code /model add}
+ * that passes {@code --protocol} with no {@code --provider} (design doc §8).
  *
  * <p>All configuration comes from the instance's own params (design §7), i.e.
  * from the registration, with the agent env {@code <instance id>.<key>} as the
@@ -40,15 +40,16 @@ import java.util.Set;
  * cachingMode=AUTOMATIC_PREFIX   (optional, defaults from the wire shape)
  * </pre>
  *
- * <p>Unlike the cloud types, a wire registration exposes <b>only the models it
- * declares</b> — the endpoint's own listing is never queried, because the user
- * already said what it serves. The endpoint is probed (short-timeout GET with a
- * TTL cache) before its models show up; {@code probe=false} opts out.
+ * <p>Unlike the cloud types, a custom endpoint registration exposes <b>only
+ * the models it declares</b> — the endpoint's own listing is never queried,
+ * because the user already said what it serves. The endpoint is probed
+ * (short-timeout GET with a TTL cache) before its models show up;
+ * {@code probe=false} opts out.
  */
-public class NaruWireProvider extends AbstractOpenAICompatProvider {
+public class NaruCustomProvider extends AbstractOpenAICompatProvider {
 
-    public NaruWireProvider() {
-        super("wire", new String[0]);
+    public NaruCustomProvider() {
+        super("custom", new String[0]);
     }
 
     @Override
@@ -99,9 +100,9 @@ public class NaruWireProvider extends AbstractOpenAICompatProvider {
 
     /**
      * The models this endpoint serves, from its {@code model}/{@code models}
-     * params. No declaration means nothing to list: a wire registration's
-     * catalogue is what its owner wrote down, not what the server happens to
-     * answer on {@code GET /models}.
+     * params. No declaration means nothing to list: a custom endpoint
+     * registration's catalogue is what its owner wrote down, not what the server
+     * happens to answer on {@code GET /models}.
      */
     private List<String> declaredModels(NaruSession session) {
         LinkedHashSet<String> out = new LinkedHashSet<>();

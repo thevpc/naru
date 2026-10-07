@@ -4,7 +4,7 @@ import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
-import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
+import net.thevpc.naru.ext.models.openai.AbstractOpenAICompatProvider;
 import net.thevpc.nuts.util.NBlankable;
 
 import java.util.ArrayList;

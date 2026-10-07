@@ -7,8 +7,8 @@ import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.mistral.NaruModelProtocolMistral;
-import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
-import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
+import net.thevpc.naru.ext.models.openai.AbstractOpenAICompatProvider;
+import net.thevpc.naru.ext.models.openai.NaruModelProtocolOpenAICompat;
 
 import java.util.ArrayList;
 import java.util.Collections;

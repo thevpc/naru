@@ -8,8 +8,8 @@ import net.thevpc.naru.api.model.NaruStreamChunk;
 import net.thevpc.naru.api.model.NaruStreamCollector;
 import net.thevpc.naru.api.model.NaruThinkingExtraction;
 import net.thevpc.naru.api.model.NaruToolCall;
-import net.thevpc.naru.ext.models.openapi.NaruOpenApiResponseParser;
-import net.thevpc.naru.ext.models.openapi.NaruOpenApiStreamParser;
+import net.thevpc.naru.ext.models.openai.NaruOpenAiResponseParser;
+import net.thevpc.naru.ext.models.openai.NaruOpenAiStreamParser;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElementReader;
@@ -30,7 +30,7 @@ import java.util.Map;
  * regression that only shows up as strange behaviour much later, once per
  * provider, in production.
  */
-public class NaruOpenApiStreamParserTest {
+public class NaruOpenAiStreamParserTest {
 
     @BeforeAll
     public static void setUp() {
@@ -41,8 +41,8 @@ public class NaruOpenApiStreamParserTest {
 
     private NaruResponse stream(String... payloads) {
         collector = new NaruStreamCollector();
-        NaruOpenApiStreamParser parser =
-                new NaruOpenApiStreamParser("groq", collector, new NaruModelConfig("m", "groq"));
+        NaruOpenAiStreamParser parser =
+                new NaruOpenAiStreamParser("groq", collector, new NaruModelConfig("m", "groq"));
         for (String payload : payloads) {
             if (!parser.onEvent(null, payload)) {
                 break;
@@ -53,7 +53,7 @@ public class NaruOpenApiStreamParserTest {
 
     private NaruResponse parseBatch(String json) {
         NElementReader reader = NElementReader.ofJson();
-        reader.mapperStore().setDeserializer(NaruResponse.class, new NaruOpenApiResponseParser());
+        reader.mapperStore().setDeserializer(NaruResponse.class, new NaruOpenAiResponseParser());
         return reader.read(json, NaruResponse.class);
     }
 
@@ -308,8 +308,8 @@ public class NaruOpenApiStreamParserTest {
     @Test
     public void anInterruptedStreamIsNotReportedAsDone() {
         collector = new NaruStreamCollector();
-        NaruOpenApiStreamParser parser =
-                new NaruOpenApiStreamParser("groq", collector, new NaruModelConfig("m", "groq"));
+        NaruOpenAiStreamParser parser =
+                new NaruOpenAiStreamParser("groq", collector, new NaruModelConfig("m", "groq"));
         parser.onEvent(null, "{\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}");
         Assertions.assertTrue(parser.hasDeliveredContent());
         NaruResponse r = parser.finish(true);
@@ -320,8 +320,8 @@ public class NaruOpenApiStreamParserTest {
     @Test
     public void aStreamThatDeliveredNothingReportsNothingDelivered() {
         collector = new NaruStreamCollector();
-        NaruOpenApiStreamParser parser =
-                new NaruOpenApiStreamParser("groq", collector, new NaruModelConfig("m", "groq"));
+        NaruOpenAiStreamParser parser =
+                new NaruOpenAiStreamParser("groq", collector, new NaruModelConfig("m", "groq"));
         parser.onEvent(null, "{\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}");
         // a role-only frame is metadata, not output: retrying is still invisible
         Assertions.assertFalse(parser.hasDeliveredContent());

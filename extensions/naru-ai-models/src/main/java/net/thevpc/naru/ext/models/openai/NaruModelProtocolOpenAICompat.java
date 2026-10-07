@@ -1,4 +1,4 @@
-package net.thevpc.naru.ext.models.openapi;
+package net.thevpc.naru.ext.models.openai;
 
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.task.NaruTask;
@@ -38,8 +38,8 @@ public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
 
     public NaruModelProtocolOpenAICompat(NaruModelProvider provider, NaruModelConfig model, String configPrefix, String chatPath, NaruModelCapabilities capabilities, String defaultBaseUrl) {
         super(provider, model, configPrefix, chatPath, capabilities,
-                new NaruOpenApiRequestSerializer(),
-                new NaruOpenApiResponseParser()
+                new NaruOpenAiRequestSerializer(),
+                new NaruOpenAiResponseParser()
         );
         this.defaultBaseUrl = defaultBaseUrl;
     }
@@ -102,7 +102,7 @@ public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
             // Delivering it as a batch of chunks is still a valid stream shape.
             return super.chatStream(request, task, handler);
         }
-        return streamChat(request, task, new NaruOpenApiStreamParser(providerName(), handler, model));
+        return streamChat(request, task, new NaruOpenAiStreamParser(providerName(), handler, model));
     }
 
     @Override
