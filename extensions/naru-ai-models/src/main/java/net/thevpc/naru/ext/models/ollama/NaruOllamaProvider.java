@@ -43,7 +43,9 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
     }
 
     public String baseUrl(NaruSession session) {
-        String url = session.agent().env().get(name() + ".url").flatMap(NElement::asStringValue).orElse("http://localhost:11434");
+        // §6: the instance's own url (a registration pointing at a remote Ollama)
+        // wins over the env key, with localhost as the built-in default
+        String url = configValue("url", session).orElse("http://localhost:11434");
         return url.replaceAll("/$", "");
     }
 

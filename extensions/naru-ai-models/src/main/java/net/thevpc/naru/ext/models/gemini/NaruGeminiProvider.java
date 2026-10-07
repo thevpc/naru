@@ -47,7 +47,10 @@ public class NaruGeminiProvider extends AbstractOpenAICompatProvider {
 
     @Override
     protected String baseUrl(NaruSession session) {
-        return "https://generativelanguage.googleapis.com/v1beta/openai";
+        // §6: the registration's own url (a proxy in front of Google, a
+        // regional endpoint) beats the fixed default
+        return configValue("url", session)
+                .orElse("https://generativelanguage.googleapis.com/v1beta/openai");
     }
 
 

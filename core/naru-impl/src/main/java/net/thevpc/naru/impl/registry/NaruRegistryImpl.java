@@ -250,12 +250,24 @@ public class NaruRegistryImpl implements NaruRegistry {
             if (!p.isAvailable(session)) {
                 continue;
             }
+            if (!p.isEnabled()) {
+                // enabled=false hides an instance from every listing and from index
+                // resolution: a registration switched off selects nothing at all
+                continue;
+            }
             List<String> ids;
             try {
                 ids = p.findModelIds(session);
             } catch (RuntimeException e) {
                 // a single unreachable provider must not break listing for all the others
                 ids = Collections.emptyList();
+            }
+            Set<String> declared = declaredModels(p);
+            if (declared != null) {
+                // design §7: --model=/--models= pins the instance to a declared subset;
+                // whatever the type enumerates outside of it is not selectable under
+                // this instance id
+                ids = ids.stream().filter(declared::contains).collect(Collectors.toList());
             }
             for (String m : ids) {
                 if (!NBlankable.isBlank(m)) {
@@ -267,6 +279,35 @@ public class NaruRegistryImpl implements NaruRegistry {
         // (provider,model) is now unique => this is a total order => a stable index
         a.sort(Comparator.comparing(NaruModelKey::provider).thenComparing(NaruModelKey::model));
         return a;
+    }
+
+    /**
+     * The model ids an instance declares through its {@code model}/{@code models}
+     * params (a registration's pin / subset), or null when it declares none and
+     * therefore lists whatever its type enumerates.
+     */
+    private static Set<String> declaredModels(NaruModelProvider p) {
+        Set<String> out = new LinkedHashSet<>();
+        boolean any = false;
+        String single = p.rawParam("model").orNull();
+        if (!NBlankable.isBlank(single)) {
+            any = true;
+            for (String s : single.split("[,\\s]+")) {
+                if (!s.isBlank()) {
+                    out.add(s.trim());
+                }
+            }
+        }
+        String many = p.rawParam("models").orNull();
+        if (!NBlankable.isBlank(many)) {
+            any = true;
+            for (String s : many.split("[,\\s]+")) {
+                if (!s.isBlank()) {
+                    out.add(s.trim());
+                }
+            }
+        }
+        return any ? out : null;
     }
 
     @Override

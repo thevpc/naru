@@ -5,6 +5,8 @@ import net.thevpc.naru.api.model.AbstractNaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
+import net.thevpc.naru.ext.models.NaruModelProtocolType;
+import net.thevpc.naru.ext.models.NaruModelProtocolTypes;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.log.NLog;
@@ -15,6 +17,7 @@ import net.thevpc.nuts.net.NHttpResponse;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.*;
@@ -26,12 +29,21 @@ import java.util.concurrent.ConcurrentHashMap;
  * the wire protocol and auth handling are inherited.
  */
 public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProvider {
-    private volatile List<String> cachedLiveModels;
-    private volatile long cachedLiveModelsAt = 0L;
+    /**
+     * Live model enumeration cached per (type, url, key) — design §9: several
+     * registrations of one type that share a key and endpoint cost one listing,
+     * not one each, while a registration with its own key gets its own entry.
+     */
+    private static final Map<String, ModelCacheEntry> LIVE_MODELS_CACHE = new ConcurrentHashMap<>();
     private static final long LIVE_MODELS_TTL_MS = 5 * 60 * 1000L;
     private static final long REACHABILITY_TTL_MS = 5000L;
 
-    private final Map<String, ProbeResult> reachabilityCache = new ConcurrentHashMap<>();
+    /**
+     * Reachability results keyed by url: registrations pointing at the same
+     * endpoint share one probe (design §11: probe caching is type/url scoped,
+     * not instance scoped).
+     */
+    private static final Map<String, ProbeResult> REACHABILITY_CACHE = new ConcurrentHashMap<>();
 
     protected final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
 
@@ -54,7 +66,17 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
     protected abstract NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session);
 
     protected NaruModelProtocol createProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
-        return new NaruModelProtocolOpenAICompat(this, model, name(), chatPath(), capabilities, baseUrl(session));
+        // a registration's chatPath param wins over the type's default path (§7)
+        String cp = configValue("chatPath", session).orElse(chatPath());
+        return new NaruModelProtocolOpenAICompat(this, model, name(), cp, capabilities, baseUrl(session));
+    }
+
+    @Override
+    public Set<String> supportedProtocols() {
+        // ids the protocol factory actually resolves against, so /model add can
+        // reject an unknown --protocol — and say what it knows — instead of
+        // silently defaulting (§8)
+        return NaruModelProtocolTypes.names();
     }
 
     @Override
@@ -64,8 +86,43 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
         }
         NaruModelCapabilities capabilities = resolveCapabilities(model.model(), session);
         return NOptional.of(protocols.computeIfAbsent(model,
-                k -> createProtocol(model, capabilities, session)
+                k -> {
+                    NOptional<String> override = configValue("protocol", session);
+                    if (override.isPresent()) {
+                        return overriddenProtocol(override.get(), model, capabilities, session);
+                    }
+                    return createProtocol(model, capabilities, session);
+                }
         ));
+    }
+
+    /**
+     * The instance's {@code --protocol} override (design §8): same provider type,
+     * another wire shape — a gemini registration speaking native
+     * {@code generateContent}, a custom endpoint speaking Anthropic Messages.
+     *
+     * <p>The id must name a type this provider knows: {@code /model add} rejects
+     * unknown ids, and a hand-edited registration fails loudly here rather than
+     * silently falling back to the default shape.
+     */
+    private NaruModelProtocol overriddenProtocol(String protocolId, NaruModelConfig model,
+                                                 NaruModelCapabilities capabilities, NaruSession session) {
+        NaruModelProtocolType t = NaruModelProtocolTypes.of(protocolId).orElse(null);
+        if (t == null) {
+            throw new NIllegalArgumentException(NMsg.ofC(
+                    "unknown protocol '%s' for provider '%s'", protocolId, name()));
+        }
+        String cp = configValue("chatPath", session).orNull();
+        if (cp == null) {
+            if (NaruModelProtocolTypes.ANTHROPIC.equals(protocolId)) {
+                cp = "v1/messages";
+            } else if (NaruModelProtocolTypes.GEMINI.equals(protocolId)) {
+                cp = null; // native protocol builds models/<id>:generateContent itself
+            } else {
+                cp = chatPath();
+            }
+        }
+        return t.create(this, model, name(), cp, capabilities, baseUrl(session));
     }
 
     public boolean isApiKeySet(NaruSession session){
@@ -84,22 +141,14 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
     }
 
     protected NDuration connectTimeout(NaruSession session) {
-        return session.agent().env().get(name() + ".connectTimeout").flatMap(x -> x.asStringValue())
-                .flatMap(x -> NDuration.of(x))
-                .orElseGetOptionalFrom(
-                        () -> session.agent().env().get(name() + ".timeout").flatMap(x -> x.asStringValue())
-                                .flatMap(x -> NDuration.of(x))
-                )
+        return configValue("connectTimeout", session).flatMap(x -> NDuration.of(x))
+                .orElseGetOptionalFrom(() -> configValue("timeout", session).flatMap(x -> NDuration.of(x)))
                 .orElse(NDuration.ofSeconds(120));
     }
 
     protected NDuration readTimeout(NaruSession session) {
-        return session.agent().env().get(name() + ".readTimeout").flatMap(x -> x.asStringValue())
-                .flatMap(x -> NDuration.of(x))
-                .orElseGetOptionalFrom(
-                        () -> session.agent().env().get(name() + ".timeout").flatMap(x -> x.asStringValue())
-                                .flatMap(x -> NDuration.of(x))
-                )
+        return configValue("readTimeout", session).flatMap(x -> NDuration.of(x))
+                .orElseGetOptionalFrom(() -> configValue("timeout", session).flatMap(x -> NDuration.of(x)))
                 .orElse(NDuration.ofSeconds(120));
     }
 
@@ -167,14 +216,14 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
             return Collections.emptyList();
         }
         long now = System.currentTimeMillis();
-        List<String> cached = cachedLiveModels;
-        if (cached != null && (now - cachedLiveModelsAt) < LIVE_MODELS_TTL_MS) {
-            return cached;
+        String cacheKey = type() + "|" + baseUrl(session) + "|" + apiKey(session).orNull();
+        ModelCacheEntry cached = LIVE_MODELS_CACHE.get(cacheKey);
+        if (cached != null && (now - cached.at) < LIVE_MODELS_TTL_MS) {
+            return cached.ids;
         }
         List<String> live = fetchLiveModelIds(session);
         if (!live.isEmpty()) {
-            cachedLiveModels = live;
-            cachedLiveModelsAt = now;
+            LIVE_MODELS_CACHE.put(cacheKey, new ModelCacheEntry(live, now));
             return live;
         }
         return staticFallback;
@@ -189,12 +238,12 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      */
     protected boolean isReachable(String url) {
         long now = System.currentTimeMillis();
-        ProbeResult cached = reachabilityCache.get(url);
+        ProbeResult cached = REACHABILITY_CACHE.get(url);
         if (cached != null && (now - cached.at) < REACHABILITY_TTL_MS) {
             return cached.ok;
         }
         boolean ok = probeUrl(url);
-        reachabilityCache.put(url, new ProbeResult(ok, now));
+        REACHABILITY_CACHE.put(url, new ProbeResult(ok, now));
         return ok;
     }
 
@@ -216,6 +265,16 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
 
         ProbeResult(boolean ok, long at) {
             this.ok = ok;
+            this.at = at;
+        }
+    }
+
+    private static class ModelCacheEntry {
+        final List<String> ids;
+        final long at;
+
+        ModelCacheEntry(List<String> ids, long at) {
+            this.ids = ids;
             this.at = at;
         }
     }

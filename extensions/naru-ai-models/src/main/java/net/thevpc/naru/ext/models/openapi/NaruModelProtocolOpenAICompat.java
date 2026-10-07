@@ -6,6 +6,7 @@ import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.net.NHttpRequest;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NOptional;
 
 import java.util.Map;
 
@@ -30,11 +31,12 @@ public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
 
     @Override
     public String url(NaruTask task, Map<String, NElement> env) {
+        NOptional<String> own = configValue(task, "url");
+        if (own.isPresent()) {
+            return own.get().replaceAll("/+$", "");
+        }
         if (defaultBaseUrl != null) {
-            return task.session().agent().env().get(configPrefix + ".url")
-                    .flatMap(x -> x.asStringValue())
-                    .map(x -> x.replaceAll("/$", ""))
-                    .orElse(defaultBaseUrl);
+            return defaultBaseUrl;
         }
         return super.url(task, env);
     }

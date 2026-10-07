@@ -1,5 +1,7 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.naru.api.agent.NaruEnv;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.elem.NPairElement;
@@ -332,6 +334,60 @@ public class NaruModelRegistration implements NToElement {
             return NOptional.ofNamedEmpty(NMsg.ofC("unset variable reference"));
         }
         return NOptional.of(resolved);
+    }
+
+    /**
+     * The layered resolver config resolution asks for (design §6): session env
+     * first, then agent env, then the system environment — the most specific
+     * scope wins. Given to {@link #interpolate(String, Function)} it makes a
+     * {@code $NAME} reference follow the same precedence as a direct name
+     * lookup ({@link #envValue(NaruSession, String)}), so rotating a key in any
+     * layer needs no re-registration.
+     *
+     * @param session whose envs are consulted; null means system env only
+     */
+    public static Function<String, String> envResolver(NaruSession session) {
+        return name -> envValue(session, name);
+    }
+
+    /**
+     * The value of {@code name} from the first layer that defines it — session
+     * env, then agent env, then the system environment — or null when no layer
+     * does. A blank value never carries a key: it counts as unset and the
+     * search continues, which is how an emptied layer hands the lookup to the
+     * next one instead of locking it out.
+     */
+    public static String envValue(NaruSession session, String name) {
+        if (NBlankable.isBlank(name)) {
+            return null;
+        }
+        if (session != null) {
+            NOptional<Object> s = session.getSessionEnv(name);
+            String sv = envString(s == null ? null : s.orNull());
+            if (!NBlankable.isBlank(sv)) {
+                return NStringUtils.strip(sv);
+            }
+            NaruEnv agentEnv = session.agent() == null ? null : session.agent().env();
+            if (agentEnv != null) {
+                NOptional<NElement> a = agentEnv.get(name);
+                String av = a == null ? null : a.flatMap(NElement::asStringValue).orNull();
+                if (!NBlankable.isBlank(av)) {
+                    return NStringUtils.strip(av);
+                }
+            }
+        }
+        return NStringUtils.stripToNull(System.getenv(name));
+    }
+
+    /**
+     * A session env value as it reads in configuration: elements to their string
+     * form, anything else to its text form.
+     */
+    private static String envString(Object v) {
+        if (v instanceof NElement) {
+            return ((NElement) v).asStringValue().orNull();
+        }
+        return v == null ? null : String.valueOf(v);
     }
 
     private static String mask(String v) {

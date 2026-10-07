@@ -117,6 +117,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * the listing was filtered (--free, --provider, keyword) and therefore renumbered.
      */
     private volatile List<NaruModelKey> listedModels = Collections.emptyList();
+    /**
+     * Instance ids materialized from the registration store into the registry.
+     * Kept so a reload can remove exactly what it previously added — never a
+     * built-in provider that happens to share the id.
+     */
+    private final Set<String> registrationInstanceIds = new HashSet<>();
 
 
     public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
@@ -156,6 +162,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (configureDefaults) {
             ((NaruRegistryImpl) registry).registerDefaults();
         }
+        // registrations become provider instances: each id in the store is registered
+        // under its own name, so its models list as <id>/<model> and resolve with the
+        // registration's own configuration (design doc §6)
+        reloadRegistrations();
         // A brand new session has no state to restore, but extensions still have to be
         // brought up: one may need the session to resolve anything at all. The SPI
         // promises open() runs before any task does, and a fresh session runs tasks too.
@@ -450,14 +460,17 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     @Override
     public Map<String, NaruModelRegistration> registrations() {
         ensureNotStopped();
-        return ((NaruAgentImpl) agent).getRegistrations().toMap();
+        NaruRegistrationStore store = registrationStore();
+        return store == null ? Map.of() : store.toMap();
     }
 
     @Override
     public void putRegistration(NaruModelRegistration registration) {
         ensureNotStopped();
-        if (registration != null) {
-            ((NaruAgentImpl) agent).getRegistrations().put(registration);
+        NaruRegistrationStore store = registrationStore();
+        if (registration != null && store != null) {
+            store.put(registration);
+            reloadRegistrations();
             fireChanged();
         }
     }
@@ -465,11 +478,114 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     @Override
     public boolean removeRegistration(String id) {
         ensureNotStopped();
-        boolean removed = ((NaruAgentImpl) agent).getRegistrations().remove(id);
+        NaruRegistrationStore store = registrationStore();
+        boolean removed = store != null && store.remove(id);
         if (removed) {
+            reloadRegistrations();
             fireChanged();
         }
         return removed;
+    }
+
+    private NaruRegistrationStore registrationStore() {
+        return agent instanceof NaruAgentImpl ? ((NaruAgentImpl) agent).getRegistrations() : null;
+    }
+
+    /**
+     * Materializes the registration store into the registry (design doc §11): every
+     * registration becomes a provider instance addressed by its id, carrying the
+     * registration's params, so its models list under {@code <id>/<model>} and every
+     * config lookup is scoped to that id.
+     *
+     * <p>Runs at session start and after any write, replacing exactly the instances a
+     * previous run added: a registration edit must reach live instances, and an id
+     * used by a built-in provider is never overwritten or removed.
+     */
+    private void reloadRegistrations() {
+        NaruRegistrationStore store = registrationStore();
+        if (store == null) {
+            return;
+        }
+        Map<String, NaruModelRegistration> regs;
+        try {
+            regs = store.toMap();
+        } catch (RuntimeException e) {
+            // a hand-edited broken entry must fail loudly where it is written, but it
+            // must not prevent the session from starting with the registrations that
+            // are valid
+            warn(NMsg.ofC("⚠ registration store unreadable: %s", e.getMessage()));
+            return;
+        }
+        for (String id : new ArrayList<>(registrationInstanceIds)) {
+            if (!regs.containsKey(id)) {
+                registry.modelProviders().remove(id.toLowerCase());
+                registrationInstanceIds.remove(id);
+            }
+        }
+        for (NaruModelRegistration reg : regs.values()) {
+            String id = reg.id();
+            NaruModelProvider base = registry.provider(reg.provider()).orNull();
+            if (base == null) {
+                warn(NMsg.ofC("⚠ registration '%s' references unknown provider type '%s'",
+                        id, reg.provider()));
+                continue;
+            }
+            NaruModelProvider existing = registry.modelProviders().get(id.toLowerCase());
+            if (existing != null && !registrationInstanceIds.contains(id)) {
+                warn(NMsg.ofC("⚠ registration '%s' : id is already used by provider '%s'",
+                        id, existing.name()));
+                continue;
+            }
+            try {
+                NaruModelProvider instance = base.newInstance(id);
+                for (Map.Entry<String, NElement> e : reg.params().entrySet()) {
+                    String v = registrationParamValue(e.getValue());
+                    if (v != null) {
+                        instance.setParam(e.getKey(), v);
+                    }
+                }
+                registry.registerModelProvider(instance);
+                registrationInstanceIds.add(id);
+            } catch (RuntimeException e) {
+                warn(NMsg.ofC("⚠ registration '%s' could not be instantiated: %s", id, e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * A registration param as the provider param layer wants it: scalars as text,
+     * arrays as comma-separated values — {@code stop} and friends are stored as
+     * lists but consumed as strings.
+     */
+    private static String registrationParamValue(NElement e) {
+        if (e == null || e.isNull()) {
+            return null;
+        }
+        if (e.isArray()) {
+            List<String> parts = new ArrayList<>();
+            for (NElement c : e.asArray().map(x -> x.children()).orElse(List.of())) {
+                String s = registrationParamValue(c);
+                if (!NBlankable.isBlank(s)) {
+                    parts.add(s);
+                }
+            }
+            return String.join(",", parts);
+        }
+        if (e.isAnyStringOrName()) {
+            return e.asStringValue().orNull();
+        }
+        if (e.isBoolean()) {
+            return e.asBooleanValue().map(String::valueOf).orElse(null);
+        }
+        NOptional<Float> f = e.asFloatValue();
+        if (f.isPresent()) {
+            float v = f.get();
+            if (v == Math.rint(v) && Math.abs(v) < 1.0E15) {
+                return String.valueOf((long) v);
+            }
+            return String.valueOf(v);
+        }
+        return e.asStringValue().orNull();
     }
 
     public NOptional<NaruModelConfig> findModel(NaruModelConfig keyOrName) {
@@ -502,21 +618,38 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         // single provider round: modelsKeys() is network bound, never call it twice
         List<NaruModelKey> catalog = registry().modelsKeys(this);
-        // 1. fully qualified key "provider/model"
         if (ref.contains("/")) {
+            // 1. fully qualified key "provider/model"
             NOptional<NaruModelConfig> r = NaruModelKey.parse(ref).map(NaruModelConfig::new);
             if (r.isPresent() && catalog.contains(r.get().key())) {
-                return r;
+                return NOptional.of(mergeRegistrationParams(r.get()));
             }
         } else {
-            // 2. exact model name
+            // 2. registration id (design §3): accepted bare when it pins exactly one
+            //    model. A registration that pins none (or whose model is not available)
+            //    resolves to nothing here — '/model use' reports its models instead of
+            //    silently picking one.
+            NaruRegistrationStore store = registrationStore();
+            NaruModelRegistration reg = store == null ? null : store.get(ref).orNull();
+            if (reg != null) {
+                List<String> pins = new ArrayList<>(reg.stringList("model"));
+                pins.addAll(reg.stringList("models"));
+                if (pins.size() == 1) {
+                    NaruModelKey k = new NaruModelKey(ref, pins.get(0));
+                    if (catalog.contains(k)) {
+                        return NOptional.of(mergeRegistrationParams(new NaruModelConfig(k)));
+                    }
+                }
+                return NOptional.ofNamedEmpty(NMsg.ofC("registration '%s'", ref));
+            }
+            // 3. exact model name
             for (NaruModelKey k : catalog) {
                 if (k.model().equals(ref)) {
-                    return NOptional.of(new NaruModelConfig(k));
+                    return NOptional.of(mergeRegistrationParams(new NaruModelConfig(k)));
                 }
             }
         }
-        // 3. positional index. The last '/model' listing wins because its own numbering
+        // 4. positional index. The last '/model' listing wins because its own numbering
         //    (possibly filtered) is what the user is referring to. Only when no listing is
         //    available do we fall back to the raw catalog order.
         Integer idx = NLiteral.of(ref).asInt().orNull();
@@ -527,13 +660,78 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 // the listing is authoritative: never silently fall through to another
                 // row, otherwise an out-of-range index selects an unrelated model.
                 if (i >= 0 && i < listed.size()) {
-                    return NOptional.of(new NaruModelConfig(listed.get(i)));
+                    return NOptional.of(mergeRegistrationParams(new NaruModelConfig(listed.get(i))));
                 }
             } else if (i >= 0 && i < catalog.size()) {
-                return NOptional.of(new NaruModelConfig(catalog.get(i)));
+                return NOptional.of(mergeRegistrationParams(new NaruModelConfig(catalog.get(i))));
             }
         }
         return NOptional.ofNamedEmpty(NMsg.ofC("model '%s'", keyOrName));
+    }
+
+    /**
+     * The registration's model-level params merged into a resolved config (design §7):
+     * params are keyed by instance id, so every model selected under {@code <id>/<model>}
+     * carries that registration's configuration — temperature, contextLength, stop,
+     * thinkingTags, ... — rather than the base provider's.
+     */
+    private NaruModelConfig mergeRegistrationParams(NaruModelConfig c) {
+        if (c == null) {
+            return null;
+        }
+        NaruRegistrationStore store = registrationStore();
+        NaruModelRegistration reg = store == null ? null : store.get(c.provider()).orNull();
+        if (reg == null) {
+            return c;
+        }
+        if (reg.param("contextLength").isPresent()) {
+            c = c.withContextLength(reg.longValue("contextLength").orElse(c.contextLength()));
+        }
+        if (reg.param("temperature").isPresent()) {
+            c = c.withTemperature(reg.floatValue("temperature").orElse(c.temperature()));
+        }
+        if (reg.param("nucleusThreshold").isPresent()) {
+            c = c.withNucleusThreshold(reg.floatValue("nucleusThreshold").orElse(c.nucleusThreshold()));
+        }
+        if (reg.param("candidateCount").isPresent()) {
+            c = c.withCandidateCount(reg.intValue("candidateCount").orElse(c.candidateCount()));
+        }
+        if (reg.param("maxTokens").isPresent()) {
+            c = c.withMaxTokens(reg.intValue("maxTokens").orElse(c.maxTokens()));
+        }
+        if (reg.param("stop").isPresent()) {
+            c = c.withStop(reg.stringList("stop"));
+        }
+        if (reg.param("thinkingTags").isPresent()) {
+            c = c.withThinkingTags(mergeThinkingTags(reg));
+        }
+        return c;
+    }
+
+    /**
+     * The registration's {@code thinkingTags} in whichever shape it was written:
+     * the canonical {@code {openTag, closeTag}} object (a hand-edited file), a
+     * two-element array or an {@code open,close} string (both from
+     * {@code --thinkingTags}). A single unpaired tag is a configuration mistake —
+     * {@link NaruThinkingTags#of(String, String)} reports it instead of silently
+     * pairing it with something that never matches.
+     */
+    private static NaruThinkingTags mergeThinkingTags(NaruModelRegistration reg) {
+        NElement e = reg.param("thinkingTags").orNull();
+        if (e == null || e.isNull()) {
+            return null;
+        }
+        if (e.isAnyObject()) {
+            return NaruThinkingTags.of(e);
+        }
+        List<String> p = reg.stringList("thinkingTags");
+        if (p.size() >= 2) {
+            return NaruThinkingTags.of(p.get(0), p.get(1));
+        }
+        if (p.isEmpty()) {
+            return NaruThinkingTags.of("", "");     // no tags → native-only reasoning
+        }
+        return NaruThinkingTags.of(p.get(0), null); // half a pair → fails loud
     }
 
     @Override

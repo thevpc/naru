@@ -1,14 +1,19 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruEnv;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.util.NIllegalArgumentException;
+import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Proxy;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -196,5 +201,125 @@ public class NaruModelRegistrationTest {
         // a reference names a variable, not a value: shown as-is
         Assertions.assertTrue(ref.toString().contains("$GEMINI_KEY_A"));
         Assertions.assertEquals("$GEMINI_KEY_A", ref.masked().stringValue("apiKey").get());
+    }
+
+    @Test
+    public void envValueLayersSessionEnvThenAgentEnvThenSystemEnv() {
+        NaruSession session = layeredSession(
+                Map.of("SHARED", "session-wins", "ONLY_SESSION", "s-value",
+                        "BLANKED", "", "BLANK_TO_AGENT", ""),
+                Map.of("SHARED", "agent-value", "ONLY_AGENT", "a-value",
+                        "BLANKED", "", "BLANK_TO_AGENT", "fallback"));
+
+        // the most specific scope wins ...
+        Assertions.assertEquals("session-wins", NaruModelRegistration.envValue(session, "SHARED"));
+        Assertions.assertEquals("s-value", NaruModelRegistration.envValue(session, "ONLY_SESSION"));
+        Assertions.assertEquals("a-value", NaruModelRegistration.envValue(session, "ONLY_AGENT"));
+        // ... a blank value counts as unset: the lookup falls through to the next
+        // layer instead of locking the name out ...
+        Assertions.assertEquals("fallback", NaruModelRegistration.envValue(session, "BLANK_TO_AGENT"));
+        // ... and when no layer defines the name, there is no value at all
+        Assertions.assertNull(NaruModelRegistration.envValue(session, "BLANKED"));
+        Assertions.assertNull(NaruModelRegistration.envValue(session, "NARU_TEST_NO_SUCH_VAR_42"));
+        // the system environment is the last layer (and the only one without a session)
+        Assertions.assertEquals(System.getenv("PATH"), NaruModelRegistration.envValue(session, "PATH"));
+        Assertions.assertEquals(System.getenv("PATH"), NaruModelRegistration.envValue(null, "PATH"));
+        Assertions.assertNull(NaruModelRegistration.envValue(null, "NARU_TEST_NO_SUCH_VAR_42"));
+
+        // $NAME references resolve through the same layers
+        Assertions.assertEquals("s-value",
+                NaruModelRegistration.interpolate("$ONLY_SESSION", NaruModelRegistration.envResolver(session)).get());
+        Assertions.assertEquals("a-value",
+                NaruModelRegistration.interpolate("${ONLY_AGENT}", NaruModelRegistration.envResolver(session)).get());
+        Assertions.assertFalse(NaruModelRegistration.interpolate("$NARU_TEST_NO_SUCH_VAR_42",
+                NaruModelRegistration.envResolver(session)).isPresent());
+    }
+
+    /**
+     * A session whose env layers are plain maps: enough to pin the precedence
+     * rules of {@code envValue} without any file or workspace.
+     */
+    private static NaruSession layeredSession(Map<String, String> sessionEnv, Map<String, String> agentEnv) {
+        NaruEnv env = (NaruEnv) Proxy.newProxyInstance(
+                NaruSession.class.getClassLoader(), new Class<?>[]{NaruEnv.class},
+                (proxy, method, args) -> {
+                    if (method.getDeclaringClass() == Object.class) {
+                        return objectMethod(proxy, method, args);
+                    }
+                    if (method.getName().equals("get")) {
+                        String k = (String) args[0];
+                        return agentEnv.containsKey(k)
+                                ? NOptional.of(NElement.ofString(agentEnv.get(k)))
+                                : NOptional.ofEmpty();
+                    }
+                    return defaultValue(method.getReturnType());
+                });
+        NaruAgent agent = (NaruAgent) Proxy.newProxyInstance(
+                NaruSession.class.getClassLoader(), new Class<?>[]{NaruAgent.class},
+                (proxy, method, args) -> {
+                    if (method.getDeclaringClass() == Object.class) {
+                        return objectMethod(proxy, method, args);
+                    }
+                    if (method.getName().equals("env")) {
+                        return env;
+                    }
+                    return defaultValue(method.getReturnType());
+                });
+        return (NaruSession) Proxy.newProxyInstance(
+                NaruSession.class.getClassLoader(), new Class<?>[]{NaruSession.class},
+                (proxy, method, args) -> {
+                    if (method.getDeclaringClass() == Object.class) {
+                        return objectMethod(proxy, method, args);
+                    }
+                    if (method.getName().equals("getSessionEnv")) {
+                        String k = (String) args[0];
+                        return sessionEnv.containsKey(k)
+                                ? NOptional.of(sessionEnv.get(k))
+                                : NOptional.ofEmpty();
+                    }
+                    if (method.getName().equals("agent")) {
+                        return agent;
+                    }
+                    return defaultValue(method.getReturnType());
+                });
+    }
+
+    private static Object objectMethod(Object proxy, java.lang.reflect.Method method, Object[] args) {
+        switch (method.getName()) {
+            case "toString":
+                return "layeredSession";
+            case "hashCode":
+                return System.identityHashCode(proxy);
+            default:
+                return proxy == args[0];
+        }
+    }
+
+    private static Object defaultValue(Class<?> type) {
+        if (!type.isPrimitive()) {
+            return null;
+        }
+        if (type == boolean.class) {
+            return false;
+        }
+        if (type == char.class) {
+            return '\0';
+        }
+        if (type == long.class) {
+            return 0L;
+        }
+        if (type == double.class) {
+            return 0d;
+        }
+        if (type == float.class) {
+            return 0f;
+        }
+        if (type == byte.class) {
+            return (byte) 0;
+        }
+        if (type == short.class) {
+            return (short) 0;
+        }
+        return 0;
     }
 }

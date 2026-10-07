@@ -5,6 +5,7 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
+import net.thevpc.naru.api.model.NaruModelRegistration;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
@@ -168,17 +169,17 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
 
     @Override
     protected String baseUrl(NaruSession session) {
-        return session.agent().env().get(name() + ".url")
-                .flatMap(NElement::asStringValue)
+        return configValue("url", session)
                 .map(x -> x.replaceAll("/$", ""))
                 .orElse(DEFAULT_BASE_URL);
     }
 
     private NOptional<NElement> getEnv(NaruSession session, String... keys) {
+        // §6 order: session env first, then agent env, then the system environment
         for (String key : keys) {
-            NOptional<NElement> val = session.agent().env().get(key);
-            if (val != null && val.isPresent()) {
-                return val;
+            String val = NaruModelRegistration.envValue(session, key);
+            if (!NBlankable.isBlank(val)) {
+                return NOptional.of(NElement.ofString(val));
             }
         }
         return NOptional.ofEmpty();
@@ -268,9 +269,9 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
         protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
             super.prepareRequest(request, body, task);
             // Recommended attribution headers (optional, configurable)
-            task.session().agent().env().get(configPrefix + ".httpReferer").flatMap(x -> x.asStringValue())
+            configValue(task, "httpReferer")
                     .ifPresent(v -> request.header("HTTP-Referer", v));
-            task.session().agent().env().get(configPrefix + ".xTitle").flatMap(x -> x.asStringValue())
+            configValue(task, "xTitle")
                     .ifPresent(v -> request.header("X-Title", v));
         }
     }

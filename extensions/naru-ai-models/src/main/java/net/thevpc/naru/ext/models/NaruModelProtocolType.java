@@ -9,9 +9,10 @@ import net.thevpc.naru.api.model.NaruModelProvider;
  * Factory that builds a {@link NaruModelProtocol} for a given wire-protocol type
  * (currently {@code openapi} and {@code anthropic}).
  *
- * <p>This is the extension hook for config-driven providers ({@code custom.*}
- * endpoints): registering a new {@code NaruModelProtocolType} makes it usable via
- * {@code custom.endpoints.<name>.type=<type>} with zero new Java provider classes.
+ * <p>This is the extension hook for wire providers: registering a new
+ * {@code NaruModelProtocolType} makes it selectable via the registration's
+ * {@code --protocol} flag ({@code /model add <id> --provider=wire
+ * --protocol=<type>}) with zero new Java provider classes.
  */
 public interface NaruModelProtocolType {
 
@@ -23,10 +24,10 @@ public interface NaruModelProtocolType {
     /**
      * @param provider        the provider owning the protocol
      * @param model           the wire model config (real model name)
-     * @param configPrefix    env prefix used to read settings (e.g. {@code custom.endpoints.foo})
+     * @param configPrefix    instance id used to read the instance's config params
      * @param chatPath        relative chat endpoint path (e.g. {@code v1/chat/completions})
      * @param capabilities    resolved capabilities
-     * @param defaultBaseUrl  fallback base url when {@code <configPrefix>.url} is not set
+     * @param defaultBaseUrl  fallback base url when the instance has no {@code url} param
      */
     NaruModelProtocol create(NaruModelProvider provider, NaruModelConfig model, String configPrefix,
                              String chatPath, NaruModelCapabilities capabilities, String defaultBaseUrl);

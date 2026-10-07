@@ -1,6 +1,8 @@
 package net.thevpc.naru.ext.tools.ollama;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruModelKey;
+import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelPsResult;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -142,6 +144,16 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 return executeDelete(context, cmdLine);
+            }
+        });
+
+        // Subcommand: unload
+        register(new AbstractSubCommand("unload", NText.ofPlain("unload a model and free its VRAM/RAM"),
+                new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name to unload (e.g. qwen2.5-coder:7b)"))
+        ) {
+            @Override
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return executeUnload(context, cmdLine);
             }
         });
     }
@@ -385,5 +397,33 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
             task.log(NaruLogMode.AGENT_RESPONSE, msg);
             return NaruStmtResult.ofError(msg.toString());
         }
+    }
+
+    private NaruStmtResult executeUnload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        NaruTask task = context.task();
+        NOptional<NArg> n = cmdLine.next();
+        if (!n.isPresent() || NBlankable.isBlank(n.get().image())) {
+            NMsg msg = NMsg.ofC("Error: missing model name to unload (e.g. /ollama unload qwen2.5-coder:7b)").asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
+        }
+        NaruModelKey key = NaruModelKey.parse(n.get().image()).get();
+        if (NBlankable.isBlank(key.provider())) {
+            key = new NaruModelKey("ollama", n.get().image());
+        }
+        NaruModelProvider provider = task.session().registry().provider("ollama").orNull();
+        if (provider == null) {
+            NMsg msg = NMsg.ofC("Error: provider not found: ollama").asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
+        }
+        if (provider.isSupportedUnloadModel()) {
+            provider.unloadModel(key, task.session());
+            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("model unload :%s", key.toMsg()));
+            return NaruStmtResult.ofSuccess(null);
+        }
+        NMsg msg = NMsg.ofC("Error: unsupported 'unload' :%s", key.toMsg()).asError();
+        task.log(NaruLogMode.AGENT_RESPONSE, msg);
+        return NaruStmtResult.ofError(msg.toString());
     }
 }

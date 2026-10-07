@@ -7,6 +7,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementDeserializer;
+import net.thevpc.nuts.util.NOptional;
 
 import java.util.Map;
 
@@ -49,8 +50,10 @@ public class NaruModelProtocolGeminiNative extends NaruModelProtocolBase {
     @Override
     protected String url(NaruTask task, Map<String, NElement> env) {
         // the base path includes the api version, which the OpenAI-compat
-        // provider does not: /v1beta/openai vs /v1beta
-        String u = super.url(task, env);
+        // provider does not: /v1beta/openai vs /v1beta. The instance's own url
+        // wins (§6); with none configured this protocol talks to Google itself —
+        // never the ollama-ish localhost default of the base class.
+        String u = configValue(task, "url").orElse(DEFAULT_BASE_URL);
         while (u.endsWith("/")) {
             u = u.substring(0, u.length() - 1);
         }

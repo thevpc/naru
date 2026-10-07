@@ -96,47 +96,20 @@
   ▌     manage AI models
   ▌   /model   <n>
   ▌            set model by index (as printed by the last '/model' listing)
-  ▌   /model  alias 
-  ▌            list aliases
-  ▌   /model  alias <alias>=<name>
-  ▌            set alias
+  ▌   /model  add <id> --provider=<type> [--protocol=<wire>] [--model=<id>|--models=a,b] [--url=…] [--apiKey=sk-…|$VAR] [--temperature=… --contextLength=…]
+  ▌            register a provider instance addressed as <id>; with an existing id, merges the given parameters into it
   ▌   /model  current 
   ▌            show current model
-  ▌   /model  install <model>
-  ▌            model name to install
-  ▌   /model 
-  ▌   /model  list 
+  ▌   /model  list [<filter>] [--provider=<name>] [--free]
   ▌            list available models, optionally filtered by keyword, provider or free-only. The printed indexes can be reused with '/model use <n>' until the next listing
-  ▌   /model  ps 
-  ▌            list loaded (in VRAM) models
-  ▌   /model  unalias <alias>
-  ▌            remove alias named <alias>
-  ▌   /model  uninstall <model>
-  ▌            model name to uninstall
-  ▌   /model  unload <model>
-  ▌            model name to unload
-  ▌   /model  update <alias> <options>
-  ▌            update option of the alias
-  ▌   /model  update <alias> --alias=<value>
-  ▌            update alias name
-  ▌   /model  update <alias> --alias=<value>
-  ▌            update alias name
-  ▌   /model  update <alias> --model=<value>
-  ▌            update model name
-  ▌   /model  update <alias> --contextLength=<value>
-  ▌            update context length (ex: 15b)
-  ▌   /model  update <alias> --temperature=<value>
-  ▌            update temperature length (ex: 0.6)
-  ▌   /model  update <alias> --nucleusThreshold=<value>
-  ▌            update nucleusThreshold (top_p) (ex: 0.6)
-  ▌   /model  update <alias> --candidateCount=<value>
-  ▌            update candidateCount ('top_k') (ex: 2)
-  ▌   /model  update <alias> --maxTokens=<value>
-  ▌            update maxTokens ('num_predict') (ex: 2)
-  ▌   /model  update <alias> --stop=<value>
-  ▌            update/append stop words ('stop') (ex: '<|start>')
+  ▌   /model  registered 
+  ▌            list registrations (api keys masked)
+  ▌   /model  remove <id>
+  ▌            delete a registration and its stored parameters
+  ▌   /model  update <id> [--temperature=… --apiKey=…]
+  ▌            merge the given parameters into an existing registration; an empty value clears the parameter
   ▌   /model  use <model>
-  ▌            model name, 'provider/model', alias, or index of the last listing ('/model list [--free|--provider=x|<filter>]')
+  ▌            model name, 'provider/model', registration id, or index of the last listing ('/model list [--free|--provider=x|<filter>]')
   ▌   /model  use-global <model>
   ▌            model name to set as default globally
   ▌   /model  [ help | --help ]

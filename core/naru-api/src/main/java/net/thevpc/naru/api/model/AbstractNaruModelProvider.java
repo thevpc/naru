@@ -1,7 +1,6 @@
 package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NIllegalArgumentException;
@@ -29,8 +28,10 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
 
     /**
      * Resolution order for this instance's key (design doc §6): the instance's own
-     * value ({@code $NAME} references resolved now, so a rotated export needs no
-     * re-registration) → agent env key {@code <instance id>.<param>} → the type's
+     * value ({@code $NAME} references resolved now against the layered env, so a
+     * rotated export needs no re-registration) → the layered env itself — session
+     * env first, then agent env, then the system environment — first under the
+     * instance-scoped name {@code <instance id>.<param>}, then under the type's
      * default env keys. An unresolved {@code $NAME} is not a value: it falls
      * through, which is how a registration "finds its key by itself".
      */
@@ -38,24 +39,23 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
         for (String s : new String[]{"apiKey","apikey","key"}) {
             String own = params.get(s);
             if (!NBlankable.isBlank(own)) {
-                NOptional<String> resolved = NaruModelRegistration.interpolate(own);
+                NOptional<String> resolved = NaruModelRegistration.interpolate(
+                        own, NaruModelRegistration.envResolver(session));
                 if (resolved.isPresent() && !NBlankable.isBlank(resolved.get())) {
                     return NOptional.of(NStringUtils.strip(resolved.get()));
                 }
             }
-            String key = session.agent().env().get(name() + "."+s).flatMap(NElement::asStringValue).orNull();
+            String key = NaruModelRegistration.envValue(session, name() + "." + s);
             if (!NBlankable.isBlank(key)) {
-                return NOptional.of(NStringUtils.strip(key));
+                return NOptional.of(key);
             }
         }
         String[] de = defaultEnvKey();
         if (de != null) {
             for (String d : de) {
-                if(!NBlankable.isBlank(d)){
-                    NOptional<String> z = NOptional.of(NStringUtils.stripToNull(System.getenv(d)));
-                    if(z.isPresent()){
-                        return z;
-                    }
+                String z = NaruModelRegistration.envValue(session, d);
+                if (!NBlankable.isBlank(z)) {
+                    return NOptional.of(z);
                 }
             }
         }
@@ -150,5 +150,41 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
             return NOptional.of("sk-***" + val.substring(val.length() - 4));
         }
         return NOptional.ofNamed(params.get(name), name);
+    }
+
+    /**
+     * The stored parameter, unmasked: this is what config resolution reads
+     * (the mask of {@link #getParam(String)} is a display concern).
+     */
+    @Override
+    public NOptional<String> rawParam(String name) {
+        return NOptional.ofNamed(name == null ? null : params.get(name), name);
+    }
+
+    /**
+     * Config resolution order for any key of this instance (design doc §6): the
+     * instance's own value — {@code $NAME} references resolved now against the
+     * layered env (session → agent → system), so a rotated export needs no
+     * re-registration — then that same layered env under
+     * {@code <instance id>.<key>}. Empty when neither is set (or a {@code $NAME}
+     * references an unset variable: an unresolved reference is not a value), so
+     * the caller falls through to its own default.
+     */
+    public NOptional<String> configValue(String key, NaruSession session) {
+        if (key != null) {
+            String own = params.get(key);
+            if (!NBlankable.isBlank(own)) {
+                NOptional<String> resolved = NaruModelRegistration.interpolate(
+                        own, NaruModelRegistration.envResolver(session));
+                if (resolved.isPresent() && !NBlankable.isBlank(resolved.get())) {
+                    return NOptional.of(NStringUtils.strip(resolved.get()));
+                }
+            }
+            String env = NaruModelRegistration.envValue(session, name() + "." + key);
+            if (!NBlankable.isBlank(env)) {
+                return NOptional.of(env);
+            }
+        }
+        return NOptional.ofEmpty();
     }
 }

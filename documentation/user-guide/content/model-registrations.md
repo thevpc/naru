@@ -173,15 +173,25 @@ selected with `protocol: "gemini"` on top of it (§8).
 
 For any parameter of a registration (`apiKey`, `url`, timeouts, retries, ...):
 
-1. **the registration's own value** (after `$VAR` interpolation) — wins;
-2. **agent env key `<instance id>.<param>`** — e.g. `personal.apiKey` set via
-   `/settings` or `env.tson`;
+1. **the registration's own value** — wins; `$VAR` references inside it are
+   resolved against the layered env below, at request time;
+2. **the layered env under `<instance id>.<param>`** — searched **session env
+   first, then agent env, then the system environment**, so the most specific
+   scope wins: `personal.apiKey` from a value set in the running session, else
+   from `env.tson` / `/settings`, else from an exported variable;
 3. **the type's default** — `GEMINI_API_KEY` for gemini, the provider's built-in
-   base URL, default timeouts.
+   base URL, default timeouts. Default env names go through the same layered
+   env, so `GEMINI_API_KEY` may come from any of the three scopes — an exported
+   variable is simply the last resort.
 
 Step 3 is why `/model add mygem --provider=gemini` with no `--apiKey` still works
 when `GEMINI_API_KEY` is exported: the registration inherits the provider's normal
 key lookup.
+
+The same three layers back every step, including `$VAR` interpolation, so a key
+rotated in any scope takes effect on the next request — no re-registration, no
+file edit. A blank value in a layer counts as unset: the lookup falls through to
+the next layer instead of locking the name out.
 
 ## 7. Per-registration parameters
 

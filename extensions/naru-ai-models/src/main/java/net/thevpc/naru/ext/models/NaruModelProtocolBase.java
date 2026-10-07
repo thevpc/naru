@@ -15,6 +15,7 @@ import net.thevpc.nuts.mon.NChronometer;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NIllegalArgumentException;
+import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NStringUtils;
 
@@ -58,16 +59,51 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     }
 
     protected String apiKey(NaruTask task) {
-        String k = task.session().agent().env().get(apiKeyConfigKey())
-                .flatMap(NElement::asStringValue).orNull();
+        // design §6: the instance's own value (post $NAME) → layered env (session →
+        // agent → system) under <instance id>.apiKey → the type's default env keys.
+        // provider.apiKey() *is* that chain, and reading it first is the one ordering
+        // change §6 requires: a registration's value must beat the env key of the
+        // same name, not lose to it.
+        String k = provider == null ? null
+                : provider.apiKey(task.session()).map(NStringUtils::stripToNull).orNull();
         if (k != null) {
-            return k.trim();
+            return k;
         }
-        return provider.apiKey(task.session()).map(NStringUtils::stripToNull).orNull();
+        // legacy: a protocol built with a configPrefix that differs from the provider's
+        // own name keeps resolving <configPrefix>.apiKey from env
+        return configValue(task, "apiKey").orNull();
     }
 
     protected String apiKeyConfigKey() {
         return configPrefix + ".apiKey";
+    }
+
+    /**
+     * Config resolution for any wire-layer key (design §6): the provider instance's
+     * own value — {@code $NAME} references resolved per request against the layered
+     * env (session → agent → system), so a rotated export needs no re-registration —
+     * then that layered env under {@code <configPrefix>.<key>}. Empty when neither
+     * is set (or a {@code $NAME} references an unset variable): an unresolved
+     * reference is not a value, the caller falls through to its default.
+     */
+    protected NOptional<String> configValue(NaruTask task, String key) {
+        if (provider != null) {
+            String raw = provider.rawParam(key).orNull();
+            if (!NBlankable.isBlank(raw)) {
+                NOptional<String> resolved = NaruModelRegistration.interpolate(raw,
+                        NaruModelRegistration.envResolver(task == null ? null : task.session()));
+                if (resolved.isPresent() && !NBlankable.isBlank(resolved.get())) {
+                    return NOptional.of(NStringUtils.strip(resolved.get()));
+                }
+            }
+        }
+        if (task != null && task.session() != null) {
+            String env = NaruModelRegistration.envValue(task.session(), configPrefix + "." + key);
+            if (!NBlankable.isBlank(env)) {
+                return NOptional.of(env);
+            }
+        }
+        return NOptional.ofEmpty();
     }
 
     private String prepareUrlPrefix(String urlPrefix) {
@@ -105,7 +141,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     }
 
     protected String url(NaruTask task, Map<String, NElement> env) {
-        String url = task.session().agent().env().get(configPrefix + ".url").flatMap(x -> x.asStringValue()).orElse("http://localhost:11434");
+        String url = configValue(task, "url").orElse("http://localhost:11434");
         while (url.endsWith("/")) {
             url = url.substring(0, url.length() - 1);
         }
@@ -124,24 +160,16 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     }
 
     protected NDuration connectTimeout(NaruTask task, Map<String, NElement> env) {
-        return task.session().agent().env().get(configPrefix + ".connectTimeout").flatMap(x -> x.asStringValue())
-                .flatMap(x -> NDuration.of(x))
-                .orElseGetOptionalFrom(
-                        () -> task.session().agent().env().get(configPrefix + ".timeout").flatMap(x -> x.asStringValue())
-                                .flatMap(x -> NDuration.of(x))
-                )
+        return configValue(task, "connectTimeout").flatMap(x -> NDuration.of(x))
+                .orElseGetOptionalFrom(() -> configValue(task, "timeout").flatMap(x -> NDuration.of(x)))
                 .orElseGet(() -> {
                     return NDuration.ofSeconds(120);
                 });
     }
 
     protected NDuration readTimeout(NaruTask task, Map<String, NElement> env) {
-        return task.session().agent().env().get(configPrefix + ".readTimeout").flatMap(x -> x.asStringValue())
-                .flatMap(x -> NDuration.of(x))
-                .orElseGetOptionalFrom(
-                        () -> task.session().agent().env().get(configPrefix + ".timeout").flatMap(x -> x.asStringValue())
-                                .flatMap(x -> NDuration.of(x))
-                )
+        return configValue(task, "readTimeout").flatMap(x -> NDuration.of(x))
+                .orElseGetOptionalFrom(() -> configValue(task, "timeout").flatMap(x -> NDuration.of(x)))
                 .orElse(NDuration.ofSeconds(120));
     }
 
@@ -257,13 +285,13 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
 
     protected int maxRetries(NaruTask task, Map<String, NElement> env) {
         if (task != null && task.session() != null) {
-            NOptional<NElement> opt = task.session().agent().env().get(configPrefix + ".maxRetries");
-            if (opt.isPresent()) {
-                return opt.get().asIntValue().orElse(5);
+            NOptional<String> own = configValue(task, "maxRetries");
+            if (own.isPresent()) {
+                return NLiteral.of(own.get()).asInt().orElse(5);
             }
-            opt = task.session().agent().env().get("model.maxRetries");
-            if (opt.isPresent()) {
-                return opt.get().asIntValue().orElse(5);
+            String global = NaruModelRegistration.envValue(task.session(), "model.maxRetries");
+            if (!NBlankable.isBlank(global)) {
+                return NLiteral.of(global).asInt().orElse(5);
             }
         }
         return 5;
@@ -271,13 +299,13 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
 
     protected NDuration retryPeriod(NaruTask task, Map<String, NElement> env) {
         if (task != null && task.session() != null) {
-            NOptional<NElement> opt = task.session().agent().env().get(configPrefix + ".retryPeriod");
-            if (opt.isPresent()) {
-                return opt.get().asStringValue().flatMap(NDuration::of).orElse(NDuration.ofSeconds(2));
+            NOptional<NDuration> own = configValue(task, "retryPeriod").flatMap(NDuration::of);
+            if (own.isPresent()) {
+                return own.get();
             }
-            opt = task.session().agent().env().get("model.retryPeriod");
-            if (opt.isPresent()) {
-                return opt.get().asStringValue().flatMap(NDuration::of).orElse(NDuration.ofSeconds(2));
+            String global = NaruModelRegistration.envValue(task.session(), "model.retryPeriod");
+            if (!NBlankable.isBlank(global)) {
+                return NDuration.of(global).orElse(NDuration.ofSeconds(2));
             }
         }
         return NDuration.ofSeconds(2);

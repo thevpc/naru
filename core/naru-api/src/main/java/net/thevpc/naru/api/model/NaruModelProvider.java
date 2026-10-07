@@ -74,7 +74,30 @@ public interface NaruModelProvider extends NComponent {
 
     NOptional<String> getParam(String name);
 
+    /**
+     * The parameter's stored value, never masked — the config resolution path
+     * (design doc §6: the wire layer reads {@code url}, {@code apiKey}, ... from
+     * the instance's own params first) must see the real credential, while
+     * listings go through {@link #getParam(String)} and may show a mask.
+     */
+    default NOptional<String> rawParam(String name) {
+        return getParam(name);
+    }
+
     Set<String> getParamNames();
+
+    /**
+     * The wire protocol ids this provider can honour for {@code --protocol=<wire>}
+     * (design doc §8): {@code openapi}, {@code anthropic}, {@code gemini}, ...
+     *
+     * <p>An empty set means the provider's wire shape is fixed, so
+     * {@code /model add --protocol=} must reject the flag instead of silently
+     * ignoring it. The registry of ids is the one the provider's protocol
+     * factory actually resolves against.
+     */
+    default Set<String> supportedProtocols() {
+        return Set.of();
+    }
 
     boolean isEnabled();
 

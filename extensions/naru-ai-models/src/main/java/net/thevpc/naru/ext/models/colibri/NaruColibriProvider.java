@@ -10,6 +10,7 @@ import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
 import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NLiteral;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,9 +51,7 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
 
     @Override
     protected String baseUrl(NaruSession session) {
-        String url = session.agent().env().get(name() + ".url")
-                .flatMap(NElement::asStringValue)
-                .orElse(DEFAULT_BASE_URL);
+        String url = configValue("url", session).orElse(DEFAULT_BASE_URL);
         return url.replaceAll("/$", "");
     }
 
@@ -68,8 +67,7 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
 
     @Override
     protected NaruModelProtocol createProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
-        String chatPath = session.agent().env().get(name() + ".chatPath")
-                .flatMap(NElement::asStringValue)
+        String chatPath = configValue("chatPath", session)
                 .map(p -> {
                     while (p.startsWith("/")) {
                         p = p.substring(1);
@@ -85,8 +83,8 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
 
     @Override
     protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
-        long contextLength = session.agent().env().get(name() + ".contextLength")
-                .flatMap(NElement::asLongValue)
+        long contextLength = configValue("contextLength", session)
+                .flatMap(x -> NLiteral.of(x).asLong())
                 .orElse(DEFAULT_CONTEXT_LENGTH);
         // GLM 5.2 (colibri build): tool calling + thinking supported, no vision/embedding.
         return new NaruModelCapabilitiesImpl(false, true, true, false, contextLength, NaruCachingMode.AUTOMATIC_PREFIX);
@@ -94,8 +92,8 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
 
     @Override
     public boolean isAvailable(NaruSession session) {
-        boolean probe = session.agent().env().get(name() + ".probe")
-                .flatMap(NElement::asBooleanValue).orElse(true);
+        boolean probe = configValue("probe", session)
+                .flatMap(x -> NLiteral.of(x).asBoolean()).orElse(true);
         if (!probe) {
             return true;
         }
@@ -104,8 +102,7 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
 
     @Override
     public List<String> findModelIds(NaruSession session) {
-        String models = session.agent().env().get(name() + ".models")
-                .flatMap(NElement::asStringValue).orNull();
+        String models = configValue("models", session).orNull();
         if (!NBlankable.isBlank(models)) {
             List<String> ids = new ArrayList<>();
             for (String s : models.split("[,\\s]+")) {

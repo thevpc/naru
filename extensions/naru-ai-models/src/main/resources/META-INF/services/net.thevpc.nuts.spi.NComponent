@@ -1,7 +1,7 @@
 net.thevpc.naru.ext.models.cache.NaruModelCacheExtension
 net.thevpc.naru.ext.models.cerebras.NaruCerebrasProvider
 net.thevpc.naru.ext.models.colibri.NaruColibriProvider
-net.thevpc.naru.ext.models.custom.NaruCustomProvider
+net.thevpc.naru.ext.models.wire.NaruWireProvider
 net.thevpc.naru.ext.models.gemini.NaruGeminiProvider
 net.thevpc.naru.ext.models.github.NaruGitHubModelsProvider
 net.thevpc.naru.ext.models.groq.NaruGroqProvider
