@@ -448,22 +448,28 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
 
     @Override
-    public Map<String, NaruModelConfig> modelAliases() {
+    public Map<String, NaruModelRegistration> registrations() {
         ensureNotStopped();
-        return ((NaruAgentImpl) agent).getModelAliases().toMap();
+        return ((NaruAgentImpl) agent).getRegistrations().toMap();
     }
 
+    @Override
+    public void putRegistration(NaruModelRegistration registration) {
+        ensureNotStopped();
+        if (registration != null) {
+            ((NaruAgentImpl) agent).getRegistrations().put(registration);
+            fireChanged();
+        }
+    }
 
     @Override
-    public Map<NaruModelConfig, List<String>> reversedModelAliases() {
+    public boolean removeRegistration(String id) {
         ensureNotStopped();
-        HashMap<NaruModelConfig, List<String>> m = new HashMap<>();
-        for (Map.Entry<String, NaruModelConfig> e : modelAliases().entrySet()) {
-            NaruModelConfig k = e.getValue();
-            List<String> v = m.computeIfAbsent(k, k1 -> new ArrayList<>());
-            v.add(e.getKey());
+        boolean removed = ((NaruAgentImpl) agent).getRegistrations().remove(id);
+        if (removed) {
+            fireChanged();
         }
-        return m;
+        return removed;
     }
 
     public NOptional<NaruModelConfig> findModel(NaruModelConfig keyOrName) {
@@ -496,26 +502,21 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         // single provider round: modelsKeys() is network bound, never call it twice
         List<NaruModelKey> catalog = registry().modelsKeys(this);
-        // 1. explicit alias ("/model alias foo=openrouter/x", then "/model use foo")
-        NaruModelConfig a = findModelAlias(ref).orNull();
-        if (a != null && catalog.contains(a.key())) {
-            return NOptional.of(a);
-        }
-        // 2. fully qualified key "provider/model"
+        // 1. fully qualified key "provider/model"
         if (ref.contains("/")) {
             NOptional<NaruModelConfig> r = NaruModelKey.parse(ref).map(NaruModelConfig::new);
             if (r.isPresent() && catalog.contains(r.get().key())) {
                 return r;
             }
         } else {
-            // 3. exact model name
+            // 2. exact model name
             for (NaruModelKey k : catalog) {
                 if (k.model().equals(ref)) {
                     return NOptional.of(new NaruModelConfig(k));
                 }
             }
         }
-        // 4. positional index. The last '/model' listing wins because its own numbering
+        // 3. positional index. The last '/model' listing wins because its own numbering
         //    (possibly filtered) is what the user is referring to. Only when no listing is
         //    available do we fall back to the raw catalog order.
         Integer idx = NLiteral.of(ref).asInt().orNull();
@@ -546,32 +547,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         ensureNotStopped();
         this.listedModels = models == null ? Collections.emptyList() : List.copyOf(models);
         return this;
-    }
-
-    @Override
-    public void removeModelAlias(String alias) {
-        ensureNotStopped();
-        alias = NStringUtils.stripToNull(alias);
-        ((NaruAgentImpl) agent).getModelAliases().remove(alias);
-        fireChanged();
-    }
-
-    @Override
-    public void addModelAlias(String alias, NaruModelConfig model) {
-        ensureNotStopped();
-        alias = NStringUtils.stripToNull(alias);
-        if (!NBlankable.isBlank(alias)) {
-            if (model != null) {
-                ((NaruAgentImpl) agent).getModelAliases().put(alias, model);
-                fireChanged();
-            }
-        }
-    }
-
-    @Override
-    public NOptional<NaruModelConfig> findModelAlias(String alias) {
-        ensureNotStopped();
-        return ((NaruAgentImpl) agent).getModelAliases().get(alias);
     }
 
     @Override
@@ -1623,16 +1598,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     @Override
     public Map<String, Object> getSessionEnv() {
         return env.entrySet().stream().collect(Collectors.toMap(x -> x.getKey(), x -> x.getValue().orNull()));
-    }
-
-    @Override
-    public NOptional<NaruModelConfig> loadModelConfig(String modelName) {
-        return ((NaruAgentImpl) agent()).getModelAliases().get(modelName);
-    }
-
-    @Override
-    public void saveModelConfig(String modelName, NaruModelConfig config) {
-        ((NaruAgentImpl) agent()).getModelAliases().put(modelName, config);
     }
 
     @Override

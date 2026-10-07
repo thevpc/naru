@@ -90,12 +90,6 @@ public interface NaruSession {
 
     NaruSession reset(boolean preserveIdentity);
 
-    void removeModelAlias(String alias);
-
-    void addModelAlias(String alias, NaruModelConfig model);
-
-    NOptional<NaruModelConfig> findModelAlias(String alias);
-
     Instant creationInstant();
 
     Instant modificationInstant();
@@ -135,9 +129,28 @@ public interface NaruSession {
      */
     NaruSession setListedModels(List<NaruModelKey> models);
 
-    Map<String, NaruModelConfig> modelAliases();
+    /**
+     * Every registration in this project, by id: the merged view of the two
+     * visibility files (private fields overlay public ones).
+     *
+     * <p>Values carry literal credentials unmasked — anything that prints them
+     * must go through {@link net.thevpc.naru.api.model.NaruModelRegistration#masked()}.
+     */
+    Map<String, NaruModelRegistration> registrations();
 
-    Map<NaruModelConfig, List<String>> reversedModelAliases();
+    /**
+     * Creates or replaces a registration. Its fields are re-split across the two
+     * visibility files as they are written: literal secrets private, everything
+     * else (including {@code $NAME} references) public.
+     */
+    void putRegistration(NaruModelRegistration registration);
+
+    /**
+     * Deletes a registration from both visibility files.
+     *
+     * @return true when it was present
+     */
+    boolean removeRegistration(String id);
 
 
     NOptional<NElement> getProjectEnv(String key);
@@ -262,7 +275,4 @@ public interface NaruSession {
     NOptional<NaruRoutine> routine(String nameOrPath, NaruTask task, boolean orCreate);
 
     Map<String, Object> getSessionEnv();
-
-    NOptional<NaruModelConfig> loadModelConfig(String modelName);
-    void saveModelConfig(String modelName,NaruModelConfig config);
 }

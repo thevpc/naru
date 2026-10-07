@@ -7,7 +7,6 @@ import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.registry.NaruRegistry;
-import net.thevpc.naru.impl.util.StoredStringMap;
 import net.thevpc.nuts.concurrent.NCallable;
 import net.thevpc.nuts.io.*;
 import net.thevpc.nuts.log.NLogger;
@@ -42,7 +41,7 @@ public class NaruAgentImpl implements NaruAgent {
      */
     private NLogger logger;
     private NPath projectDirectory;
-    private StoredStringMap<NaruModelConfig> modelAliases;
+    private NaruRegistrationStore registrations;
     private NaruProjectEnv projectEnv;
     /**
      * Live sessions. Populated from session lifecycle callbacks, which can arrive on any
@@ -237,10 +236,10 @@ public class NaruAgentImpl implements NaruAgent {
     @Override
     public NaruAgent projectDirectory(NPath projectDirectory) {
         this.projectDirectory = projectDirectory;
-        modelAliases = new StoredStringMap<>(projectDirectory.resolve(".naru/model/aliases.tson"), NaruModelConfig.class)
-                .setSerializer(x -> x.toElement())
-                .setDeserializer(x -> NaruModelConfig.of(x).get())
-        ;
+        registrations = new NaruRegistrationStore(
+                projectDirectory.resolve(".naru/config/registrations.tson"),
+                projectDirectory.resolve(".naru/local/config/registrations.tson")
+        );
         projectEnv = new NaruProjectEnv(
                 projectDirectory.resolve(".naru/config/env.tson"),
                 projectDirectory.resolve(".naru/local/config/env.tson")
@@ -252,8 +251,8 @@ public class NaruAgentImpl implements NaruAgent {
         return projectEnv;
     }
 
-    public StoredStringMap<NaruModelConfig> getModelAliases() {
-        return modelAliases;
+    public NaruRegistrationStore getRegistrations() {
+        return registrations;
     }
 
     public NaruAgent logger(NLogger logger) {

@@ -19,9 +19,36 @@ public interface NaruModelProvider extends NComponent {
     NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session);
 
     /**
-     * Provider name for display purposes.
+     * Provider name for display purposes: the <b>instance id</b> this provider is
+     * registered under ({@code gemini}, or {@code personal} for a registration of
+     * the gemini type).
      */
     String name();
+
+    /**
+     * The implementation type behind this instance: {@code gemini}, {@code ollama},
+     * ... Defaults to {@link #name()} — a built-in provider is its own type — while
+     * an instance created by {@link #newInstance(String)} keeps reporting the type
+     * it was cloned from. Type-scoped behaviour (listing filters, lifecycle
+     * commands, probe caching) reads this instead of {@link #name()}.
+     */
+    default String type() {
+        return name();
+    }
+
+    /**
+     * A new instance of the same implementation addressed as {@code id}. All its
+     * configuration keys are scoped by {@link #name()} ({@code <id>.apiKey},
+     * {@code <id>.url}, {@code <id>.timeout}, ...), so N instances of one type
+     * never collide.
+     *
+     * <p>Default rejects: a provider that does not extend
+     * {@link AbstractNaruModelProvider} (and therefore has no reusable
+     * construction) cannot be instantiated this way.
+     */
+    default NaruModelProvider newInstance(String id) {
+        throw new NIllegalArgumentException(NMsg.ofC("provider '%s' cannot be instantiated multiple times", name()));
+    }
 
     NOptional<String> apiKey(NaruSession session);
     /**

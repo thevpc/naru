@@ -107,8 +107,8 @@ gets sent.
 |---|---|---|
 | `NONE` | nothing to do | Ollama |
 | `AUTOMATIC_PREFIX` | server caches a repeated prefix on its own; NARU only reports usage | Groq, Cerebras, Mistral, xAI, GitHub Models, OpenRouter, Colibri, Gemini (OpenAI-compat route) |
-| `EXPLICIT_INLINE` | NARU places `cache_control` breakpoints | Anthropic, `custom` endpoints of type `anthropic` |
-| `EXPLICIT_RESOURCE` | cache lives in a separate server-side resource | native Gemini (`type=gemini`) — wire protocol only, see gaps |
+| `EXPLICIT_INLINE` | NARU places `cache_control` breakpoints | Anthropic, registrations with `protocol=anthropic` |
+| `EXPLICIT_RESOURCE` | cache lives in a separate server-side resource | native Gemini (`protocol=gemini`) — wire protocol only, see gaps |
 
 An unrecognised configured mode resolves to `NONE` rather than a guess. Guessing
 could send a request shape the user's server rejects.
@@ -171,9 +171,9 @@ accumulating so it cannot drag a running total backwards.
 
 `NaruGeminiProvider` speaks Google's **OpenAI-compatible** route
 (`/v1beta/openai/...`), where caching is `AUTOMATIC_PREFIX`. A native
-`gemini` protocol type is also registered
-(`custom.endpoints.<name>.type=gemini`, or programmatically via
-`NaruModelProtocolTypes.register`), speaking the first-class `generateContent`
+`gemini` protocol type is also registered (a registration's `--protocol=gemini`,
+e.g. `/model add native --provider=gemini --protocol=gemini`, or programmatically
+via `NaruModelProtocolTypes.register`), speaking the first-class `generateContent`
 API.
 
 The native route exists because resource caching is impossible on the

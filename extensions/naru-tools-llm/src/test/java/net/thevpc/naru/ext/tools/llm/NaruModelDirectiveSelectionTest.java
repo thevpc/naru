@@ -22,9 +22,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -125,7 +123,6 @@ public class NaruModelDirectiveSelectionTest {
     @SuppressWarnings("unchecked")
     private static Harness buildTask(NaruDirectiveCallContext[] outContext) {
         List<NaruModelInfo> catalog = new ArrayList<>(Arrays.asList(info()));
-        Map<String, NaruModelConfig> aliases = new LinkedHashMap<>();
         List<String> listed = new ArrayList<>();
         NaruModelConfig[] selected = {null};
         List<net.thevpc.nuts.text.NMsg> logs = new ArrayList<>();
@@ -165,8 +162,6 @@ public class NaruModelDirectiveSelectionTest {
                             return agent;
                         case "registry":
                             return registry;
-                        case "modelAliases":
-                            return aliases;
                         case "setListedModels":
                             listed.clear();
                             listed.addAll((List<String>) args[0]);

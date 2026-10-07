@@ -14,7 +14,6 @@ import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
-import net.thevpc.nuts.text.NTextBuilder;
 import net.thevpc.nuts.util.*;
 
 import java.text.DecimalFormat;
@@ -36,7 +35,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("use", NText.ofPlain("select model"),
-                new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name, 'provider/model', alias, or index of the last listing ('/model list [--free|--provider=x|<filter>]')"))
+                new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name, 'provider/model', registration id, or index of the last listing ('/model list [--free|--provider=x|<filter>]')"))
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -237,44 +236,6 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
 
-        register(new AbstractSubCommand("alias", NText.ofPlain("manager model aliases")
-                , new SubCommandHelp(NText.of(""), NText.ofPlain("list aliases"))
-                , new SubCommandHelp(NText.of("<alias>=<name>"), NText.ofPlain("set alias"))
-        ) {
-            @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                if (cmdLine.isEmpty()) {
-                    return executeListAlias(context, cmdLine);
-                } else {
-                    return executeSetAlias(context, cmdLine);
-                }
-            }
-        });
-        register(new AbstractSubCommand("update", NText.ofPlain("update an alias to configure context length etc...")
-                , new SubCommandHelp(NText.of("<alias> <options>"), NText.ofPlain("update option of the alias"))
-                , new SubCommandHelp(NText.of("<alias> --alias=<value>"), NText.ofPlain("update alias name"))
-                , new SubCommandHelp(NText.of("<alias> --alias=<value>"), NText.ofPlain("update alias name"))
-                , new SubCommandHelp(NText.of("<alias> --model=<value>"), NText.ofPlain("update model name"))
-                , new SubCommandHelp(NText.of("<alias> --contextLength=<value>"), NText.ofPlain("update context length (ex: 15b)"))
-                , new SubCommandHelp(NText.of("<alias> --temperature=<value>"), NText.ofPlain("update temperature length (ex: 0.6)"))
-                , new SubCommandHelp(NText.of("<alias> --nucleusThreshold=<value>"), NText.ofPlain("update nucleusThreshold (top_p) (ex: 0.6)"))
-                , new SubCommandHelp(NText.of("<alias> --candidateCount=<value>"), NText.ofPlain("update candidateCount ('top_k') (ex: 2)"))
-                , new SubCommandHelp(NText.of("<alias> --maxTokens=<value>"), NText.ofPlain("update maxTokens ('num_predict') (ex: 2)"))
-                , new SubCommandHelp(NText.of("<alias> --stop=<value>"), NText.ofPlain("update/append stop words ('stop') (ex: '<|start>')"))
-        ) {
-            @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                return executeSetAlias(context, cmdLine);
-            }
-        });
-        register(new AbstractSubCommand("unalias", NText.ofPlain("remove alias by name")
-                , new SubCommandHelp(NText.of("<alias>"), NText.ofPlain("remove alias named <alias>"))
-        ) {
-            @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                return executeUnsetAlias(context, cmdLine);
-            }
-        });
         register(new AbstractSubCommand("list", NText.ofPlain("list available models"),
                 new SubCommandHelp(NText.of("[<filter>] [--provider=<name>] [--free]"), NText.ofPlain("list available models, optionally filtered by keyword, provider or free-only. The printed indexes can be reused with '/model use <n>' until the next listing"))
         ) {
@@ -365,10 +326,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 }
                 boolean match = exact
                         || m.model().toLowerCase().contains(flc)
-                        || m.provider().toLowerCase().contains(flc)
-                        || task.session().modelAliases().values().stream()
-                        .filter(x -> x.key().equals(m.key()))
-                        .anyMatch(x -> x.name().toLowerCase().contains(flc));
+                        || m.provider().toLowerCase().contains(flc);
                 if (!match) {
                     continue;
                 }
@@ -412,27 +370,6 @@ public class NaruModelDirective extends NaruDirectiveBase {
 
             NaruModelKey mkey = model.key();
 
-            NTextBuilder extra1 = null;
-            List<String> currAliases = task.session().modelAliases().values().stream().filter(x -> x.key().equals(model.key())).map(x -> x.name())
-                    .sorted()
-                    .collect(Collectors.toList());
-            if (!currAliases.isEmpty()) {
-                extra1 = NTextBuilder.of();
-                extra1.append(NMsg.ofStyledSeparator(" ("));
-                for (int i = 0; i < currAliases.size(); i++) {
-                    if (i > 0) {
-                        extra1.append(NMsg.ofStyledSeparator(", "));
-                    }
-                    String c = currAliases.get(i);
-                    if (selectedModel != null && Objects.equals(c, selectedModel.name())) {
-                        extra1.append(NMsg.ofStyledPrimary3(c));
-                    } else {
-                        extra1.append(NMsg.ofStyledPrimary1(c));
-                    }
-                }
-                extra1.append(NMsg.ofStyledSeparator(")"));
-            }
-
             NMsg extra2 = null;
             if (selectedModel != null && mkey.equals(selectedModel.key())) {
                 extra2 = NMsg.ofC("%s%s%s",
@@ -453,11 +390,10 @@ public class NaruModelDirective extends NaruDirectiveBase {
                         NMsg.ofStyledSeparator("]")
                 );
             }
-            NMsg row = NMsg.ofC("  %s[%s] %s%s%s",
+            NMsg row = NMsg.ofC("  %s[%s] %s%s",
                     extra2,
                     NMsg.ofStyledNumber(zformat.format(index)),
                     model.toText(),
-                    extra1 == null ? "" : extra1,
                     extra3 == null ? "" : extra3
             );
             task.log(NaruLogMode.AGENT_RESPONSE, row);
@@ -684,227 +620,6 @@ public class NaruModelDirective extends NaruDirectiveBase {
                     }
                 });
         return eps;
-    }
-
-    public NaruStmtResult executeListAlias(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        Map<String, NaruModelConfig> aliases = task.session().modelAliases();
-        NStringBuilder sb = NStringBuilder.of();
-        NMsg msg = NMsg.ofC("Aliases: %s", aliases.size());
-        task.log(NaruLogMode.AGENT_RESPONSE, msg);
-        sb.println(msg.toString());
-        int index = 1;
-
-        if (aliases.isEmpty()) {
-            return NaruStmtResult.ofSuccess(sb.toString());
-        }
-        int zeros = (int) Math.ceil(Math.log10(aliases.size()));
-        DecimalFormat zformat = new DecimalFormat(NStringUtils.repeat("0", zeros));
-        for (Map.Entry<String, NaruModelConfig> e : aliases.entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).collect(Collectors.toList())) {
-            NMsg row = NMsg.ofC("[%s] %s",
-                    NMsg.ofStyledNumber(zformat.format(index)),
-                    e.getValue().toText());
-            task.log(NaruLogMode.AGENT_RESPONSE, row);
-            sb.println(row.toString());
-            index++;
-        }
-        return NaruStmtResult.ofSuccess(sb.toString());
-    }
-
-    public NaruStmtResult executeSetAlias(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NRef<String> aliasName = NRef.of();
-        NRef<String> modelName = NRef.of();
-        NRef<Long> contextLength = NRef.of();
-        NRef<Float> temperature = NRef.of();
-        NRef<Float> nucleusThreshold = NRef.of();
-        NRef<Integer> candidateCount = NRef.of();
-        NRef<Integer> maxTokens = NRef.of();
-        List<String> stop = new ArrayList<>();
-
-        cmdLine.matcher()
-                .whenNonOption()
-                .asArg(a -> {
-                    if (a.getStringValue().isPresent()) {
-                        if (aliasName.isNull() && modelName.isNull()) {
-                            aliasName.set(a.key());
-                            modelName.set(a.value());
-                        } else if (modelName.isNull()) {
-                            modelName.set(a.asString().orNull());
-                        } else {
-                            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: invalid argument %s", a.toString()).asError());
-                        }
-                    } else {
-                        if (aliasName.isNull()) {
-                            aliasName.set(a.asString().orNull());
-                        } else if (modelName.isNull()) {
-                            modelName.set(a.asString().orNull());
-                        } else {
-                            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: invalid argument %s", a.toString()).asError());
-                        }
-                    }
-                })
-                .when("--alias").asEntry(a -> aliasName.set(a.asString().orNull()))
-                .when("--model").asEntry(a -> modelName.set(a.asString().orNull()))
-                .when("--contextLength").asEntry(a -> contextLength.set(NMemorySize.parse(a.value(), NMemoryUnit.BYTE).get().asBytes()))
-                .when("--temperature").asEntry(a -> temperature.set(a.asFloat().orNull()))
-                .when("--nucleusThreshold").asEntry(a -> nucleusThreshold.set(a.asFloat().orNull()))
-                .when("--candidateCount").asEntry(a -> candidateCount.set(a.asInt().orNull()))
-                .when("--maxTokens").asEntry(a -> maxTokens.set(a.asInt().orNull()))
-                .when("--stop").asEntry(a -> stop.add(a.asString().orNull()))
-                .requireAll();
-        if (NBlankable.isBlank(aliasName.get())) {
-            NMsg msg = NMsg.ofC("Error: missing alias name to set.").asError();
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
-        }
-        if (NBlankable.isBlank(modelName.get())) {
-            NMsg msg = NMsg.ofC("Error: missing model name to set.").asError();
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
-        }
-
-        NaruModelConfig k = task.session().findModel(modelName.get()).orNull();
-        if (k == null) {
-            NMsg msg = NMsg.ofC("Error: model %s not found.",
-                    modelName.get()).asError();
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
-        }
-
-        NaruModelConfig oldAliasTarget = context.task().session().findModelAlias(aliasName.get()).orNull();
-        if (oldAliasTarget != null) {
-            NMsg msg = NMsg.ofC("alias %s already bound to %s", aliasName.get(), oldAliasTarget.toText()).asError();
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
-        }
-        context.task().session().addModelAlias(aliasName.get(), new NaruModelConfig(
-                aliasName.get(),
-                k.provider(),
-                k.model(),
-                contextLength.orElse(k.contextLength()),
-                temperature.orElse(k.temperature()),
-                nucleusThreshold.orElse(k.nucleusThreshold()),
-                candidateCount.orElse(k.candidateCount()),
-                maxTokens.orElse(k.maxTokens()),
-                stop
-        ));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("set-alias %s=%s",
-                NMsg.ofStyledPrimary1(aliasName.get()), k.toText()
-        ));
-        return NaruStmtResult.ofSuccess(null);
-    }
-
-    public void executeUpdateAlias(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NRef<String> aliasName = NRef.of();
-        NRef<String> modelName = NRef.of();
-        NRef<Long> contextLength = NRef.of();
-        NRef<Float> temperature = NRef.of();
-        NRef<Float> nucleusThreshold = NRef.of();
-        NRef<Integer> candidateCount = NRef.of();
-        NRef<Integer> maxTokens = NRef.of();
-        List<String> stop = new ArrayList<>();
-
-        cmdLine.matcher()
-                .whenNonOption()
-                .asArg(a -> {
-                    if (a.getStringValue().isPresent()) {
-                        if (aliasName.isNull() && modelName.isNull()) {
-                            aliasName.set(a.key());
-                            modelName.set(a.value());
-                        } else if (modelName.isNull()) {
-                            modelName.set(a.asString().orNull());
-                        } else {
-                            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: invalid argument %s", a.toString()).asError());
-                        }
-                    } else {
-                        if (aliasName.isNull()) {
-                            aliasName.set(a.asString().orNull());
-                        } else if (modelName.isNull()) {
-                            modelName.set(a.asString().orNull());
-                        } else {
-                            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: invalid argument %s", a.toString()).asError());
-                        }
-                    }
-                })
-                .when("--alias").asEntry(a -> aliasName.set(a.asString().orNull()))
-                .when("--model").asEntry(a -> modelName.set(a.asString().orNull()))
-                .when("--contextLength").asEntry(a -> contextLength.set(a.asLong().orNull()))
-                .when("--temperature").asEntry(a -> temperature.set(a.asFloat().orNull()))
-                .when("--nucleusThreshold").asEntry(a -> nucleusThreshold.set(a.asFloat().orNull()))
-                .when("--candidateCount").asEntry(a -> candidateCount.set(a.asInt().orNull()))
-                .when("--maxTokens").asEntry(a -> maxTokens.set(a.asInt().orNull()))
-                .when("--stop").asEntry(a -> stop.add(a.asString().orNull()))
-                .requireAll();
-        if (NBlankable.isBlank(aliasName.get())) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing alias name to set.").asError());
-            return;
-        }
-        if (NBlankable.isBlank(modelName.get())) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing model name to set.").asError());
-            return;
-        }
-        NaruModelConfig naruModelConfig = task.session().loadModelConfig(aliasName.get()).orNull();
-        if (naruModelConfig == null) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: missing alias %s", aliasName.get()).asError());
-            return;
-        }
-        if (!modelName.isNull()) {
-            NaruModelConfig k = task.session().findModel(modelName.get()).orNull();
-            if (k == null) {
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error: model %s not found.",
-                        modelName.get()).asError());
-                return;
-            }
-            naruModelConfig = naruModelConfig.withModel(k.toString());
-        }
-        if (contextLength.isSet()) {
-            naruModelConfig = naruModelConfig.withContextLength(contextLength.get());
-        }
-        if (temperature.isSet()) {
-            naruModelConfig = naruModelConfig.withTemperature(temperature.get());
-        }
-        if (nucleusThreshold.isSet()) {
-            naruModelConfig = naruModelConfig.withNucleusThreshold(nucleusThreshold.get());
-        }
-        if (candidateCount.isSet()) {
-            naruModelConfig = naruModelConfig.withCandidateCount(candidateCount.get());
-        }
-        if (maxTokens.isSet()) {
-            naruModelConfig = naruModelConfig.withMaxTokens(maxTokens.get());
-        }
-
-        if (!stop.isEmpty()) {
-            naruModelConfig = naruModelConfig.withStop(stop);
-        }
-
-        task.session().saveModelConfig(aliasName.get(), naruModelConfig);
-
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("update-alias %s",
-                NMsg.ofStyledPrimary1(aliasName.get())
-        ));
-    }
-
-    public NaruStmtResult executeUnsetAlias(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
-        NOptional<NArg> n = cmdLine.next();
-        if (!n.isPresent()) {
-            NMsg msg = NMsg.ofC("Error: missing alias to unset.").asError();
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
-        }
-        NArg a = n.get();
-        NaruModelConfig oldAliasTarget = context.task().session().findModelAlias(a.image()).orNull();
-        if (oldAliasTarget == null) {
-            NMsg msg = NMsg.ofC("Error: alias %s not found", a.image()).asError();
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
-        }
-        context.task().session().removeModelAlias(a.key());
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s",
-                task.model().toText()));
-        return NaruStmtResult.ofSuccess(null);
     }
 
 

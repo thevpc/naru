@@ -2,7 +2,9 @@ package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NStringUtils;
@@ -10,12 +12,14 @@ import net.thevpc.nuts.util.NStringUtils;
 import java.util.*;
 
 public abstract class AbstractNaruModelProvider implements NaruModelProvider {
-    private final String name;
+    private String name;
+    private String type;
     private final Map<String, String> params = new HashMap<>();
     private final String[] defaultEnvKeys;
 
     public AbstractNaruModelProvider(String name,String[] defaultEnvKeys) {
         this.name = name;
+        this.type = name;
         this.defaultEnvKeys = defaultEnvKeys;
     }
 
@@ -23,8 +27,22 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
         return defaultEnvKeys;
     }
 
+    /**
+     * Resolution order for this instance's key (design doc §6): the instance's own
+     * value ({@code $NAME} references resolved now, so a rotated export needs no
+     * re-registration) → agent env key {@code <instance id>.<param>} → the type's
+     * default env keys. An unresolved {@code $NAME} is not a value: it falls
+     * through, which is how a registration "finds its key by itself".
+     */
     public NOptional<String> apiKey(NaruSession session) {
         for (String s : new String[]{"apiKey","apikey","key"}) {
+            String own = params.get(s);
+            if (!NBlankable.isBlank(own)) {
+                NOptional<String> resolved = NaruModelRegistration.interpolate(own);
+                if (resolved.isPresent() && !NBlankable.isBlank(resolved.get())) {
+                    return NOptional.of(NStringUtils.strip(resolved.get()));
+                }
+            }
             String key = session.agent().env().get(name() + "."+s).flatMap(NElement::asStringValue).orNull();
             if (!NBlankable.isBlank(key)) {
                 return NOptional.of(NStringUtils.strip(key));
@@ -48,6 +66,33 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
     @Override
     public String name() {
         return name;
+    }
+
+    @Override
+    public String type() {
+        return type;
+    }
+
+    /**
+     * A fresh instance of the same implementation under another id: constructed
+     * from the provider's no-arg constructor (constructor defaults, empty params)
+     * — nothing is copied from this instance, registration params are applied by
+     * the caller afterwards.
+     */
+    @Override
+    public NaruModelProvider newInstance(String id) {
+        String nid = id == null ? null : NStringUtils.stripToNull(id);
+        if (nid == null) {
+            throw new NIllegalArgumentException(NMsg.ofC("missing instance id"));
+        }
+        try {
+            AbstractNaruModelProvider p = (AbstractNaruModelProvider) getClass().getDeclaredConstructor().newInstance();
+            p.name = nid;
+            p.type = this.type;
+            return p;
+        } catch (ReflectiveOperationException e) {
+            throw new NIllegalArgumentException(NMsg.ofC("cannot create instance '%s' of provider type '%s' : %s", nid, type, e));
+        }
     }
 
     public boolean isEnabled() {

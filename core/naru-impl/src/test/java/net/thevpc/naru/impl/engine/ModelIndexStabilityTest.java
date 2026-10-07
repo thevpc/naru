@@ -187,17 +187,17 @@ public class ModelIndexStabilityTest {
     }
 
     @Test
-    public void namesAndAliasesWinOverIndexes() {
+    public void namesWinOverIndexes() {
         session.registry().registerModelProvider(new FakeProvider("ollama",
                 Arrays.asList("a-model", "b-model"), true));
         session.registry().registerModelProvider(new FakeProvider("openrouter",
                 Arrays.asList("c:free"), true));
-        session.addModelAlias("cheap", new NaruModelConfig("openrouter", "c:free"));
         session.setListedModels(List.of(new NaruModelKey("ollama", "b-model")));
 
-        Assertions.assertEquals("openrouter/c:free", keyOf(session, "cheap"));
+        // a bare model name beats both the listed index and listing membership
         Assertions.assertEquals("ollama/a-model", keyOf(session, "a-model"));
         Assertions.assertEquals("ollama/a-model", keyOf(session, "ollama/a-model"));
+        Assertions.assertEquals("openrouter/c:free", keyOf(session, "c:free"));
     }
 
     @Test

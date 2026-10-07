@@ -9,7 +9,7 @@
 | Guide                                            | Status   |
 |--------------------------------------------------|----------|
 | [Sessions and tasks](content/sessions.md)                | ✅ |
-| [Config-driven custom models](content/config-driven-custom-providers.md) | ✅ |
+| [Model registrations](content/model-registrations.md)    | ✅ |
 | [Planning](content/planning.md)                           | ✅ |
 | [Context compaction](content/compaction.md)             | ✅ |
 | More guides (routines, tools, ...)                | 🚧 coming |
@@ -29,9 +29,11 @@
 - [Run a script from Java and read the result](content/sessions.md)
 - [Waiting: block, time out, compose, or react](content/sessions.md#5-waiting-for-a-task)
 - [Running NARU without a terminal](content/sessions.md#9-running-without-a-terminal)
-- [Configure an OpenAI-compatible endpoint by config](content/config-driven-custom-providers.md)
-- [Configure an Anthropic endpoint by config](content/config-driven-custom-providers.md#anthropic-messages-typeanthropic)
-- [Availability probing & `/models` filtering](content/config-driven-custom-providers.md#4-availability-and-models-filtering)
+- [Register the same provider with several API keys](content/model-registrations.md#2-quick-start-two-keys-for-one-provider)
+- [Available vs registered models](content/model-registrations.md#1-available-vs-registered)
+- [`/model add` reference](content/model-registrations.md#4-the-model-directive)
+- [Configure an OpenAI-compatible or Anthropic endpoint](content/model-registrations.md#8-wire-types-openapi-anthropic-gemini)
+- [Availability probing & `/models` filtering](content/model-registrations.md#9-availability-probing-and-listings)
 - [Plan a goal as a dependency graph, and activate it](content/planning.md)
 - [`/plan` directive reference](content/planning.md#4-directives)
 - [Planning tools the model can call](content/planning.md#5-tools)
