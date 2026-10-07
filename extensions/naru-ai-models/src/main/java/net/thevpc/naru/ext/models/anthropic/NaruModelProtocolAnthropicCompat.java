@@ -22,6 +22,9 @@ import java.util.Map;
  */
 public class NaruModelProtocolAnthropicCompat extends NaruModelProtocolBase {
 
+    /** The {@code --protocol=<wire>} id of this wire shape (design doc §8). */
+    public static final String PROTOCOL_ID = "anthropic";
+
     /**
      * Fallback base url used when config key {@code <configPrefix>.url} is not set.
      */
@@ -49,6 +52,26 @@ public class NaruModelProtocolAnthropicCompat extends NaruModelProtocolBase {
             return defaultBaseUrl;
         }
         return super.url(task, env);
+    }
+
+    // ── Live-model listing facts (wire-level GETs, session-scoped) ─────────────
+    // The listing response is OpenAI-shaped ({@code data[].id}); only path and
+    // auth differ from the openai wire. Kept on the owning class so the provider
+    // base reads wire facts from the wire class, not from a central registry.
+
+    /** Relative path of this wire's model-listing endpoint. */
+    public static String modelsPath() {
+        return "v1/models";
+    }
+
+    /** Header name carrying the api key on wire-level GETs. */
+    public static String authHeaderName() {
+        return "x-api-key";
+    }
+
+    /** Header value for a given api key (bare, unlike openai's Bearer). */
+    public static String authHeaderValue(String apiKey) {
+        return apiKey == null ? "" : apiKey;
     }
 
     @Override

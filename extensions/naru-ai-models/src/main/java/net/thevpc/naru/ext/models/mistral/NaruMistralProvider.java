@@ -6,11 +6,14 @@ import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
+import net.thevpc.naru.ext.models.mistral.NaruModelProtocolMistral;
 import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
+import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 public class NaruMistralProvider extends AbstractOpenAICompatProvider {
     // Fallback only — verify these are real callable IDs (not marketing names) via
@@ -34,7 +37,24 @@ public class NaruMistralProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected NaruModelProtocol createProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+    public String defaultProtocol() {
+        return NaruModelProtocolMistral.PROTOCOL_ID;
+    }
+
+    @Override
+    public Set<String> supportedProtocols() {
+        // the mistral dialect (x-ratelimit-* accounting) is the default wire; the
+        // plain OpenAI-compatible shape is offered as an explicit override
+        return Set.of(NaruModelProtocolMistral.PROTOCOL_ID, NaruModelProtocolOpenAICompat.PROTOCOL_ID);
+    }
+
+    /**
+     * The mistral dialect wire: the same request shape as the openai wire plus
+     * genuine {@code x-ratelimit-*} / {@code mistral-correlation-id} header
+     * accounting, so it is provider-owned behaviour, not a URL choice.
+     */
+    @Override
+    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
         return new NaruModelProtocolMistral(this, model, name(), capabilities);
     }
 

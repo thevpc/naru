@@ -87,16 +87,30 @@ public interface NaruModelProvider extends NComponent {
     Set<String> getParamNames();
 
     /**
+     * The wire protocol id this provider speaks natively: what a registration
+     * gets when it passes no {@code --protocol}, and the shape a
+     * {@code --protocol=<wire>} equal to it accepts idempotently (design doc §8).
+     * Defaults to {@code "openai"} (the OpenAI-compatible request shape).
+     */
+    default String defaultProtocol() {
+        return "openai";
+    }
+
+    /**
      * The wire protocol ids this provider can honour for {@code --protocol=<wire>}
-     * (design doc §8): {@code openapi}, {@code anthropic}, {@code gemini}, ...
+     * (design doc §8): the type's own {@link #defaultProtocol()} plus any override
+     * shapes it knows ({@code openai}, {@code anthropic}, {@code gemini}, ...).
+     * The ids are the ones the provider's protocol factory
+     * ({@code createProtocol} on the OpenAI-compatible base) resolves against.
      *
-     * <p>An empty set means the provider's wire shape is fixed, so
-     * {@code /model add --protocol=} must reject the flag instead of silently
-     * ignoring it. The registry of ids is the one the provider's protocol
-     * factory actually resolves against.
+     * <p>Defaults to the type's {@link #defaultProtocol()} — naming the default
+     * wire explicitly is then a no-op. A provider whose wire shape is genuinely
+     * fixed and unnameable overrides with an empty set, so
+     * {@code /model add --protocol=} rejects the flag instead of silently
+     * ignoring it.
      */
     default Set<String> supportedProtocols() {
-        return Set.of();
+        return Set.of(defaultProtocol());
     }
 
     boolean isEnabled();

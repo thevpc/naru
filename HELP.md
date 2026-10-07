@@ -96,8 +96,8 @@
   ▌     manage AI models
   ▌   /model   <n>
   ▌            set model by index (as printed by the last '/model' listing)
-  ▌   /model  add <id> --provider=<type> [--protocol=<wire>] [--model=<id>|--models=a,b] [--url=…] [--apiKey=sk-…|$VAR] [--temperature=… --contextLength=…]
-  ▌            register a provider instance addressed as <id>; with an existing id, merges the given parameters into it
+  ▌   /model  add <id> --provider=<type> [--protocol=<wire>] [--model=<id>|--models=a,b] [--url=…] [--apiKey=sk-…|$VAR] [--temperature=… --contextLength=…] | <id> --protocol=<wire> --url=… --models=a,b [--apiKey=…]
+  ▌            register an instance of a built-in provider type, or a generic endpoint speaking a wire protocol; with an existing id, merges the given parameters into it
   ▌   /model  current 
   ▌            show current model
   ▌   /model  list [<filter>] [--provider=<name>] [--free]

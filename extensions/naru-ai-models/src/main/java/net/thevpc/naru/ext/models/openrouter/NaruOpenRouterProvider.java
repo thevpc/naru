@@ -43,7 +43,25 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected NaruModelProtocol createProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+    public String defaultProtocol() {
+        return NaruOpenRouterProtocol.PROTOCOL_ID;
+    }
+
+    @Override
+    public Set<String> supportedProtocols() {
+        // the openrouter dialect (attribution headers, its own model catalogue
+        // with :free variants) is the default wire; the plain OpenAI-compatible
+        // shape is offered as an explicit override
+        return Set.of(NaruOpenRouterProtocol.PROTOCOL_ID, NaruModelProtocolOpenAICompat.PROTOCOL_ID);
+    }
+
+    /**
+     * The openrouter dialect wire: the openai request shape plus the optional
+     * {@code HTTP-Referer} / {@code X-Title} attribution headers. Provider-owned
+     * behaviour, not a URL choice — {@code --url} merely relocates it.
+     */
+    @Override
+    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
         return new NaruOpenRouterProtocol(this, model, name(), capabilities);
     }
 
@@ -242,6 +260,7 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
         return false;
     }
 
+    @Override
     public NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
         NaruModelCapabilities cached = cachedCapabilities.get(modelName);
         if (cached != null) {
@@ -260,6 +279,9 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
     }
 
     static class NaruOpenRouterProtocol extends NaruModelProtocolOpenAICompat {
+
+        /** The {@code --protocol=<wire>} id of this provider-native wire (design §8). */
+        static final String PROTOCOL_ID = "openrouter";
 
         NaruOpenRouterProtocol(NaruOpenRouterProvider provider, NaruModelConfig model, String configPrefix, NaruModelCapabilities capabilities) {
             super(provider, model, configPrefix, "chat/completions", capabilities, DEFAULT_BASE_URL);

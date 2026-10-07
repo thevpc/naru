@@ -88,7 +88,8 @@ public class NaruModelDirectiveRegistrationTest {
         PROTOCOLS.clear();
         UNIVERSE.put("gemini", List.of("gem-1", "gem-2"));
         UNIVERSE.put("stub", List.of("m1", "m2"));
-        PROTOCOLS.put("wire", Set.of("openapi", "anthropic", "gemini"));
+        PROTOCOLS.put("wire", Set.of("openai", "anthropic", "gemini"));
+        PROTOCOLS.put("gemini", Set.of("openai", "gemini"));
         builtins.clear();
         instances.clear();
         registrations.clear();
@@ -466,24 +467,50 @@ public class NaruModelDirectiveRegistrationTest {
     // ── /model add ────────────────────────────────────────────────────────────
 
     @Test
-    public void addNormalizesWireShorthandToWirePlusProtocol() {
-        NaruStmtResult res = add("ex --provider=openapi --url=http://x");
+    public void addGenericEndpointWithProtocolOnly() {
+        NaruStmtResult res = add("ex --protocol=openai --url=http://x --models=a,b");
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
 
         NaruModelRegistration reg = registrations.get("ex");
         Assertions.assertNotNull(reg);
-        Assertions.assertEquals("wire", reg.provider());
-        Assertions.assertEquals("openapi", reg.protocol().get());
+        Assertions.assertEquals("wire", reg.provider(), "no provider param defaults to the internal wire type");
+        Assertions.assertTrue(reg.param("provider").isPresent() == false,
+                "a generic endpoint never stores a provider param");
+        Assertions.assertEquals("openai", reg.protocol().get());
         Assertions.assertEquals("wire", instances.get("ex").type(), "the instance must be typed by its provider type");
-        Assertions.assertTrue(logged().contains("created (provider=wire, protocol=openapi)"),
-                () -> "expected the created message, got: " + logged());
+        Assertions.assertTrue(logged().contains("created (protocol=openai, generic endpoint)"),
+                () -> "expected the generic created message, got: " + logged());
     }
 
     @Test
-    public void addRequiresProvider() {
+    public void addRequiresIdentityProviderOrProtocol() {
         NaruStmtResult res = add("plain");
         Assertions.assertEquals(NaruStmtResultType.ERROR, res.type());
-        Assertions.assertTrue(logged().contains("missing --provider"), () -> logged());
+        String out = logged();
+        Assertions.assertTrue(out.contains("--provider=<type>"),
+                "must point at the built-in form, got: " + out);
+        Assertions.assertTrue(out.contains("--protocol=<wire>"),
+                "must point at the generic form, got: " + out);
+        Assertions.assertTrue(registrations.isEmpty());
+    }
+
+    @Test
+    public void addRejectsWireIdsWrittenAsProvider() {
+        for (String forbidden : new String[]{"wire", "openai", "anthropic"}) {
+            NaruStmtResult res = add("x --provider=" + forbidden + " --url=http://x");
+            String out = logged();
+            Assertions.assertEquals(NaruStmtResultType.ERROR, res.type(),
+                    () -> "--provider=" + forbidden + " must be rejected, got: " + out);
+            Assertions.assertTrue(out.contains("--protocol=<wire>"),
+                    () -> "the rejected --provider=" + forbidden + " must point at the generic form, got: " + out);
+            Assertions.assertTrue(registrations.isEmpty());
+        }
+
+        // the openai spelling carries the rename hint
+        NaruStmtResult res = add("x --provider=openapi --url=http://x");
+        String out = logged();
+        Assertions.assertEquals(NaruStmtResultType.ERROR, res.type(), () -> out);
+        Assertions.assertTrue(out.contains("wire id is now 'openai'"), () -> out);
         Assertions.assertTrue(registrations.isEmpty());
     }
 
@@ -500,12 +527,28 @@ public class NaruModelDirectiveRegistrationTest {
 
     @Test
     public void addRejectsUnknownProtocolAndListsSupportedOnes() {
-        NaruStmtResult res = add("x --provider=wire --protocol=soap");
+        NaruStmtResult res = add("x --protocol=soap");
         Assertions.assertEquals(NaruStmtResultType.ERROR, res.type());
         String out = logged();
         Assertions.assertTrue(out.contains("unknown protocol 'soap'"), () -> out);
-        Assertions.assertTrue(out.contains("openapi"), "supported protocols must be listed, got: " + out);
+        Assertions.assertTrue(out.contains("openai"), "supported protocols must be listed, got: " + out);
         Assertions.assertTrue(registrations.isEmpty());
+    }
+
+    @Test
+    public void addAcceptsDefaultProtocolIdempotently() {
+        // naming a type's own default wire id is a no-op, never an error
+        NaruStmtResult res = add("stubby --provider=stub --protocol=openai");
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
+        NaruModelRegistration reg = registrations.get("stubby");
+        Assertions.assertFalse(reg.protocol().isPresent(),
+                "naming the default wire stores nothing, got: " + reg.params());
+
+        // a shape it does not speak is rejected even though it shares the default
+        NaruStmtResult other = add("stubby2 --provider=stub --protocol=gemini");
+        Assertions.assertEquals(NaruStmtResultType.ERROR, other.type(), () -> logged());
+        Assertions.assertTrue(logged().contains("does not support --protocol"), () -> logged());
+        Assertions.assertFalse(registrations.containsKey("stubby2"));
     }
 
     @Test
@@ -514,6 +557,36 @@ public class NaruModelDirectiveRegistrationTest {
         Assertions.assertEquals(NaruStmtResultType.ERROR, res.type());
         Assertions.assertTrue(logged().contains("does not support --protocol"), () -> logged());
         Assertions.assertTrue(registrations.isEmpty());
+    }
+
+    @Test
+    public void addGenericEndpointRequiresUrlAndModels() {
+        // no url — the endpoint has nothing to call
+        NaruStmtResult noUrl = add("ex --protocol=anthropic");
+        Assertions.assertEquals(NaruStmtResultType.ERROR, noUrl.type(), () -> logged());
+        Assertions.assertTrue(logged().contains("needs a base url"), () -> logged());
+        Assertions.assertTrue(registrations.isEmpty());
+
+        // url but no model declaration — no provider class can enumerate models
+        NaruStmtResult noModels = add("ex --protocol=anthropic --url=http://x");
+        Assertions.assertEquals(NaruStmtResultType.ERROR, noModels.type(), () -> logged());
+        Assertions.assertTrue(logged().contains("--model=<id>"), () -> logged());
+        Assertions.assertTrue(logged().contains("--models=a,b"), () -> logged());
+        Assertions.assertTrue(registrations.isEmpty());
+
+        // a single pinned model satisfies the requirement
+        NaruStmtResult single = add("ex --protocol=anthropic --url=http://x --model=claude-2");
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS, single.type(), () -> logged());
+        Assertions.assertTrue(logged().contains("generic endpoint"), () -> logged());
+    }
+
+    @Test
+    public void addProviderOverrideMentionsBothKnobs() {
+        NaruStmtResult res = add("hybrid --provider=gemini --protocol=gemini");
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
+        String out = logged();
+        Assertions.assertTrue(out.contains("(provider=gemini, protocol=gemini)"),
+                "the created message must show both knobs, got: " + out);
     }
 
     @Test
@@ -572,6 +645,32 @@ public class NaruModelDirectiveRegistrationTest {
         Assertions.assertEquals("stub", reg.provider(), "clearing one parameter must not drop the others");
     }
 
+    @Test
+    public void updateCannotStripTheIdentity() {
+        // a provider-based registration cannot be turned generic by clearing --provider
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS, add("personal --provider=gemini").type());
+        NaruStmtResult stripProvider = update("personal --provider=");
+        Assertions.assertEquals(NaruStmtResultType.ERROR, stripProvider.type(), () -> logged());
+        Assertions.assertTrue(logged().contains("cannot clear"), () -> logged());
+        Assertions.assertEquals("gemini", registrations.get("personal").provider(),
+                "a rejected update must leave the registration untouched");
+
+        // ... and a generic endpoint cannot be stripped of its only identity
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS,
+                add("ex --protocol=openai --url=http://x --models=a,b").type());
+        NaruStmtResult stripProtocol = update("ex --protocol=");
+        Assertions.assertEquals(NaruStmtResultType.ERROR, stripProtocol.type(), () -> logged());
+        Assertions.assertTrue(logged().contains("--protocol=<wire>"), () -> logged());
+        Assertions.assertEquals("openai", registrations.get("ex").protocol().get());
+
+        // dropping only the override of a provider-based registration is fine
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS,
+                add("native --provider=gemini --protocol=gemini").type());
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS, update("native --protocol=").type(), () -> logged());
+        Assertions.assertFalse(registrations.get("native").protocol().isPresent(),
+                "clearing the override falls back to the type's default wire");
+    }
+
     // ── /model remove ─────────────────────────────────────────────────────────
 
     @Test
@@ -607,6 +706,21 @@ public class NaruModelDirectiveRegistrationTest {
         Assertions.assertTrue(out.contains("sk-***1234"), () -> "expected the masked key, got: " + out);
         Assertions.assertFalse(out.contains("sk-secret1234"), () -> "the literal must never be printed: " + out);
         Assertions.assertTrue(out.contains("models=auto"), () -> out);
+    }
+
+    @Test
+    public void registeredTypeColumnShowsProtocolForGenericEntries() {
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS,
+                add("ex --protocol=openai --url=http://x --models=a,b").type());
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS, add("personal --provider=gemini").type());
+
+        NaruStmtResult res = directive.executeRegisteredList(context, NCmdLine.of(""));
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
+        String out = logged();
+        Assertions.assertTrue(java.util.regex.Pattern.compile("ex[ ]+openai").matcher(out).find(),
+                "a generic entry's type column must name its wire protocol, got: " + out);
+        Assertions.assertTrue(java.util.regex.Pattern.compile("personal[ ]+gemini").matcher(out).find(),
+                "a provider entry's type column must name its type, got: " + out);
     }
 
     // ── /model use with a registration id ─────────────────────────────────────
@@ -703,8 +817,10 @@ public class NaruModelDirectiveRegistrationTest {
         List<String> c = complete("/model", "add", "x", "--provider=");
         Assertions.assertTrue(c.contains("--provider=gemini"), () -> "got: " + c);
         Assertions.assertTrue(c.contains("--provider=stub"), () -> "got: " + c);
-        Assertions.assertTrue(c.contains("--provider=openapi"),
-                "the wire shorthands must be offered, got: " + c);
+        Assertions.assertFalse(c.contains("--provider=wire"),
+                "the internal wire type must not be offered, got: " + c);
+        Assertions.assertFalse(c.contains("--provider=openapi"),
+                "the gone wire shorthands must not be offered, got: " + c);
 
         List<String> partial = complete("/model", "add", "x", "--provider=ge");
         Assertions.assertEquals(List.of("--provider=gemini"), partial,
@@ -714,9 +830,16 @@ public class NaruModelDirectiveRegistrationTest {
     @Test
     public void protocolValueCompletesFromTheChosenProviderShapes() {
         List<String> c = complete("/model", "add", "x", "--provider=wire", "--protocol=");
-        Assertions.assertTrue(c.contains("--protocol=openapi"), () -> "got: " + c);
+        Assertions.assertTrue(c.contains("--protocol=openai"), () -> "got: " + c);
         Assertions.assertTrue(c.contains("--protocol=anthropic"), () -> "got: " + c);
         Assertions.assertTrue(c.contains("--protocol=gemini"), () -> "got: " + c);
+        Assertions.assertFalse(c.contains("--protocol=openapi"),
+                "the old spelling must be gone, got: " + c);
+
+        // a gemini registration can also pick its native wire next to the default
+        List<String> gem = complete("/model", "add", "x", "--provider=gemini", "--protocol=");
+        Assertions.assertTrue(gem.contains("--protocol=openai"), () -> "got: " + gem);
+        Assertions.assertTrue(gem.contains("--protocol=gemini"), () -> "got: " + gem);
 
         // a type with a fixed wire shape has no protocols to offer
         List<String> none = complete("/model", "add", "x", "--provider=stub", "--protocol=");

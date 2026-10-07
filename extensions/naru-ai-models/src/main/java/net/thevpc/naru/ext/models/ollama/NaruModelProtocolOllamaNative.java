@@ -15,6 +15,9 @@ import java.util.Map;
 
 public class NaruModelProtocolOllamaNative extends NaruModelProtocolBase {
 
+    /** The {@code --protocol=<wire>} id of this provider-native wire (design §8). */
+    public static final String PROTOCOL_ID = "ollama";
+
     /**
      * Request env key carrying the {@code think} flag sent to Ollama.
      *

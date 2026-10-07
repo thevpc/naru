@@ -130,7 +130,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("add", NText.ofPlain("create or update a model registration"),
-                new SubCommandHelp(NText.of("<id> --provider=<type> [--protocol=<wire>] [--model=<id>|--models=a,b] [--url=…] [--apiKey=sk-…|$VAR] [--temperature=… --contextLength=…]"), NText.ofPlain("register a provider instance addressed as <id>; with an existing id, merges the given parameters into it"))
+                new SubCommandHelp(NText.of("<id> --provider=<type> [--protocol=<wire>] [--url=…] [--model=<id>|--models=a,b] [--apiKey=sk-…|$VAR] [--temperature=… --contextLength=…] | <id> --protocol=<wire> --url=… --models=a,b [--apiKey=…]"), NText.ofPlain("register an instance of a built-in provider type, or a generic endpoint speaking a wire protocol; with an existing id, merges the given parameters into it"))
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -288,9 +288,9 @@ public class NaruModelDirective extends NaruDirectiveBase {
     /**
      * A {@code --param=…} token of {@code add}/{@code update}: option names while
      * the user is still typing the flag, then candidate values once the text
-     * reaches the {@code =} — provider types (plus the wire shorthands), wire
-     * protocols supported by the provider chosen in the line, the catalog models
-     * of that provider, and {@code true}/{@code false} for the boolean flags.
+     * reaches the {@code =} — provider types, wire protocols supported by the
+     * provider chosen in the line, the catalog models of that provider, and
+     * {@code true}/{@code false} for the boolean flags.
      */
     private static void completeRegistrationOption(List<NArgCompleteCandidate> candidates, NaruSession session, String[] words, int wordIndex) {
         String current = currentWord(words, wordIndex);
@@ -308,13 +308,14 @@ public class NaruModelDirective extends NaruDirectiveBase {
         String key = normalizeOptionKey(prefix);
         switch (key) {
             case "provider":
+                // the internal wire type and the (gone) wire-shorthand ids are
+                // never offered: --provider=wire|openai|... is rejected at parse
                 for (String t : providerTypes(session)) {
+                    if ("wire".equalsIgnoreCase(t)) {
+                        continue;
+                    }
                     addValueCandidate(candidates, prefix, t, t, current);
                 }
-                addValueCandidate(candidates, prefix, "openapi",
-                        "openapi — wire shorthand (--provider=wire --protocol=openapi)", current);
-                addValueCandidate(candidates, prefix, "anthropic",
-                        "anthropic — wire shorthand (--provider=wire --protocol=anthropic)", current);
                 break;
             case "protocol":
                 for (String p : protocolIds(session, words, wordIndex)) {
@@ -643,10 +644,11 @@ public class NaruModelDirective extends NaruDirectiveBase {
     /**
      * Creates or updates a registration (design doc §4/§7/§8). The first non-option
      * is the registration id; every {@code --key=value} becomes one of its
-     * parameters — {@code --provider} selects the type (required when the id is
-     * new), {@code --protocol} the wire shape, the rest are merged into every
-     * model selected under the id. An update is a merge: parameters the flags do
-     * not mention are kept, an empty value clears one.
+     * parameters — {@code --provider} selects a built-in type,
+     * {@code --protocol} the wire shape (together: an override of the type's wire;
+     * {@code --protocol} alone: a generic endpoint), the rest are merged into
+     * every model selected under the id. An update is a merge: parameters the
+     * flags do not mention are kept, an empty value clears one.
      */
     public NaruStmtResult executeRegistration(NaruDirectiveCallContext context, NCmdLine cmdLine, String operation) {
         NaruTask task = context.task();
@@ -689,7 +691,8 @@ public class NaruModelDirective extends NaruDirectiveBase {
         if (NBlankable.isBlank(typedId)) {
             return fail(context, update
                     ? NMsg.ofC("Error: missing registration id (usage: /model update <id> --<param>=<value>)")
-                    : NMsg.ofC("Error: missing registration id (usage: /model add <id> --provider=<type> \u2026)"));
+                    : NMsg.ofC("Error: missing registration id (usage: /model add <id> --provider=<type> [--protocol=<wire>], "
+                            + "or /model add <id> --protocol=<wire> --url=\u2026 --models=a,b)"));
         }
         if (typedId.indexOf('/') >= 0) {
             return fail(context, NMsg.ofC(
@@ -735,10 +738,44 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 params.put(f.getKey(), v);
             }
         }
-        if (params.get("provider") == null || params.get("provider").isNull()) {
+
+        // identity: --provider=<type> and/or --protocol=<wire> (design doc §8) —
+        // a registration is either a built-in type, or a generic endpoint selected
+        // by its wire shape alone. Validated on the *merged* params, so an update
+        // can never strip the identity through an empty --provider= / --protocol=
+        // and leave a parameter-less shell behind.
+        String providerValue = rawStringParam(params, "provider");
+        String protocolValue = rawStringParam(params, "protocol");
+        if (existing != null && providerValue == null && !"wire".equalsIgnoreCase(existing.provider())) {
             return fail(context, NMsg.ofC(
-                    "Error: missing --provider=<type> (e.g. '/model add %s --provider=gemini'). Known types: %s",
-                    typedId, knownProviderTypes(session)));
+                    "Error: cannot clear '%s's provider with '--provider=' (an update only merges) — to turn it "
+                            + "into a generic endpoint, remove it and add it again with '--protocol=<wire> --url=\u2026 --models=a,b'.",
+                    typedId));
+        }
+        if (providerValue == null && protocolValue == null) {
+            return fail(context, NMsg.ofC(
+                    "Error: missing identity for '%s' — use '--provider=<type>' for a built-in provider, "
+                            + "or '--protocol=<wire> --url=\u2026 --models=a,b' for a generic endpoint.",
+                    typedId));
+        }
+        if (providerValue != null) {
+            String lower = providerValue.trim().toLowerCase();
+            if (lower.equals("openapi")) {
+                return fail(context, NMsg.ofC(
+                        "Error: '--provider=openapi' is gone — the wire id is now 'openai': a generic endpoint "
+                                + "spells it as '--protocol=openai --url=\u2026 --models=a,b'."));
+            }
+            if (lower.equals("wire")) {
+                return fail(context, NMsg.ofC(
+                        "Error: '--provider=wire' is internal to registrations — a generic endpoint spells its "
+                                + "wire shape with '--protocol=<wire> --url=\u2026 --models=a,b', no --provider."));
+            }
+            if (lower.equals("openai") || lower.equals("anthropic")) {
+                return fail(context, NMsg.ofC(
+                        "Error: '--provider=%s' is a wire protocol id, not a provider type — a generic endpoint "
+                                + "spells it as '--protocol=%s --url=\u2026 --models=a,b'.",
+                        providerValue, lower));
+            }
         }
 
         NaruModelRegistration reg;
@@ -759,17 +796,19 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         }
 
-        // --provider names a *type*, never an instance id: the wire shorthands
-        // (openapi, anthropic) were already normalized to 'wire' by of()
+        // --provider names a *type*, never an instance id; a generic endpoint
+        // (no provider param) resolves to the internal wire type
         NaruModelProvider typeProvider = findProviderType(session, reg.provider());
         if (typeProvider == null) {
             return fail(context, NMsg.ofC(
-                    "Error: unknown provider type '%s'. Known types: %s (openapi and anthropic are wire shorthands).",
+                    "Error: unknown provider type '%s'. Known types: %s.",
                     reg.provider(), knownProviderTypes(session)));
         }
 
-        // --protocol must name a wire shape this type speaks (§8): rejected rather
-        // than silently ignored — an unknown id is never guessed at
+        // --protocol must name a wire shape this type speaks (§8): naming the
+        // type's own default wire id is a no-op accepted idempotently; anything
+        // else is rejected rather than silently ignored — an unknown id is never
+        // guessed at
         String protocol = null;
         NOptional<String> proto = reg.protocol();
         if (proto.isPresent()) {
@@ -784,32 +823,62 @@ public class NaruModelDirective extends NaruDirectiveBase {
                     }
                 }
             }
+            if (match == null && typeProvider.defaultProtocol() != null
+                    && typeProvider.defaultProtocol().equalsIgnoreCase(wanted)) {
+                match = typeProvider.defaultProtocol(); // naming the default wire is a no-op
+            }
             if (match == null) {
                 return fail(context, supported == null || supported.isEmpty()
                         ? NMsg.ofC("Error: provider type '%s' does not support --protocol: its wire shape is fixed.", reg.provider())
                         : NMsg.ofC("Error: unknown protocol '%s' for provider type '%s' (supported: %s).",
                         wanted, reg.provider(), String.join(", ", new TreeSet<>(supported))));
             }
-            if (!match.equals(wanted)) {
-                reg = reg.withParam("protocol", match);   // store the canonical id
+            if (reg.param("provider").isPresent()
+                    && typeProvider.defaultProtocol() != null
+                    && match.equalsIgnoreCase(typeProvider.defaultProtocol())) {
+                // naming a built-in type's own default wire is a no-op: nothing
+                // is stored and the wire falls back to the default (the message
+                // still shows it). A generic endpoint's protocol is its
+                // identity, so it is always stored.
+                reg = reg.withParam("protocol", (NElement) null);
+                protocol = null;
+            } else {
+                if (!match.equals(wanted)) {
+                    reg = reg.withParam("protocol", match);   // store the canonical id
+                }
+                protocol = match;
             }
-            protocol = match;
+        }
+
+        // a generic endpoint has no provider class to enumerate or address — it
+        // needs a base url and the models it serves, or there is nothing to call
+        boolean generic = "wire".equalsIgnoreCase(reg.provider());
+        if (generic) {
+            if (NBlankable.isBlank(reg.stringValue("url").orNull())) {
+                return fail(context, NMsg.ofC(
+                        "Error: a generic endpoint needs a base url — e.g. '/model add %s --protocol=%s --url=\u2026 --models=a,b'.",
+                        typedId, protocol == null ? typeProvider.defaultProtocol() : protocol));
+            }
+            if (!reg.param("model").isPresent() && !reg.param("models").isPresent()) {
+                return fail(context, NMsg.ofC(
+                        "Error: a generic endpoint needs --model=<id> or --models=a,b — no provider class exists "
+                                + "to enumerate its models (e.g. '/model add %s --protocol=%s --url=\u2026 --models=a,b').",
+                        typedId, protocol == null ? typeProvider.defaultProtocol() : protocol));
+            }
         }
 
         boolean created = existing == null;
         session.putRegistration(reg);
         NMsg ok = created
-                ? NMsg.ofC("registration '%s' created (provider=%s%s)",
+                ? generic
+                ? NMsg.ofC("registration '%s' created (protocol=%s, generic endpoint)",
+                NMsg.ofStyledPrimary1(reg.id()),
+                protocol == null ? typeProvider.defaultProtocol() : protocol)
+                : NMsg.ofC("registration '%s' created (provider=%s%s)",
                 NMsg.ofStyledPrimary1(reg.id()), reg.provider(),
                 protocol == null ? "" : ", protocol=" + protocol)
                 : NMsg.ofC("registration '%s' updated", NMsg.ofStyledPrimary1(reg.id()));
         task.log(NaruLogMode.AGENT_RESPONSE, ok);
-        if (created && reg.provider().equals("wire")
-                && !reg.param("model").isPresent() && !reg.param("models").isPresent()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
-                    "note: a wire registration lists only the models it declares — add %s to make them visible.",
-                    NMsg.ofStyledPrimary1("--models=a,b")));
-        }
         return NaruStmtResult.ofSuccess(ok.toString());
     }
 
@@ -878,7 +947,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
             NMsg row = NMsg.ofC("  %s  %s  %s",
                     String.format("%-" + width + "s", e.getKey()),
-                    r.provider(),
+                    registrationTypeColumn(r),
                     String.join("  ", kv));
             task.log(NaruLogMode.AGENT_RESPONSE, row);
             sb.println(row.toString());
@@ -995,6 +1064,30 @@ public class NaruModelDirective extends NaruDirectiveBase {
     private static String providerType(NaruSession session, String id) {
         NaruModelProvider p = findProvider(session, id);
         return p == null || NBlankable.isBlank(p.type()) ? id : p.type();
+    }
+
+    /**
+     * The trimmed string form of a parameter in a raw element map, or null when
+     * absent/blank.
+     */
+    private static String rawStringParam(Map<String, NElement> params, String name) {
+        NElement e = params == null ? null : params.get(name);
+        if (e == null || e.isNull()) {
+            return null;
+        }
+        return NStringUtils.stripToNull(e.asStringValue().orNull());
+    }
+
+    /**
+     * The type column of {@code /model registered}: a provider-based registration
+     * names its type; a generic endpoint (no provider param) names the wire
+     * protocol it speaks instead of the internal {@code wire} type.
+     */
+    private static String registrationTypeColumn(NaruModelRegistration r) {
+        if ("wire".equalsIgnoreCase(r.provider())) {
+            return r.protocol().orElse("wire");
+        }
+        return r.provider();
     }
 
     private static String knownProviderTypes(NaruSession session) {

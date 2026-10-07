@@ -11,7 +11,6 @@ import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.naru.ext.models.wire.NaruWireProvider;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -130,16 +129,21 @@ public class NaruWireProviderTest {
     }
 
     @Test
-    public void testUnknownProtocolFailsLoudly() {
-        // design §8: an unknown protocol id is a mistake, not a request to guess —
-        // /model add rejects it, and a hand-edited registration fails here
+    public void testUnknownProtocolIsWarnedAndIgnored() {
+        // design §8: an unknown protocol id is never guessed at and never fatal —
+        // /model add rejects it at the directive level, but a hand-edited (or
+        // env-configured) registration makes createProtocol warn and fall back
+        // to the provider's default wire, so the endpoint keeps working
         NaruWireProvider provider = wire(Map.of(
                 "url", "http://127.0.0.1:9",
                 "models", "model-a",
                 "protocol", "bogus",
                 "probe", "false"));
-        Assertions.assertThrows(NIllegalArgumentException.class, () ->
-                provider.getProtocol(config("model-a"), createMockSession(Collections.emptyMap())));
+        NOptional<NaruModelProtocol> proto = provider.getProtocol(config("model-a"),
+                createMockSession(Collections.emptyMap()));
+        Assertions.assertTrue(proto.isPresent());
+        Assertions.assertInstanceOf(NaruModelProtocolOpenAICompat.class, proto.get(),
+                "unsupported protocol is ignored, the default wire is used");
     }
 
     private NaruSession createMockSession(Map<String, String> envMap) {

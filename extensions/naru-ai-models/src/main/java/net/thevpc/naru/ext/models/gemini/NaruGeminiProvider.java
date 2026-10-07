@@ -4,7 +4,9 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
+import net.thevpc.naru.ext.models.gemini.NaruModelProtocolGeminiNative;
 import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
+import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.log.NLog;
@@ -19,12 +21,15 @@ import net.thevpc.nuts.util.NOptional;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 /**
- * Gemini provider — talks to Google AI Studio through the OpenAI-compatible router.
+ * Gemini provider — talks to Google AI Studio through the OpenAI-compatible router
+ * (its default wire), or through the native {@code generateContent} API when the
+ * registration pins {@code --protocol=gemini}.
  *
- * <p>Endpoint: POST {baseUrl}/chat/completions
- * <p>Default baseUrl: https://generativelence.googleapis.com/v1beta/openai
+ * <p>Endpoint: POST {baseUrl}/chat/completions (default wire)
+ * <p>Default baseUrl: https://generativelanguage.googleapis.com/v1beta/openai
  */
 public class NaruGeminiProvider extends AbstractOpenAICompatProvider {
     private static final List<String> FALLBACK_MODELS = List.of(
@@ -53,9 +58,19 @@ public class NaruGeminiProvider extends AbstractOpenAICompatProvider {
                 .orElse("https://generativelanguage.googleapis.com/v1beta/openai");
     }
 
+    @Override
+    public Set<String> supportedProtocols() {
+        // the OpenAI-compatible router (default) or the native generateContent
+        // API — which is the only wire with CachedContent resource caching.
+        return Set.of(NaruModelProtocolOpenAICompat.PROTOCOL_ID, NaruModelProtocolGeminiNative.PROTOCOL_ID);
+    }
+
 
     /**
      * Statically maps model limits since cloud-hosted capabilities cannot be polled natively.
+     * Under the native gemini wire the supposedly-reportable caching mode becomes
+     * EXPLICIT_RESOURCE ({@code CachedContent} resources); the OpenAI-compatible
+     * route can only do automatic prefix caching.
      */
     @Override
     protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
@@ -70,7 +85,9 @@ public class NaruGeminiProvider extends AbstractOpenAICompatProvider {
         }
 
         return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength,
-                NaruCachingMode.AUTOMATIC_PREFIX);
+                NaruModelProtocolGeminiNative.PROTOCOL_ID.equalsIgnoreCase(resolvedProtocolId(session))
+                        ? NaruCachingMode.EXPLICIT_RESOURCE
+                        : NaruCachingMode.AUTOMATIC_PREFIX);
     }
 
     @Override

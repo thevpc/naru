@@ -48,13 +48,13 @@ public class NaruModelRegistration implements NToElement {
     private static final Set<String> SECRET_PARAMS = Set.of("apikey", "api_key", "key");
 
     /**
-     * Provider values that are wire-id shorthands: {@code openapi} or
-     * {@code anthropic} written as the provider mean the generic {@code wire}
-     * provider speaking that protocol (design doc §8). {@code gemini} is
-     * deliberately absent — as a provider it means the built-in gemini provider;
-     * its native wire shape is selected with {@code --protocol=gemini}.
+     * Provider values that are not provider types: wire protocol ids, written as
+     * a provider they would silently rewrite the registration's identity. The
+     * generic endpoint is spelled {@code protocol: "..."} with no provider (design
+     * doc §8). {@code openapi} gets its own branch because it is the pre-rename
+     * spelling of {@code openai} and deserves a migration hint.
      */
-    private static final Set<String> WIRE_SHORTHANDS = Set.of("openapi", "anthropic");
+    private static final Set<String> FORBIDDEN_PROVIDERS = Set.of("wire", "openai", "anthropic");
 
     private final String id;
     private final Map<String, NElement> params;
@@ -69,23 +69,54 @@ public class NaruModelRegistration implements NToElement {
     }
 
     /**
-     * Validates and normalizes a parameter map: {@code provider} is required, and
-     * wire-id shorthands are expanded to {@code wire} + matching {@code protocol}.
+     * Validates and normalizes a parameter map. {@code provider} is optional: a
+     * registration without one is a generic endpoint (internal {@code wire}
+     * type) whose wire shape comes from {@code protocol}. A registration must
+     * carry one of the two — its identity — so a bare parameter shell (a
+     * hand-edited {@code url}-only entry, say) fails loudly instead of silently
+     * registering a generic endpoint nobody asked for. A {@code provider} value
+     * must be a real provider type — wire ids are rejected so nothing ever
+     * persists {@code provider: "wire"} or one of the protocol shorthands.
      */
     private static Map<String, NElement> normalize(String id, Map<String, NElement> params) {
-        NElement p = params == null ? null : params.get("provider");
-        String provider = p == null ? null : NStringUtils.stripToNull(p.asStringValue().orNull());
-        if (provider == null) {
-            throw new NIllegalArgumentException(NMsg.ofC("missing 'provider' in registration '%s'", id));
-        }
         Map<String, NElement> m = new LinkedHashMap<>(params == null ? Map.of() : params);
-        String lower = provider.toLowerCase();
-        if (WIRE_SHORTHANDS.contains(lower)) {
-            m.put("provider", NElement.ofString("wire"));
-            if (!m.containsKey("protocol")) {
-                m.put("protocol", NElement.ofString(lower));
-            }
+        NElement p = m.get("provider");
+        if (p != null && p.isNull()) {
+            m.remove("provider");
+            p = null;
+        }
+        NElement protocol = m.get("protocol");
+        String protocolValue = protocol == null || protocol.isNull()
+                ? null : NStringUtils.stripToNull(protocol.asStringValue().orNull());
+        if (p == null && protocolValue == null) {
+            throw new NIllegalArgumentException(NMsg.ofC(
+                    "invalid registration '%s': a registration is a provider instance (\"provider\": \"gemini\") "
+                            + "or a generic endpoint (\"protocol\": \"openai\", no provider) — it cannot carry neither",
+                    id == null ? "?" : id));
+        }
+        if (protocolValue == null) {
+            m.remove("protocol");
         } else {
+            m.put("protocol", NElement.ofString(protocolValue.toLowerCase()));
+        }
+        if (p != null) {
+            String provider = NStringUtils.stripToNull(p.asStringValue().orNull());
+            if (provider == null) {
+                throw new NIllegalArgumentException(NMsg.ofC("missing 'provider' in registration '%s'", id));
+            }
+            String lower = provider.toLowerCase();
+            if (lower.equals("openapi")) {
+                throw new NIllegalArgumentException(NMsg.ofC(
+                        "invalid provider '%s' in registration '%s': the wire id is now 'openai' — "
+                                + "a generic endpoint is written protocol: \"openai\" with no provider",
+                        provider, id));
+            }
+            if (FORBIDDEN_PROVIDERS.contains(lower)) {
+                throw new NIllegalArgumentException(NMsg.ofC(
+                        "invalid provider '%s' in registration '%s': it is a wire protocol id, not a provider "
+                                + "type — a generic endpoint is written protocol: \"%s\" with no provider",
+                        provider, id, lower));
+            }
             m.put("provider", NElement.ofString(provider));
         }
         return m;
@@ -102,10 +133,13 @@ public class NaruModelRegistration implements NToElement {
     }
 
     /**
-     * Reads a registration from its stored object ({@code {provider: "...", ...}}).
+     * Reads a registration from its stored object ({@code {provider: "...", ...}}
+     * for a provider instance, or {@code {protocol: "openai", url: ..., ...}}
+     * with no provider for a generic endpoint).
      *
-     * @throws NIllegalArgumentException when the element is not an object or has no
-     *                                   provider: a hand-edited file must fail loudly,
+     * @throws NIllegalArgumentException when the element is not an object, or
+     *                                   names a wire protocol id as its provider:
+     *                                   a hand-edited file must fail loudly,
      *                                   never silently register nothing
      */
     public static NaruModelRegistration of(String id, NElement element) {
@@ -132,11 +166,16 @@ public class NaruModelRegistration implements NToElement {
 
     /**
      * The provider type this instance serves ({@code gemini}, {@code ollama},
-     * {@code wire}, ...). Never a wire shorthand: those are normalized at parse
-     * time into {@code wire} + {@link #protocol()}.
+     * ...), or the internal {@code wire} type when the registration carries no
+     * {@code provider} param — a generic endpoint selected with
+     * {@code --protocol} alone. Nothing stores {@code wire} as a provider value.
      */
     public String provider() {
-        return params.get("provider").asStringValue().orNull();
+        NElement p = params.get("provider");
+        if (p == null || p.isNull()) {
+            return "wire";
+        }
+        return p.asStringValue().orNull();
     }
 
     /**
@@ -223,11 +262,16 @@ public class NaruModelRegistration implements NToElement {
     }
 
     /**
-     * Copy with one parameter set ({@code null} value removes it).
+     * Copy with one parameter set ({@code null} value removes it). Dropping
+     * {@code provider} is rejected: a generic endpoint is built without one from
+     * the start, never by stripping it from a provider-based registration.
      */
     public NaruModelRegistration withParam(String name, NElement value) {
         if (name == null) {
             return this;
+        }
+        if (value == null && "provider".equalsIgnoreCase(name)) {
+            throw new NIllegalArgumentException(NMsg.ofC("cannot remove the registration's provider"));
         }
         Map<String, NElement> m = new LinkedHashMap<>(params);
         if (value == null) {

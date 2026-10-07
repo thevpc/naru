@@ -20,6 +20,9 @@ import java.util.*;
 
 
 public class NaruModelProtocolMistral extends NaruModelProtocolOpenAICompat {
+    /** The {@code --protocol=<wire>} id of this provider-native wire (design §8). */
+    public static final String PROTOCOL_ID = "mistral";
+
     private static final DateTimeFormatter HTTP_DATE = DateTimeFormatter.ofPattern(
             "EEE, dd MMM yyyy HH:mm:ss z", Locale.ENGLISH
     );

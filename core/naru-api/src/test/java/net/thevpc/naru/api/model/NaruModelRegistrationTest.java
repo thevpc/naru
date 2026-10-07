@@ -14,7 +14,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -43,40 +42,50 @@ public class NaruModelRegistrationTest {
     }
 
     @Test
-    public void providerIsRequired() {
+    public void identityIsProviderOrProtocol() {
+        // a string provider must name a type
         Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("x", (String) null));
         Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("x", "  "));
         Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of((String) null, "gemini"));
 
-        Map<String, NElement> noProvider = new LinkedHashMap<>();
-        noProvider.put("url", NElement.ofString("https://x"));
-        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("x", noProvider));
         // a non-object element is a broken hand-edit, not a registration
         Assertions.assertThrows(NIllegalArgumentException.class,
                 () -> NaruModelRegistration.of("x", NElement.ofString("gemini")));
     }
 
     @Test
-    public void wireShorthandsNormalize() {
-        NaruModelRegistration r = NaruModelRegistration.of("ep",
-                Map.of("provider", NElement.ofString("openapi")));
-        Assertions.assertEquals("wire", r.provider());
-        Assertions.assertEquals("openapi", r.protocol().get());
+    public void genericEndpointHasProviderWireAndNoProviderParam() {
+        // --protocol alone: a generic endpoint with no stored provider
+        NaruModelRegistration r = NaruModelRegistration.of("ep", Map.of(
+                "protocol", NElement.ofString("openai"),
+                "url", NElement.ofString("https://x"),
+                "models", NElement.ofString("a,b")));
+        Assertions.assertEquals("wire", r.provider(), "no provider param means the internal wire type");
+        Assertions.assertEquals("openai", r.protocol().get());
+        Assertions.assertFalse(r.param("provider").isPresent(), "nothing persists provider=wire");
+        Assertions.assertEquals(r, NaruModelRegistration.of(r.id(), r.params()), "generic endpoint round-trips");
+    }
 
-        r = NaruModelRegistration.of("ep",
-                Map.of("provider", NElement.ofString("anthropic")));
-        Assertions.assertEquals("wire", r.provider());
-        Assertions.assertEquals("anthropic", r.protocol().get());
+    @Test
+    public void wireShorthandsAreRejected() {
+        // wire ids written as a provider are rejected, never normalized (clean cut)
+        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep",
+                Map.of("provider", NElement.ofString("openapi"))));
+        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep",
+                Map.of("provider", NElement.ofString("openai"))));
+        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep",
+                Map.of("provider", NElement.ofString("anthropic"))));
+        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep",
+                Map.of("provider", NElement.ofString("wire"))));
+        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep", "openai"));
 
-        // an explicit protocol survives the shorthand
-        r = NaruModelRegistration.of("ep", Map.of(
-                "provider", NElement.ofString("openapi"),
-                "protocol", NElement.ofString("gemini")));
-        Assertions.assertEquals("wire", r.provider());
-        Assertions.assertEquals("gemini", r.protocol().get());
+        // the openapi rejection carries the rename hint
+        NIllegalArgumentException ex = Assertions.assertThrows(NIllegalArgumentException.class,
+                () -> NaruModelRegistration.of("ep", Map.of("provider", NElement.ofString("openapi"))));
+        Assertions.assertTrue(ex.getMessage().contains("openai"));
 
         // gemini as a provider is the built-in provider, never a shorthand
-        r = NaruModelRegistration.of("personal", "gemini");
+        NaruModelRegistration r = NaruModelRegistration.of("personal", "gemini");
         Assertions.assertEquals("gemini", r.provider());
         Assertions.assertFalse(r.protocol().isPresent());
 
@@ -136,13 +145,14 @@ public class NaruModelRegistrationTest {
     @Test
     public void elementRoundTrip() {
         NObjectElementBuilder b = NElement.ofObjectBuilder();
-        b.set("provider", "wire");
-        b.set("protocol", "openapi");
+        b.set("protocol", "openai");
         b.set("url", "https://api.example.com/v1");
         b.set("apiKey", "$EXAMPLE_API_KEY");
         b.set("temperature", 0.7f);
         NaruModelRegistration r = NaruModelRegistration.of("example", b.build());
 
+        Assertions.assertEquals("wire", r.provider());
+        Assertions.assertEquals("openai", r.protocol().get());
         Assertions.assertEquals(r, NaruModelRegistration.of(r.id(), r.toElement()));
         Assertions.assertEquals(r, NaruModelRegistration.of(r.id(), r.params()));
     }

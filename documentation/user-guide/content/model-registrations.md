@@ -21,7 +21,7 @@
 - [5. Storage and visibility](#5-storage-and-visibility)
 - [6. Config resolution order](#6-config-resolution-order)
 - [7. Per-registration parameters](#7-per-registration-parameters)
-- [8. Wire types: `openapi`, `anthropic`, `gemini`](#8-wire-types-openapi-anthropic-gemini)
+- [8. Wire types: `openai`, `anthropic`, `gemini`](#8-wire-types-openai-anthropic-gemini)
 - [9. Availability, probing, and listings](#9-availability-probing-and-listings)
 - [10. What was removed, and what replaces it](#10-what-was-removed-and-what-replaces-it)
 - [11. Provider API: `type()` and `newInstance()`](#11-provider-api-type-and-newinstance)
@@ -97,7 +97,7 @@ A model key is always `<instance id>/<model id>` — two segments, no exceptions
 |-----|-------------|---------------|--------------|
 | `gemini/gemini-3.8-flash` | `gemini` (built-in) | `gemini` | `gemini.apiKey` → `GEMINI_API_KEY` |
 | `personal/gemini-3.8-flash` | `personal` (registration) | `gemini` | registration's key → `$GEMINI_KEY_A` |
-| `litellm/qwen3-32b` | `litellm` (registration) | `wire` (protocol `openapi`) | registration's key |
+| `litellm/qwen3-32b` | `litellm` (registration) | `wire` (protocol `openai`) | registration's key |
 | `gpu/llama3.1:8b` | `gpu` (registration) | `ollama` | registration's `url` |
 
 Selection accepts, in this order:
@@ -113,6 +113,7 @@ Selection accepts, in this order:
 | Command | Effect |
 |---------|--------|
 | `/model add <id> --provider=<type> [--protocol=<wire>] [--model=<id>\|--models=a,b] [--url=…] [--apiKey=sk-…\|$VAR] [--temperature=… --contextLength=… --maxTokens=… …]` | Create (or, with an existing id, update) a registration |
+| `/model add <id> --protocol=<wire> --url=… --models=a,b [--apiKey=…]` | Same, without a provider type: a generic HTTP endpoint speaking the wire (§8) |
 | `/model remove <id>` | Delete a registration and its stored parameters |
 | `/model registered` | Table of registrations, keys **masked** (`sk-***abcd`) |
 | `/model list [<filter>] [--provider=<type>] [--free]` | Merged listing of every selectable model (built-ins + registrations) |
@@ -152,7 +153,7 @@ Registrations live in two files on the same visibility axis as `env.tson`:
   },
   work:     { provider: "gemini", apiKey: "$GEMINI_KEY_B" },
   fast:     { provider: "gemini", model: "gemini-3.8-flash", apiKey: "$GEMINI_KEY_A" },
-  litellm:  { provider: "openapi", url: "http://localhost:4000/v1", models: "qwen3-32b" },
+  litellm:  { protocol: "openai", url: "http://localhost:4000/v1", models: "qwen3-32b" },
   gpu:      { provider: "ollama", url: "http://gpu-box:11434" }
 }
 ```
@@ -170,9 +171,14 @@ Rules:
   (§6), which is how a registration "finds its key by itself".
 
 Both files are plain TSON — hand-editable, and the directive writes the same thing
-you would. In `provider`, the wire-id shorthands of §8 (`openapi`, `anthropic`) are
-accepted too and normalize to `wire` + `protocol`. `gemini` is deliberately not one:
-as a provider it means the built-in gemini provider, and its native wire shape is
+you would. A generic endpoint is written with `protocol` and **no** `provider`
+(the internal `wire` type is implied: `provider()` reports `wire`, but no
+`provider` param is ever stored). Writing a wire id as a `provider` is rejected
+outright — `provider: "openai"` / `provider: "anthropic"` can only mean a generic
+wire from §8, no built-in provider class corresponds, and a hand-edited file must
+fail loudly. `openapi` (the old spelling) is rejected with a hint to write
+`protocol: "openai"`. `gemini` is deliberately not among the rejected ids: as a
+provider it means the built-in gemini provider, and its native wire shape is
 selected with `protocol: "gemini"` on top of it (§8).
 
 ## 6. Config resolution order
@@ -235,26 +241,28 @@ Values are merged into every model selected under that instance id, so
 `/model use personal/gemini-3.8-flash` selects *personal's* configuration —
 including its key — not the base provider's.
 
-## 8. Wire types: `openapi`, `anthropic`, `gemini`
+## 8. Wire types: `openai`, `anthropic`, `gemini`
 
 A registration has two independent knobs:
 
 | Knob | Meaning |
 |------|---------|
 | `--provider=<type>` | **Who** serves the model: enumerates its models, resolves capabilities, provides the default key. A built-in provider type (`gemini`, `ollama`, `openrouter`, ...) or the generic `wire` type for an endpoint with no provider class. |
-| `--protocol=<wire>` | **How** the request is shaped: `openapi`, `anthropic`, or `gemini` (native `generateContent`). Optional — defaults to the provider's own wire shape. |
+| `--protocol=<wire>` | **How** the request is shaped: `openai`, `anthropic`, or `gemini` (native `generateContent`). Optional — defaults to the provider's own wire shape. |
+
+The two knobs are orthogonal: `--provider` picks *who*, `--protocol` picks *how*,
+and a registration only needs the one it variations on.
 
 Pointing NARU at an HTTP endpoint with no built-in provider class is a generic
-`wire` registration, spelled two ways:
+`wire` registration — `--protocol` alone, no `--provider=`:
 
 ```text
-/model add litellm --provider=openapi   --url=http://localhost:4000/v1 --models=qwen3-32b --apiKey=$LITELLM_KEY   ← shorthand
-/model add litellm --provider=wire --protocol=openapi --url=http://localhost:4000/v1 --models=qwen3-32b --apiKey=$LITELLM_KEY   ← explicit, same thing
-/model add claude2 --provider=anthropic --url=https://api.anthropic.com --models=claude-sonnet-4 --apiKey=sk-...
+/model add litellm  --protocol=openai    --url=http://localhost:4000/v1 --models=qwen3-32b --apiKey=$LITELLM_KEY       ← generic endpoint, no provider class
+/model add claude2  --protocol=anthropic --url=https://api.anthropic.com --models=claude-sonnet-4 --apiKey=$ANTHROPIC_KEY
 /model use litellm/qwen3-32b
 ```
 
-- `openapi` — OpenAI-compatible `POST {url}/chat/completions`, sending
+- `openai` — OpenAI-compatible `POST {url}/chat/completions`, sending
   `Authorization: Bearer <key>` only when a key resolves
 - `anthropic` — Anthropic Messages `POST {url}/v1/messages` with `x-api-key` +
   `anthropic-version` headers and the Messages body shape (`system` hoisted to top
@@ -276,10 +284,15 @@ that matters today is speaking native Gemini against Google's API (required for
 /model add native --provider=gemini --protocol=gemini --apiKey=$GEMINI_KEY_A
 ```
 
-Wire ids come from `NaruModelProtocolTypes` (`openapi`, `anthropic`, `gemini`);
-extensions add more through `NaruModelProtocolTypes.register(...)` and they are
-usable here the same way. Unknown `--provider` or `--protocol` values are
-**rejected** by `/model add` rather than silently defaulted.
+Wire ids are what the providers themselves declare, not a central registry: every
+provider has a `defaultProtocol()` — the wire it speaks when none is configured —
+and a `supportedProtocols()` set — its own default plus any override shapes it has
+code for (§11). The generic `wire` type declares `openai`, `anthropic` and
+`gemini`; a dialect provider (`mistral`, `openrouter`) declares its own id plus
+`openai`; `ollama` declares none, so its single `api/chat` shape cannot be
+re-pointed. Unknown `--protocol` values are **rejected** by `/model add`; a wire
+id the provider does not declare is *ignored with a warning* at runtime (its
+default wire is used) — never silently substituted, never fatal.
 
 There is no second mechanism for this any more: `/model endpoint` and the
 `custom.endpoints.*` environment keys are **gone**, and `custom/<endpoint>/<model>`
@@ -298,8 +311,9 @@ addresses nothing.
   before.
 - Two registrations of the same provider may legitimately report **different model
   sets** — each enumerates with its own key.
-- Live model enumeration is cached per `type() + key`, so five gemini
-  registrations cost one lookup, not five.
+- Live model enumeration is cached per (`type()`, wire protocol, url, api key),
+  so five gemini registrations sharing a key and endpoint cost one lookup, not
+  five.
 
 ## 10. What was removed, and what replaces it
 
@@ -325,7 +339,7 @@ are gone; wire-type registrations (§8) are the one concept:
 
 ```text
 // was: /model endpoint add litellm --url=http://localhost:4000/v1 --models=qwen3-32b
-/model add litellm --provider=openapi --url=http://localhost:4000/v1 --models=qwen3-32b --apiKey=$LITELLM_KEY
+/model add litellm --protocol=openai --url=http://localhost:4000/v1 --models=qwen3-32b --apiKey=$LITELLM_KEY
 ```
 
 **Ollama lifecycle commands move to `/ollama`,** where they belong:
@@ -337,18 +351,31 @@ are gone; wire-type registrations (§8) are the one concept:
 | `/model ps` | `/ollama ps` |
 | `/model unload <m>` | `/ollama unload <m>` |
 
-## 11. Provider API: `type()` and `newInstance()`
+## 11. Provider API: `type()`, `newInstance()`, and the wire shape
 
 Adding a provider is unchanged — implement `NaruModelProvider` and it is discovered
-by SPI. Two additions make registrations possible:
+by SPI. Three additions make registrations and `--protocol` work:
 
 ```java
 public interface NaruModelProvider {
     String name();                                   // the instance id (unchanged)
     default String type() { return name(); }         // implementation type: "gemini", "ollama", ...
     default NaruModelProvider newInstance(String id) // same implementation, new instance id
+    default String defaultProtocol() { return "openai"; }   // the wire spoken when --protocol is unset
+    default Set<String> supportedProtocols() { return Set.of(defaultProtocol()); } // override shapes (§8)
 }
 ```
+
+The two protocol members are the whole wire decision: `defaultProtocol()` is the
+provider's own wire id (a dialect provider returns `mistral`, `openrouter` or
+`ollama`), `supportedProtocols()` the override shapes it has code for — naming the
+default explicitly is a no-op. A provider whose shape is genuinely fixed (`ollama`)
+overrides with an empty set, so `/model add --protocol=` rejects the flag instead
+of silently accepting a wire that would not be spoken. On the OpenAI-compatible
+base, ids map straight onto concrete wire classes (`NaruModelProtocolOpenAICompat`,
+`NaruModelProtocolAnthropicCompat`, `NaruModelProtocolGeminiNative`) — there is no
+registry of wire types to extend, writing a new wire means writing its class and
+building it in `createDefaultProtocol`/`createProtocol`.
 
 Because every configuration lookup in the wire layer is already keyed by the
 provider's *name* (`<name>.apiKey`, `<name>.url`, `<name>.timeout`), an instance
@@ -368,7 +395,7 @@ probe caching) reads `type()` instead of `name()`.
 3. Config resolves: registration value (`$VAR` interpolated) → `<id>.*` env key →
    provider default (`GEMINI_*` env var), so a registration can pick its key up
    from the environment on its own.
-4. Wire types (`openapi`, `anthropic`, `gemini`, selected with `--provider=…`
-   shorthand or `--protocol=`) are the *only* way to point at a custom HTTP
-   endpoint — `/model endpoint` and `custom.endpoints.*` are gone, as are aliases
-   (recreate both as registrations); ollama lifecycle commands live in `/ollama`.
+4. Wire types (`openai`, `anthropic`, `gemini`, selected with `--protocol=`) are
+   the *only* way to point at a custom HTTP endpoint — `/model endpoint` and
+   `custom.endpoints.*` are gone, as are aliases (recreate both as registrations);
+   ollama lifecycle commands live in `/ollama`.

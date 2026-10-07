@@ -3,11 +3,8 @@ package net.thevpc.naru.ext.models.colibri;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
-import net.thevpc.naru.api.model.NaruModelConfig;
-import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
-import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NLiteral;
@@ -63,22 +60,6 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
     @Override
     protected String modelsPath() {
         return DEFAULT_MODELS_PATH;
-    }
-
-    @Override
-    protected NaruModelProtocol createProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
-        String chatPath = configValue("chatPath", session)
-                .map(p -> {
-                    while (p.startsWith("/")) {
-                        p = p.substring(1);
-                    }
-                    while (p.endsWith("/")) {
-                        p = p.substring(0, p.length() - 1);
-                    }
-                    return p;
-                })
-                .orElse(DEFAULT_CHAT_PATH);
-        return new NaruModelProtocolOpenAICompat(this, model, name(), chatPath, capabilities, baseUrl(session));
     }
 
     @Override

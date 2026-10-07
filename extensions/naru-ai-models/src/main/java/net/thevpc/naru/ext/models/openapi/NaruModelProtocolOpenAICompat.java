@@ -8,9 +8,24 @@ import net.thevpc.nuts.net.NHttpRequest;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
+/**
+ * The OpenAI-compatible wire protocol ({@code POST {base}/chat/completions},
+ * {@code Authorization: Bearer}), the default {@code --protocol} shape.
+ *
+ * <p>Besides the chat wire, this class owns the wire's live-model listing facts
+ * (the static {@code modelsPath}/{@code authHeader*}/{@code parseModelIds}
+ * members): the provider base reads them when enumerating the models a
+ * registration of this wire can address.
+ */
 public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
+
+    /** The {@code --protocol=<wire>} id of this wire shape (design doc §8). */
+    public static final String PROTOCOL_ID = "openai";
 
     /**
      * Fallback base url used when config key {@code <configPrefix>.url} is not set.
@@ -39,6 +54,41 @@ public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
             return defaultBaseUrl;
         }
         return super.url(task, env);
+    }
+
+    // ── Live-model listing facts (wire-level GETs, session-scoped) ─────────────
+
+    /** Relative path of this wire's model-listing endpoint. */
+    public static String modelsPath() {
+        return "models";
+    }
+
+    /** Header name carrying the api key on wire-level GETs. */
+    public static String authHeaderName() {
+        return "Authorization";
+    }
+
+    /** Header value for a given api key. */
+    public static String authHeaderValue(String apiKey) {
+        return "Bearer " + (apiKey == null ? "" : apiKey);
+    }
+
+    /**
+     * Parses a listing response ({@code data[].id}) into the model ids it
+     * registers.
+     */
+    public static List<String> parseModelIds(NElement root) {
+        NOptional<NElement> dataOpt = root == null ? NOptional.ofEmpty()
+                : root.asObject().flatMap(o -> o.get("data"));
+        if (!dataOpt.isPresent() || !dataOpt.get().isArray()) {
+            return Collections.emptyList();
+        }
+        List<String> ids = new ArrayList<>();
+        for (NElement item : dataOpt.get().asArray().get()) {
+            item.asObject().flatMap(o -> o.get("id")).flatMap(NElement::asStringValue)
+                    .ifPresent(ids::add);
+        }
+        return ids;
     }
 
 

@@ -4,8 +4,10 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
-import net.thevpc.naru.ext.models.NaruModelProtocolTypes;
+import net.thevpc.naru.ext.models.anthropic.NaruModelProtocolAnthropicCompat;
+import net.thevpc.naru.ext.models.gemini.NaruModelProtocolGeminiNative;
 import net.thevpc.naru.ext.models.openapi.AbstractOpenAICompatProvider;
+import net.thevpc.naru.ext.models.openapi.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
@@ -14,12 +16,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Generic wire provider: a class-less endpoint (OpenAI-compatible, Anthropic
- * Messages, ...) addressed through a registration instead of code. This is the
- * {@code --provider=openapi|anthropic|wire} implementation type behind
- * {@code /model add}.
+ * Messages, native Gemini, ...) addressed through a registration instead of
+ * code. This is the implementation type behind a {@code /model add} that passes
+ * {@code --protocol} with no {@code --provider} (design doc §8).
  *
  * <p>All configuration comes from the instance's own params (design §7), i.e.
  * from the registration, with the agent env {@code <instance id>.<key>} as the
@@ -28,7 +31,7 @@ import java.util.List;
  * <pre>
  * url=https://my-server          (required: without it there is nothing to call)
  * models=model-a,model-b         (or model=single: the models this endpoint serves)
- * protocol=openapi|anthropic|gemini  (wire shape, default openapi)
+ * protocol=openai|anthropic|gemini  (wire shape, default openai)
  * apiKey=sk-... | apiKey=$MY_VAR (optional: no key simply means no Authorization)
  * chatPath=v1/chat/completions   (optional)
  * contextLength=32768            (optional)
@@ -51,6 +54,16 @@ public class NaruWireProvider extends AbstractOpenAICompatProvider {
     @Override
     protected String baseUrl(NaruSession session) {
         return configValue("url", session).orNull();
+    }
+
+    @Override
+    public Set<String> supportedProtocols() {
+        // a generic endpoint can speak any wire shape
+        return Set.of(
+                NaruModelProtocolOpenAICompat.PROTOCOL_ID,
+                NaruModelProtocolAnthropicCompat.PROTOCOL_ID,
+                NaruModelProtocolGeminiNative.PROTOCOL_ID
+        );
     }
 
     @Override
@@ -128,8 +141,8 @@ public class NaruWireProvider extends AbstractOpenAICompatProvider {
             }
             return NaruCachingMode.NONE;
         }
-        String protocol = configValue("protocol", session).orElse(NaruModelProtocolTypes.OPENAPI);
-        if (NaruModelProtocolTypes.ANTHROPIC.equalsIgnoreCase(protocol)) {
+        String protocolId = resolvedProtocolId(session);
+        if (protocolId != null && protocolId.equalsIgnoreCase(NaruModelProtocolAnthropicCompat.PROTOCOL_ID)) {
             return NaruCachingMode.EXPLICIT_INLINE;
         }
         return NaruCachingMode.AUTOMATIC_PREFIX;

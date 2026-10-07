@@ -2,9 +2,9 @@ package net.thevpc.naru.ext.models.test;
 
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.ext.models.NaruModelProtocolTypes;
 import net.thevpc.naru.ext.models.gemini.NaruGeminiNativeRequestSerializer;
 import net.thevpc.naru.ext.models.gemini.NaruGeminiNativeResponseParser;
+import net.thevpc.naru.ext.models.gemini.NaruModelProtocolGeminiNative;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NArrayElement;
@@ -209,11 +209,11 @@ public class NaruGeminiNativeTest {
     }
 
     @Test
-    public void geminiIsRegisteredAsAProtocolType() {
-        Assertions.assertTrue(NaruModelProtocolTypes.of("gemini").isPresent());
-        Assertions.assertTrue(NaruModelProtocolTypes.of("GEMINI").isPresent(),
-                "type ids are case-insensitive");
-        Assertions.assertTrue(NaruModelProtocolTypes.names().contains("gemini"));
+    public void geminiListingIdsDropTheModelsPrefix() {
+        NElement root = NElementReader.ofJson().read(
+                "{\"models\":[{\"name\":\"models/gemini-2.5-pro\",\"supportedGenerationMethods\":[\"generateContent\"]}]}");
+        Assertions.assertEquals(List.of("gemini-2.5-pro"),
+                NaruModelProtocolGeminiNative.parseModelIds(root));
     }
 
     @Test

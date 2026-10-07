@@ -38,7 +38,24 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
     }
 
 
-    protected NaruModelProtocol createProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+    @Override
+    public String defaultProtocol() {
+        return NaruModelProtocolOllamaNative.PROTOCOL_ID;
+    }
+
+    @Override
+    public Set<String> supportedProtocols() {
+        // the /api/chat REST wire is the only shape ollama speaks; --protocol=
+        // therefore rejects any other wire id at the directive level
+        return Set.of();
+    }
+
+    /**
+     * The native {@code /api/chat} REST wire (the {@code think} flag, the
+     * stream frame format, ...) — ollama's one and only wire.
+     */
+    @Override
+    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
         return new NaruModelProtocolOllamaNative(this, model, name(), capabilities);
     }
 

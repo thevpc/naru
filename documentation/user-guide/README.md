@@ -32,7 +32,7 @@
 - [Register the same provider with several API keys](content/model-registrations.md#2-quick-start-two-keys-for-one-provider)
 - [Available vs registered models](content/model-registrations.md#1-available-vs-registered)
 - [`/model add` reference](content/model-registrations.md#4-the-model-directive)
-- [Configure an OpenAI-compatible or Anthropic endpoint](content/model-registrations.md#8-wire-types-openapi-anthropic-gemini)
+- [Configure an OpenAI-compatible or Anthropic endpoint](content/model-registrations.md#8-wire-types-openai-anthropic-gemini)
 - [Availability probing & `/models` filtering](content/model-registrations.md#9-availability-probing-and-listings)
 - [Plan a goal as a dependency graph, and activate it](content/planning.md)
 - [`/plan` directive reference](content/planning.md#4-directives)

@@ -170,10 +170,9 @@ accumulating so it cannot drag a running total backwards.
 ## Gemini: two protocols, not one
 
 `NaruGeminiProvider` speaks Google's **OpenAI-compatible** route
-(`/v1beta/openai/...`), where caching is `AUTOMATIC_PREFIX`. A native
-`gemini` protocol type is also registered (a registration's `--protocol=gemini`,
-e.g. `/model add native --provider=gemini --protocol=gemini`, or programmatically
-via `NaruModelProtocolTypes.register`), speaking the first-class `generateContent`
+(`/v1beta/openai/...`), where caching is `AUTOMATIC_PREFIX`. It also declares the
+native `gemini` wire (`--protocol=gemini`, e.g. `/model add native
+--provider=gemini --protocol=gemini`), speaking the first-class `generateContent`
 API.
 
 The native route exists because resource caching is impossible on the
