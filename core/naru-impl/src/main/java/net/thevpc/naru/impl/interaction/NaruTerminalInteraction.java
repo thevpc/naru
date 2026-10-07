@@ -112,6 +112,7 @@ public class NaruTerminalInteraction implements NaruInteraction {
             }
             String line;
             try {
+                terminal.out().resetLine();
                 line = terminal.readLine(request.prompt());
             } catch (Exception ex) {
                 request.cancel("terminal read failed: " + ex.getMessage());
