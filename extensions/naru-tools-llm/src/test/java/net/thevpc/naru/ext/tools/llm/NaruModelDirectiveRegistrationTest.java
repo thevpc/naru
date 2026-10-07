@@ -19,6 +19,9 @@ import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.routine.NaruStmtResultType;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
+import net.thevpc.nuts.cmdline.NArgCompletePosition;
+import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
@@ -55,7 +58,9 @@ public class NaruModelDirectiveRegistrationTest {
     private final Map<String, NaruModelRegistration> registrations = new LinkedHashMap<>();
     private final List<NaruModelInfo> catalog = new ArrayList<>();
     private final List<NMsg> logs = new ArrayList<>();
+    private final List<NaruModelKey> listed = new ArrayList<>();
     private final String[] argument = {""};
+    private NaruSession session;
     private final NaruDirectiveCallContext context = buildContext();
     private final NaruModelDirective directive = new NaruModelDirective();
 
@@ -88,6 +93,7 @@ public class NaruModelDirectiveRegistrationTest {
         instances.clear();
         registrations.clear();
         catalog.clear();
+        listed.clear();
         logs.clear();
         argument[0] = "";
         builtins.put("gemini", new FakeProvider("gemini", new String[]{"GEMINI_API_KEY"}));
@@ -167,17 +173,24 @@ public class NaruModelDirectiveRegistrationTest {
                         }
                         case "findModel":
                             return NOptional.ofEmpty();
-                        case "setListedModels":
+                        case "setListedModels": {
+                            listed.clear();
+                            if (args[0] != null) {
+                                listed.addAll((List<NaruModelKey>) args[0]);
+                            }
+                            return null;
+                        }
                         case "unsetSessionEnv":
                             return null;
                         case "listedModels":
-                            return List.of();
+                            return new ArrayList<>(listed);
                         case "getSessionEnv":
                             return NOptional.ofEmpty();
                         default:
                             return null;
                     }
                 });
+        this.session = session;
 
         NaruTask task = (NaruTask) Proxy.newProxyInstance(getClass().getClassLoader(),
                 new Class<?>[]{NaruTask.class},
@@ -649,5 +662,141 @@ public class NaruModelDirectiveRegistrationTest {
                 () -> "only the registration row gets a type annotation, got: " + out);
         Assertions.assertFalse(out.contains("qwen"),
                 "--provider must match by type and exclude other types, got: " + out);
+    }
+
+    // ── autocomplete ─────────────────────────────────────────────────────────
+
+    private List<String> complete(String... words) {
+        NCmdLine cmdLine = NCmdLine.of(words);
+        int last = words.length - 1;
+        NArgCompletePosition pos = NArgCompletePosition.of(last, words[last].length(), 0);
+        NArgCompleteResult result = directive.resolveCandidates(cmdLine.completePosition(pos), pos, session);
+        List<String> out = new ArrayList<>();
+        for (NArgCompleteCandidate c : result.candidates()) {
+            out.add(c.value());
+        }
+        return out;
+    }
+
+    @Test
+    public void subcommandsAndBareReferencesCompleteAtPositionOne() {
+        List<String> c = complete("/model", "");
+        Assertions.assertTrue(c.contains("add"), () -> "subcommand missing, got: " + c);
+        Assertions.assertTrue(c.contains("use"), () -> "subcommand missing, got: " + c);
+        Assertions.assertTrue(c.contains("registered"), () -> "subcommand missing, got: " + c);
+        Assertions.assertTrue(c.contains("gemini/gem-1"),
+                "the bare form must also accept a model reference, got: " + c);
+    }
+
+    @Test
+    public void partialSubcommandIsNarrowed() {
+        List<String> c = complete("/model", "reg");
+        Assertions.assertTrue(c.contains("registered"), () -> "got: " + c);
+        for (String v : c) {
+            Assertions.assertTrue(v.startsWith("reg"),
+                    "candidate " + v + " does not extend 'reg': " + c);
+        }
+    }
+
+    @Test
+    public void providerValueCompletesAfterEquals() {
+        List<String> c = complete("/model", "add", "x", "--provider=");
+        Assertions.assertTrue(c.contains("--provider=gemini"), () -> "got: " + c);
+        Assertions.assertTrue(c.contains("--provider=stub"), () -> "got: " + c);
+        Assertions.assertTrue(c.contains("--provider=openapi"),
+                "the wire shorthands must be offered, got: " + c);
+
+        List<String> partial = complete("/model", "add", "x", "--provider=ge");
+        Assertions.assertEquals(List.of("--provider=gemini"), partial,
+                "a partial value must narrow the candidates");
+    }
+
+    @Test
+    public void protocolValueCompletesFromTheChosenProviderShapes() {
+        List<String> c = complete("/model", "add", "x", "--provider=wire", "--protocol=");
+        Assertions.assertTrue(c.contains("--protocol=openapi"), () -> "got: " + c);
+        Assertions.assertTrue(c.contains("--protocol=anthropic"), () -> "got: " + c);
+        Assertions.assertTrue(c.contains("--protocol=gemini"), () -> "got: " + c);
+
+        // a type with a fixed wire shape has no protocols to offer
+        List<String> none = complete("/model", "add", "x", "--provider=stub", "--protocol=");
+        Assertions.assertTrue(none.isEmpty(),
+                "a fixed-shape type must offer no protocols, got: " + none);
+    }
+
+    @Test
+    public void modelsValueCompletesForTheChosenProvider() {
+        List<String> c = complete("/model", "add", "x", "--provider=gemini", "--models=");
+        Assertions.assertTrue(c.contains("--models=gem-1"), () -> "got: " + c);
+        Assertions.assertTrue(c.contains("--models=gem-2"), () -> "got: " + c);
+        Assertions.assertFalse(c.contains("--models=m1"),
+                "gemini must not offer stub's models, got: " + c);
+
+        // before a provider is chosen every catalog model is fair game
+        List<String> all = complete("/model", "add", "x", "--models=");
+        Assertions.assertTrue(all.contains("--models=m1"), () -> "got: " + all);
+    }
+
+    @Test
+    public void optionNamesComplete() {
+        List<String> c = complete("/model", "add", "x", "--pro");
+        Assertions.assertTrue(c.contains("--provider="), () -> "got: " + c);
+        Assertions.assertTrue(c.contains("--protocol="), () -> "got: " + c);
+        Assertions.assertTrue(c.contains("--probe="), () -> "got: " + c);
+    }
+
+    @Test
+    public void booleanFlagsCompleteTrueAndFalse() {
+        List<String> c = complete("/model", "add", "x", "--probe=");
+        Assertions.assertTrue(c.contains("--probe=true"), () -> "got: " + c);
+        Assertions.assertTrue(c.contains("--probe=false"), () -> "got: " + c);
+    }
+
+    @Test
+    public void addUpdateRemoveCompleteExistingIds() {
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS, add("personal --provider=gemini").type());
+
+        Assertions.assertTrue(complete("/model", "update", "").contains("personal"),
+                "update must offer registration ids");
+        Assertions.assertTrue(complete("/model", "remove", "pers").contains("personal"),
+                "remove must offer matching registration ids");
+        Assertions.assertTrue(complete("/model", "add", "").contains("personal"),
+                "add merges into an existing id, so it must be offered too");
+    }
+
+    @Test
+    public void useCompletesRegistrationsAndKeys() {
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS, add("personal --provider=gemini").type());
+
+        List<String> c = complete("/model", "use", "");
+        Assertions.assertTrue(c.contains("personal"), () -> "registration id missing, got: " + c);
+        Assertions.assertTrue(c.contains("gemini/gem-1"), () -> "key missing, got: " + c);
+        Assertions.assertTrue(c.contains("gemini/gem-2"), () -> "key missing, got: " + c);
+    }
+
+    @Test
+    public void listCompletesTheProviderFilterAndKeywords() {
+        List<String> c = complete("/model", "list", "--provider=");
+        Assertions.assertTrue(c.contains("--provider=gemini"), () -> "got: " + c);
+        Assertions.assertTrue(c.contains("--provider=stub"), () -> "got: " + c);
+
+        List<String> free = complete("/model", "list", "gem");
+        Assertions.assertTrue(free.contains("gemini"), () -> "a provider word must complete, got: " + free);
+        Assertions.assertTrue(free.contains("gemini/gem-1"), () -> "a model key must complete, got: " + free);
+    }
+
+    @Test
+    public void bareIndexCompletesAfterAListing() {
+        catalog.add(info("gemini", "gem-2"));
+        NaruStmtResult res = directive.executeList(context, NCmdLine.of(""));
+        Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
+
+        Assertions.assertTrue(complete("/model", "").contains("1"),
+                "the index the listing printed must complete the bare form");
+    }
+
+    @Test
+    public void unknownSubcommandAndDeepUnrelatedArgsOfferNothing() {
+        Assertions.assertTrue(complete("/model", "bogus", "").isEmpty());
     }
 }

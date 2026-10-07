@@ -124,6 +124,12 @@ Selection accepts, in this order:
 `--provider=` filters by **type**, so `/model list --provider=gemini` shows the
 base provider and every gemini registration together.
 
+Autocomplete covers the whole surface: subcommand names, then per-subcommand
+arguments — registration ids for `add`/`update`/`remove`, model references
+(indexes, ids, `provider/model` keys) for `use`/`use-global` and the bare form,
+and `--param=value` flags with their vocabulary (`--provider=`, `--protocol=`,
+`--models=` of the provider chosen in the line, booleans).
+
 Removed commands (see §10 for what replaced them):
 `/model alias`, `/model unalias`, `/model install`, `/model uninstall`,
 `/model ps`, `/model unload`, `/model endpoint`.

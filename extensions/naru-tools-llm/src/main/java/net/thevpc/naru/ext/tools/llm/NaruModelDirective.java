@@ -10,6 +10,9 @@ import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NArg;
+import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
+import net.thevpc.nuts.cmdline.NArgCompletePosition;
+import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
@@ -157,6 +160,313 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
 
+    }
+
+    // ── autocomplete ──────────────────────────────────────────────────────────
+
+    private static final String[] REGISTRATION_PARAMS = {
+            "provider", "protocol", "model", "models", "apiKey", "url",
+            "temperature", "contextLength", "nucleusThreshold", "candidateCount",
+            "maxTokens", "maxRetries", "stop", "thinkingTags", "chatPath",
+            "tools", "probe", "enabled"
+    };
+
+    /**
+     * Tab completion for the whole command surface: subcommand names
+     * filtered by what has been typed, then each subcommand's own arguments — a
+     * {@code --param=value} token with <b>values</b> for the flags that have a
+     * fixed vocabulary (provider types, wire protocols, the models of a provider
+     * chosen earlier in the line, booleans), registration ids for {@code add}/
+     * {@code update}/{@code remove}, and model references for {@code use},
+     * {@code use-global} and the bare form.
+     */
+    @Override
+    public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+        List<NArgCompleteCandidate> candidates = new ArrayList<>();
+        String[] words = cmdLine.toStringArray();
+        int wordIndex = pos.wordIndex();
+        if (wordIndex == 1) {
+            // "/model <…>": subcommand names, plus whatever the bare form accepts
+            // (an index of the pinned listing, a registration id, or a filter word
+            // such as a full provider/model key)
+            String prefix = currentWord(words, wordIndex);
+            completeSubcommandNames(candidates, prefix);
+            completeModelReference(candidates, session, prefix);
+        } else if (wordIndex >= 2) {
+            String sub = words.length > 1 ? words[1] : "";
+            if (!subCommand(sub).isPresent()) {
+                return NArgCompleteResult.ofCandidates(candidates);
+            }
+            switch (sub) {
+                case "use":
+                case "use-global":
+                    completeModelReference(candidates, session, currentWord(words, wordIndex));
+                    break;
+                case "add":
+                case "update":
+                    if (wordIndex == 2) {
+                        completeRegistrationId(candidates, session, currentWord(words, wordIndex));
+                    } else {
+                        completeRegistrationOption(candidates, session, words, wordIndex);
+                    }
+                    break;
+                case "remove":
+                    if (wordIndex == 2) {
+                        completeRegistrationId(candidates, session, currentWord(words, wordIndex));
+                    }
+                    break;
+                case "list":
+                    completeListArgument(candidates, session, words, wordIndex);
+                    break;
+                default:
+                    break;
+            }
+        }
+        return NArgCompleteResult.ofCandidates(candidates);
+    }
+
+    private static String currentWord(String[] words, int wordIndex) {
+        return wordIndex < words.length ? words[wordIndex] : "";
+    }
+
+    /** The candidate must extend what has been typed, case-insensitively. */
+    private static boolean extendsWord(String typed, String candidate) {
+        return candidate != null && candidate.toLowerCase().startsWith(typed.toLowerCase());
+    }
+
+    private void completeSubcommandNames(List<NArgCompleteCandidate> candidates, String prefix) {
+        List<String> names = new ArrayList<>();
+        for (SubCommand sc : registeredSubCommands()) {
+            if (!sc.name().isEmpty()) {
+                names.add(sc.name());
+            }
+        }
+        Collections.sort(names);
+        for (String name : names) {
+            if (extendsWord(prefix, name)) {
+                candidates.add(NArgCompleteCandidate.of(name,
+                        name + " — " + subCommand(name).get().description().toString()));
+            }
+        }
+    }
+
+    /**
+     * Everything {@code /model use} (and the bare form) can select: an index of
+     * the pinned listing, an existing registration id, or a full provider/model
+     * key of the merged catalog.
+     */
+    private static void completeModelReference(List<NArgCompleteCandidate> candidates, NaruSession session, String prefix) {
+        List<NaruModelKey> listed = session == null ? null : session.listedModels();
+        if (listed != null) {
+            for (int i = 0; i < listed.size(); i++) {
+                String ix = String.valueOf(i + 1);
+                if (extendsWord(prefix, ix)) {
+                    candidates.add(NArgCompleteCandidate.of(ix, "index " + ix + " — " + listed.get(i)));
+                }
+            }
+        }
+        completeRegistrationId(candidates, session, prefix);
+        for (NaruModelKey mk : catalogModelKeys(session)) {
+            if (extendsWord(prefix, mk.toString())) {
+                candidates.add(NArgCompleteCandidate.of(mk.toString(), mk.toString()));
+            }
+        }
+    }
+
+    private static void completeRegistrationId(List<NArgCompleteCandidate> candidates, NaruSession session, String prefix) {
+        Map<String, NaruModelRegistration> regs = session == null ? null : session.registrations();
+        if (regs != null) {
+            for (Map.Entry<String, NaruModelRegistration> e : regs.entrySet()) {
+                if (extendsWord(prefix, e.getKey())) {
+                    candidates.add(NArgCompleteCandidate.of(e.getKey(),
+                            "registration " + e.getKey() + " (provider " + e.getValue().provider() + ")"));
+                }
+            }
+        }
+    }
+
+    /**
+     * A {@code --param=…} token of {@code add}/{@code update}: option names while
+     * the user is still typing the flag, then candidate values once the text
+     * reaches the {@code =} — provider types (plus the wire shorthands), wire
+     * protocols supported by the provider chosen in the line, the catalog models
+     * of that provider, and {@code true}/{@code false} for the boolean flags.
+     */
+    private static void completeRegistrationOption(List<NArgCompleteCandidate> candidates, NaruSession session, String[] words, int wordIndex) {
+        String current = currentWord(words, wordIndex);
+        int eq = current.indexOf('=');
+        if (eq < 0) {
+            for (String name : REGISTRATION_PARAMS) {
+                String cand = "--" + name + "=";
+                if (extendsWord(current, cand)) {
+                    candidates.add(NArgCompleteCandidate.of(cand, "--" + name + "=<value>"));
+                }
+            }
+            return;
+        }
+        String prefix = current.substring(0, eq);
+        String key = normalizeOptionKey(prefix);
+        switch (key) {
+            case "provider":
+                for (String t : providerTypes(session)) {
+                    addValueCandidate(candidates, prefix, t, t, current);
+                }
+                addValueCandidate(candidates, prefix, "openapi",
+                        "openapi — wire shorthand (--provider=wire --protocol=openapi)", current);
+                addValueCandidate(candidates, prefix, "anthropic",
+                        "anthropic — wire shorthand (--provider=wire --protocol=anthropic)", current);
+                break;
+            case "protocol":
+                for (String p : protocolIds(session, words, wordIndex)) {
+                    addValueCandidate(candidates, prefix, p, p, current);
+                }
+                break;
+            case "model":
+            case "models":
+                completeModelsValue(candidates, session, words, wordIndex, prefix, current);
+                break;
+            case "tools":
+            case "probe":
+            case "enabled":
+                addValueCandidate(candidates, prefix, "true", "true", current);
+                addValueCandidate(candidates, prefix, "false", "false", current);
+                break;
+            default:
+                // numeric or free-text parameters have no fixed vocabulary
+                break;
+        }
+    }
+
+    private static void completeModelsValue(List<NArgCompleteCandidate> candidates, NaruSession session, String[] words, int wordIndex, String prefix, String current) {
+        String chosen = providerChosen(words, wordIndex);
+        for (NaruModelKey mk : catalogModelKeys(session)) {
+            if (chosen != null && !NBlankable.isBlank(chosen) && !chosen.equalsIgnoreCase(mk.provider())) {
+                continue;
+            }
+            addValueCandidate(candidates, prefix, mk.model(), mk.model() + " (" + mk.provider() + ")", current);
+        }
+    }
+
+    private static void addValueCandidate(List<NArgCompleteCandidate> candidates, String prefix, String value, String desc, String current) {
+        String cand = prefix + "=" + value;
+        if (extendsWord(current, cand)) {
+            candidates.add(NArgCompleteCandidate.of(cand, desc));
+        }
+    }
+
+    /**
+     * {@code /model list} arguments: the {@code --provider=}/{@code -p} filter
+     * (with provider values after the {@code =}), {@code --free}/{@code -f}, and
+     * — for the free-text keyword — the words a listing can actually be filtered
+     * by (provider names and full provider/model keys).
+     */
+    private static void completeListArgument(List<NArgCompleteCandidate> candidates, NaruSession session, String[] words, int wordIndex) {
+        String current = currentWord(words, wordIndex);
+        if (current.startsWith("-")) {
+            int eq = current.indexOf('=');
+            if (eq >= 0) {
+                String prefix = current.substring(0, eq);
+                String key = normalizeOptionKey(prefix);
+                if ("provider".equals(key) || "p".equals(key)) {
+                    for (String t : providerTypes(session)) {
+                        addValueCandidate(candidates, prefix, t, t, current);
+                    }
+                }
+                return;
+            }
+            if (extendsWord(current, "--provider=")) {
+                candidates.add(NArgCompleteCandidate.of("--provider=", "--provider=<type>"));
+            }
+            if (extendsWord(current, "--free")) {
+                candidates.add(NArgCompleteCandidate.of("--free", "--free"));
+            }
+            if (extendsWord(current, "-p=")) {
+                candidates.add(NArgCompleteCandidate.of("-p=", "-p=<type>"));
+            }
+            if (extendsWord(current, "-f")) {
+                candidates.add(NArgCompleteCandidate.of("-f", "-f"));
+            }
+            return;
+        }
+        // a free-text filter: the words a listing can actually be filtered by
+        for (String t : providerTypes(session)) {
+            if (extendsWord(current, t)) {
+                candidates.add(NArgCompleteCandidate.of(t, "provider " + t));
+            }
+        }
+        for (NaruModelKey mk : catalogModelKeys(session)) {
+            if (extendsWord(current, mk.toString())) {
+                candidates.add(NArgCompleteCandidate.of(mk.toString(), mk.toString()));
+            }
+        }
+    }
+
+    /** The provider {@code --provider=…} chosen earlier in the line, if any. */
+    private static String providerChosen(String[] words, int wordIndex) {
+        for (int i = 2; i < wordIndex && i < words.length; i++) {
+            String w = words[i];
+            int e = w.indexOf('=');
+            if (e > 0 && normalizeOptionKey(w.substring(0, e)).equals("provider")) {
+                return NStringUtils.stripToNull(w.substring(e + 1));
+            }
+        }
+        return null;
+    }
+
+    private static String normalizeOptionKey(String key) {
+        String k = key.trim();
+        while (k.startsWith("-")) {
+            k = k.substring(1);
+        }
+        return k.toLowerCase();
+    }
+
+    /** The distinct provider types (never registration ids) currently registered. */
+    private static Set<String> providerTypes(NaruSession session) {
+        TreeSet<String> out = new TreeSet<>();
+        Map<String, NaruModelProvider> all = session == null || session.registry() == null
+                ? null : session.registry().modelProviders();
+        if (all != null) {
+            for (NaruModelProvider p : all.values()) {
+                if (p != null && !NBlankable.isBlank(p.type())) {
+                    out.add(p.type());
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The wire shapes the provider chosen earlier in the line can speak
+     * (design §8); the union over all providers when the user has not picked one
+     * yet, so {@code --protocol=} always offers the vocabulary it can use.
+     */
+    private static Set<String> protocolIds(NaruSession session, String[] words, int wordIndex) {
+        TreeSet<String> out = new TreeSet<>();
+        String chosen = providerChosen(words, wordIndex);
+        Map<String, NaruModelProvider> all = session == null || session.registry() == null
+                ? null : session.registry().modelProviders();
+        if (all != null) {
+            for (NaruModelProvider p : all.values()) {
+                if (p == null || (chosen != null && !p.type().equalsIgnoreCase(chosen))) {
+                    continue;
+                }
+                Set<String> sp = p.supportedProtocols();
+                if (sp != null) {
+                    out.addAll(sp);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** The selectable keys of the merged catalog (built-ins + registrations). */
+    private static List<NaruModelKey> catalogModelKeys(NaruSession session) {
+        if (session == null || session.registry() == null) {
+            return List.of();
+        }
+        List<NaruModelKey> keys = session.registry().modelsKeys(session);
+        return keys == null ? List.of() : keys;
     }
 
     public NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {

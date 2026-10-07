@@ -50,6 +50,15 @@ public abstract class NaruDirectiveBase implements NaruDirective {
         return NOptional.ofNamed(subCommands.get(name), NMsg.ofC("subcommand %s", name));
     }
 
+    /**
+     * Every registered subcommand, for a subclass' own {@link #resolveCandidates}
+     * to complete subcommand names (with descriptions) before delegating the
+     * deeper words to the subcommands themselves.
+     */
+    protected Collection<SubCommand> registeredSubCommands() {
+        return subCommands.values();
+    }
+
     @Override
     public String group() {
         return group;
