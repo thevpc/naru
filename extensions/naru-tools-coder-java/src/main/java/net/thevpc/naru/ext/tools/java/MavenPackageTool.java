@@ -16,7 +16,8 @@ import net.thevpc.nuts.util.NBlankable;
 public class MavenPackageTool extends DefaultNaruTool {
 
     public MavenPackageTool() {
-        super("maven_package", new String[]{NaruToolTags.DEV});
+        // exec, like maven_compile: packaging runs the build lifecycle.
+        super("maven_package", new String[]{NaruToolTags.DEV, NaruToolTags.JAVA, NaruToolTags.EXECUTE});
     }
 
     @Override

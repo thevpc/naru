@@ -22,6 +22,8 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -106,6 +108,51 @@ public class NaruPlanModeToolGateTest {
 
     private Map<String, NaruTool> tools() {
         return session.registry().tools();
+    }
+
+    /**
+     * Plan mode's entire tool surface, written down. This is the fail-closed half of
+     * the test: if a tool is added, retagged, or a build plugin's tool changes which
+     * tags it wears, the list changes and this test fails until someone deliberately
+     * decides whether the tool belongs in a read-only mode.
+     *
+     * <p>Kept as names rather than a predicate on purpose. A predicate ("no write or
+     * exec tag") silently accepts a brand new tool the moment its author forgets a
+     * tag -- which is exactly the leak this pins. An enumerated list cannot.
+     *
+     * <p>{@code think} is not listed: whether it is offered depends on the model's
+     * thinking capability and the {@code model.thinking} setting (see
+     * {@code ThinkTool.isRelevant}), so the test removes it from the actual set
+     * before comparing. Everything else must match exactly.
+     */
+    private static final Set<String> PLAN_MODE_READ_ALLOWLIST = Set.of(
+            // filesystem reads
+            "cd", "file_grep", "file_read", "folder_find", "pwd", "diff",
+            // code index reads
+            "code_symbols", "find_symbol", "project_map", "project_summary",
+            // git reads
+            "git_diff", "git_log", "git_status",
+            // semantic search (in-memory index, no repo mutation)
+            "semantic_index", "semantic_search",
+            // planning itself
+            "plan_create", "plan_get", "plan_update",
+            // read-only research / navigation
+            "delegate_to_model", "search_web", "routine_list_lines",
+            // tag revocation is a permission edit, not a repo write
+            "tag_remove"
+    );
+
+    @Test
+    public void planModeOffersExactlyTheReadOnlyAllowlist() {
+        grantEverything();
+        task.promptMode(mode("plan"));
+
+        Set<String> actual = new TreeSet<>(toolNames());
+        actual.remove("think"); // conditional on model capabilities; see class javadoc
+        assertEquals(new TreeSet<>(PLAN_MODE_READ_ALLOWLIST), actual,
+                () -> "plan mode's tool list drifted from the read-only allowlist; "
+                        + "a tool either leaked in or was lost. Update the allowlist only "
+                        + "after deciding the tool is safe in a read-only mode.");
     }
 
     @Test

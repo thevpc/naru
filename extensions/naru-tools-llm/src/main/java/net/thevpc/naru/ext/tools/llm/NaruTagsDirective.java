@@ -31,6 +31,11 @@ import java.util.stream.Collectors;
  * /tags list                 enabled tags + excluded tools
  * /tags available            every tag known to the registry
  * </pre>
+ *
+ * <p>A tool becomes visible when <b>any</b> of its tags is granted (OR-matching),
+ * so {@code disable} only hides a tool when it revokes the <i>last</i> granted tag
+ * that tool wears. To hide one specific tool regardless of its tags, ban it by name
+ * with {@code /tools exclude} -- a different gate.
  */
 public class NaruTagsDirective extends NaruDirectiveBase {
 
@@ -78,7 +83,9 @@ public class NaruTagsDirective extends NaruDirectiveBase {
         });
 
         register(new AbstractSubCommand("disable", NText.ofPlain("disable tools tagged with the given tags"),
-                new SubCommandHelp("<tag-name>... [<tag-name>...]", "remove the given tags from the task's enabled tag set")
+                new SubCommandHelp("<tag-name>... [<tag-name>...]", "remove the given tags from the task's enabled tag set. "
+                        + "A tool is visible while ANY of its tags is granted, so disabling one tag does not hide a "
+                        + "tool that still wears another granted tag; ban a single tool by name with /tools exclude")
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {

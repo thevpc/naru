@@ -19,7 +19,8 @@ public class MavenTestTool extends DefaultNaruTool {
 
 
     public MavenTestTool() {
-        super("maven_test", new String[]{NaruToolTags.DEV});
+        // exec, like maven_compile: a test run executes project code.
+        super("maven_test", new String[]{NaruToolTags.DEV, NaruToolTags.JAVA, NaruToolTags.EXECUTE});
     }
 
 

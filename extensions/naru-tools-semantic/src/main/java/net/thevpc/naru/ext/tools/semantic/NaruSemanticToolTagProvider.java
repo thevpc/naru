@@ -1,4 +1,4 @@
-package net.thevpc.naru.ext.tools.java;
+package net.thevpc.naru.ext.tools.semantic;
 
 import net.thevpc.naru.api.registry.DefaultNaruToolTag;
 import net.thevpc.naru.api.registry.NaruToolTag;
@@ -9,17 +9,16 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-public class NaruJavaToolTagProvider implements NaruToolTagProvider {
+public class NaruSemanticToolTagProvider implements NaruToolTagProvider {
     private final List<NaruToolTag> all = new ArrayList<>();
 
-    public NaruJavaToolTagProvider() {
-        all.add(new DefaultNaruToolTag(NaruToolTags.DEV, "development operations including compile and test"));
-        all.add(new DefaultNaruToolTag(NaruToolTags.JAVA, "java development operations"));
+    public NaruSemanticToolTagProvider() {
+        all.add(new DefaultNaruToolTag(NaruToolTags.SEMANTIC, "Semantic code search and vector indexing tools"));
     }
 
     @Override
     public String name() {
-        return "java";
+        return "semantic";
     }
 
     @Override

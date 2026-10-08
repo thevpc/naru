@@ -100,15 +100,17 @@ public class NaruToolsDirective extends NaruDirectiveBase {
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                NCmdLine cmd = NCmdLine.of(context.argument());
-                if (cmd.isEmpty()) {
+                // cmdLine is already positioned after the 'exclude' keyword by
+                // NaruDirectiveBase; re-parsing context.argument() would re-include
+                // the keyword itself and ban a tool literally named 'exclude'.
+                if (cmdLine.isEmpty()) {
                     NMsg msg = NMsg.ofC("missing tool");
                     context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
                     return NaruStmtResult.ofError(msg.toString());
                 }
                 int count = 0;
-                while (!cmd.isEmpty()) {
-                    NArg a = cmd.next().get();
+                while (!cmdLine.isEmpty()) {
+                    NArg a = cmdLine.next().get();
                     context.task().addToolExclusion(a.image());
                     count++;
                 }
@@ -121,16 +123,17 @@ public class NaruToolsDirective extends NaruDirectiveBase {
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                NCmdLine cmd = NCmdLine.of(context.argument());
-                if (cmd.isEmpty()) {
+                // cmdLine is already positioned after the 'unexclude' keyword (see exclude).
+                if (cmdLine.isEmpty()) {
                     NMsg msg = NMsg.ofC("missing tool");
                     context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
                     return NaruStmtResult.ofError(msg.toString());
                 }
                 int count = 0;
-                while (!cmd.isEmpty()) {
-                    NArg a = cmd.next().get();
+                while (!cmdLine.isEmpty()) {
+                    NArg a = cmdLine.next().get();
                     context.task().removeToolExclusion(a.image());
+                    count++;
                 }
                 return NaruStmtResult.ofSuccess(count);
             }

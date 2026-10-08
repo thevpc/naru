@@ -149,7 +149,8 @@
   ▌   /tags  available 
   ▌            list all available tags
   ▌   /tags  disable <tag-name>... [<tag-name>...]
-  ▌            disable tools tagged with the given tags
+  ▌            remove the given tags from the task's enabled tag set.
+  ▌            a tool is visible while ANY of its tags is granted, so disabling one tag does not hide a tool that still wears another granted tag; ban a single tool by name with /tools exclude
   ▌   /tags  enable <tag-name>... [<tag-name>...]
   ▌            enable tools tagged with the given tags
   ▌   /tags  list 

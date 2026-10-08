@@ -27,7 +27,10 @@ public class SemanticSearchTool extends DefaultNaruTool {
     private static final EmbeddingProvider EMBEDDER = new TfIdfEmbeddingProvider();
 
     public SemanticSearchTool() {
-        super("semantic_search", new String[]{NaruToolTags.DEV});
+        // semantic is additive: every semantic tool also wears it, so the tag
+        // describes a capability rather than replacing the broader 'dev' grant.
+        // Granting either dev or semantic reveals the tool (OR matching).
+        super("semantic_search", new String[]{NaruToolTags.DEV, NaruToolTags.SEMANTIC});
     }
 
     @Override

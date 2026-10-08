@@ -29,6 +29,8 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -225,6 +227,8 @@ public class AgentModelIntegrationTest {
                     + "// /tags: opt into fs+network, then revoke network again, list for good measure\n"
                     + "/tags enable fs network\n"
                     + "/tags disable network\n"
+                    + "// name bans are a DIFFERENT gate: /tools exclude, never /tags disable\n"
+                    + "/tools exclude cd set_working_dir\n"
                     + "/tags list\n"
                     + "// prepare a nested project layout with a file to grep\n"
                     + "/system mkdir -p proj\n"
@@ -267,14 +271,19 @@ public class AgentModelIntegrationTest {
             assertTrue(task.status() == NaruTaskStatus.DONE,
                     () -> "expected the task to finish, but status was " + task.status());
 
-            // /tags took effect on the task: enable granted fs, disable revoked network
+            // /tags enable granted fs; /tags disable revoked network (tags, not names)
             assertTrue(task.findToolTags().stream().anyMatch(t -> "fs".equals(t.name())),
                     "expected the 'fs' tag to be enabled via /tags");
             assertTrue(task.findToolTags().stream().noneMatch(t -> "network".equals(t.name())),
                     "expected the 'network' tag to be revoked via /tags disable");
-            assertTrue(task.findToolExclusions().isEmpty(),
-                    "/tags disable revokes a tag, it must not exclude a tool by name: "
-                            + task.findToolExclusions());
+            // /tools exclude is the name-ban gate: cd and set_working_dir are excluded.
+            // /tags disable must NOT have added a name exclusion, so the set is exactly
+            // what /tools exclude put there (the two gates are orthogonal).
+            assertEquals(
+                    new TreeSet<>(List.of("cd", "set_working_dir")),
+                    new TreeSet<>(task.findToolExclusions()),
+                    "/tags disable revokes tags, /tools exclude bans names; the gates must not "
+                            + "bleed into each other: " + task.findToolExclusions());
 
             // /file find --save / --dir published usable values
             assertEquals("proj/pom.xml",
@@ -314,6 +323,45 @@ public class AgentModelIntegrationTest {
                     "expected /else NOT to run when the condition is true");
             assertTrue(folder.resolve("save-ok").isRegularFile(),
                     "/system --save out == \"hi\"");
+        });
+    }
+
+    @Test
+    public void testTagRevokeAndToolExclusionAreOrthogonalGates() {
+        // Engine-only (no LLM): /tags and /tools exclude are two independent gates.
+        // Revoking a tag must not touch the by-name exclusion set, and removing a name
+        // exclusion must not touch the granted tag set. One script exercises both
+        // directions at once:
+        //   - cd/set_working_dir are excluded, then network is revoked: the exclusions
+        //     must survive the tag revoke (cd is still there until unexclude runs);
+        //   - fs is granted, then cd is unexcluded: the granted tag must survive.
+        assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
+            session = agent.newSession().statements(
+                    "/tags enable fs network",
+                    "/tools exclude cd set_working_dir",
+                    "/tags disable network",
+                    "/tools unexclude cd",
+                    "/tags list"
+            ).build().start();
+            NaruTask task = captureForegroundTask(session);
+            session.waitFor();
+
+            assertNotNull(task, "expected the session to create a task");
+            assertTrue(task.status() == NaruTaskStatus.DONE,
+                    () -> "expected the task to finish, but status was " + task.status());
+            // removing a name exclusion must leave granted tags untouched
+            assertTrue(task.findToolTags().stream().anyMatch(t -> "fs".equals(t.name())),
+                    "expected the granted 'fs' tag to survive /tools unexclude");
+            assertTrue(task.findToolTags().stream().noneMatch(t -> "network".equals(t.name())),
+                    "expected /tags disable network to revoke only the network tag");
+            // revoking a tag must leave name exclusions untouched: set_working_dir was
+            // excluded before the revoke and is still excluded after it, and cd was
+            // removed only by the explicit /tools unexclude (never by /tags).
+            assertEquals(
+                    new TreeSet<>(Set.of("set_working_dir")),
+                    new TreeSet<>(task.findToolExclusions()),
+                    "expected /tags disable to leave name exclusions alone and /tools unexclude "
+                            + "to remove exactly cd: " + task.findToolExclusions());
         });
     }
 
@@ -532,7 +580,8 @@ public class AgentModelIntegrationTest {
                     "/tags enable fs",
                     // models tend to "explore" with cd/pwd first; excluding cd keeps
                     // the agent focused on the actual write (this test's purpose).
-                    "/tags disable cd",
+                    // Banning a single tool by name is /tools exclude, never /tags disable.
+                    "/tools exclude cd",
                     "Call the file_write tool ONCE with path=\"" + fileName
                             + "\" and content=\"" + marker
                             + "\". The bare file name is relative to the current (project root) directory. "

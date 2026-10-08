@@ -24,8 +24,9 @@ public class RunShellTool extends DefaultNaruTool {
         // exec, not just network: spawning a process is what the exec tag exists for,
         // and the plan mode veto keys on it -- a read-only mode must not be able to see
         // a shell through a task that was granted network for search_web alone.
-        // network stays: granting it has always been how a task opts into run_shell.
-        super("run_shell", new String[]{NaruToolTags.NETWORK, NaruToolTags.EXECUTE});
+        // write, because a shell can mutate the filesystem; network stays, since
+        // granting it has always been how a task opts into run_shell.
+        super("run_shell", new String[]{NaruToolTags.NETWORK, NaruToolTags.EXECUTE, NaruToolTags.WRITE});
     }
 
 

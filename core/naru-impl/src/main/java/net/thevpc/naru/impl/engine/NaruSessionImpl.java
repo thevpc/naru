@@ -383,9 +383,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             if (task.projectDir() != null) {
                 sb.append("Project directory: ").append(task.projectDir()).append('\n');
             }
-            if (!registry().isEmpty()) {
-                sb.append("Available tools: ").append(task.findTools().stream().map(NaruToolDefinition::getName).toList()).append('\n');
-            }
+            // No "Available tools" line here: the tool list is already part of the
+            // request sent to the model, and a spawn-time snapshot would go stale as
+            // soon as /tags or /tools change -- two sources of truth for one list.
             return sb.toString();
         }
         return s.trim();

@@ -14,7 +14,9 @@ import java.nio.file.Paths;
 public class SemanticIndexTool extends DefaultNaruTool {
 
     public SemanticIndexTool() {
-        super("semantic_index", new String[]{NaruToolTags.DEV});
+        // semantic is additive; the index is built in memory, so this stays a
+        // read/compute tool and is still visible in plan mode.
+        super("semantic_index", new String[]{NaruToolTags.DEV, NaruToolTags.SEMANTIC});
     }
 
     @Override

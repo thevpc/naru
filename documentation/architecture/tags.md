@@ -18,7 +18,7 @@ A tag is the pair `(name, description)`:
 | `NaruToolTag` | API type: `name()` + `description()` |
 | `DefaultNaruToolTag` | The only implementation; normalizes `name` to **lower-kebab-case**, requires a non-blank description |
 | `NaruToolTagProvider` | Declares a list of tags; one provider per feature/extension |
-| `NaruToolTags` | The constant vocabulary (`fs`, `routine`, `network`, `exec`, `write`, `ai`, `dev`, `mcp`, `index`, `git`, `tags`) |
+| `NaruToolTags` | The constant vocabulary (`fs`, `routine`, `network`, `exec`, `write`, `ai`, `dev`, `java`, `semantic`, `mcp`, `index`, `git`, `tags`) |
 
 Tags are **registered**, not invented ad hoc. A provider is a Nuts `NComponent`
 discovered on the classpath, so each extension jar contributes its own tags the
@@ -49,9 +49,8 @@ tag that no provider declared **throws** instead of silently no-op'ing.
 ## 2. The tag gate: how a task decides which tools to offer
 
 Every model request builds its tool list from `NaruTask.findTools()`. That one
-method is the single source of truth for the tool schema sent to the model, the
-"Available tools" line of the system prompt, `/tools list` and `/tools
-unselected`. The gate runs, in order:
+method is the single source of truth for the tool schema sent to the model,
+`/tools list` and `/tools unselected`. The gate runs, in order:
 
 1. **Prompt-mode veto** — `mode.acceptToolTags(tool.tags())`. The mode may
    reject a whole tag set outright (see §6). If it returns false the tool is
@@ -115,21 +114,29 @@ tagged, which the registry lint (`NaruTagRegistryLintTest`) enforces.
 | `ai` | `naru-impl` (builtin) | AI operations including calling other LLMs/models | `delegate_to_model`, `context_compact`, `ollama_*` |
 | `network` | `naru-impl` (builtin) | networking operations including search web | `search_web`, `run_shell` |
 | `write` | `naru-impl` (builtin) | persistent modifications in files, folders, databases | `file_write`, `file_edit_search_replace`, `git_commit`, `routine_add_line` |
-| `exec` | `naru-impl` (builtin) | spawning new processes or tasks | `run_shell`, `ollama_start/stop/status/ps`, `routine_run` |
+| `exec` | `naru-impl` (builtin) | spawning new processes or tasks | `run_shell`, `maven_compile/test/package`, `ollama_start/stop/status/ps`, `routine_run` |
 | `fs` | `naru-tools-fs` | file system operations including add, edit, search files | `file_read`, `file_grep`, `folder_find`, `cd`, `pwd`, `diff` |
 | `dev` | `naru-tools-coder-java` | development operations including compile and test | `maven_compile/test/package`, `git_*`, `code_symbols`, `project_map`, `semantic_*` |
+| `java` | `naru-tools-coder-java` | java development operations | `maven_compile`, `maven_test`, `maven_package` |
+| `semantic` | `naru-tools-semantic` | semantic code search and vector indexing | `semantic_index`, `semantic_search` |
 | `git` | `naru-tools-git` | Git version control tools | `git_status`, `git_diff`, `git_log`, `git_commit` |
 | `mcp` | `naru-tools-mcp` | MCP tools | every `McpBackedTool` (only once an MCP server is configured) |
 | `index` | `naru-tools-index` | codebase indexing and symbol search | `code_symbols`, `find_symbol`, `project_map`, `project_summary` |
 | `tags` | `naru-tools-tags` | grant and revoke tool tags at runtime | `tag_add`, `tag_remove` |
 | `plan` | `naru-tools-plan` | planning tools | `plan_create`, `plan_update`, `plan_get` |
 
-Two tags that used to be here — `java` and `semantic` — were removed: no tool
-wore either one (every Java and semantic tool wears `dev`), so granting them was
-a silent no-op. `NaruTagRegistryLintTest.everyAvailableTagIsMeaningful` now
-pins the invariant for the whole vocabulary: **every tag `/tags available`
-offers has a tool behind it**, with `mcp` as the one exception (its tools are
-created only when a server is declared in the agent env).
+`java` and `semantic` are wired **additively**: every Java and semantic tool
+keeps `dev` and *also* wears its specific tag. `/tags enable java` therefore
+only ever widens visibility — a task granted `dev` before the split sees exactly
+the same tools as before, while a task that wants only the Java or only the
+semantic surface can now ask for the narrow tag. (Tag matching is OR, so
+granting `java` still reveals the Maven tools that also wear `dev`; the specific
+tag is the more precise key, not a replacement.)
+
+`NaruTagRegistryLintTest.everyAvailableTagIsMeaningful` pins the invariant for
+the whole vocabulary: **every tag `/tags available` offers has a tool behind
+it**, with `mcp` as the one exception (its tools are created only when a server
+is declared in the agent env).
 
 Notes on the vocabulary:
 
@@ -307,16 +314,10 @@ tools only, writes and executes both stripped by mode and never granted anyway.
 These are the seams of today's implementation; the tests that pin the intended
 behaviour are referenced so the delta is easy to audit.
 
-1. **The system prompt's "Available tools" line is a spawn-time snapshot.**
-   `NaruSessionImpl` renders it once when the task is born; `/tools list` (and
-   the actual tool schema sent with each request) recompute `findTools()` live.
-   So after a mid-session `/tags enable` the prompt line and the schema can
-   disagree until the next context rebuild. `/context system` shows the line,
-   `/tools list` shows the truth.
-2. **Tag changes mid-turn are schema-only.** A tag granted after a request was
+1. **Tag changes mid-turn are schema-only.** A tag granted after a request was
    built does not retroactively un-hide tools already sent; it affects the *next*
    request's tool list.
-3. **Not persisted** (§5): a restarted session forgets its floor.
+2. **Not persisted** (§5): a restarted session forgets its floor.
 
 ### Fixed during Phase 1 (kept for the audit trail)
 
@@ -329,11 +330,29 @@ behaviour are referenced so the delta is easy to audit.
   `disable` now understands `all`/`*` like `enable` does.
 - **`removeToolExclusion` added to the exclusion set instead of removing**, so
   `/tools unexclude` was a no-op that made exclusions permanent.
-- **`semantic` and `java` were registered but worn by no tool.** Both tags and
-  the semantic tag provider were deleted (§3); the invariant is now a test.
+- **`/tools exclude|unexclude` re-parsed the full directive argument**, so the
+  subcommand keyword itself was treated as a tool name: `/tools exclude cd` also
+  banned a tool literally named `exclude`, and `unexclude` always reported
+  success 0. Both now consume the already-positioned `cmdLine`, like every other
+  subcommand, and count what they removed.
+- **`semantic` and `java` were registered but worn by no tool, so granting them
+  was a silent no-op.** They are now wired **additively**: the semantic provider
+  is restored, `semantic_index`/`semantic_search` wear `{dev, semantic}`, the
+  Maven tools wear `{dev, java, exec}`, and the registry lint fails if any
+  advertised tag has no tool (§3).
+- **Maven tools could leak into plan mode.** `maven_compile`/`maven_test`/
+  `maven_package` spawn `mvn` (arbitrary build plugins), but wore only `dev`,
+  which plan mode accepts. They now also wear `exec`, so the mode veto keeps
+  them out of the read-only surface. `NaruPlanModeToolGateTest` pins plan mode's
+  entire tool surface as an explicit allowlist of names.
+- **The system prompt carried a spawn-time "Available tools" snapshot** that
+  went stale after a mid-session `/tags` or `/tools` change, duplicating (and
+  potentially contradicting) the live schema. The line is gone; the schema sent
+  with each request is the only tool list.
 - **The gate treated "no tags" as "always visible".** It is now fail-closed
   behind `NaruTool.isEssential()` (§2), and `file_write`/`run_shell` declare
-  the full `{fs, write}` / `{network, exec}` tag sets they actually exercise.
+  the full `{fs, write}` / `{network, exec, write}` tag sets they actually
+  exercise.
 
 ## 11. Where the code lives
 

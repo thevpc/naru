@@ -20,7 +20,10 @@ public class MavenCompileTool extends DefaultNaruTool {
     private static final int MAX_OUTPUT_CHARS = 8_000;
 
     public MavenCompileTool() {
-        super("maven_compile", new String[]{NaruToolTags.DEV});
+        // exec: maven_compile spawns mvn, which loads and runs arbitrary build
+        // plugins. Without the exec tag a task granted dev saw this in plan mode,
+        // whose whole contract is "no code execution".
+        super("maven_compile", new String[]{NaruToolTags.DEV, NaruToolTags.JAVA, NaruToolTags.EXECUTE});
     }
 
     @Override

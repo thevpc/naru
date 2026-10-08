@@ -23,7 +23,6 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -45,9 +44,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       user can grant that opens nothing -- the mirror image of the first property.</li>
  * </ul>
  *
- * <p>It also pins the removal of the {@code java} and {@code semantic} tags: both were
- * registered while every tool wearing them had drifted to {@code dev}, so
- * {@code /tags enable java} granted nothing at all.
+ * <p>It also pins the {@code java} and {@code semantic} tags back onto the tools they
+ * name. Both used to be registered while every Java and semantic tool wore only
+ * {@code dev}, so {@code /tags enable java} granted nothing at all -- an unused tag
+ * reads as a broken command. The tags are wired <b>additively</b>: the tools keep
+ * {@code dev} and gain {@code java}/{@code semantic}, so the grant only widens.
  */
 public class NaruTagRegistryLintTest {
 
@@ -155,19 +156,40 @@ public class NaruTagRegistryLintTest {
                         + "changes nothing, which reads as a broken /tags command: " + empty);
     }
 
-    // ── the two tags that were removed ───────────────────────────────────────
+    // ── the two tags that must stay wired additively ─────────────────────────
 
     @Test
-    public void theDeadJavaAndSemanticTagsAreGone() {
-        // both were declared while their tools wore 'dev', so enabling them was a no-op
-        assertFalse(availableTags().contains("java"),
-                "'java' is registered but every Java tool wears 'dev'");
-        assertFalse(availableTags().contains("semantic"),
-                "'semantic' is registered but every semantic tool wears 'dev'");
+    public void javaAndSemanticAreRegisteredAndBackedByTools() {
+        // both were once declared while their tools wore only 'dev', so enabling
+        // them was a no-op. They are now additive: the tools keep 'dev' and wear
+        // the specific tag too, so the grant widens visibility.
+        assertTrue(availableTags().contains("java"),
+                "'java' must stay registered now that Java tools wear it");
+        assertTrue(availableTags().contains("semantic"),
+                "'semantic' must stay registered now that semantic tools wear it");
+
+        assertTrue(mavenTools().stream()
+                        .allMatch(t -> t.tags().contains("java")),
+                "every Java (maven) tool must wear the 'java' tag");
+        assertTrue(semanticTools().stream()
+                        .allMatch(t -> t.tags().contains("semantic")),
+                "every semantic tool must wear the 'semantic' tag");
+    }
+
+    private List<NaruTool> mavenTools() {
+        return tools().values().stream()
+                .filter(t -> t.name().startsWith("maven_"))
+                .toList();
+    }
+
+    private List<NaruTool> semanticTools() {
+        return tools().values().stream()
+                .filter(t -> t.name().startsWith("semantic_"))
+                .toList();
     }
 
     /**
-     * The point of the two removals, stated from the user's side: what {@code /tags
+     * The point of the additive wiring, stated from the user's side: what {@code /tags
      * available} lists is exactly what {@code /tags enable} can act on. A tag that
      * appears there must have tools behind it, or the command lies.
      */
