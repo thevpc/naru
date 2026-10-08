@@ -14,7 +14,6 @@ public class NaruJavaToolTagProvider implements NaruToolTagProvider {
 
     public NaruJavaToolTagProvider() {
         all.add(new DefaultNaruToolTag(NaruToolTags.DEV, "development operations including compile and test"));
-        all.add(new DefaultNaruToolTag("java", "java development operations"));
     }
 
     @Override

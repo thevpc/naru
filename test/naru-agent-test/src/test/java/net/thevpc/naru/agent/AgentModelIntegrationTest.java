@@ -222,9 +222,9 @@ public class AgentModelIntegrationTest {
         // into later directive arguments.
         assertTimeoutPreemptively(TEST_TIMEOUT, () -> {
             String script = ""
-                    + "// /tags: opt into the fs tag, exclude two tools, list for good measure\n"
+                    + "// /tags: opt into fs+network, then revoke network again, list for good measure\n"
                     + "/tags enable fs network\n"
-                    + "/tags disable cd set_working_dir\n"
+                    + "/tags disable network\n"
                     + "/tags list\n"
                     + "// prepare a nested project layout with a file to grep\n"
                     + "/system mkdir -p proj\n"
@@ -267,12 +267,14 @@ public class AgentModelIntegrationTest {
             assertTrue(task.status() == NaruTaskStatus.DONE,
                     () -> "expected the task to finish, but status was " + task.status());
 
-            // /tags took effect on the task
+            // /tags took effect on the task: enable granted fs, disable revoked network
             assertTrue(task.findToolTags().stream().anyMatch(t -> "fs".equals(t.name())),
                     "expected the 'fs' tag to be enabled via /tags");
-            assertTrue(task.findToolExclusions().contains("cd")
-                            && task.findToolExclusions().contains("set_working_dir"),
-                    "expected cd and set_working_dir to be excluded via /tags");
+            assertTrue(task.findToolTags().stream().noneMatch(t -> "network".equals(t.name())),
+                    "expected the 'network' tag to be revoked via /tags disable");
+            assertTrue(task.findToolExclusions().isEmpty(),
+                    "/tags disable revokes a tag, it must not exclude a tool by name: "
+                            + task.findToolExclusions());
 
             // /file find --save / --dir published usable values
             assertEquals("proj/pom.xml",

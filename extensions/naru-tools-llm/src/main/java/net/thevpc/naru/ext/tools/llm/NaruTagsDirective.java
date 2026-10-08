@@ -20,22 +20,22 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * Manages which tool capabilities a task may use: {@code enable|add} opts the
- * task into a tool TAG (making the tools wearing that tag visible to the model)
- * and {@code disable|remove} puts a tool into the task's EXCLUSION set. This is
- * the script-friendly twin of {@code /tools add-tagged / exclude / ...}:
+ * Manages which tool capabilities a task may use: {@code enable} opts the task into a
+ * tool TAG (making the tools wearing that tag visible to the model) and {@code disable}
+ * revokes one. Both operate on <b>tags</b>, never on tool names -- banning a single tool
+ * by name is {@code /tools exclude}, the other gate entirely:
  *
  * <pre>
- * /tags enable fs            (alias: /tags add fs)
- * /tags disable cd web       (alias: /tags remove cd web)
- * /tags list                 (enabled tags + excluded tools)
- * /tags tags                 (all tags known to the registry)
+ * /tags enable fs            grant the fs tag (tools wearing fs become visible)
+ * /tags disable fs           revoke the fs tag (its tools disappear again)
+ * /tags list                 enabled tags + excluded tools
+ * /tags available            every tag known to the registry
  * </pre>
  */
 public class NaruTagsDirective extends NaruDirectiveBase {
 
     public NaruTagsDirective() {
-        super("tags", "ai", "enable/disable tool tags and tool exclusions", "tag");
+        super("tags", "ai", "enable/disable tool tags", "tag");
         this.noCommand("list");
 
         register(new AbstractSubCommand("enable", NText.ofPlain("enable tools tagged with the given tags"),
@@ -77,14 +77,14 @@ public class NaruTagsDirective extends NaruDirectiveBase {
             }
         });
 
-        register(new AbstractSubCommand("disable", NText.ofPlain("exclude tools by name"),
-                new SubCommandHelp("<tool-name>... [<tool-name>...]", "add the given tools to the task's exclusion set")
+        register(new AbstractSubCommand("disable", NText.ofPlain("disable tools tagged with the given tags"),
+                new SubCommandHelp("<tag-name>... [<tag-name>...]", "remove the given tags from the task's enabled tag set")
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 if (cmdLine.isEmpty()) {
-                    NMsg msg = NMsg.ofC("missing tool");
+                    NMsg msg = NMsg.ofC("missing tag");
                     task.log(NaruLogMode.AGENT_RESPONSE, msg);
                     return NaruStmtResult.ofError(msg.toString());
                 }
@@ -92,7 +92,7 @@ public class NaruTagsDirective extends NaruDirectiveBase {
                 Set<String> toRemove=new HashSet<>();
                 while (!cmdLine.isEmpty()) {
                     String tag = cmdLine.next().get().image();
-                    if(tag.equals("*")) {
+                    if(tag.equals("*") || "all".equalsIgnoreCase(tag.trim())) {
                         Map<String, NaruToolTag> tags = task.session().registry().availableTags();
                         toRemove.addAll(tags.keySet());
                     }else if(tag.contains("*")){
@@ -109,7 +109,7 @@ public class NaruTagsDirective extends NaruDirectiveBase {
                 }
                 for (String tag : toRemove) {
                     task.removeToolTag(tag);
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("tag %s enabled", NMsg.ofStyledPrimary1(tag)));
+                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("tag %s disabled", NMsg.ofStyledPrimary1(tag)));
                     count++;
                 }
                 return NaruStmtResult.ofSuccess(count);

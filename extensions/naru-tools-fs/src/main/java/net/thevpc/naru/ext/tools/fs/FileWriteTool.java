@@ -13,7 +13,10 @@ import net.thevpc.naru.api.registry.DefaultNaruTool;
  */
 public class FileWriteTool extends DefaultNaruTool {
     public FileWriteTool() {
-        super("file_write", new String[]{NaruToolTags.FILE_SYSTEM});
+        // write, not just fs: overwriting a file is a write effect, and the plan mode
+        // veto keys on exactly this tag. Wearing fs alone would let file_write through
+        // a read-only mode the moment the task had been granted fs.
+        super("file_write", new String[]{NaruToolTags.FILE_SYSTEM, NaruToolTags.WRITE});
     }
 
     @Override

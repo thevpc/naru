@@ -1054,7 +1054,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     public NaruTask removeToolExclusion(String toolName) {
-        excludedTools.add(toolName);
+        excludedTools.remove(toolName);
         return this;
     }
 
@@ -1079,16 +1079,20 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 continue;
             }
             Set<String> tt = t.tags();
-            if (!excludedTools.contains(t.name())) {
-                if (tt.isEmpty()) {
+            if (excludedTools.contains(t.name())) {
+                continue;
+            }
+            if (tt.isEmpty()) {
+                // fail-closed: a tool with no tag has nothing to match against, so it is
+                // hidden unless it explicitly declares itself a core/essential tool.
+                // "no tags" must never read as "no permission needed".
+                if (t.isEssential()) {
                     toolDefinitions.add(t.getDefinition(this));
-                } else {
-                    if (tt.stream().anyMatch(
-                            x -> taskToolTags.contains(NNameFormat.LOWER_KEBAB_CASE.format(x))
-                    )) {
-                        toolDefinitions.add(t.getDefinition(this));
-                    }
                 }
+            } else if (tt.stream().anyMatch(
+                    x -> taskToolTags.contains(NNameFormat.LOWER_KEBAB_CASE.format(x))
+            )) {
+                toolDefinitions.add(t.getDefinition(this));
             }
         }
         return toolDefinitions;

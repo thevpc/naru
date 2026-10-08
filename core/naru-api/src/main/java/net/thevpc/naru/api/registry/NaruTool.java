@@ -26,6 +26,21 @@ public interface NaruTool {
 
     Set<String> tags();
 
+    /**
+     * Whether this tool is a core/essential tool that stays visible even when it
+     * wears no tag at all.
+     *
+     * <p>The tag gate is <b>fail-closed</b>: a tool with no tags has nothing to match
+     * against, so by default it is <em>hidden</em> rather than offered to everyone --
+     * "no tags" must never read as "no permission needed". A tool that is genuinely
+     * unconditional (the {@code think} scratchpad is the only one today) has to say so
+     * explicitly by overriding this method, which makes the exception visible in the
+     * tool's own source instead of a silent property of the gate.
+     */
+    default boolean isEssential() {
+        return false;
+    }
+
     default boolean isRelevant(NaruTask task){
         return true;
     }

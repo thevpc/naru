@@ -21,8 +21,15 @@ public class ThinkTool extends DefaultNaruTool {
 
     public ThinkTool() {
         // deliberately untagged: a no-op scratchpad is not a plan mutation, and sharing
-        // the PLAN tag with the structural tools would hide thinking behind plan access
+        // the PLAN tag with the structural tools would hide thinking behind plan access.
+        // The tag gate is fail-closed (untagged tools are hidden), so the one tool that
+        // must stay unconditional says so explicitly.
         super("think", new String[0]);
+    }
+
+    @Override
+    public boolean isEssential() {
+        return true;
     }
 
     @Override
