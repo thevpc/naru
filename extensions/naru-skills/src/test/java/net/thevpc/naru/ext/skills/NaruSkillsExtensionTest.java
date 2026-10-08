@@ -397,6 +397,41 @@ public class NaruSkillsExtensionTest {
         assertTrue(tson.contains("schemaVersion"), tson);
     }
 
+    /**
+     * The core tells extensions when a task leaves the session; an extension that keeps
+     * per-task state drops that task's entry. Without this, {@code ext/skills.tson} grows
+     * by one dead entry per task ever run, and a later load resurrects selections for tasks
+     * that no longer exist.
+     */
+    @Test
+    public void terminatingATaskRemovesItsSelectionFromExtensionState() {
+        NaruTask keep = task();
+        NaruTask victim = task();
+        ext.load(keep, "git-flow");
+        ext.load(victim, "javadoc");
+        assertTrue(hasSelectionFor(ext.save(session), victim.id()), "precondition: victim has persisted selection");
+
+        victim.kill();
+
+        NElement saved = ext.save(session);
+        assertFalse(hasSelectionFor(saved, victim.id()),
+                () -> "a deregistered task still has persisted selection: " + saved);
+        assertTrue(hasSelectionFor(saved, keep.id()),
+                () -> "a live task's selection was dropped too: " + saved);
+    }
+
+    private static boolean hasSelectionFor(NElement state, long taskId) {
+        if (state == null) {
+            return false;
+        }
+        return state.asObject().get().getArray("selection")
+                .map(a -> a.children().stream()
+                        .anyMatch(c -> c.asObject()
+                                .map(o -> o.getLongValue("id").orElse(-1L) == taskId)
+                                .orElse(false)))
+                .orElse(false);
+    }
+
     private static void writeTson(NElement e, NPath file) {
         NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
                 .write(e, file);

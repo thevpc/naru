@@ -104,6 +104,16 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         this.manager = new NaruSkillManagerImpl(session);
     }
 
+    /**
+     * A task that has left the session cannot use its selection again, and its entry would
+     * otherwise be written to {@code ext/skills.tson} forever. Dropping it here is what
+     * keeps that file proportional to the live tasks rather than to every task ever run.
+     */
+    @Override
+    public void onTaskDeregistered(NaruSession session, long taskId) {
+        selection.remove(taskId);
+    }
+
     @Override
     public boolean isRelevant(NaruTask task) {
         return !selection.isEmpty();

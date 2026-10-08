@@ -79,7 +79,11 @@ Two very different things are called "skill state"; keep them apart:
 
    `masked` records names a task explicitly *unloaded* (§6). The file is
    rewritten after every persist (the store persists after every statement),
-   so `save()` must stay cheap and idempotent.
+   so `save()` must stay cheap and idempotent. When a task reaches a terminal
+   state and leaves the session, the core calls
+   `NaruSessionExtension.onTaskDeregistered(session, taskId)` and the extension
+   drops that task's `selection` entry — otherwise the file would keep a dead
+   entry for every task the session ever ran.
 
 ## 3. The architecture: an optional session extension
 

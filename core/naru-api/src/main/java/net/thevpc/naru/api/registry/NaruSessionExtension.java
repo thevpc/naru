@@ -102,6 +102,21 @@ public interface NaruSessionExtension extends NComponent {
     default void onModeChanged(NaruTask task, NaruPromptMode old, NaruPromptMode now) {
     }
 
+    /**
+     * Called after a task reached a terminal state and was removed from the session.
+     * <p>
+     * An extension that keeps per-task state keyed by task id must drop that task's entry
+     * here. Without it the state file accumulates an entry for every task the session ever
+     * ran, and a later session load resurrects selections for tasks that no longer exist.
+     * <p>
+     * Must not throw: this runs inside the task's terminal status transition.
+     *
+     * @param session the session the task belonged to
+     * @param taskId  the id that was just deregistered
+     */
+    default void onTaskDeregistered(NaruSession session, long taskId) {
+    }
+
     // ── reacting to the request itself ──────────────────────────────────────
 
     /**

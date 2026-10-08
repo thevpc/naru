@@ -1658,6 +1658,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         if (tasks.containsKey(tid)) {
             NaruTask i = tasks.remove(tid);
+            notifyTaskDeregistered(tid);
             Map<String, Object> payload = NMaps.of(
                     "status", i.status().name(),
                     "name", i.name()
@@ -1668,6 +1669,23 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                     payload, tid, i.parentId(), Instant.now(), NaruEventTargets.ofEveryone(), NaruRetentionPolicies.ofDefault()));
             if (tasks.isEmpty()) {
                 stop();
+            }
+        }
+    }
+
+    /**
+     * Tells each installed extension that a task has left the session, so per-task state
+     * does not accumulate dead ids. One broken extension must not cost the terminal
+     * transition, hence the catch.
+     */
+    private void notifyTaskDeregistered(long tid) {
+        for (NaruSessionExtension extension : registry.sessionExtensions()) {
+            try {
+                extension.onTaskDeregistered(this, tid);
+            } catch (Exception e) {
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "session extension '%s' failed on task %s deregistration: %s",
+                        extension.name(), tid, e.getMessage()).asError());
             }
         }
     }

@@ -216,13 +216,27 @@ Semantics pinned by tests:
 `/tags enable` understands `*`, `all` and glob patterns (`fs*`); `tag_add`
 accepts a comma/space/`;`-separated list of names in a `tags` parameter.
 
-### Persistence caveats
+### Persistence
 
-Task tags are **session-scoped and not persisted**. `NaruTaskImpl.toElement()`
-does not serialize the granted set, `load()` does not restore it, and a task
-`reset()` clears it. A reloaded session therefore starts from the empty floor
-again — re-grant in the session's init script if a task must keep its tags
-across restarts.
+The floor is part of the task, and is written with it. `NaruTaskImpl.toElement()`
+stamps `schemaVersion: 2` and serializes both sets — the granted tag **names**
+under `toolTags` and the banned tool names under `excludedTools` — and `load()`
+restores them, so a saved session comes back with the gate it had:
+
+- **Restoring is lenient where granting is strict.** `addToolTag` resolves a
+  name through the registry and throws on an unknown one; the loader must not, or
+  an element that mentions a tag whose provider has since been uninstalled could
+  never be loaded. The name is **kept** (so it still round-trips and is not
+  silently dropped) and the unknown tag is reported as a warning.
+- **Tag definitions are derived, never stored.** `findToolTags()` resolves the
+  held names through `findAvailableTag` on every call, so there is no parallel
+  definition list to drift out of step with the names the gate matches on.
+- **`reset()` keeps both sets (O4).** A reset returns the task to a runnable
+  state; it is not a permission wipe. The old asymmetry — clearing the tags but
+  not the exclusions — left a task that refused tools it no longer had any reason
+  to see.
+- Elements written before version 2 simply lack both arrays and load as an empty
+  floor, exactly as version 1 did.
 
 ## 6. Tags and prompt modes
 
@@ -283,6 +297,12 @@ it needs, or a routine that does both.
   so a task must first be granted `tags` from outside (directive or spawn spec).
   The self-referentiality is deliberate: "the right to change rights" is never
   granted by default. `NaruTagGateTest` pins both halves of this.
+- **Deregistration cleans per-task extension state.** When a task reaches a
+  terminal state and leaves the session, the core calls
+  `NaruSessionExtension.onTaskDeregistered(session, taskId)`. An extension that
+  keys state by task id (the skills extension's selection map) drops that entry,
+  so `ext/<name>.tson` stays proportional to the live tasks rather than to every
+  task the session ever ran.
 
 ## 9. A worked example
 
@@ -317,7 +337,6 @@ behaviour are referenced so the delta is easy to audit.
 1. **Tag changes mid-turn are schema-only.** A tag granted after a request was
    built does not retroactively un-hide tools already sent; it affects the *next*
    request's tool list.
-2. **Not persisted** (§5): a restarted session forgets its floor.
 
 ### Fixed during Phase 1 (kept for the audit trail)
 
@@ -354,6 +373,23 @@ behaviour are referenced so the delta is easy to audit.
   the full `{fs, write}` / `{network, exec, write}` tag sets they actually
   exercise.
 
+### Fixed during Phase 2 (kept for the audit trail)
+
+- **The floor was not persisted.** `toElement()` serialized neither the granted
+  tags nor the exclusions and `load()` restored neither, so a reloaded session
+  started from the empty floor; `NaruTaskStatePersistenceTest` pins the
+  save/reload round trip and the versioned element.
+- **An unknown tag was unrecoverable.** `load()` used the throwing `addToolTag`,
+  so an element naming a tag whose provider had gone missing could not be loaded
+  at all. It now keeps the name and warns.
+- **`findToolTags()` could disagree with the gate.** The definitions lived in a
+  second list beside the names; the two could drift. The definitions are now
+  derived from the names on every call.
+- **`reset()` cleared the tags but not the exclusions.** Both are now kept (O4).
+- **Terminal tasks leaked their extension state.** `ext/skills.tson` accumulated
+  one dead selection entry per task ever run, because nothing told the extension a
+  task had left. The new `NaruSessionExtension.onTaskDeregistered` hook fixes it.
+
 ## 11. Where the code lives
 
 | Concern | Location |
@@ -369,4 +405,4 @@ behaviour are referenced so the delta is easy to audit.
 | `/tools` directive | `extensions/naru-tools-llm/.../NaruToolsDirective.java` |
 | `tag_add` / `tag_remove` tools + `tags` tag + toolset | `extensions/naru-tools-tags/` |
 | Per-extension tag providers | one `*ToolTagProvider` per feature extension (§3) |
-| Behavioural pin | `test/naru-agent-test/.../NaruTagGateTest.java`, `test/naru-agent-test/.../NaruTagRegistryLintTest.java`, `test/naru-agent-test/.../NaruPlanModeToolGateTest.java`, `test/naru-agent-test/.../AgentModelIntegrationTest.java`, `core/naru-impl/src/test/.../TaskSpawnConfigTest.java` |
+| Behavioural pin | `test/naru-agent-test/.../NaruTagGateTest.java`, `test/naru-agent-test/.../NaruTagRegistryLintTest.java`, `test/naru-agent-test/.../NaruPlanModeToolGateTest.java`, `test/naru-agent-test/.../NaruTaskStatePersistenceTest.java`, `test/naru-agent-test/.../AgentModelIntegrationTest.java`, `core/naru-impl/src/test/.../TaskSpawnConfigTest.java` |

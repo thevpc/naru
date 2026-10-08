@@ -47,13 +47,24 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
+
+    /**
+     * Version of the task element written by {@link #toElement()}.
+     * <p>
+     * 1 was the implicit version: neither the granted tag names nor the excluded
+     * tool names were serialized, so a reloaded task started from the empty floor.
+     * 2 writes {@code toolTags} and {@code excludedTools} as name arrays. The
+     * loader reads both unconditionally and treats their absence as empty, so an
+     * element written by an older version simply loads as version 1 did.
+     */
+    public static final int TASK_SCHEMA_VERSION = 2;
+
     private long id;
     private String name;
     private long parentId;
     private final List<Function<NaruTask, NaruMessage>> systemHistory = new ArrayList<>();
     private final List<NaruMessage> history = new ArrayList<>();
     private final Set<String> taskToolTags = new TreeSet<>();
-    private final List<NaruToolTag> taskToolTagDefinitions = new ArrayList<>();
     private final Set<String> excludedTools = new TreeSet<>();
     /**
      * Set by {@link #kill()} so that a statement already executing can notice
@@ -775,14 +786,18 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         returnResult = null;
         frames.clear();
         env.clear();
-        taskToolTags.clear();
-        taskToolTagDefinitions.clear();
+        // O4: a reset returns the task to a runnable state, it is not a permission
+        // wipe. The granted tags and the tool exclusions are standing decisions the
+        // user or the spawn spec made, so they are deliberately kept (the oscillation
+        // this fixes: reset() used to clear the tags but not the exclusions, leaving a
+        // task that refused tools it no longer had any reason to see).
         ((NaruSessionImpl) session).fireChanged();
     }
 
     @Override
     public NElement toElement() {
         NObjectElementBuilder o = NObjectElementBuilder.of();
+        o.set("schemaVersion", TASK_SCHEMA_VERSION);
         o.set("id", id());
         o.set("parentId", parentId());
         o.set("creationDate", NElement.ofInstant(creationDate));
@@ -791,6 +806,19 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         o.set("projectDir", NElement.ofString(projectDir.toString()));
         o.set("workingDir", workingDir == null ? null : NElement.ofString(workingDir.toString()));
         o.set("userQueriesCount", userQueriesCount);
+        // the granted tag names and the excluded tool names are the task's standing
+        // permissions; without them a reload rebuilt a task that could see nothing it
+        // had been granted and everything it had banned
+        NArrayElementBuilder _toolTags = NArrayElementBuilder.of();
+        for (String t : taskToolTags) {
+            _toolTags.add(t);
+        }
+        NArrayElementBuilder _excludedTools = NArrayElementBuilder.of();
+        for (String t : excludedTools) {
+            _excludedTools.add(t);
+        }
+        o.set("toolTags", _toolTags.build());
+        o.set("excludedTools", _excludedTools.build());
 
         o.set("extraContext", extraContext);
         o.set("lastResult", lastResult == null ? null : lastResult.toElement());
@@ -833,6 +861,32 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         this.workingDir = o.getStringValue("workingDir").map(x -> NPath.of(x)).orElse(workingDir);
         this.lastResult = o.get("lastResult").map(x -> NaruMessage.of(x)).orNull();
         this.inputMode = o.get("inputMode").map(x -> NaruInputMode.parse(x).orElse(NaruInputMode.LINE)).orNull();
+        // Granted tags and exclusions come back by name. This is deliberately not
+        // addToolTag(..): that resolves through findAvailableTag(..).get() and throws on an
+        // unknown tag, which would make an element mentioning a tag whose provider is no
+        // longer installed impossible to load. The name is kept -- so it still round-trips
+        // and is not silently dropped -- and an unknown tag warns below.
+        this.taskToolTags.clear();
+        NArrayElement toolTags1 = o.get("toolTags").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
+        if (toolTags1 != null) {
+            for (NElement nElement : toolTags1) {
+                String t = nElement.asStringValue().orNull();
+                if (!NBlankable.isBlank(t)) {
+                    this.taskToolTags.add(NNameFormat.LOWER_KEBAB_CASE.format(t.trim()));
+                }
+            }
+        }
+        this.excludedTools.clear();
+        NArrayElement excludedTools1 = o.get("excludedTools").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
+        if (excludedTools1 != null) {
+            for (NElement nElement : excludedTools1) {
+                String t = nElement.asStringValue().orNull();
+                if (!NBlankable.isBlank(t)) {
+                    this.excludedTools.add(t.trim());
+                }
+            }
+        }
+        warnOnUnknownTaskToolTags();
         this.inputBuffer = "";
         NOptional<NElement> ibe = o.get("inputBuffer");
         if (ibe.isPresent() && ibe.get().isAnyStringOrName()) {
@@ -891,10 +945,12 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     public NaruTaskImpl _setTaskTags(Set<String> taskTags) {
         this.taskToolTags.clear();
-        this.taskToolTags.addAll(taskTags);
-        this.taskToolTagDefinitions.clear();
-        for (String t : taskTags) {
-            this.taskToolTagDefinitions.add(session().registry().findAvailableTag(t).get());
+        if (taskTags != null) {
+            for (String t : taskTags) {
+                // go through addToolTag so an unknown tag still throws here rather than
+                // being stored and surfacing as a silent no-op later
+                addToolTag(t);
+            }
         }
         return this;
     }
@@ -1028,24 +1084,54 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
     }
 
+    /**
+     * The registered definitions for the tags this task holds.
+     *
+     * <p>The definitions are <b>derived</b> from the granted names on every call rather
+     * than kept beside them in a second list. A parallel list is the kind of thing that
+     * drifts: an add that updated one and not the other produced a task whose
+     * {@code findTools()} gate (which reads names) and whose {@code findToolTags()}
+     * listing (which read definitions) disagreed. Unknown names -- a tag whose provider
+     * was removed after the task was loaded -- have no definition and are skipped here;
+     * {@link #warnOnUnknownTaskToolTags()} already reported them.
+     */
     public List<NaruToolTag> findToolTags() {
-        return new ArrayList<>(taskToolTagDefinitions);
+        List<NaruToolTag> out = new ArrayList<>();
+        for (String name : taskToolTags) {
+            NaruToolTag tag = session().registry().findAvailableTag(name).orNull();
+            if (tag != null) {
+                out.add(tag);
+            }
+        }
+        return out;
     }
 
     public NaruTask addToolTag(String toolTag) {
         NaruToolTag tag = session().registry().findAvailableTag(toolTag).get();
-        if (taskToolTags.add(NNameFormat.LOWER_KEBAB_CASE.format(tag.name()))) {
-            taskToolTagDefinitions.add(tag);
-        }
+        taskToolTags.add(NNameFormat.LOWER_KEBAB_CASE.format(tag.name()));
         return this;
     }
 
     public NaruTask removeToolTag(String toolTag) {
         String normalized = NNameFormat.LOWER_KEBAB_CASE.format(NStringUtils.strip(toolTag));
-        if (taskToolTags.remove(normalized)) {
-            taskToolTagDefinitions.removeIf(x -> NNameFormat.LOWER_KEBAB_CASE.format(x.name()).equals(normalized));
-        }
+        taskToolTags.remove(normalized);
         return this;
+    }
+
+    /**
+     * Reports every held tag name that no provider declares. Such a tag reveals no tool
+     * (it cannot match an unregistered tool's tag set), so it is a permission the user
+     * believes they hold and do not. The name is kept so it survives a round trip and is
+     * not silently dropped; the warning is what keeps the gap visible.
+     */
+    private void warnOnUnknownTaskToolTags() {
+        for (String name : taskToolTags) {
+            if (session().registry().findAvailableTag(name).isEmpty()) {
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "⚠ task %s holds tool tag '%s' but no provider declares it; the tag is kept and reveals no tool",
+                        id(), name));
+            }
+        }
     }
 
     public NaruTask addToolExclusion(String toolName) {
