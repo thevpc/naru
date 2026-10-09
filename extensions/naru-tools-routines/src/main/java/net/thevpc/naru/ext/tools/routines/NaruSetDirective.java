@@ -1,11 +1,19 @@
 package net.thevpc.naru.ext.tools.routines;
 
+import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruTaskConfig;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
+import net.thevpc.nuts.cmdline.NArgCompletePosition;
+import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.expr.NExprContext;
 import net.thevpc.nuts.expr.NExprNode;
 import net.thevpc.nuts.expr.NExprOpNode;
@@ -13,8 +21,12 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,10 +45,12 @@ public class NaruSetDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<var> += <expr> | -= <expr> | *= <expr> | /= <expr>", "apply an arithmetic update to the variable (a missing var counts as 0).\nex:\n/set n += 2"),
                 new SubCommandHelp("--task <var> = <expr>", "explicitly target the task env (this is the default).\nex:\n/set --task a=x*2"),
                 new SubCommandHelp("--session <var> = <expr>", "target the session env.\nex:\n/set --session a=x*2"),
+                new SubCommandHelp("--agent <var> = <expr>", "target the in-memory agent env: every session of this process, not persisted.\nex:\n/set --agent model.thinking=false"),
                 new SubCommandHelp("--local <var> = <expr>", "target the current frame local variable.\nex:\n/set --local a=x*2"),
                 new SubCommandHelp("", "list variables of the default scope (task env)"),
                 new SubCommandHelp("--task", "list task env variables"),
                 new SubCommandHelp("--session", "list session env variables"),
+                new SubCommandHelp("--agent", "list agent env variables"),
                 new SubCommandHelp("--local", "list current frame variables")
         ) {
             @Override
@@ -50,6 +64,9 @@ public class NaruSetDirective extends NaruDirectiveBase {
                 } else if (raw.startsWith("--session ") || raw.equals("--session")) {
                     raw = raw.substring("--session".length()).trim();
                     v = VarType.SESSION;
+                } else if (raw.startsWith("--agent ") || raw.equals("--agent")) {
+                    raw = raw.substring("--agent".length()).trim();
+                    v = VarType.AGENT;
                 } else if (raw.startsWith("--local ") || raw.equals("--local")) {
                     raw = raw.substring("--local".length()).trim();
                     v = VarType.VAR;
@@ -111,6 +128,13 @@ public class NaruSetDirective extends NaruDirectiveBase {
         switch (v) {
             case SESSION:
                 return task.session().getSessionEnv(name).orNull();
+            case AGENT: {
+                NaruEnv agentEnv = task.session().agent() == null ? null : task.session().agent().agentEnv();
+                NElement value = agentEnv == null ? null : agentEnv.get(name).orNull();
+                // an agent-env value is an NElement; text unwraps it the same way the
+                // config store's values are read elsewhere
+                return NaruTaskConfig.toText(value);
+            }
             case VAR:
                 return task.frame().getLocalVar(name).orNull();
             default:
@@ -123,6 +147,13 @@ public class NaruSetDirective extends NaruDirectiveBase {
             case SESSION:
                 task.session().setSessionEnv(name, value);
                 break;
+            case AGENT: {
+                NaruEnv agentEnv = task.session().agent() == null ? null : task.session().agent().agentEnv();
+                if (agentEnv != null) {
+                    agentEnv.put(name, value == null ? null : NElement.of(value), NaruVisibility.PRIVATE);
+                }
+                break;
+            }
             case VAR:
                 task.frame().setLocalVar(name, value);
                 break;
@@ -191,6 +222,15 @@ public class NaruSetDirective extends NaruDirectiveBase {
             case SESSION:
                 varMap = task.session().sessionEnv();
                 break;
+            case AGENT: {
+                Map<String, Object> agentVars = new java.util.LinkedHashMap<>();
+                NaruEnv agentEnv = task.session().agent() == null ? null : task.session().agent().agentEnv();
+                if (agentEnv != null) {
+                    agentEnv.entries().forEach((k, val) -> agentVars.put(k, NaruTaskConfig.toText(val)));
+                }
+                varMap = agentVars;
+                break;
+            }
             case VAR:
                 varMap = task.frame().getAllVars();
                 break;
@@ -208,7 +248,55 @@ public class NaruSetDirective extends NaruDirectiveBase {
         return NaruStmtResult.ofSuccess(varMap);
     }
 
+    // ── autocomplete ─────────────────────────────────────────────────────────
+
+    @Override
+    public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+        List<NArgCompleteCandidate> candidates = new ArrayList<>();
+        String[] words = cmdLine.toStringArray();
+        int wordIndex = pos.wordIndex();
+        String currentArg = wordIndex < words.length ? words[wordIndex] : "";
+
+        if (currentArg.startsWith("-")) {
+            addCandidates(candidates, currentArg, "--task", "--session", "--agent", "--local");
+            return NArgCompleteResult.ofCandidates(candidates);
+        }
+        // variable names already known in an env scope: session and agent are reachable
+        // from the completion context; task and frame locals are not, and are best served
+        // by the "name=" hole and the flags below
+        for (String key : envKeys(session)) {
+            if (key.startsWith(currentArg)) {
+                candidates.add(NArgCompleteCandidate.of(key));
+            }
+            String withValue = key + "=";
+            if (withValue.startsWith(currentArg)) {
+                candidates.add(NArgCompleteCandidate.of(withValue));
+            }
+        }
+        addCandidates(candidates, currentArg, "--task", "--session", "--agent", "--local");
+        return NArgCompleteResult.ofCandidates(candidates);
+    }
+
+    private static Set<String> envKeys(NaruSession session) {
+        Set<String> keys = new TreeSet<>();
+        if (session == null) {
+            return keys;
+        }
+        try {
+            keys.addAll(session.sessionEnv().keySet());
+        } catch (RuntimeException ignored) {
+            // completion is best effort; a stopped session must not break Tab
+        }
+        try {
+            if (session.agent() != null) {
+                keys.addAll(session.agent().agentEnv().entries().keySet());
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return keys;
+    }
+
     enum VarType {
-        VAR, TASK, SESSION
+        VAR, TASK, SESSION, AGENT
     }
 }

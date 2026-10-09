@@ -61,4 +61,15 @@ public interface NaruAgent {
     void log(NaruLogMode mode, NMsg message);
 
     NaruEnv env();
+
+    /**
+     * The in-memory, per-process agent env.
+     *
+     * <p>Distinct from {@link #env()}, which is the on-disk project config (the two
+     * {@code env.tson} files). Values here are shared by every session of this process and
+     * live between the session env and the config files in the resolution chain, so
+     * {@code /set --agent model.thinking=false} overrides a saved setting for this run
+     * without writing a file. Nothing survives a restart.
+     */
+    NaruEnv agentEnv();
 }

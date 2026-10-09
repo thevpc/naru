@@ -55,11 +55,6 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 return executeRename(context, cmdLine);
             }
-
-            @Override
-            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
-                return sessionNameCandidates(cmdLine, pos, session);
-            }
         });
 
         register(new AbstractSubCommand("public", NText.ofPlain("change session visibility to public"),
@@ -86,10 +81,6 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 return executeDelete(context, cmdLine);
             }
-            @Override
-            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
-                return sessionNameCandidates(cmdLine, pos, session);
-            }
         });
         register(new AbstractSubCommand("purge", NText.ofPlain("purge all sessions")
         ) {
@@ -105,11 +96,6 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 return executeLoad(context, cmdLine);
-            }
-
-            @Override
-            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
-                return sessionNameCandidates(cmdLine, pos, session);
             }
         });
 //        register(new AbstractSubCommand("reload", NText.ofPlain("reload current session")
@@ -437,26 +423,122 @@ public class NaruSessionDirective extends NaruDirectiveBase {
 
     // ── autocomplete ─────────────────────────────────────────────────────────────
 
-    private NArgCompleteResult sessionNameCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
-        List<NArgCompleteCandidate> candidates = new java.util.ArrayList<>();
-        String[] stringArray = cmdLine.toStringArray();
+    /**
+     * The subcommands that accept {@code --id}/{@code --name}: completion has to offer
+     * session ids/names as their values, and only for these.
+     */
+    private static final Set<String> TARGET_SUBCOMMANDS = Set.of(
+            "current", "save", "restore", "reset", "copy",
+            "public", "private", "delete", "rename", "load");
+
+    /** Subcommands whose positional words name sessions rather than being free text. */
+    private static final Set<String> POSITIONAL_IS_SESSION = Set.of("delete", "load");
+
+    /**
+     * Completion for {@code /session <sub> ...}: delegates subcommand-name completion to
+     * the base class, and for a target-aware subcommand completes the id/name values
+     * (whether written {@code --id=<prefix>} or {@code --id <prefix>}) from the same
+     * live-plus-saved universe the command resolves against.
+     */
+    @Override
+    public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+        String[] words = cmdLine.toStringArray();
         int wordIndex = pos.wordIndex();
-        if (wordIndex == 2) {
-            String currentArg = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
-            if (currentArg.startsWith("-")) {
-                addCandidates(candidates, currentArg, "--id", "--name");
-            } else {
-                for (NaruResourceInfo info : session.sessionStoreManager().list()) {
-                    if (info.getName() != null && !info.getName().isEmpty()) {
-                        addCandidates(candidates, currentArg, info.getName());
-                    }
-                    if (info.getUuid() != null && !info.getUuid().isEmpty()) {
-                        addCandidates(candidates, currentArg, info.getUuid());
-                    }
-                }
+        if (wordIndex >= 2 && words.length > 1 && TARGET_SUBCOMMANDS.contains(words[1])) {
+            return targetCandidates(cmdLine, pos, session, POSITIONAL_IS_SESSION.contains(words[1]));
+        }
+        return super.resolveCandidates(cmdLine, pos, session);
+    }
+
+    private NArgCompleteResult targetCandidates(NCmdLine cmdLine, NArgCompletePosition pos,
+                                                NaruSession session, boolean positionalIsSession) {
+        List<NArgCompleteCandidate> candidates = new ArrayList<>();
+        String[] words = cmdLine.toStringArray();
+        int wordIndex = pos.wordIndex();
+        String currentArg = wordIndex < words.length ? words[wordIndex] : "";
+        String previous = wordIndex > 0 && wordIndex - 1 < words.length ? words[wordIndex - 1] : null;
+
+        List<String> names = new ArrayList<>();
+        List<String> uuids = new ArrayList<>();
+        collectSessionIds(session, names, uuids);
+
+        if (currentArg.startsWith("--id=")) {
+            addMatching(candidates, uuids, currentArg.substring("--id=".length()), "--id=");
+            return NArgCompleteResult.ofCandidates(candidates);
+        }
+        if (currentArg.startsWith("--name=")) {
+            addMatching(candidates, names, currentArg.substring("--name=".length()), "--name=");
+            return NArgCompleteResult.ofCandidates(candidates);
+        }
+        if ("--id".equals(previous)) {
+            addMatching(candidates, uuids, currentArg, "");
+            return NArgCompleteResult.ofCandidates(candidates);
+        }
+        if ("--name".equals(previous)) {
+            addMatching(candidates, names, currentArg, "");
+            return NArgCompleteResult.ofCandidates(candidates);
+        }
+        if (currentArg.startsWith("-")) {
+            addCandidates(candidates, currentArg, "--id", "--id=", "--name", "--name=");
+            return NArgCompleteResult.ofCandidates(candidates);
+        }
+        if (positionalIsSession) {
+            addMatching(candidates, names, currentArg, "");
+            addMatching(candidates, uuids, currentArg, "");
+        }
+        addCandidates(candidates, currentArg, "--id", "--name");
+        return NArgCompleteResult.ofCandidates(candidates);
+    }
+
+    /**
+     * The live-plus-saved session universe, de-duplicated by uuid with the live name
+     * winning. Split into names and uuids because a value typed after {@code --name} must
+     * not offer uuids and vice versa.
+     */
+    private static void collectSessionIds(NaruSession session, List<String> names, List<String> uuids) {
+        Set<String> seenNames = new LinkedHashSet<>();
+        Set<String> seenUuids = new LinkedHashSet<>();
+        addSessionId(session, names, uuids, seenNames, seenUuids);
+        NaruAgent agent = session.agent();
+        if (agent != null) {
+            for (NaruSession s : agent.sessions()) {
+                addSessionId(s, names, uuids, seenNames, seenUuids);
             }
         }
-        return NArgCompleteResult.ofCandidates(candidates);
+        for (NaruResourceInfo info : session.sessionStoreManager().list()) {
+            if (info.getUuid() != null && seenUuids.add(info.getUuid()) && !info.getUuid().isEmpty()) {
+                uuids.add(info.getUuid());
+            }
+            String n = info.getName();
+            if (n != null && !n.isEmpty() && seenNames.add(n)) {
+                names.add(n);
+            }
+        }
+    }
+
+    private static void addSessionId(NaruSession s,
+                                     List<String> names, List<String> uuids,
+                                     Set<String> seenNames, Set<String> seenUuids) {
+        if (s == null || s.uuid() == null || s.uuid().isEmpty()) {
+            return;
+        }
+        if (seenUuids.add(s.uuid())) {
+            uuids.add(s.uuid());
+        }
+        String n = safeName(s);
+        if (n != null && !n.isEmpty() && !"NO_NAME".equals(n) && seenNames.add(n)) {
+            names.add(n);
+        }
+    }
+
+    private void addMatching(List<NArgCompleteCandidate> candidates, List<String> values,
+                             String prefix, String valuePrefix) {
+        String p = prefix == null ? "" : prefix;
+        for (String v : values) {
+            if (v.toLowerCase().startsWith(p.toLowerCase())) {
+                candidates.add(NArgCompleteCandidate.of(valuePrefix + v));
+            }
+        }
     }
 
 
@@ -467,23 +549,95 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             return rejected;
         }
 
-        List<NaruResourceInfo> naruResourceInfos = task.session().sessionStoreManager().list();
+        NaruSession current = task.session();
+        List<NaruResourceInfo> saved = current.sessionStoreManager().list();
+        // current first, then every other running session, then the saved-only ones. A
+        // uuid is listed once: a session that is both live and saved shows its live state.
+        List<NaruSession> running = new ArrayList<>();
+        Set<String> runningUuids = new LinkedHashSet<>();
+        NaruAgent agent = current.agent();
+        if (agent != null) {
+            for (NaruSession s : agent.sessions()) {
+                if (s != null && s.uuid() != null && runningUuids.add(s.uuid())) {
+                    running.add(s);
+                }
+            }
+        }
+
         NStringBuilder sb = NStringBuilder.of();
         int index = 1;
-        for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
-            NMsg msg = NMsg.ofC("[%s] %s %s (%s) %s %s %s", index,
-                    naruResourceInfo.getCreationInstant(),
-                    naruResourceInfo.getModificationInstant(),
-                    NaruUtils.timeAgo(naruResourceInfo.getModificationInstant()),
-                    NMsg.ofStyledKeyword(naruResourceInfo.getMode().name().toLowerCase()),
-                    NMsg.ofStyledPrimary3(naruResourceInfo.getUuid()),
-                    NMsg.ofStyledString(naruResourceInfo.getName())
-            );
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            sb.println(msg.toString());
-            index++;
+        Set<String> shown = new LinkedHashSet<>();
+        logSessionRow(task, sb, index++, current, findSaved(saved, current.uuid()), true, current.isRunning());
+        shown.add(current.uuid());
+        for (NaruSession s : running) {
+            if (shown.contains(s.uuid())) {
+                continue;
+            }
+            logSessionRow(task, sb, index++, s, findSaved(saved, s.uuid()), false, true);
+            shown.add(s.uuid());
+        }
+        for (NaruResourceInfo info : saved) {
+            if (info.getUuid() == null || shown.contains(info.getUuid())) {
+                continue;
+            }
+            logSessionRow(task, sb, index++, null, info, false, false);
+            shown.add(info.getUuid());
         }
         return NaruStmtResult.ofSuccess(sb.toString());
+    }
+
+    /**
+     * One /session list row. {@code *} marks the current session, the visibility and the
+     * {@code live, N tasks} / {@code saved} state make liveness explicit, and an unknown
+     * age prints {@code (unknown)} rather than the empty {@code ()} a null instant used
+     * to produce.
+     */
+    private void logSessionRow(NaruTask task, NStringBuilder sb, int index,
+                               NaruSession live, NaruResourceInfo saved,
+                               boolean current, boolean running) {
+        String uuid = live != null ? live.uuid() : saved.getUuid();
+        String name = live != null ? safeName(live) : saved.getName();
+        if (NBlankable.isBlank(name)) {
+            name = "NO_NAME";
+        }
+        NaruVisibility visibility = live != null ? live.getVisibility() : saved.getMode();
+        String age = NaruUtils.timeAgo(live != null ? live.modificationInstant() : saved.getModificationInstant());
+        if (NBlankable.isBlank(age)) {
+            age = "unknown";
+        }
+        String state;
+        if (running) {
+            int taskCount = liveTaskCount(live);
+            state = "live, " + taskCount + (taskCount == 1 ? " task" : " tasks");
+        } else if (saved != null) {
+            state = "saved";
+        } else {
+            state = "not saved";
+        }
+        NMsg msg = NMsg.ofC("[%s]%s %s %s %s %s (%s)",
+                index,
+                current ? NMsg.ofStyledPrimary1(" *") : "  ",
+                NMsg.ofStyledString(name),
+                NMsg.ofStyledPrimary3(uuid),
+                NMsg.ofStyledKeyword(visibility == null ? "?" : visibility.name().toLowerCase()),
+                NMsg.ofStyledKeyword(state),
+                NMsg.ofStyledPale(age)
+        );
+        task.log(NaruLogMode.AGENT_RESPONSE, msg);
+        sb.println(msg.toString());
+    }
+
+    private static int liveTaskCount(NaruSession session) {
+        if (session == null) {
+            return 0;
+        }
+        try {
+            List<NaruTask> tasks = session.tasks();
+            return tasks == null ? 0 : tasks.size();
+        } catch (RuntimeException e) {
+            // a session that is stopping mid-listing is not an error worth failing on
+            return 0;
+        }
     }
 
 

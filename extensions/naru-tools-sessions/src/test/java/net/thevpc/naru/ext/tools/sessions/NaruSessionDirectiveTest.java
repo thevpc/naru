@@ -441,6 +441,99 @@ public class NaruSessionDirectiveTest {
                 () -> "the error must say the session is not running: " + r.errorValue());
     }
 
+    // ── autocomplete ─────────────────────────────────────────────────────────
+
+    /** The request's exact case: {@code --id=} must complete the id from the catalog. */
+    @Test
+    public void inlineIdOptionCompletesTheUuid() {
+        NaruSessionImpl saved = savedSession("inline-id");
+        String prefix = uniquePrefix(saved.uuid(), session.uuid());
+
+        List<String> values = complete("/session", "current", "--id=" + prefix);
+
+        assertTrue(values.contains("--id=" + saved.uuid()),
+                "typing --id=<prefix> must offer the full uuid, got " + values);
+    }
+
+    /** {@code --id <prefix>} as two words must complete the id too. */
+    @Test
+    public void separateIdOptionCompletesTheUuid() {
+        NaruSessionImpl saved = savedSession("separate-id");
+        String prefix = uniquePrefix(saved.uuid(), session.uuid());
+
+        List<String> values = complete("/session", "current", "--id", prefix);
+
+        assertTrue(values.contains(saved.uuid()),
+                "typing --id <prefix> must offer the uuid, got " + values);
+    }
+
+    @Test
+    public void inlineNameOptionCompletesTheName() {
+        savedSession("comp-inline");
+
+        List<String> values = complete("/session", "current", "--name=comp");
+
+        assertTrue(values.contains("--name=comp-inline"),
+                "typing --name=<prefix> must offer the name, got " + values);
+    }
+
+    /**
+     * Every subcommand that accepts a target offers the selectors, not just the three that
+     * happened to register completion before.
+     */
+    @Test
+    public void everyTargetSubcommandOffersTheSelectors() {
+        session.save();
+        for (String sub : new String[]{"current", "save", "restore", "reset",
+                "copy", "public", "private", "delete", "load", "rename"}) {
+            List<String> values = complete("/session", sub, "");
+            assertTrue(values.contains("--id") && values.contains("--name"),
+                    "/session " + sub + " must offer --id/--name, got " + values);
+        }
+    }
+
+    /** A non-target subcommand must keep delegating to the base resolver. */
+    @Test
+    public void listDoesNotOfferSelectors() {
+        List<String> values = complete("/session", "list", "");
+
+        assertFalse(values.contains("--id"), "/session list must not offer --id, got " + values);
+    }
+
+    // ── list rendering ───────────────────────────────────────────────────────
+
+    @Test
+    public void listMarksTheCurrentSessionAndCountsLiveTasks() {
+        session.save();
+        // a held task keeps the session alive for the duration of the listing; the
+        // /session list task itself is a second registered task
+        NaruTask held = session.newTask(NaruTaskSpec.of().statements("/return 1"));
+        session.start();
+        try {
+            NaruStmtResult r = call("list");
+            String s = String.valueOf(r.successValue());
+            assertTrue(s.contains("*"), "the current session must be marked with '*': " + s);
+            assertTrue(s.contains("live"), "a running session must be marked live: " + s);
+            assertTrue(s.contains("task"), "a live session must report its task count: " + s);
+            assertFalse(s.contains("()"), "an unknown age must not print empty parentheses: " + s);
+        } finally {
+            held.kill();
+            session.stop();
+        }
+    }
+
+    @Test
+    public void listShowsSavedOnlySessions() {
+        savedSession("only-saved");
+
+        NaruStmtResult r = call("list");
+        String s = String.valueOf(r.successValue());
+
+        assertTrue(s.contains("only-saved"), "a saved session must be listed: " + s);
+        assertTrue(s.contains("saved"), "a saved-only session must be marked saved: " + s);
+        assertFalse(s.contains("()"), "no row may print empty parentheses: " + s);
+    }
+
     /**
      * A single offline, tools-capable model so that {@code newTask} always finds something
      * to attach to a task. It never chats: the tests here drive /session, not the model.

@@ -3,6 +3,8 @@ package net.thevpc.naru.api.agent;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NOptional;
 
+import java.util.Map;
+
 /**
  * A keyed store of configuration values that can be told apart by visibility.
  *
@@ -34,5 +36,16 @@ public interface NaruEnv {
     NOptional<NElement> get(String key, NaruVisibility visibility);
 
     void put(String key, NElement value, NaruVisibility visibility);
+
+    /**
+     * Every key in this store, for a listing.
+     *
+     * <p>For the two config files this is the merged view, private winning, the same way
+     * {@link #get(String)} resolves a key. A store that cannot enumerate returns empty
+     * rather than failing, so a listing degrades to "nothing to show" instead of erroring.
+     */
+    default Map<String, NElement> entries() {
+        return Map.of();
+    }
 
 }

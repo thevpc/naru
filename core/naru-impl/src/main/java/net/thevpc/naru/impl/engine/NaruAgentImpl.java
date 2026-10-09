@@ -44,6 +44,11 @@ public class NaruAgentImpl implements NaruAgent {
     private NaruRegistrationStore registrations;
     private NaruProjectEnv projectEnv;
     /**
+     * The in-memory agent env. Unlike {@link #projectEnv}, it is not rebuilt when the
+     * project directory changes: it belongs to the process, not to a project.
+     */
+    private final NaruMemoryEnv agentEnv = new NaruMemoryEnv();
+    /**
      * Live sessions. Populated from session lifecycle callbacks, which can arrive on any
      * thread, so the collection must be concurrent: a plain list was a race as soon as
      * two sessions started at once.
@@ -249,6 +254,11 @@ public class NaruAgentImpl implements NaruAgent {
 
     public NaruProjectEnv env() {
         return projectEnv;
+    }
+
+    @Override
+    public NaruEnv agentEnv() {
+        return agentEnv;
     }
 
     public NaruRegistrationStore getRegistrations() {

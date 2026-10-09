@@ -39,6 +39,9 @@ import java.util.List;
  *       parent. The narrowest store, and the one a script should use.</li>
  *   <li><b>session env</b> -- written by {@code /set} at session level; shared by
  *       sibling tasks, gone when the session ends.</li>
+ *   <li><b>agent env</b> -- written by {@code /set --agent}; shared by every session of
+ *       this process and never persisted, so it overrides a saved setting for one run
+ *       without touching a file.</li>
  *   <li><b>config</b> -- {@code .naru/local/config/env.tson} then
  *       {@code .naru/config/env.tson}, private winning. On disk, so it outlives the
  *       session and is how a project ships its defaults to everyone who opens it.</li>
@@ -74,6 +77,7 @@ public final class NaruTaskConfig {
 
     public static final String SCOPE_TASK = "task";
     public static final String SCOPE_SESSION = "session";
+    public static final String SCOPE_AGENT = "agent";
     public static final String SCOPE_CONFIG = "config";
     public static final String SCOPE_SYSTEM_PROPERTY = "system property";
 
@@ -143,7 +147,15 @@ public final class NaruTaskConfig {
             if (sessionEnv != null && sessionEnv.isPresent()) {
                 return NOptional.of(new Resolved(sessionEnv.get(), SCOPE_SESSION, null));
             }
-            // 3. config, asked per visibility so the answer can name the file. Private
+            // 3. agent env, shared by every session of this process but not persisted
+            NaruAgent agent = session.agent();
+            if (agent != null) {
+                NOptional<NElement> agentValue = agent.agentEnv().get(key);
+                if (agentValue != null && agentValue.isPresent()) {
+                    return NOptional.of(new Resolved(agentValue.get(), SCOPE_AGENT, null));
+                }
+            }
+            // 4. config, asked per visibility so the answer can name the file. Private
             // first, matching what getProjectEnv(key) resolves to on its own.
             NOptional<NElement> privateValue = session.getProjectEnv(key, NaruVisibility.PRIVATE);
             if (privateValue != null && privateValue.isPresent()) {
@@ -154,7 +166,7 @@ public final class NaruTaskConfig {
                 return NOptional.of(new Resolved(publicValue.get(), SCOPE_CONFIG, NaruVisibility.PUBLIC));
             }
         }
-        // 4. JVM system property, the operator's escape hatch
+        // 5. JVM system property, the operator's escape hatch
         String property = System.getProperty(key);
         if (property != null && !property.isBlank()) {
             return NOptional.of(new Resolved(property, SCOPE_SYSTEM_PROPERTY, null));

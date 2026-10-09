@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.llm;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.model.NaruThinkingConfig;
@@ -9,6 +10,9 @@ import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.cmdline.NArg;
+import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
+import net.thevpc.nuts.cmdline.NArgCompletePosition;
+import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
@@ -17,7 +21,10 @@ import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NStringBuilder;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Reads and writes <b>config</b> keys: the values that live in the two files under
@@ -229,5 +236,47 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
             default:
                 return null;
         }
+    }
+
+    // ── autocomplete ─────────────────────────────────────────────────────────
+
+    @Override
+    public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+        List<NArgCompleteCandidate> candidates = new ArrayList<>();
+        String[] words = cmdLine.toStringArray();
+        int wordIndex = pos.wordIndex();
+        String currentArg = wordIndex < words.length ? words[wordIndex] : "";
+
+        if (currentArg.startsWith("-")) {
+            addCandidates(candidates, currentArg, "--private", "--public", "--local");
+            return NArgCompleteResult.ofCandidates(candidates);
+        }
+        // word 0 is /settings; the key may be the first or a later word
+        for (String key : settingKeys(session)) {
+            if (key.startsWith(currentArg)) {
+                candidates.add(NArgCompleteCandidate.of(key));
+            }
+            String withValue = key + "=";
+            if (withValue.startsWith(currentArg)) {
+                candidates.add(NArgCompleteCandidate.of(withValue));
+            }
+        }
+        return NArgCompleteResult.ofCandidates(candidates);
+    }
+
+    /**
+     * The keys {@code /settings} can name: the advertised list plus whatever the project
+     * config files already hold, so a custom key is completed once it exists.
+     */
+    private static List<String> settingKeys(NaruSession session) {
+        Set<String> keys = new TreeSet<>(Arrays.asList(KNOWN_KEYS));
+        if (session != null && session.agent() != null) {
+            try {
+                keys.addAll(session.agent().env().entries().keySet());
+            } catch (RuntimeException ignored) {
+                // completion is best effort; an unreadable config must not break Tab
+            }
+        }
+        return new ArrayList<>(keys);
     }
 }
