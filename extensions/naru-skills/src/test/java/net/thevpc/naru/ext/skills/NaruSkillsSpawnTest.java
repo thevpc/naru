@@ -5,6 +5,8 @@ import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.scheduler.NaruEvent;
+import net.thevpc.naru.api.spawn.NaruSpawnContract;
+import net.thevpc.naru.api.spawn.NaruSpawnPolicy;
 import net.thevpc.naru.api.spawn.NaruToolTagExpression;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
@@ -30,10 +32,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The skill file front-matter ({@code requires}) and the session extension's
- * {@code onSpawned}: a resolved spawn skill is loaded onto the freshly spawned child, and a
- * skill whose required tags clash with what the child was granted is surfaced as a
- * spawn-time warning naming exactly what is missing or held.
+ * The skill front-matter ({@code requires}) and the session extension's {@code onSpawned}:
+ * a resolved spawn skill (policy, contract, or {@code --add-skills}) is loaded onto the
+ * freshly spawned child. Spawning never evaluates {@code requires} — decision 4 moved the
+ * gate to request-build time, where the task's current tags are the ones that matter.
  */
 @Timeout(60)
 public class NaruSkillsSpawnTest {
@@ -116,21 +118,13 @@ public class NaruSkillsSpawnTest {
         file.writeString(sb.toString());
     }
 
-    private void privateSkill(String name, String header, String... body) {
-        StringBuilder sb = new StringBuilder();
-        if (header != null) {
-            sb.append("---\n").append(header).append("\n---\n");
-        }
-        for (String l : body) {
-            sb.append(l).append('\n');
-        }
-        NPath file = projectDir.resolve(".naru/local/skills").resolve(name + ".md");
-        file.mkParentDirs();
-        file.writeString(sb.toString());
-    }
-
     private NaruTask task() {
         return session.newTask(NaruTaskSpec.of());
+    }
+
+    /** Rebuilds the discovery snapshot from disk (the manager reads disk only on reload). */
+    private void discover() {
+        ext.reload();
     }
 
     private NaruTask spawn(NaruTask parent, NaruTaskSpec spec) {
@@ -142,6 +136,7 @@ public class NaruSkillsSpawnTest {
     @Test
     public void requiresFrontMatterParsesIntoARequirement() {
         publicSkill("fs-ops", "{ requires: \"fs & !write\" }", "use fs like a pro", "never write");
+        discover();
         NaruSkill s = ext.skills().findSkill("fs-ops");
         assertNotNull(s);
 
@@ -157,6 +152,7 @@ public class NaruSkillsSpawnTest {
     @Test
     public void aSkillWithoutFrontMatterHasNoRequirement() {
         publicSkill("plain", null, "no constraint at all");
+        discover();
         NaruSkill s = ext.skills().findSkill("plain");
         assertNull(s.getRequires());
         assertEquals(Set.of(), s.getRequiredTags());
@@ -166,6 +162,7 @@ public class NaruSkillsSpawnTest {
     @Test
     public void aMalformedRequiresLoadsAsAbsentRatherThanHidingTheSkill() {
         publicSkill("broken", "{ requires: \"fs & ((\" }", "still loads");
+        discover();
         NaruSkill s = ext.skills().findSkill("broken");
         assertNotNull(s, "a broken requirement must not hide the skill");
         assertNull(s.getRequires());
@@ -176,9 +173,23 @@ public class NaruSkillsSpawnTest {
     public void thePrivateCopySuppliesTheRequirementToo() {
         publicSkill("report", null, "public wording");
         privateSkill("report", "{ requires: \"fs\" }", "private wording");
+        discover();
         NaruSkill s = ext.skills().findSkill("report");
         assertEquals(List.of("private wording"), s.getLines());
         assertEquals(Set.of("fs"), s.getRequiredTags());
+    }
+
+    private void privateSkill(String name, String header, String... body) {
+        StringBuilder sb = new StringBuilder();
+        if (header != null) {
+            sb.append("---\n").append(header).append("\n---\n");
+        }
+        for (String l : body) {
+            sb.append(l).append('\n');
+        }
+        NPath file = projectDir.resolve(".naru/local/skills").resolve(name + ".md");
+        file.mkParentDirs();
+        file.writeString(sb.toString());
     }
 
     // ── onSpawned: resolved skills land on the child ───────────────────────
@@ -191,7 +202,7 @@ public class NaruSkillsSpawnTest {
         NaruTask child = spawn(parent, NaruTaskSpec.of().addSkills("git-flow"));
 
         assertEquals(Set.of("git-flow"), ext.activeNames(child),
-                () -> "the resolved spawn skill was not loaded onto the child: " + ext.activeNames(child));
+                () -> "the --add-skills resolution was not loaded onto the child: " + ext.activeNames(child));
         assertEquals(Set.of(), ext.activeNames(parent),
                 "the parent's selection must not be touched by the child spawn");
     }
@@ -207,36 +218,77 @@ public class NaruSkillsSpawnTest {
     }
 
     @Test
-    public void aClashingRequirementWarnsNamingWhatIsMissingOrHeld() {
-        publicSkill("fs-aware", "{ requires: \"fs & !write\" }", "fs only, never write");
+    public void aSpawnPolicySeedsItsSkillsOntoTheChild() {
+        publicSkill("code-review", null, "review with care");
         NaruTask parent = task();
+        session.defineSpawnPolicy(new NaruSpawnPolicy("review-safe").addSkills("code-review"));
 
-        // the child holds write (so the !write clause is violated) but not fs (so the
-        // positive clause is violated too) — both sides of the fix hint appear
-        NaruTask child = spawn(parent, NaruTaskSpec.of().addTags("write").addSkills("fs-aware"));
+        NaruTask child = spawn(parent, NaruTaskSpec.of().policy("review-safe"));
 
-        assertEquals(Set.of("fs-aware"), ext.activeNames(child),
-                "the skill must still load; the warning is a warning, not a refusal");
-        assertTrue(outputs.stream().anyMatch(o -> o.message().toString().contains("skill 'fs-aware' requires fs")),
-                () -> "expected the spawn-time inconsistency warning: " + outputs);
-        assertTrue(outputs.stream().anyMatch(o -> o.message().toString().contains("lacks fs")),
-                () -> "the warning must name the missing tag: " + outputs);
-        assertTrue(outputs.stream().anyMatch(o -> o.message().toString().contains("holds write")),
-                () -> "the warning must name the conflicting held tag: " + outputs);
-        assertTrue(outputs.stream().anyMatch(o -> o.message().toString().contains("--add-tags")),
-                () -> "the warning must point at the fixing flags: " + outputs);
+        assertEquals(Set.of("code-review"), ext.activeNames(child),
+                () -> "the policy's skills must seed the child: " + ext.activeNames(child));
     }
 
     @Test
-    public void aSatisfiedRequirementLoadsSilently() {
+    public void aContractSeedsItsSkillsOntoTheChild() {
+        publicSkill("code-review", null, "review with care");
+        NaruTask parent = task();
+        NaruSpawnContract contract = NaruSpawnContract.parse("{ skills: [\"code-review\"] }");
+
+        NaruTask child = spawn(parent, NaruTaskSpec.of().contract(contract));
+
+        assertEquals(Set.of("code-review"), ext.activeNames(child),
+                () -> "the contract's skills must seed the child: " + ext.activeNames(child));
+    }
+
+    // ── requires is evaluated at request-build time, never at spawn ───────
+
+    @Test
+    public void spawnNeverWarnsAboutRequiresEvenWhenItClashes() {
+        publicSkill("fs-aware", "{ requires: \"!write\" }", "fs only, never write");
+        NaruTask parent = task();
+        // the default task holds write, which the skill forbids — yet spawning must not
+        // complain: the gate is a request-time concern, not a spawn-time refusal
+        NaruTask child = spawn(parent, NaruTaskSpec.of().addSkills("fs-aware"));
+
+        assertEquals(Set.of("fs-aware"), ext.activeNames(child),
+                "the skill must still load; requires is not a spawn-time rejection");
+        assertTrue(outputs.stream().noneMatch(o -> o.message().toString().contains("requires")),
+                () -> "spawn-time must not mention requires at all: " + outputs);
+        assertTrue(outputs.stream().noneMatch(o -> o.message().toString().contains("--add-tags")),
+                () -> "the spawn-time fixing hint is gone: " + outputs);
+    }
+
+    @Test
+    public void theRequestBuildInjectTheGatedBodyOnlyWhenSatisfied() {
         publicSkill("fs-aware", "{ requires: \"write\" }", "write only");
         NaruTask parent = task();
 
-        // the requirement is checked against the CHILD's resolved tags, so the spawn must grant it
+        // the child holds write, so the request-build gate opens and the body is injected
         NaruTask child = spawn(parent, NaruTaskSpec.of().addTags("write").addSkills("fs-aware"));
+        assertTrue(ext.contribute(child).stream()
+                        .anyMatch(m -> m.getContent().contains("## ACTIVE SKILL DIRECTIVE: FS-AWARE")),
+                () -> "a satisfied requirement must inject the body: " + ext.contribute(child));
+    }
 
-        assertEquals(Set.of("fs-aware"), ext.activeNames(child));
-        assertTrue(outputs.stream().noneMatch(o -> o.message().toString().contains("inconsistent")),
-                () -> "a satisfied requirement must not warn: " + outputs);
+    @Test
+    public void revokingATagWhileTheSkillIsLoadedLeavesItLoadedButGated() {
+        publicSkill("fs-aware", "{ requires: \"write\" }", "write only");
+        NaruTask parent = task();
+        NaruTask child = spawn(parent, NaruTaskSpec.of().addTags("write").addSkills("fs-aware"));
+        assertTrue(ext.contribute(child).stream()
+                .anyMatch(m -> m.getContent().contains("ACTIVE SKILL DIRECTIVE")),
+                "precondition: before the revoke the body is injected");
+
+        child.removeToolTag("write");
+
+        // decision 4: still LOADED — the tag revocation does not unload the skill
+        assertEquals(NaruSkillState.LOADED, ext.state(child, "fs-aware"));
+        assertTrue(ext.contribute(child).stream()
+                        .anyMatch(m -> m.getContent().contains("## SKILL REQUIRES GATE (UNSATISFIED): FS-AWARE")),
+                () -> "the revoked tag must gate the body at request-build: " + ext.contribute(child));
+        assertTrue(ext.contribute(child).stream()
+                        .noneMatch(m -> m.getContent().contains("## ACTIVE SKILL DIRECTIVE: FS-AWARE")),
+                "the gated body must not be injected");
     }
 }

@@ -1,212 +1,297 @@
 package net.thevpc.naru.ext.skills;
 
-import net.thevpc.naru.api.agent.NaruVisibility;
-import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.spawn.NaruToolTagExpression;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.elem.NObjectElement;
+import net.thevpc.nuts.elem.NPairElement;
+import net.thevpc.nuts.elem.NPrimitiveElement;
+import net.thevpc.nuts.elem.NStringElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NNameFormat;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Filesystem-backed skill resolution.
+ * Filesystem-backed skill resolution, snapshot-based (v2).
  * <p>
- * A public skill lives at {@code <project>/.naru/skills/<name>.md} and a private one at
- * {@code <project>/.naru/local/skills/<name>.md}. Private shadows public: a project
- * checking in a public copy cannot override a developer's local edit, so the local file
- * wins outright rather than the two being concatenated.
+ * A skill lives either in the legacy flat form {@code <root>/<name>.md} or the
+ * open-standard folder form {@code <root>/<name>/SKILL.md} (falling back to
+ * {@code skill.md}), where {@code <root>} is {@code <project>/.naru/skills} (public) or
+ * {@code <project>/.naru/local/skills} (private). Within one root the folder form beats
+ * the flat form; across roots private shadows public and there is no merge.
+ * <p>
+ * Every {@link NaruSkill} returned is an immutable snapshot holding the content hash and
+ * body of the file as read when the snapshot was built. {@code available()} and
+ * {@link #findSkill(String)} serve the cached snapshot and never touch the disk:
+ * request-time contribution is therefore disk-free. {@link #reload()} deliberately
+ * rebuilds the snapshot, and the doctor command compares snapshot hashes to the current
+ * files so a silent edit is reported rather than silently applied.
  * <p>
  * Depends only on {@link NaruSession#projectDir()}, so this extension needs nothing from
  * {@code naru-impl}.
  */
 class NaruSkillManagerImpl implements NaruSkillManager {
     private final NaruSession session;
+    private Map<String, NaruSkill> cache = new HashMap<>();
 
     NaruSkillManagerImpl(NaruSession session) {
         this.session = session;
     }
 
+    // ── discovery snapshot ─────────────────────────────────────────────────
+
     @Override
-    public List<NaruResourceInfo> available() {
-        Map<String, NaruResourceInfo> a = new HashMap<>();
-        for (NPath p : skillFiles(NaruVisibility.PUBLIC)) {
-            String goodName = NNameFormat.LOWER_KEBAB_CASE.format(skillNameFromPath(p));
-            NaruResourceInfo s = a.computeIfAbsent(goodName, x -> new NaruResourceInfo().setName(goodName));
-            s.setVisibility(NaruVisibility.PUBLIC);
-            s.setCreationInstant(p.creationInstant());
-            s.setModificationInstant(p.lastModifiedInstant());
-        }
-        for (NPath p : skillFiles(NaruVisibility.PRIVATE)) {
-            String goodName = NNameFormat.LOWER_KEBAB_CASE.format(skillNameFromPath(p));
-            NaruResourceInfo s = a.computeIfAbsent(goodName, x -> new NaruResourceInfo().setName(goodName));
-            // private wins
-            s.setVisibility(NaruVisibility.PRIVATE);
-            s.setCreationInstant(p.creationInstant());
-            s.setModificationInstant(p.lastModifiedInstant());
-        }
-        return a.values().stream()
-                .sorted(Comparator.comparing(NaruResourceInfo::getName))
+    public List<NaruSkill> available() {
+        return cache.values().stream()
+                .sorted(Comparator.comparing(NaruSkill::getName))
                 .collect(Collectors.toList());
     }
 
-    private static boolean isValidSkillName(NPath x) {
-        return x.name().endsWith(".md");
+    @Override
+    public NaruSkill findSkill(String name) {
+        String canonical = canonicalName(name);
+        return canonical == null ? null : cache.get(canonical);
     }
 
-    private static String skillNameFromPath(NPath p) {
-        return p.name().substring(0, p.name().length() - 3);
+    @Override
+    public NaruSkill reload(String name) {
+        String canonical = canonicalName(name);
+        if (canonical == null) {
+            return null;
+        }
+        Map<String, SkillEntry> found = new HashMap<>();
+        collect(rootDir(NaruVisibility.PUBLIC), NaruVisibility.PUBLIC, canonical, found);
+        collect(rootDir(NaruVisibility.PRIVATE), NaruVisibility.PRIVATE, canonical, found);
+        SkillEntry entry = found.get(canonical);
+        NaruSkill skill = entry == null ? null : readSkill(canonical, entry);
+        if (skill == null) {
+            cache.remove(canonical);
+            return null;
+        }
+        cache.put(canonical, skill);
+        return skill;
     }
 
-    private NPath skillsDir(NaruVisibility visibility) {
+    @Override
+    public NaruSkill read(String name) {
+        String canonical = canonicalName(name);
+        if (canonical == null) {
+            return null;
+        }
+        Map<String, SkillEntry> found = new HashMap<>();
+        collect(rootDir(NaruVisibility.PUBLIC), NaruVisibility.PUBLIC, canonical, found);
+        collect(rootDir(NaruVisibility.PRIVATE), NaruVisibility.PRIVATE, canonical, found);
+        SkillEntry entry = found.get(canonical);
+        return entry == null ? null : readSkill(canonical, entry);
+    }
+
+    @Override
+    public void reload() {
+        Map<String, SkillEntry> found = new HashMap<>();
+        collect(rootDir(NaruVisibility.PUBLIC), NaruVisibility.PUBLIC, null, found);
+        collect(rootDir(NaruVisibility.PRIVATE), NaruVisibility.PRIVATE, null, found);
+        Map<String, NaruSkill> next = new HashMap<>();
+        for (Map.Entry<String, SkillEntry> e : found.entrySet()) {
+            NaruSkill skill = readSkill(e.getKey(), e.getValue());
+            if (skill != null) {
+                next.put(e.getKey(), skill);
+            }
+        }
+        this.cache = next;
+    }
+
+    private NPath rootDir(NaruVisibility visibility) {
         if (visibility == NaruVisibility.PUBLIC) {
             return session.projectDir().resolve(".naru/skills/");
         }
         return session.projectDir().resolve(".naru/local/skills/");
     }
 
-    private List<NPath> skillFiles(NaruVisibility visibility) {
-        NPath dir = skillsDir(visibility);
-        if (!dir.isDirectory()) {
-            return List.of();
-        }
-        return dir.stream().filter(NaruSkillManagerImpl::isValidSkillName).collect(Collectors.toList());
-    }
-
     /**
-     * Resolves a name to the file (or pair of files) that define it, or null when the
-     * skill does not exist. Returns the canonical name alongside, so callers never echo
-     * back the spelling the user happened to type.
+     * Scans one skill root, filling {@code found} with the entries whose name matches
+     * {@code onlyName} (or all when null). Within a root the folder form beats the flat
+     * form when both define the same name; across roots the private copy shadows the public
+     * one (which {@link #readSkill} enforces, not this scan).
      */
-    private SkillFiles findSkillFiles(String name) {
-        if (NBlankable.isBlank(name)) {
-            return null;
+    private void collect(NPath root, NaruVisibility visibility, String onlyName, Map<String, SkillEntry> found) {
+        if (!root.isDirectory()) {
+            return;
         }
-        String canonical = NNameFormat.LOWER_KEBAB_CASE.format(name.trim());
-        SkillFiles sf = new SkillFiles();
-        sf.name = canonical;
-
-        NPath publicSkill = resolveFile(NaruVisibility.PUBLIC, canonical);
-        NPath privateSkill = resolveFile(NaruVisibility.PRIVATE, canonical);
-
-        if (publicSkill != null && privateSkill != null) {
-            // private wins: the local file replaces the checked-in one
-            sf.mode = NaruVisibility.PRIVATE;
-            sf.privateSkill = privateSkill;
-        } else if (publicSkill != null) {
-            sf.mode = NaruVisibility.PUBLIC;
-            sf.publicSkill = publicSkill;
-        } else if (privateSkill != null) {
-            sf.mode = NaruVisibility.PRIVATE;
-            sf.privateSkill = privateSkill;
-        } else {
-            return null;
-        }
-        return sf;
-    }
-
-    private NPath resolveFile(NaruVisibility visibility, String canonical) {
-        NPath exact = skillsDir(visibility).resolve(canonical + ".md");
-        if (exact.isRegularFile()) {
-            return exact;
-        }
-        // fall back to a case/separator-insensitive match, so "MySkill" finds "my-skill.md"
-        return skillFiles(visibility).stream()
-                .filter(x -> NNameFormat.equalsIgnoreFormat(skillNameFromPath(x), canonical))
-                .findFirst()
-                .orElse(null);
-    }
-
-    @Override
-    public NaruResourceInfo findSkillInfo(String name) {
-        SkillFiles sf = findSkillFiles(name);
-        if (sf == null) {
-            return null;
-        }
-        NaruResourceInfo s = new NaruResourceInfo();
-        s.setName(sf.name);
-        NPath effective = sf.publicSkill != null ? sf.publicSkill : sf.privateSkill;
-        s.setCreationInstant(effective.creationInstant());
-        s.setModificationInstant(effective.lastModifiedInstant());
-        s.setVisibility(sf.mode);
-        return s;
-    }
-
-    @Override
-    public NaruSkill findSkill(String name) {
-        SkillFiles sf = findSkillFiles(name);
-        if (sf == null) {
-            return null;
-        }
-        List<String> lines = new ArrayList<>();
-        Set<String> sources = new HashSet<>();
-        NaruToolTagExpression requires = null;
-        if (sf.publicSkill != null) {
-            sources.add(sf.publicSkill.toString());
-            lines.addAll(bodyLines(sf.publicSkill));
-            requires = requiresOf(sf.publicSkill);
-        }
-        if (sf.privateSkill != null) {
-            sources.add(sf.privateSkill.toString());
-            lines.addAll(bodyLines(sf.privateSkill));
-            // the private copy wins on requirements too
-            NaruToolTagExpression privateRequires = requiresOf(sf.privateSkill);
-            if (privateRequires != null) {
-                requires = privateRequires;
+        for (NPath child : root.stream().sorted(Comparator.comparing(NPath::name)).collect(Collectors.toList())) {
+            if (child.isRegularFile() && child.name().endsWith(".md")) {
+                String canonical = canonicalName(child.name().substring(0, child.name().length() - 3));
+                if (canonical == null || (onlyName != null && !onlyName.equals(canonical))) {
+                    continue;
+                }
+                SkillEntry e = found.computeIfAbsent(canonical, x -> new SkillEntry());
+                // two files can canonicalize to the same name (e.g. "My Skill.md" and
+                // "my-skill.md"); keep the first in sorted order and stay deterministic
+                if (visibility == NaruVisibility.PUBLIC) {
+                    if (e.publicFlat == null) {
+                        e.publicFlat = new SkillCopy(visibility, NaruSkillLayout.FLAT, child);
+                    }
+                } else if (e.privateFlat == null) {
+                    e.privateFlat = new SkillCopy(visibility, NaruSkillLayout.FLAT, child);
+                }
+            } else if (child.isDirectory()) {
+                String canonical = canonicalName(child.name());
+                if (canonical == null || (onlyName != null && !onlyName.equals(canonical))) {
+                    continue;
+                }
+                NPath md = resolveSkillMd(child);
+                if (md != null) {
+                    SkillEntry e = found.computeIfAbsent(canonical, x -> new SkillEntry());
+                    SkillCopy copy = new SkillCopy(visibility, NaruSkillLayout.FOLDER, md);
+                    if (visibility == NaruVisibility.PUBLIC) {
+                        e.publicFolder = copy;
+                    } else {
+                        e.privateFolder = copy;
+                    }
+                }
             }
         }
-        return new NaruSkillImpl(sf.name, sf.mode, lines,
-                sources.size() == 1 ? sources.iterator().next() : sources.toString(), requires);
     }
 
-    // ── front matter (WP3): --- requires: "fs & !write" --- ─────────────────
-
-    /**
-     * Splits a skill file into its optional {@code ---} front-matter header (TSON) and its
-     * body, exactly mirroring the core's {@code MarkdownWithHeader} conventions so the
-     * requirement a spawn validates is the same data the model context would merge.
-     */
-    private static String[] headerAndBody(NPath file) {
-        String raw;
-        try {
-            raw = file.readString(java.nio.charset.StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            return new String[]{null, null};
+    private static NPath resolveSkillMd(NPath dir) {
+        NPath upper = dir.resolve("SKILL.md");
+        if (upper.isRegularFile()) {
+            return upper;
         }
+        NPath lower = dir.resolve("skill.md");
+        return lower.isRegularFile() ? lower : null;
+    }
+
+    // ── reading one skill ──────────────────────────────────────────────────
+
+    private NaruSkill readSkill(String canonical, SkillEntry entry) {
+        SkillCopy win = entry.privateCopy() != null ? entry.privateCopy() : entry.publicCopy();
+        if (win == null) {
+            return null;
+        }
+        boolean shadowed = entry.publicCopy() != null && entry.privateCopy() != null;
+        NPath root = rootDir(win.visibility);
+        String originRoot = root.toString();
+        String baseDir = win.layout == NaruSkillLayout.FOLDER
+                ? win.file.parent().toString()
+                : root.toString();
+
+        List<String> warnings = new ArrayList<>();
+        String raw = readAll(win.file);
+        String contentHash = "";
+        String headerText = null;
+        List<String> bodyLines = new ArrayList<>();
+        Map<String, Object> frontMatter = new LinkedHashMap<>();
         if (raw == null) {
-            return new String[]{null, null};
+            warnings.add("cannot read '" + win.file + "'");
+        } else {
+            contentHash = sha256(raw);
+            Header body = splitHeader(raw);
+            headerText = body.header;
+            bodyLines = body.bodyLines;
+            if (body.unterminatedHeader) {
+                warnings.add("skill '" + canonical + "' has an unterminated '---' front-matter block");
+            }
+            frontMatter = parseFrontMatter(canonical, win, headerText, warnings);
         }
-        String t = raw.trim();
-        if (!t.startsWith("---")) {
-            return new String[]{null, t};
+
+        String description = textOf(frontMatter, "description");
+        if (NBlankable.isBlank(description)) {
+            if (win.layout == NaruSkillLayout.FLAT) {
+                description = firstParagraph(bodyLines);
+            } else {
+                warnings.add("skill '" + canonical + "' has no front-matter 'description' (the open standard requires one)");
+                description = "";
+            }
+        } else {
+            description = description.trim();
         }
-        int x = t.indexOf("---", 3);
-        if (x <= 0) {
-            return new String[]{null, t};
+
+        NaruToolTagExpression requires = parseRequires(canonical, frontMatter, warnings);
+
+        return new NaruSkillImpl(canonical, win.visibility, shadowed, win.layout,
+                win.file.toString(), originRoot, baseDir, description, contentHash,
+                frontMatter, requires, warnings, bodyLines);
+    }
+
+    private static String readAll(NPath file) {
+        try {
+            return file.readString(StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
         }
-        return new String[]{t.substring(3, x).trim(), t.substring(x + 3).trim()};
+    }
+
+    private static String sha256(String raw) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = md.digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     /**
-     * The skill body without its front-matter, split into lines the same way
-     * {@link NPath#lines()} presents them (no trailing empty line).
+     * Splits raw file text into the optional {@code ---}-delimited front-matter header and
+     * the body. A first line that is not {@code ---} means no header (legacy flat files);
+     * a header that never closes is reported by the caller as a warning and the whole file
+     * is treated as body.
      */
-    private static List<String> bodyLines(NPath file) {
-        String body = headerAndBody(file)[1];
+    private static Header splitHeader(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return new Header(null, new ArrayList<>(), false);
+        }
+        List<String> lines = new ArrayList<>(List.of(raw.split("\n", -1)));
+        if (lines.isEmpty() || !lines.get(0).trim().equals("---")) {
+            return new Header(null, splitLines(raw), false);
+        }
+        int close = -1;
+        for (int i = 1; i < lines.size(); i++) {
+            if (lines.get(i).trim().equals("---")) {
+                close = i;
+                break;
+            }
+        }
+        if (close <= 0) {
+            return new Header(null, splitLines(raw), true);
+        }
+        StringBuilder header = new StringBuilder();
+        for (int i = 1; i < close; i++) {
+            if (i > 1) {
+                header.append('\n');
+            }
+            header.append(lines.get(i));
+        }
+        StringBuilder body = new StringBuilder();
+        for (int i = close + 1; i < lines.size(); i++) {
+            body.append(lines.get(i));
+            if (i < lines.size() - 1) {
+                body.append('\n');
+            }
+        }
+        return new Header(header.toString(), splitLines(body.toString()), false);
+    }
+
+    private static List<String> splitLines(String body) {
         if (body == null || body.isEmpty()) {
-            return List.of();
+            return new ArrayList<>();
         }
         List<String> out = new ArrayList<>();
         for (String line : body.split("\r?\n")) {
@@ -219,48 +304,160 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     }
 
     /**
-     * The tag expression of the skill's {@code requires} front-matter key, or null.
-     * A malformed expression is treated as absent: the skill still loads, it just imposes
-     * no spawn-time requirement (a hard failure would make one broken file hide every
-     * working skill).
+     * Lenient YAML front-matter parsing: never rejects a skill. Malformed YAML, a
+     * non-mapping header, a {@code name} that disagrees with the file/folder, and a
+     * missing {@code description} on a folder skill all produce warnings instead.
      */
-    private static NaruToolTagExpression requiresOf(NPath file) {
-        String header = headerAndBody(file)[0];
-        if (NBlankable.isBlank(header)) {
+    private static Map<String, Object> parseFrontMatter(String canonical, SkillCopy win,
+                                                        String headerText, List<String> warnings) {
+        if (NBlankable.isBlank(headerText)) {
+            if (win.layout == NaruSkillLayout.FOLDER) {
+                warnings.add("skill '" + canonical + "' has no YAML front-matter (the open standard requires name+description)");
+            }
+            return new LinkedHashMap<>();
+        }
+        Map<String, Object> map = new LinkedHashMap<>();
+        try {
+            NElement el = NElementReader.ofYaml().read(headerText);
+            NObjectElement obj = el == null ? null : el.asObject().orNull();
+            if (obj == null) {
+                warnings.add("skill '" + canonical + "' front-matter is not a YAML mapping");
+                return new LinkedHashMap<>();
+            }
+            for (NElement child : obj.children()) {
+                if (child.isPair()) {
+                    NPairElement pair = child.asPair().get();
+                    map.put(keyString(pair.key()), convertValue(pair.value()));
+                }
+            }
+        } catch (Exception e) {
+            warnings.add("skill '" + canonical + "' has invalid YAML front-matter: " + e.getMessage());
+            return new LinkedHashMap<>();
+        }
+        String fmName = textOf(map, "name");
+        if (!NBlankable.isBlank(fmName)) {
+            String fmCanonical = canonicalName(fmName);
+            if (fmCanonical == null) {
+                warnings.add("skill '" + canonical + "' front-matter name '" + fmName + "' is not a valid lower-kebab name");
+            } else if (!fmCanonical.equals(canonical)) {
+                warnings.add("skill '" + canonical + "' front-matter name '" + fmName + "' does not match the file/folder name");
+            }
+        }
+        return map;
+    }
+
+    private static NaruToolTagExpression parseRequires(String canonical, Map<String, Object> frontMatter,
+                                                       List<String> warnings) {
+        String expr = textOf(frontMatter, "requires");
+        if (NBlankable.isBlank(expr)) {
             return null;
         }
         try {
-            NElement el = NElementReader.ofTson().read(header);
-            List<NElement> children = new ArrayList<>();
-            NListContainerElement list = el.asListContainer().orNull();
-            if (list != null) {
-                children.addAll(list.children());
-            } else {
-                NObjectElement obj = el.asObject().orNull();
-                if (obj != null) {
-                    children.addAll(obj.children());
-                }
-            }
-            for (NElement child : children) {
-                String key = child.isPair() ? child.asPair().get().key().asStringValue().orNull() : null;
-                if ("requires".equals(key)) {
-                    String expr = child.asPair().get().value().asStringValue().orNull();
-                    if (NBlankable.isBlank(expr)) {
-                        return null;
-                    }
-                    return NaruToolTagExpression.parse(expr);
-                }
-            }
-        } catch (Exception ignore) {
-            // absent requirement, see javadoc
+            return NaruToolTagExpression.parse(expr.trim());
+        } catch (IllegalArgumentException e) {
+            warnings.add("skill '" + canonical + "' has an invalid 'requires' expression '" + expr + "': " + e.getMessage());
+            return null;
         }
-        return null;
     }
 
-    private static class SkillFiles {
-        String name;
-        NaruVisibility mode;
-        NPath publicSkill;
-        NPath privateSkill;
+    private static String keyString(NElement key) {
+        String s = key == null ? null : key.asStringValue().orNull();
+        return s == null && key != null ? key.toString() : s;
+    }
+
+    private static Object convertValue(NElement v) {
+        if (v == null) {
+            return null;
+        }
+        NObjectElement o = v.asObject().orNull();
+        if (o != null) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            for (NElement child : o.children()) {
+                if (child.isPair()) {
+                    NPairElement pair = child.asPair().get();
+                    m.put(keyString(pair.key()), convertValue(pair.value()));
+                }
+            }
+            return m;
+        }
+        NListContainerElement list = v.asListContainer().orNull();
+        if (list != null) {
+            List<Object> out = new ArrayList<>();
+            for (NElement c : list.children()) {
+                out.add(convertValue(c));
+            }
+            return out;
+        }
+        NPrimitiveElement p = v.asPrimitive().orNull();
+        if (p != null && p.value() != null) {
+            return String.valueOf(p.value());
+        }
+        NStringElement s = v.asString().orNull();
+        if (s != null) {
+            return s.rawValue();
+        }
+        String sv = v.asStringValue().orNull();
+        return sv == null ? v.toString() : sv;
+    }
+
+    private static String textOf(Map<String, Object> frontMatter, String key) {
+        Object v = frontMatter.get(key);
+        return v instanceof String s ? s : null;
+    }
+
+    private static String firstParagraph(List<String> lines) {
+        StringBuilder sb = new StringBuilder();
+        for (String line : lines) {
+            String t = line == null ? "" : line.trim();
+            if (t.isEmpty()) {
+                if (sb.length() > 0) {
+                    break;
+                }
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(t);
+        }
+        return sb.toString();
+    }
+
+    private static String canonicalName(String name) {
+        if (NBlankable.isBlank(name)) {
+            return null;
+        }
+        String canonical = NNameFormat.LOWER_KEBAB_CASE.format(name.trim());
+        return canonical.isEmpty() ? null : canonical;
+    }
+
+    private record Header(String header, List<String> bodyLines, boolean unterminatedHeader) {
+    }
+
+    private static class SkillCopy {
+        final NaruVisibility visibility;
+        final NaruSkillLayout layout;
+        final NPath file;
+
+        SkillCopy(NaruVisibility visibility, NaruSkillLayout layout, NPath file) {
+            this.visibility = visibility;
+            this.layout = layout;
+            this.file = file;
+        }
+    }
+
+    private static class SkillEntry {
+        SkillCopy publicFlat;
+        SkillCopy privateFlat;
+        SkillCopy publicFolder;
+        SkillCopy privateFolder;
+
+        SkillCopy publicCopy() {
+            return publicFolder != null ? publicFolder : publicFlat;
+        }
+
+        SkillCopy privateCopy() {
+            return privateFolder != null ? privateFolder : privateFlat;
+        }
     }
 }

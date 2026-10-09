@@ -5,29 +5,49 @@ import net.thevpc.naru.api.spawn.NaruToolTagExpression;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.IntPredicate;
 
 class NaruSkillImpl implements NaruSkill {
     private final String name;
     private final String sourceName;
+    private final String originRoot;
+    private final String baseDir;
     private final NaruVisibility visibility;
+    private final boolean shadowed;
+    private final NaruSkillLayout layout;
+    private final String description;
+    private final String contentHash;
+    private final Map<String, Object> frontMatter;
+    private final List<String> warnings;
     private final List<String> lines = new ArrayList<>();
     private final NaruToolTagExpression requires;
 
-    NaruSkillImpl(String name, NaruVisibility visibility, List<String> lines, String sourceName) {
-        this(name, visibility, lines, sourceName, null);
-    }
-
-    NaruSkillImpl(String name, NaruVisibility visibility, List<String> lines, String sourceName,
-                  NaruToolTagExpression requires) {
+    NaruSkillImpl(String name, NaruVisibility visibility, boolean shadowed, NaruSkillLayout layout,
+                  String sourceName, String originRoot, String baseDir, String description,
+                  String contentHash, Map<String, Object> frontMatter,
+                  NaruToolTagExpression requires, List<String> warnings, List<String> lines) {
         this.name = name;
-        this.sourceName = sourceName;
         this.visibility = visibility;
+        this.shadowed = shadowed;
+        this.layout = layout;
+        this.sourceName = sourceName;
+        this.originRoot = originRoot;
+        this.baseDir = baseDir;
+        this.description = description == null ? "" : description;
+        this.contentHash = contentHash;
+        this.frontMatter = Collections.unmodifiableMap(
+                frontMatter == null ? Map.of() : new LinkedHashMap<>(frontMatter));
         this.requires = requires;
-        this.lines.addAll(lines);
+        this.warnings = Collections.unmodifiableList(
+                warnings == null ? List.of() : new ArrayList<>(warnings));
+        if (lines != null) {
+            this.lines.addAll(lines);
+        }
     }
 
     @Override
@@ -38,6 +58,60 @@ class NaruSkillImpl implements NaruSkill {
     @Override
     public NaruVisibility getVisibility() {
         return visibility;
+    }
+
+    @Override
+    public boolean isShadowed() {
+        return shadowed;
+    }
+
+    @Override
+    public NaruSkillLayout getLayout() {
+        return layout;
+    }
+
+    @Override
+    public String getOriginRoot() {
+        return originRoot;
+    }
+
+    @Override
+    public String getBaseDir() {
+        return baseDir;
+    }
+
+    @Override
+    public String getDescription() {
+        return description;
+    }
+
+    @Override
+    public Map<String, Object> getFrontMatter() {
+        return frontMatter;
+    }
+
+    @Override
+    public String getContentHash() {
+        return contentHash;
+    }
+
+    @Override
+    public Set<String> getAllowedTools() {
+        Set<String> out = new LinkedHashSet<>();
+        Object at = frontMatter.get("allowed-tools");
+        if (at instanceof String s) {
+            for (String tok : s.trim().split("\\s+")) {
+                if (!tok.isEmpty()) {
+                    out.add(tok);
+                }
+            }
+        }
+        return Collections.unmodifiableSet(out);
+    }
+
+    @Override
+    public List<String> getWarnings() {
+        return warnings;
     }
 
     @Override
