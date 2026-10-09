@@ -160,7 +160,7 @@ public class NaruProjectInitializationTest {
         initHook(other, "project-marker");
         NaruTaskImpl task = newTask(projectDir);
 
-        session.setProjectDir(other);
+        session.projectDir(other);
 
         assertEquals(other.normalize(), session.projectDir());
         assertEquals(0, countMarker(task, "project-marker"),

@@ -87,8 +87,8 @@ public class NaruSkillsToolTest {
         agent.projectDirectory(projectDir);
         session = new NaruSessionImpl(agent, projectDir, null, true, NOOP_LISTENER, null, null, null);
         ext = NaruSkillsExtension.skills(session);
-        publicFlat("javadoc", "use javadoc style", "always document public API");
-        publicFlat("git-flow", "follow git flow");
+        publicFolder("javadoc", "name: javadoc\ndescription: use javadoc style", "always document public API");
+        publicFolder("git-flow", "name: git-flow\ndescription: follow git flow", "follow git flow");
         ext.reload();
     }
 
@@ -105,11 +105,20 @@ public class NaruSkillsToolTest {
 
     // ── fixtures ────────────────────────────────────────────────────────────
 
-    private void publicFlat(String name, String... lines) {
-        write(projectDir.resolve(".naru/skills/" + name + ".md"), lines);
+    private void publicFolder(String name, String frontMatter, String... body) {
+        writeFolder(".naru/skills", name, frontMatter, body);
     }
 
-    private void publicFolder(String name, String frontMatter, String... body) {
+    private void foreignFolder(String foreignDir, String name, String... body) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("---\nname: ").append(name).append("\ndescription: ").append(name).append(" description\n---\n");
+        for (String l : body) {
+            sb.append(l).append('\n');
+        }
+        write(projectDir.resolve(foreignDir + "/" + name + "/SKILL.md"), sb.toString().split("\n", -1));
+    }
+
+    private void writeFolder(String root, String name, String frontMatter, String... body) {
         StringBuilder sb = new StringBuilder();
         if (frontMatter != null) {
             sb.append("---\n").append(frontMatter).append("\n---\n");
@@ -117,7 +126,7 @@ public class NaruSkillsToolTest {
         for (String l : body) {
             sb.append(l).append('\n');
         }
-        write(projectDir.resolve(".naru/skills/" + name + "/SKILL.md"), sb.toString().split("\n", -1));
+        write(projectDir.resolve(root + "/" + name + "/SKILL.md"), sb.toString().split("\n", -1));
     }
 
     private static void write(NPath file, String... lines) {
@@ -208,7 +217,7 @@ public class NaruSkillsToolTest {
 
     @Test
     public void aModelLoadPropagatesToTheLiveChildren() {
-        publicFlat("git-flow", "follow git flow");
+        publicFolder("git-flow", "name: git-flow\ndescription: follow git flow", "follow git flow");
         ext.reload();
         NaruTask parent = taskWithSkillsTag();
         NaruTask child = session.newTask(NaruTaskSpec.of().parentId(parent.id()));
@@ -234,7 +243,7 @@ public class NaruSkillsToolTest {
 
     @Test
     public void aForeignSkillIsFramedAsUntrustedInTheToolResult() {
-        write(projectDir.resolve(".claude/skills/legacy.md"), "legacy instructions");
+        foreignFolder(".claude/skills", "legacy", "legacy instructions");
         ext.reload();
         NaruTask t = taskWithSkillsTag();
         NaruSkillRoot claude = root(ext.roots(t), "claude");
@@ -249,7 +258,7 @@ public class NaruSkillsToolTest {
 
     @Test
     public void aForeignBodyIsFramedAsUntrustedInTheContribution() {
-        write(projectDir.resolve(".claude/skills/legacy.md"), "legacy instructions");
+        foreignFolder(".claude/skills", "legacy", "legacy instructions");
         ext.reload();
         NaruTask t = taskWithSkillsTag();
         ext.trust(root(ext.roots(t), "claude"), true);

@@ -17,7 +17,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -93,9 +92,9 @@ public class NaruSkillsProjectChangeTest {
     }
 
     private static void skill(NPath base, String name) {
-        NPath file = base.resolve(".naru/skills/" + name + ".md");
+        NPath file = base.resolve(".naru/skills/" + name + "/SKILL.md");
         file.mkParentDirs();
-        file.writeString(name + " body\n");
+        file.writeString("---\nname: " + name + "\ndescription: " + name + " description\n---\n" + name + " body\n");
     }
 
     private Set<String> availableNames() {
@@ -117,7 +116,7 @@ public class NaruSkillsProjectChangeTest {
         assertFalse(availableNames().contains(beta), "beta is not available before the change");
         assertTrue(ext.load(task, alpha), "alpha is loaded for the task");
 
-        session.setProjectDir(other);
+        session.projectDir(other);
 
         Set<String> after = availableNames();
         assertTrue(after.contains(beta), "beta becomes available at the new root: " + after);

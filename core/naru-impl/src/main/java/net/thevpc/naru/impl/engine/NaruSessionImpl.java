@@ -627,7 +627,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NaruSession setName(String name) {
+    public NaruSession name(String name) {
         ensureNotStopped();
         this.name = NStringUtils.firstNonBlankStripped(name, "NO_NAME");
         this.fireChanged();
@@ -1562,7 +1562,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return workingDir;
     }
 
-    public NaruSession setWorkingDir(NPath workingDir) {
+    public NaruSession workingDir(NPath workingDir) {
         ensureNotStopped();
         NPath nf = workingDir.toAbsolute(this.workingDir);
         if (!nf.equals(this.workingDir)) {
@@ -1629,7 +1629,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * {@link NaruTask#runInitHooks} once after this returns.
      */
     @Override
-    public NaruSession setProjectDir(NPath projectDir) {
+    public NaruSession projectDir(NPath projectDir) {
         ensureNotStopped();
         NPath nf = projectDir.toAbsolute(this.projectDir).normalize();
         NPath old = this.projectDir;
@@ -2099,7 +2099,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
 
     @Override
-    public Map<String, Object> getSessionEnv() {
+    public Map<String, Object> sessionEnv() {
         return env.entrySet().stream().collect(Collectors.toMap(x -> x.getKey(), x -> x.getValue().orNull()));
     }
 

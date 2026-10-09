@@ -48,7 +48,7 @@ public class NaruProjectDirective extends NaruDirectiveBase {
                     return NaruStmtResult.ofError(msg.toString());
                 }
                 NPath old = session.projectDir();
-                session.setProjectDir(target);
+                session.projectDir(target);
                 // exactly once per /project: the workspace init, read from the new root
                 task.runInitHooks(NaruEvent.PROJECT_CHANGE);
                 NPath now = session.projectDir();

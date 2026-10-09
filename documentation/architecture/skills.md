@@ -353,8 +353,7 @@ current tags are the ones that matter).
 
 | File | Role |
 |---|---|
-| `.../NaruSkill.java`, `NaruSkillImpl.java` | value type: name, visibility, shadowed, layout, source/base dirs, front-matter, `requires`, body |
-| `.../NaruSkillLayout.java` | flat vs folder |
+| `.../NaruSkill.java`, `NaruSkillImpl.java` | value type: name, visibility, shadowed, source/base dirs, front-matter, `requires`, body |
 | `.../NaruSkillRoot.java`, `NaruSkillRootKind.java` | a root: kind, path, label, precedence, trust state |
 | `.../NaruSkillEntry.java` | one copy in a listing (winner or shadowed loser) |
 | `.../NaruSkillTrustStore.java` | per-scope TSON persistence of foreign-root trust |

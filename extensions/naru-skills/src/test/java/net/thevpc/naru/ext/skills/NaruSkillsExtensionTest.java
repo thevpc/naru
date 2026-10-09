@@ -35,8 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The skills feature now that it lives in an extension: v2 discovery (folder and flat
- * layouts, snapshots, reload), the flat per-task selection with ADVERTISED default and
+ * The skills feature now that it lives in an extension: v2 discovery (the open-standard
+ * folder layout, snapshots, reload), the flat per-task selection with ADVERTISED default and
  * LOADED on request, requires gating at request-build time, the persisted round trip, and
  * the v1→v2 migration.
  *
@@ -88,9 +88,9 @@ public class NaruSkillsExtensionTest {
     @BeforeEach
     public void setUp() {
         projectDir = NPath.ofTempFolder("naru-skills-" + System.nanoTime());
-        publicFlat("javadoc", "use javadoc style", "always document public API");
-        publicFlat("git-flow", "follow git flow");
-        privateFlat("javadoc", "PRIVATE javadoc rules");
+        publicSkill("javadoc", "use javadoc style", "always document public API");
+        publicSkill("git-flow", "follow git flow", "follow git flow");
+        privateSkill("javadoc", "PRIVATE javadoc rules", "PRIVATE javadoc rules");
         NaruAgent agent = new NaruAgentImpl();
         agent.projectDirectory(projectDir);
         session = new NaruSessionImpl(agent, projectDir, null, true, NOOP_LISTENER, null, null, null);
@@ -109,12 +109,12 @@ public class NaruSkillsExtensionTest {
 
     // ── fixtures ────────────────────────────────────────────────────────────
 
-    private void publicFlat(String name, String... lines) {
-        write(projectDir.resolve(".naru/skills/" + name + ".md"), lines);
+    private void publicSkill(String name, String description, String... body) {
+        publicFolder(name, "name: " + name + "\ndescription: " + description, body);
     }
 
-    private void privateFlat(String name, String... lines) {
-        write(projectDir.resolve(".naru/local/skills/" + name + ".md"), lines);
+    private void privateSkill(String name, String description, String... body) {
+        privateFolder(name, "name: " + name + "\ndescription: " + description, body);
     }
 
     private void publicFolder(String name, Object frontMatter, String... body) {
@@ -168,21 +168,20 @@ public class NaruSkillsExtensionTest {
         ext.reload();
     }
 
-    // ── discovery: value, layout, snapshot ─────────────────────────────────
+    // ── discovery: value, snapshot ─────────────────────────────────────────
 
     @Test
-    public void publicFlatSkillIsResolvedByCanonicalName() {
+    public void publicFolderSkillIsResolvedByCanonicalName() {
         NaruSkill s = ext.skills().findSkill("git-flow");
         assertNotNull(s);
         assertEquals("git-flow", s.getName());
         assertEquals(NaruVisibility.PUBLIC, s.getVisibility());
-        assertEquals(NaruSkillLayout.FLAT, s.getLayout());
         assertEquals(List.of("follow git flow"), s.getLines());
-        // no front-matter: the description is the first paragraph of the body
+        // the description comes from the front-matter required by the open standard
         assertEquals("follow git flow", s.getDescription());
-        // origin root and base dir both point at the public root for a flat file
+        // origin root is the skills root, base dir is the skill folder
         assertTrue(s.getOriginRoot().endsWith(".naru/skills"), s.getOriginRoot());
-        assertEquals(s.getOriginRoot(), s.getBaseDir());
+        assertTrue(s.getBaseDir().endsWith(".naru/skills/git-flow"), s.getBaseDir());
         // snapshot: value carries the raw-content hash
         assertFalse(s.getContentHash().isEmpty());
     }
@@ -193,7 +192,6 @@ public class NaruSkillsExtensionTest {
         discover();
         NaruSkill s = ext.skills().findSkill("pdf-reader");
         assertNotNull(s);
-        assertEquals(NaruSkillLayout.FOLDER, s.getLayout());
         assertEquals("read pdf files", s.getDescription());
         assertTrue(s.getBaseDir().endsWith(".naru/skills/pdf-reader"), s.getBaseDir());
         assertTrue(s.getOriginRoot().endsWith(".naru/skills"), s.getOriginRoot());
@@ -225,7 +223,7 @@ public class NaruSkillsExtensionTest {
         assertEquals(NaruVisibility.PRIVATE, s.getVisibility());
         assertTrue(s.isShadowed(), "the private copy hides the public one, so this name must be flagged shadowed");
         assertEquals(List.of("PRIVATE javadoc rules"), s.getLines());
-        assertTrue(s.getSourceName().contains(".naru/local/skills/javadoc.md"), s.getSourceName());
+        assertTrue(s.getSourceName().contains(".naru/local/skills/javadoc/SKILL.md"), s.getSourceName());
     }
 
     @Test
@@ -252,7 +250,7 @@ public class NaruSkillsExtensionTest {
     public void theSnapshotIsServedWithoutReReadingTheDisk() {
         NaruSkill before = ext.skills().findSkill("git-flow");
         String hash = before.getContentHash();
-        publicFlat("git-flow", "CHANGED ON DISK", "but the snapshot must not see it");
+        publicSkill("git-flow", "changed on disk", "CHANGED ON DISK", "but the snapshot must not see it");
         // the manager keeps serving the snapshot it read at open()
         NaruSkill after = ext.skills().findSkill("git-flow");
         assertEquals(hash, after.getContentHash());
@@ -261,10 +259,10 @@ public class NaruSkillsExtensionTest {
 
     @Test
     public void reloadRebuildsTheSnapshotFromDisk() {
-        publicFlat("draft", "first version");
+        publicSkill("draft", "draft skill", "first version");
         discover();
         String hash1 = ext.skills().findSkill("draft").getContentHash();
-        publicFlat("draft", "second version");
+        publicSkill("draft", "draft skill", "second version");
         assertEquals(hash1, ext.skills().findSkill("draft").getContentHash(),
                 "precondition: without a reload the snapshot is stale");
 
@@ -277,7 +275,7 @@ public class NaruSkillsExtensionTest {
 
     @Test
     public void reloadOfOneNameRefreshesJustThatSkill() {
-        publicFlat("fresh", "born after the session opened");
+        publicSkill("fresh", "fresh skill", "born after the session opened");
         // the snapshot held nothing at open(); the targeted refresh finds the new file
         NaruSkill found = ext.reload("fresh");
         assertNotNull(found);
@@ -404,7 +402,7 @@ public class NaruSkillsExtensionTest {
         NaruMessage active = messages.get(0);
         assertTrue(active.getContent().contains("## ACTIVE SKILL DIRECTIVE: GIT-FLOW"), active.getContent());
         assertTrue(active.getContent().contains("follow git flow"), active.getContent());
-        assertTrue(active.getSourceName().contains(".naru/skills/git-flow.md"), active.getSourceName());
+        assertTrue(active.getSourceName().contains(".naru/skills/git-flow/SKILL.md"), active.getSourceName());
     }
 
     @Test
@@ -457,8 +455,8 @@ public class NaruSkillsExtensionTest {
     public void loadedSkillThatDisappearsFromDiskIsFlaggedNotSilentlyDropped() {
         NaruTask a = task();
         ext.load(a, "git-flow");
-        publicFlat("filler", "so the extension stays relevant", "");
-        projectDir.resolve(".naru/skills/git-flow.md").delete();
+        publicSkill("filler", "filler skill", "so the extension stays relevant");
+        projectDir.resolve(".naru/skills/git-flow/SKILL.md").delete();
         ext.reload();
         List<NaruMessage> messages = ext.contribute(a);
         assertTrue(messages.stream().anyMatch(m -> m.getContent().contains("## SKILL MISSING: GIT-FLOW")),

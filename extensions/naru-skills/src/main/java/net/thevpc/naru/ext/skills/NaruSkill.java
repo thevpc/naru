@@ -29,8 +29,6 @@ public interface NaruSkill {
     /** True when both a public and a private copy define this name (private wins). */
     boolean isShadowed();
 
-    NaruSkillLayout getLayout();
-
     /**
      * Where the content came from, for provenance in {@code /context} listings: the path of
      * the single file that supplied it (the private copy when one shadows a public one).
@@ -60,14 +58,14 @@ public interface NaruSkill {
     }
 
     /**
-     * The directory holding the skill file: the skill root for a flat {@code <name>.md}, or
-     * {@code <root>/<name>} for the open-standard folder form.
+     * The directory holding the skill file: {@code <root>/<name>} for the open-standard
+     * folder form.
      */
     String getBaseDir();
 
     /**
-     * The human-readable description: the front-matter {@code description} when present,
-     * otherwise the flat file's first paragraph. Empty when neither exists.
+     * The human-readable description: the front-matter {@code description} when present.
+     * Empty when it is missing.
      */
     String getDescription();
 

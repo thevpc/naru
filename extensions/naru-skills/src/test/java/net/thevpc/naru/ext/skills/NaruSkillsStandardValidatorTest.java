@@ -236,10 +236,9 @@ public class NaruSkillsStandardValidatorTest {
         try {
             NaruSkill s = NaruSkillsExtension.skills(session).skills().findSkill("pdf-reader");
             assertNotNull(s, "naru must load the skill the reference validator accepted");
-            // naru reports the same name, description, and layout — leniently, without warnings
+            // naru reports the same name, description, and body — leniently, without warnings
             assertEquals("pdf-reader", s.getName());
             assertEquals("Read and extract text from PDF files", s.getDescription());
-            assertEquals(NaruSkillLayout.FOLDER, s.getLayout());
             assertEquals(List.of("# pdf-reader", "extracts text"), s.getLines());
             assertEquals(List.of(), s.getWarnings());
             // no naru-extension fields here, so no requirement either

@@ -105,12 +105,23 @@ public class NaruSkillDirectiveTest {
 
     // ── fixtures ────────────────────────────────────────────────────────────
 
-    private void publicFlat(String name, String... lines) {
-        write(projectDir.resolve(".naru/skills/" + name + ".md"), lines);
+    private void publicSkill(String name, String description, String... body) {
+        publicFolder(name, "name: " + name + "\ndescription: " + description, body);
     }
 
-    private void privateFlat(String name, String... lines) {
-        write(projectDir.resolve(".naru/local/skills/" + name + ".md"), lines);
+    private void privateSkill(String name, String description, String... body) {
+        privateFolder(name, "name: " + name + "\ndescription: " + description, body);
+    }
+
+    private void privateFolder(String name, String frontMatter, String... body) {
+        StringBuilder sb = new StringBuilder();
+        if (frontMatter != null) {
+            sb.append("---\n").append(frontMatter).append("\n---\n");
+        }
+        for (String l : body) {
+            sb.append(l).append('\n');
+        }
+        write(projectDir.resolve(".naru/local/skills/" + name + "/SKILL.md"), sb.toString().split("\n", -1));
     }
 
     private void publicFolder(String name, String frontMatter, String... body) {
@@ -157,9 +168,9 @@ public class NaruSkillDirectiveTest {
 
     @Test
     public void listShowsStateOriginVisibilityShadowedAndRequiresStatus() {
-        publicFlat("git-flow", "follow git flow");
-        publicFlat("javadoc", "use javadoc style");
-        privateFlat("javadoc", "PRIVATE javadoc rules");
+        publicSkill("git-flow", "follow git flow", "follow git flow");
+        publicSkill("javadoc", "use javadoc style", "use javadoc style");
+        privateSkill("javadoc", "PRIVATE javadoc rules", "PRIVATE javadoc rules");
         ext.reload();
         NaruTask t = parent();
 
@@ -183,7 +194,7 @@ public class NaruSkillDirectiveTest {
 
     @Test
     public void listMarksLoadedSkillsAndAdvertisedDefaults() {
-        publicFlat("git-flow", "follow git flow");
+        publicSkill("git-flow", "follow git flow", "follow git flow");
         ext.reload();
         NaruTask t = parent();
         call(t, "skill", "load git-flow");
@@ -195,7 +206,7 @@ public class NaruSkillDirectiveTest {
 
     @Test
     public void availableIsAnAliasOfList() {
-        publicFlat("git-flow", "follow git flow");
+        publicSkill("git-flow", "follow git flow", "follow git flow");
         ext.reload();
         NaruTask t = parent();
         assertEquals(String.valueOf(call(t, "skill", "").successValue()),
@@ -206,7 +217,7 @@ public class NaruSkillDirectiveTest {
 
     @Test
     public void loadAndUnloadRoundTrip() {
-        publicFlat("git-flow", "follow git flow");
+        publicSkill("git-flow", "follow git flow", "follow git flow");
         ext.reload();
         NaruTask t = parent();
 
@@ -234,7 +245,7 @@ public class NaruSkillDirectiveTest {
     @Test
     public void loadFindsAFreshlyWrittenFileWithoutAFullReload() {
         NaruTask t = parent();
-        publicFlat("latecomer", "born while the session was open");
+        publicSkill("latecomer", "latecomer skill", "born while the session was open");
 
         NaruStmtResult r = call(t, "skill", "load latecomer");
 
@@ -244,7 +255,7 @@ public class NaruSkillDirectiveTest {
 
     @Test
     public void showDisplaysTheSkillBody() {
-        publicFlat("git-flow", "follow git flow");
+        publicSkill("git-flow", "follow git flow", "follow git flow");
         ext.reload();
         NaruTask t = parent();
         NaruStmtResult r = call(t, "skill", "show git-flow");
@@ -257,11 +268,11 @@ public class NaruSkillDirectiveTest {
 
     @Test
     public void reloadAppliesDiskChangesThatTheSnapshotOtherwiseKeeps() {
-        publicFlat("draft", "version one");
+        publicSkill("draft", "draft skill", "version one");
         ext.reload();
         NaruTask t = parent();
         String hash1 = ext.skills().findSkill("draft").getContentHash();
-        publicFlat("draft", "version two");
+        publicSkill("draft", "draft skill", "version two");
         // without an explicit reload the snapshot keeps serving the old content
         assertEquals(hash1, ext.skills().findSkill("draft").getContentHash());
 
@@ -271,7 +282,7 @@ public class NaruSkillDirectiveTest {
         assertFalse(hash1.equals(ext.skills().findSkill("draft").getContentHash()));
 
         // the no-name form reloads the whole snapshot
-        publicFlat("draft", "version three");
+        publicSkill("draft", "draft skill", "version three");
         call(t, "skill", "reload");
         assertEquals(List.of("version three"), ext.skills().findSkill("draft").getLines());
     }
@@ -288,12 +299,12 @@ public class NaruSkillDirectiveTest {
 
     @Test
     public void doctorReportsASilentlyChangedSkillAndClearsAfterReload() {
-        publicFlat("rules", "original rules");
+        publicSkill("rules", "rules skill", "original rules");
         ext.reload();
         NaruTask t = parent();
         call(t, "skill", "load rules");
 
-        publicFlat("rules", "edited on disk");
+        publicSkill("rules", "rules skill", "edited on disk");
         int before = outputs.size();
         NaruStmtResult r = call(t, "skill", "doctor");
         assertNull(r.errorValue(), () -> "doctor must not error: " + r);
@@ -310,11 +321,11 @@ public class NaruSkillDirectiveTest {
 
     @Test
     public void doctorReportsAMissingFileUnderASelectedName() {
-        publicFlat("rules", "original rules");
+        publicSkill("rules", "rules skill", "original rules");
         ext.reload();
         NaruTask t = parent();
         call(t, "skill", "load rules");
-        projectDir.resolve(".naru/skills/rules.md").delete();
+        projectDir.resolve(".naru/skills/rules/SKILL.md").delete();
 
         int before = outputs.size();
         call(t, "skill", "doctor");
@@ -324,7 +335,7 @@ public class NaruSkillDirectiveTest {
 
     @Test
     public void doctorReportsEmptyAndUnmappedAllowedTools() {
-        publicFlat("blank", "");
+        publicFolder("blank", "name: blank");
         publicFolder("guarded", "name: guarded\ndescription: guarded\nallowed-tools: \"nope_tool\"", "guarded body");
         ext.reload();
         NaruTask t = parent();
@@ -340,7 +351,7 @@ public class NaruSkillDirectiveTest {
 
     @Test
     public void doctorReportsAnUnmetRequirement() {
-        publicFlat("guarded", "---", "{ requires: \"write\" }", "---", "write only");
+        publicFolder("guarded", "name: guarded\ndescription: guarded\nrequires: \"write\"", "write only");
         ext.reload();
         NaruTask t = parent(); // a fresh task holds no tags, so "write" is unmet
 

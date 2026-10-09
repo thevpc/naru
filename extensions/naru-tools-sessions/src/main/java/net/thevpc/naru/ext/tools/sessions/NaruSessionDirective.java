@@ -259,7 +259,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         NaruSession session = task.session();
         NArg n = cmdLine.next().orNull();
         if(n!=null && !n.isOption() && !NBlankable.isBlank(n.image())){
-            session.setName(n.image());
+            session.name(n.image());
         }
         if (NBlankable.isBlank(session.name()) || session.name().equals("NO_NAME")) {
             List<NaruMessage> history = task.context(NaruSource.values()).messages();
@@ -272,7 +272,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                         )
                 );
                 if (chat.getMessage() != null) {
-                    session.setName(chat.getMessage().getContent());
+                    session.name(chat.getMessage().getContent());
                 }
             } catch (Exception ex) {
                 context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Unable ot evaluate session title using LLM : %s : %s", NMsg.ofStyledString(session.name()), ex));
@@ -288,7 +288,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         NaruSession session = task.session();
         String n = String.join(" ",cmdLine.toStringArray());
         if(!NBlankable.isBlank(n)){
-            session.setName(n);
+            session.name(n);
             task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved renamed : %s", NMsg.ofStyledString(session.name())));
             return NaruStmtResult.ofSuccess(null);
         }else{

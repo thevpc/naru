@@ -118,36 +118,53 @@ public class NaruSkillsRootsTest {
         file.writeString(sb.toString());
     }
 
-    private void publicFlat(String name, String... lines) {
-        write(projectDir.resolve(".naru/skills/" + name + ".md"), lines);
+    private void publicSkill(String name, String... body) {
+        folderSkill(projectDir.resolve(".naru/skills"), name, body);
     }
 
-    private void privateFlat(String name, String... lines) {
-        write(projectDir.resolve(".naru/local/skills/" + name + ".md"), lines);
+    private void privateSkill(String name, String... body) {
+        folderSkill(projectDir.resolve(".naru/local/skills"), name, body);
     }
 
-    private void foreignFlat(String label, String name, String... lines) {
-        String dir = switch (label) {
+    private void foreignSkill(String label, String name, String... body) {
+        folderSkill(projectDir.resolve(foreignProjectDir(label)), name, body);
+    }
+
+    private void foreignUserSkill(String label, String name, String... body) {
+        folderSkill(userHome.resolve(foreignUserDir(label)), name, body);
+    }
+
+    private void folderScope(String relativeDir, String name, String... body) {
+        folderSkill(projectDir.resolve(relativeDir + "/.naru/skills"), name, body);
+    }
+
+    private static String foreignProjectDir(String label) {
+        return switch (label) {
             case "claude" -> ".claude/skills";
             case "agents" -> ".agents/skills";
             case "opencode" -> ".opencode/skills";
             default -> throw new IllegalArgumentException(label);
         };
-        write(projectDir.resolve(dir + "/" + name + ".md"), lines);
     }
 
-    private void foreignUserFlat(String label, String name, String... lines) {
-        String dir = switch (label) {
+    private static String foreignUserDir(String label) {
+        return switch (label) {
             case "claude" -> ".claude/skills";
             case "agents" -> ".agents/skills";
             case "opencode" -> ".config/opencode/skills";
             default -> throw new IllegalArgumentException(label);
         };
-        write(userHome.resolve(dir + "/" + name + ".md"), lines);
     }
 
-    private void folderScope(String relativeDir, String name, String... lines) {
-        write(projectDir.resolve(relativeDir + "/.naru/skills/" + name + ".md"), lines);
+    /** Writes a standard folder skill: {@code <root>/<name>/SKILL.md} with a front-matter. */
+    private void folderSkill(NPath root, String name, String... body) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("---\nname: ").append(name)
+                .append("\ndescription: ").append(name).append(" description\n---\n");
+        for (String l : body) {
+            sb.append(l).append('\n');
+        }
+        write(root.resolve(name + "/SKILL.md"), sb.toString().split("\n", -1));
     }
 
     private NaruTask task() {
@@ -178,7 +195,7 @@ public class NaruSkillsRootsTest {
 
     @Test
     public void rootsAreOrderedStrongestFirstWithEveryNativeAheadOfForeign() {
-        foreignFlat("claude", "legacy", "legacy body");
+        foreignSkill("claude", "legacy", "legacy body");
         ext.reload();
         List<NaruSkillRoot> roots = ext.roots(task());
 
@@ -209,7 +226,7 @@ public class NaruSkillsRootsTest {
 
     @Test
     public void aForeignRootContributesNothingUntilTrusted() {
-        foreignFlat("claude", "legacy", "legacy body");
+        foreignSkill("claude", "legacy", "legacy body");
         ext.reload();
 
         assertNull(ext.skills().findSkill("legacy"),
@@ -228,8 +245,8 @@ public class NaruSkillsRootsTest {
 
     @Test
     public void naruNativeWinsAndTheForeignCopyStaysVisibleAsShadowed() {
-        publicFlat("shared", "native body");
-        foreignFlat("claude", "shared", "foreign body");
+        publicSkill("shared", "native body");
+        foreignSkill("claude", "shared", "foreign body");
         ext.reload();
         NaruTask t = task();
         ext.trust(root(ext.roots(t), "claude"), true);
@@ -238,7 +255,7 @@ public class NaruSkillsRootsTest {
         assertNotNull(winner);
         assertEquals(List.of("native body"), winner.getLines(),
                 () -> "the NARU-native copy must win: " + winner.getSourceName());
-        assertTrue(winner.getSourceName().contains(".naru/skills/shared.md"), winner.getSourceName());
+        assertTrue(winner.getSourceName().contains(".naru/skills/shared/SKILL.md"), winner.getSourceName());
         assertTrue(winner.isShadowed(), "two copies of the name means the winner is shadowed");
 
         List<NaruSkillEntry> entries = ext.entries(t);
@@ -250,7 +267,7 @@ public class NaruSkillsRootsTest {
 
     @Test
     public void trustIsPersistedPerProjectRootAndReadBack() {
-        foreignFlat("claude", "legacy", "legacy body");
+        foreignSkill("claude", "legacy", "legacy body");
         ext.reload();
         NaruTask t = task();
         NaruSkillRoot claude = root(ext.roots(t), "claude");
@@ -277,7 +294,7 @@ public class NaruSkillsRootsTest {
 
     @Test
     public void userLevelForeignTrustIsPersistedUnderTheUserHome() {
-        foreignUserFlat("claude", "personal", "personal body");
+        foreignUserSkill("claude", "personal", "personal body");
         ext.reload();
         NaruTask t = task();
         NaruSkillRoot claudeUser = null;
@@ -322,7 +339,7 @@ public class NaruSkillsRootsTest {
 
     @Test
     public void theClosestFolderScopeWinsForTheSameName() {
-        publicFlat("scope", "project body");
+        publicSkill("scope", "project body");
         folderScope("sub", "scope", "sub body");
         ext.reload();
 
@@ -354,7 +371,7 @@ public class NaruSkillsRootsTest {
 
     @Test
     public void theTrustCommandTogglesAForeignRootAndListShowsItsState() {
-        foreignFlat("claude", "legacy", "legacy body");
+        foreignSkill("claude", "legacy", "legacy body");
         ext.reload();
         NaruTask t = task();
 

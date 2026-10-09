@@ -7,8 +7,8 @@ import java.util.Objects;
 /**
  * One place skills are read from, in the ordered root model (WP6).
  * <p>
- * A root is a directory that holds either flat {@code <name>.md} files or
- * {@code <name>/SKILL.md} folders. Roots are ordered by {@link #precedence()} (lower is
+ * A root is a directory that holds {@code <name>/SKILL.md} folders. Roots are ordered by
+ * {@link #precedence()} (lower is
  * stronger) so that resolution is a simple "first copy of a name wins". NARU-native roots
  * always have a lower precedence than foreign ones, which is how "NARU-native always
  * wins" falls out without a special case.

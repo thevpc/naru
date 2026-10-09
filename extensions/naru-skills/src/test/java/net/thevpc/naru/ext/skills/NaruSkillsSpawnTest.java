@@ -113,7 +113,7 @@ public class NaruSkillsSpawnTest {
         for (String l : body) {
             sb.append(l).append('\n');
         }
-        NPath file = projectDir.resolve(".naru/skills").resolve(name + ".md");
+        NPath file = projectDir.resolve(".naru/skills").resolve(name).resolve("SKILL.md");
         file.mkParentDirs();
         file.writeString(sb.toString());
     }
@@ -187,7 +187,7 @@ public class NaruSkillsSpawnTest {
         for (String l : body) {
             sb.append(l).append('\n');
         }
-        NPath file = projectDir.resolve(".naru/local/skills").resolve(name + ".md");
+        NPath file = projectDir.resolve(".naru/local/skills").resolve(name).resolve("SKILL.md");
         file.mkParentDirs();
         file.writeString(sb.toString());
     }

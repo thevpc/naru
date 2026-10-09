@@ -4,6 +4,8 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.NaruScheduler;
 import net.thevpc.naru.api.scheduler.NaruSessionEventLog;
+import net.thevpc.naru.api.spawn.NaruSpawnPolicy;
+import net.thevpc.naru.api.spawn.NaruSpawnResolution;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruRegistry;
@@ -40,7 +42,7 @@ public interface NaruSession {
      * Storage is not migrated: a session keeps writing to the store it was created with
      * (O9). {@code /project} is a navigation change, not a move of the session.
      */
-    NaruSession setProjectDir(NPath projectDir);
+    NaruSession projectDir(NPath projectDir);
 
     /**
      * Appends an explicitly named event to the session event log, with no task as its
@@ -70,11 +72,7 @@ public interface NaruSession {
 
     NPath workingDir();
 
-    NaruSession setWorkingDir(NPath workingDir);
-
-//    NaruSession load(NElement element);
-
-//    NaruSession load(NPath path);
+    NaruSession workingDir(NPath workingDir);
 
     NElement toElement();
 
@@ -115,7 +113,7 @@ public interface NaruSession {
 
     String name();
 
-    NaruSession setName(String name);
+    NaruSession name(String name);
 
     /**
      * The catalog of sessions <b>saved to disk</b> in this project.
@@ -201,13 +199,13 @@ public interface NaruSession {
      * so they are deliberately not persisted with the session state. Redefining a name
      * replaces it.
      */
-    void defineSpawnPolicy(net.thevpc.naru.api.spawn.NaruSpawnPolicy policy);
+    void defineSpawnPolicy(NaruSpawnPolicy policy);
 
     /** The named spawn policy, or empty when none was defined for that name. */
-    NOptional<net.thevpc.naru.api.spawn.NaruSpawnPolicy> findSpawnPolicy(String name);
+    NOptional<NaruSpawnPolicy> findSpawnPolicy(String name);
 
     /** The defined spawn policies, name-indexed. */
-    Map<String, net.thevpc.naru.api.spawn.NaruSpawnPolicy> spawnPolicies();
+    Map<String, NaruSpawnPolicy> spawnPolicies();
 
     /**
      * Resolves a spawn exactly as {@link #newTask(NaruTaskSpec)} would — policy defaults,
@@ -219,7 +217,7 @@ public interface NaruSession {
      * so an explain run reports exactly what the real spawn would reject, alongside the
      * resolved sets and their sources.
      */
-    net.thevpc.naru.api.spawn.NaruSpawnResolution resolveSpawn(NaruTaskSpec taskBuilder);
+    NaruSpawnResolution resolveSpawn(NaruTaskSpec taskBuilder);
 
     /**
      * Create a task from {@code spec}, start it, and return it.
@@ -319,5 +317,5 @@ public interface NaruSession {
 
     NOptional<NaruRoutine> routine(String nameOrPath, NaruTask task, boolean orCreate);
 
-    Map<String, Object> getSessionEnv();
+    Map<String, Object> sessionEnv();
 }

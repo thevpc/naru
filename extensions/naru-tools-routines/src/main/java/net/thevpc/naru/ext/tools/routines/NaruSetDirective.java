@@ -189,7 +189,7 @@ public class NaruSetDirective extends NaruDirectiveBase {
         Map<String, Object> varMap;
         switch (v) {
             case SESSION:
-                varMap = task.session().getSessionEnv();
+                varMap = task.session().sessionEnv();
                 break;
             case VAR:
                 varMap = task.frame().getAllVars();

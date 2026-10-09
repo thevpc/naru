@@ -91,7 +91,7 @@ public class NaruSessionDirectiveTest {
         agent.projectDirectory(projectDir);
         session = new NaruSessionImpl(agent, projectDir, new NaruStreamInteraction(o -> {
         }), true, NOOP_LISTENER, null, null, null);
-        session.setName("arch-review");
+        session.name("arch-review");
     }
 
     private NaruTask task() {

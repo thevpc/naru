@@ -19,7 +19,6 @@ class NaruSkillImpl implements NaruSkill {
     private final String baseDir;
     private final NaruVisibility visibility;
     private final boolean shadowed;
-    private final NaruSkillLayout layout;
     private final String description;
     private final String contentHash;
     private final Map<String, Object> frontMatter;
@@ -28,15 +27,15 @@ class NaruSkillImpl implements NaruSkill {
     private final NaruToolTagExpression requires;
     private final NaruSkillRoot root;
 
-    NaruSkillImpl(String name, NaruVisibility visibility, boolean shadowed, NaruSkillLayout layout,
+    NaruSkillImpl(String name, NaruVisibility visibility, boolean shadowed,
                   String sourceName, String originRoot, String baseDir, String description,
                   String contentHash, Map<String, Object> frontMatter,
                   NaruToolTagExpression requires, List<String> warnings, List<String> lines) {
-        this(name, visibility, shadowed, layout, sourceName, originRoot, baseDir, description,
+        this(name, visibility, shadowed, sourceName, originRoot, baseDir, description,
                 contentHash, frontMatter, requires, warnings, lines, null);
     }
 
-    NaruSkillImpl(String name, NaruVisibility visibility, boolean shadowed, NaruSkillLayout layout,
+    NaruSkillImpl(String name, NaruVisibility visibility, boolean shadowed,
                   String sourceName, String originRoot, String baseDir, String description,
                   String contentHash, Map<String, Object> frontMatter,
                   NaruToolTagExpression requires, List<String> warnings, List<String> lines,
@@ -44,7 +43,6 @@ class NaruSkillImpl implements NaruSkill {
         this.name = name;
         this.visibility = visibility;
         this.shadowed = shadowed;
-        this.layout = layout;
         this.sourceName = sourceName;
         this.originRoot = originRoot;
         this.baseDir = baseDir;
@@ -63,7 +61,7 @@ class NaruSkillImpl implements NaruSkill {
 
     /** A copy of this skill with a recomputed shadowed flag (WP6 effective-root merge). */
     NaruSkillImpl withShadowed(boolean shadowed) {
-        return new NaruSkillImpl(name, visibility, shadowed, layout, sourceName, originRoot,
+        return new NaruSkillImpl(name, visibility, shadowed, sourceName, originRoot,
                 baseDir, description, contentHash, frontMatter, requires, warnings, lines, root);
     }
 
@@ -80,11 +78,6 @@ class NaruSkillImpl implements NaruSkill {
     @Override
     public boolean isShadowed() {
         return shadowed;
-    }
-
-    @Override
-    public NaruSkillLayout getLayout() {
-        return layout;
     }
 
     @Override
