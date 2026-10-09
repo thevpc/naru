@@ -179,7 +179,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
                             "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
                             "╵ ╵╵ ╵╵╰╴╰─╯ v%s\n" +
                             "Type %s%s (or %s%s) for help and %s%s to exit.\n"
-                    , NVersion.of("1.0.0.0")
+                    , NVersion.of("1.1.0.0")
                     , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("help")
                     , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("?")
                     , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("exit")
