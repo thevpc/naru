@@ -19,6 +19,7 @@ import net.thevpc.nuts.platform.NOsFamily;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NStringUtils;
 
 import java.util.*;
 import java.util.function.Consumer;
@@ -477,7 +478,95 @@ public class OllamaService {
         NHttpRequest request = http.POST("api/pull")
                 .timeout(NDuration.ofMinutes(30))
                 .jsonRequestBody(body);
-        request.run().failFast();
+
+        NHttpResponse response = request.run();
+        consumePullStream(response, model, logger);
+    }
+
+    /**
+     * Consumes Ollama's streamed {@code /api/pull} response.
+     *
+     * <p>A pull is a streaming NDJSON endpoint: it answers 200 immediately and
+     * reports progress -- and failures -- inside the event stream. The body must
+     * be consumed both to surface in-band errors and to keep the download going;
+     * an unread body eventually blocks the server and the pull silently never
+     * completes.
+     *
+     * @throws RuntimeException when the HTTP status is an error, the stream
+     *                          carries an {@code error} event, or the stream
+     *                          ends without a terminal {@code success} event
+     */
+    void consumePullStream(NHttpResponse response, String model, Consumer<NMsg> logger) {
+        if (response.isError()) {
+            throw new RuntimeException(NMsg.ofC("Ollama pull failed (HTTP %s): %s",
+                    response.intStatusCode(), NStringUtils.strip(response.contentAsString())).toString());
+        }
+
+        String streamError = null;
+        boolean success = false;
+        String lastStatus = null;
+        long lastPercent = -1;
+
+        try (java.io.BufferedReader reader = response.content().asBufferedReader()) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
+                NObjectElement root;
+                try {
+                    NElement element = elementReader().read(line);
+                    if (!element.isAnyObject()) {
+                        continue;
+                    }
+                    root = element.asObject().get();
+                } catch (Exception e) {
+                    // Ollama can interleave a non-JSON diagnostic line; skipping
+                    // it is better than losing the whole pull.
+                    continue;
+                }
+                String error = root.getStringValue("error").orNull();
+                if (!NBlankable.isBlank(error)) {
+                    streamError = error;
+                    break;
+                }
+                String status = root.getStringValue("status").orNull();
+                if (NBlankable.isBlank(status)) {
+                    continue;
+                }
+                if ("success".equals(status)) {
+                    success = true;
+                }
+                long completed = root.getLongValue("completed").orElse(-1L);
+                long total = root.getLongValue("total").orElse(-1L);
+                if (logger != null) {
+                    if (completed >= 0 && total > 0) {
+                        long percent = (completed * 100) / total;
+                        // Throttle progress so a large download does not drown
+                        // the transcript: report every 5%, and whenever a new
+                        // layer restarts the counter.
+                        if (lastPercent < 0 || percent < lastPercent || percent >= lastPercent + 5) {
+                            lastPercent = percent;
+                            logger.accept(NMsg.ofC("  %s %s%%", status,
+                                    NMsg.ofStyledNumber(String.valueOf(percent))));
+                        }
+                    } else if (!status.equals(lastStatus)) {
+                        lastStatus = status;
+                        logger.accept(NMsg.ofC("  %s", status));
+                    }
+                }
+            }
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(NMsg.ofC("Error reading Ollama pull stream: %s", e.getMessage()).toString(), e);
+        }
+
+        if (streamError != null) {
+            throw new RuntimeException(streamError);
+        }
+        if (!success) {
+            throw new RuntimeException("Ollama pull stream ended before reporting success");
+        }
 
         if (logger != null) {
             logger.accept(NMsg.ofC("Model %s pulled successfully.", NMsg.ofStyledPrimary1(model)));
