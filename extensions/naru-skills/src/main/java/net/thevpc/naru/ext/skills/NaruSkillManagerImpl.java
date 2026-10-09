@@ -3,6 +3,7 @@ package net.thevpc.naru.ext.skills;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.spawn.NaruToolTagExpression;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.elem.NListContainerElement;
@@ -17,53 +18,218 @@ import net.thevpc.nuts.util.NNameFormat;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Filesystem-backed skill resolution, snapshot-based (v2).
+ * Filesystem-backed skill resolution across the ordered root model (WP6).
+ * <p>
+ * Skills are read from a list of roots ordered by {@link NaruSkillRoot#precedence()}:
+ * {@code <project>/.naru/local/skills} (strongest), the {@code .naru/skills} walk from
+ * {@code projectDir} down to the task's {@code workingDir} (closest wins),
+ * {@code ~/.naru/skills}, then the foreign project roots ({@code .claude}, {@code .agents},
+ * {@code .opencode}) and the foreign user roots. The first copy of a name wins; every other
+ * copy stays visible, marked shadowed, through {@link #entries(NaruTask)}.
+ * <p>
+ * NARU-native roots are always read. Foreign roots are opt-in: they are read only once
+ * trusted, the decision persisted by {@link NaruSkillTrustStore}. An untrusted foreign root
+ * still appears in {@link #roots(NaruTask)} so the user can see what is available to trust.
  * <p>
  * A skill lives either in the legacy flat form {@code <root>/<name>.md} or the
  * open-standard folder form {@code <root>/<name>/SKILL.md} (falling back to
- * {@code skill.md}), where {@code <root>} is {@code <project>/.naru/skills} (public) or
- * {@code <project>/.naru/local/skills} (private). Within one root the folder form beats
- * the flat form; across roots private shadows public and there is no merge.
- * <p>
- * Every {@link NaruSkill} returned is an immutable snapshot holding the content hash and
- * body of the file as read when the snapshot was built. {@code available()} and
- * {@link #findSkill(String)} serve the cached snapshot and never touch the disk:
- * request-time contribution is therefore disk-free. {@link #reload()} deliberately
- * rebuilds the snapshot, and the doctor command compares snapshot hashes to the current
- * files so a silent edit is reported rather than silently applied.
- * <p>
- * Depends only on {@link NaruSession#projectDir()}, so this extension needs nothing from
- * {@code naru-impl}.
+ * {@code skill.md}); within one root the folder form beats the flat form. Every
+ * {@link NaruSkill} is an immutable snapshot carrying the content hash and body as read when
+ * the snapshot was built; the base (projectDir) roots are snapshotted by {@link #reload()}
+ * so request-time contribution is disk-free. Folder-scoped roots beyond the project
+ * directory are read at request time, because they depend on the task's working directory.
  */
 class NaruSkillManagerImpl implements NaruSkillManager {
     private final NaruSession session;
-    private Map<String, NaruSkill> cache = new HashMap<>();
+    private final NPath userHome;
+    private final NaruSkillTrustStore trust;
+
+    /** Base snapshot: copies keyed by the root that owns them (projectDir-root set). */
+    private Map<NaruSkillRoot, List<SkillCopy>> baseCopies = new LinkedHashMap<>();
+    private Map<String, List<SkillCopy>> baseByName = new LinkedHashMap<>();
+    private Map<String, NaruSkill> baseWinners = new LinkedHashMap<>();
+    private Map<String, SkillCopy> baseWinnerCopy = new LinkedHashMap<>();
 
     NaruSkillManagerImpl(NaruSession session) {
         this.session = session;
+        this.userHome = resolveUserHome();
+        this.trust = new NaruSkillTrustStore(session.projectDir(), userHome);
+    }
+
+    private static NPath resolveUserHome() {
+        String override = System.getProperty("naru.skills.userHome");
+        if (!NBlankable.isBlank(override)) {
+            return NPath.of(override);
+        }
+        return NPath.ofUserHome();
+    }
+
+    // ── roots ──────────────────────────────────────────────────────────────
+
+    private NaruSkillRoot root(NaruSkillRootKind kind, NPath path, String label, int precedence) {
+        NaruSkillRoot r = new NaruSkillRoot(kind, path, label, precedence, false);
+        return kind.foreign() && trust.isTrusted(r) ? r.asTrusted() : r;
+    }
+
+    /** The foreign families, project level then user level. */
+    private static final String[][] FOREIGN = {
+            {"claude", ".claude/skills"},
+            {"agents", ".agents/skills"},
+            {"opencode", ".opencode/skills"},
+    };
+    private static final String[][] FOREIGN_USER = {
+            {"claude", ".claude/skills"},
+            {"agents", ".agents/skills"},
+            {"opencode", ".config/opencode/skills"},
+    };
+
+    /**
+     * The ordered root set effective for a task at {@code workingDir}. Precedence is fixed
+     * here so a merge can always sort deterministically; lower wins.
+     */
+    List<NaruSkillRoot> rootsFor(NPath workingDir) {
+        List<NaruSkillRoot> out = new ArrayList<>();
+        NPath project = session.projectDir();
+        out.add(root(NaruSkillRootKind.PROJECT_PRIVATE, project.resolve(".naru/local/skills"), "naru", 10));
+
+        // the .naru/skills walk: projectDir first (weakest) to workingDir last (strongest
+        // within the walk). Closedness is expressed by the precedence: distance 0 is the
+        // task's own directory.
+        List<NPath> dirs = walkDirs(project, workingDir);
+        for (int i = 0; i < dirs.size(); i++) {
+            NPath dir = dirs.get(i);
+            int distance = dirs.size() - 1 - i; // 0 for the workingDir entry
+            out.add(root(NaruSkillRootKind.FOLDER_PUBLIC, dir.resolve(".naru/skills"),
+                    "naru", 100 + distance));
+        }
+
+        out.add(root(NaruSkillRootKind.USER, userHome.resolve(".naru/skills"), "naru", 5000));
+
+        int i = 0;
+        for (String[] f : FOREIGN) {
+            out.add(root(NaruSkillRootKind.FOREIGN_PROJECT, project.resolve(f[1]), f[0], 6000 + i++));
+        }
+        i = 0;
+        for (String[] f : FOREIGN_USER) {
+            out.add(root(NaruSkillRootKind.FOREIGN_USER, userHome.resolve(f[1]), f[0], 7000 + i++));
+        }
+        return out;
+    }
+
+    /**
+     * The directories from {@code projectDir} down to {@code workingDir}, projectDir first.
+     * When the working directory leaves the project, only the project directory is used
+     * (the same fallback the model-context walk uses).
+     */
+    private static List<NPath> walkDirs(NPath project, NPath workingDir) {
+        List<NPath> dirs = new ArrayList<>();
+        if (project == null) {
+            return dirs;
+        }
+        NPath wd = workingDir == null ? project : workingDir;
+        if (!wd.startsWith(project)) {
+            dirs.add(project);
+            return dirs;
+        }
+        NPath p = wd;
+        while (p != null && p.startsWith(project)) {
+            dirs.add(p);
+            if (p.equals(project)) {
+                break;
+            }
+            p = p.parent();
+        }
+        // walkDirs expects projectDir first (weakest), workingDir last (strongest)
+        Collections.reverse(dirs);
+        return dirs;
+    }
+
+    @Override
+    public List<NaruSkillRoot> roots(NaruTask task) {
+        return Collections.unmodifiableList(rootsFor(task == null ? null : task.workingDir()));
+    }
+
+    @Override
+    public boolean trust(NaruSkillRoot selected, boolean trusted) {
+        if (selected == null || !selected.requiresTrust()) {
+            return false;
+        }
+        NaruSkillRoot concrete = new NaruSkillRoot(selected.kind(), selected.path(),
+                selected.label(), selected.precedence(), false);
+        boolean changed = trust.setTrusted(concrete, trusted);
+        if (changed) {
+            reload();
+        }
+        return changed;
     }
 
     // ── discovery snapshot ─────────────────────────────────────────────────
 
     @Override
     public List<NaruSkill> available() {
-        return cache.values().stream()
+        return baseWinners.values().stream()
                 .sorted(Comparator.comparing(NaruSkill::getName))
                 .collect(Collectors.toList());
     }
 
     @Override
+    public List<NaruSkill> available(NaruTask task) {
+        List<SkillCopy> copies = effectiveCopies(task == null ? null : task.workingDir());
+        Map<String, List<SkillCopy>> byName = group(copies);
+        List<NaruSkill> out = new ArrayList<>();
+        for (Map.Entry<String, List<SkillCopy>> e : byName.entrySet()) {
+            SkillCopy winner = winner(e.getValue());
+            out.add(materialize(e.getKey(), winner, e.getValue().size() > 1));
+        }
+        out.sort(Comparator.comparing(NaruSkill::getName));
+        return out;
+    }
+
+    @Override
     public NaruSkill findSkill(String name) {
         String canonical = canonicalName(name);
-        return canonical == null ? null : cache.get(canonical);
+        return canonical == null ? null : baseWinners.get(canonical);
+    }
+
+    @Override
+    public NaruSkill findSkill(NaruTask task, String name) {
+        String canonical = canonicalName(name);
+        if (canonical == null) {
+            return null;
+        }
+        List<SkillCopy> copies = effectiveCopies(task == null ? null : task.workingDir());
+        List<SkillCopy> named = group(copies).get(canonical);
+        if (named == null || named.isEmpty()) {
+            return null;
+        }
+        return materialize(canonical, winner(named), named.size() > 1);
+    }
+
+    @Override
+    public List<NaruSkillEntry> entries(NaruTask task) {
+        List<SkillCopy> copies = effectiveCopies(task == null ? null : task.workingDir());
+        Map<String, List<SkillCopy>> byName = group(copies);
+        List<NaruSkillEntry> out = new ArrayList<>();
+        for (Map.Entry<String, List<SkillCopy>> e : byName.entrySet()) {
+            SkillCopy winner = winner(e.getValue());
+            for (SkillCopy c : e.getValue()) {
+                NaruSkill skill = materialize(e.getKey(), c, e.getValue().size() > 1);
+                out.add(new NaruSkillEntry(skill, c.root, c != winner));
+            }
+        }
+        out.sort(Comparator.comparing((NaruSkillEntry x) -> x.skill().getName())
+                .thenComparing(x -> x.root() == null ? Integer.MAX_VALUE : x.root().precedence()));
+        return out;
     }
 
     @Override
@@ -72,16 +238,17 @@ class NaruSkillManagerImpl implements NaruSkillManager {
         if (canonical == null) {
             return null;
         }
-        Map<String, SkillEntry> found = new HashMap<>();
-        collect(rootDir(NaruVisibility.PUBLIC), NaruVisibility.PUBLIC, canonical, found);
-        collect(rootDir(NaruVisibility.PRIVATE), NaruVisibility.PRIVATE, canonical, found);
-        SkillEntry entry = found.get(canonical);
-        NaruSkill skill = entry == null ? null : readSkill(canonical, entry);
-        if (skill == null) {
-            cache.remove(canonical);
+        Map<String, List<SkillCopy>> byName = group(scanRoots(baseRoots()));
+        List<SkillCopy> copies = byName.get(canonical);
+        if (copies == null || copies.isEmpty()) {
+            baseWinners.remove(canonical);
+            baseWinnerCopy.remove(canonical);
             return null;
         }
-        cache.put(canonical, skill);
+        SkillCopy winner = winner(copies);
+        NaruSkill skill = readSkill(canonical, winner, copies.size() > 1);
+        baseWinners.put(canonical, skill);
+        baseWinnerCopy.put(canonical, winner);
         return skill;
     }
 
@@ -91,78 +258,111 @@ class NaruSkillManagerImpl implements NaruSkillManager {
         if (canonical == null) {
             return null;
         }
-        Map<String, SkillEntry> found = new HashMap<>();
-        collect(rootDir(NaruVisibility.PUBLIC), NaruVisibility.PUBLIC, canonical, found);
-        collect(rootDir(NaruVisibility.PRIVATE), NaruVisibility.PRIVATE, canonical, found);
-        SkillEntry entry = found.get(canonical);
-        return entry == null ? null : readSkill(canonical, entry);
+        Map<String, List<SkillCopy>> byName = group(scanRoots(baseRoots()));
+        List<SkillCopy> copies = byName.get(canonical);
+        return copies == null || copies.isEmpty() ? null : readSkill(canonical, winner(copies), copies.size() > 1);
     }
 
     @Override
     public void reload() {
-        Map<String, SkillEntry> found = new HashMap<>();
-        collect(rootDir(NaruVisibility.PUBLIC), NaruVisibility.PUBLIC, null, found);
-        collect(rootDir(NaruVisibility.PRIVATE), NaruVisibility.PRIVATE, null, found);
-        Map<String, NaruSkill> next = new HashMap<>();
-        for (Map.Entry<String, SkillEntry> e : found.entrySet()) {
-            NaruSkill skill = readSkill(e.getKey(), e.getValue());
+        List<SkillCopy> copies = scanRoots(baseRoots());
+        baseCopies = new LinkedHashMap<>();
+        for (SkillCopy c : copies) {
+            baseCopies.computeIfAbsent(c.root, x -> new ArrayList<>()).add(c);
+        }
+        baseByName = group(copies);
+        Map<String, NaruSkill> winners = new LinkedHashMap<>();
+        Map<String, SkillCopy> winnerCopies = new LinkedHashMap<>();
+        for (Map.Entry<String, List<SkillCopy>> e : baseByName.entrySet()) {
+            SkillCopy winner = winner(e.getValue());
+            NaruSkill skill = readSkill(e.getKey(), winner, e.getValue().size() > 1);
             if (skill != null) {
-                next.put(e.getKey(), skill);
+                winners.put(e.getKey(), skill);
+                winnerCopies.put(e.getKey(), winner);
             }
         }
-        this.cache = next;
+        this.baseWinners = winners;
+        this.baseWinnerCopy = winnerCopies;
     }
 
-    private NPath rootDir(NaruVisibility visibility) {
-        if (visibility == NaruVisibility.PUBLIC) {
-            return session.projectDir().resolve(".naru/skills/");
-        }
-        return session.projectDir().resolve(".naru/local/skills/");
+    // ── root scanning ──────────────────────────────────────────────────────
+
+    private List<NaruSkillRoot> baseRoots() {
+        return rootsFor(session.projectDir());
     }
 
     /**
-     * Scans one skill root, filling {@code found} with the entries whose name matches
-     * {@code onlyName} (or all when null). Within a root the folder form beats the flat
-     * form when both define the same name; across roots the private copy shadows the public
-     * one (which {@link #readSkill} enforces, not this scan).
+     * Copies for the roots effective at {@code workingDir}. Base roots are served from the
+     * snapshot; folder roots beyond the project directory are read live.
      */
-    private void collect(NPath root, NaruVisibility visibility, String onlyName, Map<String, SkillEntry> found) {
-        if (!root.isDirectory()) {
-            return;
+    private List<SkillCopy> effectiveCopies(NPath workingDir) {
+        List<NaruSkillRoot> roots = rootsFor(workingDir);
+        List<SkillCopy> out = new ArrayList<>();
+        for (NaruSkillRoot r : roots) {
+            if (r.requiresTrust() && !r.trusted()) {
+                continue;
+            }
+            List<SkillCopy> cached = baseCopies.get(r);
+            if (cached != null) {
+                // Re-stamp the cached copies with the effective root: the same directory can
+                // carry a different precedence depending on the task's working directory (the
+                // project's public root is distance 0 from a task at the project, but distance
+                // N from a task deeper in the tree). Without this, a snapshot copy and a live
+                // folder copy would tie and the closest directory would not reliably win.
+                for (SkillCopy c : cached) {
+                    out.add(c.withRoot(r));
+                }
+            } else {
+                out.addAll(scanRoot(r));
+            }
         }
-        for (NPath child : root.stream().sorted(Comparator.comparing(NPath::name)).collect(Collectors.toList())) {
+        return out;
+    }
+
+    private List<SkillCopy> scanRoots(List<NaruSkillRoot> roots) {
+        List<SkillCopy> out = new ArrayList<>();
+        for (NaruSkillRoot r : roots) {
+            if (r.requiresTrust() && !r.trusted()) {
+                continue;
+            }
+            out.addAll(scanRoot(r));
+        }
+        return out;
+    }
+
+    private List<SkillCopy> scanRoot(NaruSkillRoot root) {
+        List<SkillCopy> out = new ArrayList<>();
+        NPath dir = root.path();
+        if (dir == null || !dir.isDirectory()) {
+            return out;
+        }
+        NaruVisibility visibility = visibilityOf(root);
+        for (NPath child : dir.stream().sorted(Comparator.comparing(NPath::name)).collect(Collectors.toList())) {
             if (child.isRegularFile() && child.name().endsWith(".md")) {
                 String canonical = canonicalName(child.name().substring(0, child.name().length() - 3));
-                if (canonical == null || (onlyName != null && !onlyName.equals(canonical))) {
+                if (canonical == null) {
                     continue;
                 }
-                SkillEntry e = found.computeIfAbsent(canonical, x -> new SkillEntry());
-                // two files can canonicalize to the same name (e.g. "My Skill.md" and
-                // "my-skill.md"); keep the first in sorted order and stay deterministic
-                if (visibility == NaruVisibility.PUBLIC) {
-                    if (e.publicFlat == null) {
-                        e.publicFlat = new SkillCopy(visibility, NaruSkillLayout.FLAT, child);
-                    }
-                } else if (e.privateFlat == null) {
-                    e.privateFlat = new SkillCopy(visibility, NaruSkillLayout.FLAT, child);
-                }
+                out.add(new SkillCopy(root, visibility, NaruSkillLayout.FLAT, child));
             } else if (child.isDirectory()) {
                 String canonical = canonicalName(child.name());
-                if (canonical == null || (onlyName != null && !onlyName.equals(canonical))) {
+                if (canonical == null) {
                     continue;
                 }
                 NPath md = resolveSkillMd(child);
                 if (md != null) {
-                    SkillEntry e = found.computeIfAbsent(canonical, x -> new SkillEntry());
-                    SkillCopy copy = new SkillCopy(visibility, NaruSkillLayout.FOLDER, md);
-                    if (visibility == NaruVisibility.PUBLIC) {
-                        e.publicFolder = copy;
-                    } else {
-                        e.privateFolder = copy;
-                    }
+                    out.add(new SkillCopy(root, visibility, NaruSkillLayout.FOLDER, md));
                 }
             }
         }
+        return out;
+    }
+
+    private static NaruVisibility visibilityOf(NaruSkillRoot root) {
+        return switch (root.kind()) {
+            case PROJECT_PRIVATE, USER, FOREIGN_USER -> NaruVisibility.PRIVATE;
+            case FOLDER_PUBLIC, FOREIGN_PROJECT -> NaruVisibility.PUBLIC;
+        };
     }
 
     private static NPath resolveSkillMd(NPath dir) {
@@ -174,19 +374,73 @@ class NaruSkillManagerImpl implements NaruSkillManager {
         return lower.isRegularFile() ? lower : null;
     }
 
+    private static Map<String, List<SkillCopy>> group(List<SkillCopy> copies) {
+        Map<String, List<SkillCopy>> byName = new LinkedHashMap<>();
+        for (SkillCopy c : copies) {
+            String canonical = nameOf(c);
+            if (canonical == null) {
+                continue;
+            }
+            byName.computeIfAbsent(canonical, x -> new ArrayList<>()).add(c);
+        }
+        for (List<SkillCopy> list : byName.values()) {
+            list.sort(COPY_ORDER);
+        }
+        return byName;
+    }
+
+    private static SkillCopy winner(List<SkillCopy> copies) {
+        return copies.stream().min(COPY_ORDER).orElse(null);
+    }
+
+    private static final Comparator<SkillCopy> COPY_ORDER = Comparator
+            .comparingInt((SkillCopy c) -> c.root == null ? Integer.MAX_VALUE : c.root.precedence())
+            .thenComparingInt(c -> c.layout == NaruSkillLayout.FOLDER ? 0 : 1)
+            .thenComparing(c -> c.file == null ? "" : c.file.toString());
+
+    private static String nameOf(SkillCopy c) {
+        if (c.layout == NaruSkillLayout.FLAT) {
+            String n = c.file.name();
+            return canonicalName(n.substring(0, n.length() - 3));
+        }
+        return canonicalName(c.file.parent().name());
+    }
+
     // ── reading one skill ──────────────────────────────────────────────────
 
-    private NaruSkill readSkill(String canonical, SkillEntry entry) {
-        SkillCopy win = entry.privateCopy() != null ? entry.privateCopy() : entry.publicCopy();
+    /**
+     * Reads the winner from the snapshot when it is the snapshot's winner (disk-free), and
+     * from disk otherwise (a folder root, or a copy the snapshot never saw). The shadowed
+     * flag is recomputed for the effective root set rather than trusting the snapshot's.
+     */
+    private NaruSkill materialize(String canonical, SkillCopy win, boolean shadowed) {
         if (win == null) {
             return null;
         }
-        boolean shadowed = entry.publicCopy() != null && entry.privateCopy() != null;
-        NPath root = rootDir(win.visibility);
-        String originRoot = root.toString();
+        NaruSkill base = baseWinners.get(canonical);
+        SkillCopy baseCopy = baseWinnerCopy.get(canonical);
+        if (base != null && baseCopy != null && sameCopy(baseCopy, win)) {
+            if (base.isShadowed() == shadowed) {
+                return base;
+            }
+            return ((NaruSkillImpl) base).withShadowed(shadowed);
+        }
+        return readSkill(canonical, win, shadowed);
+    }
+
+    private static boolean sameCopy(SkillCopy a, SkillCopy b) {
+        return a == b || (a != null && b != null
+                && a.layout == b.layout
+                && String.valueOf(a.file).equals(String.valueOf(b.file))
+                && a.root.equals(b.root));
+    }
+
+    private NaruSkill readSkill(String canonical, SkillCopy win, boolean shadowed) {
+        NPath rootPath = win.root.path();
+        String originRoot = rootPath == null ? null : rootPath.toString();
         String baseDir = win.layout == NaruSkillLayout.FOLDER
                 ? win.file.parent().toString()
-                : root.toString();
+                : (rootPath == null ? null : rootPath.toString());
 
         List<String> warnings = new ArrayList<>();
         String raw = readAll(win.file);
@@ -223,7 +477,7 @@ class NaruSkillManagerImpl implements NaruSkillManager {
 
         return new NaruSkillImpl(canonical, win.visibility, shadowed, win.layout,
                 win.file.toString(), originRoot, baseDir, description, contentHash,
-                frontMatter, requires, warnings, bodyLines);
+                frontMatter, requires, warnings, bodyLines, win.root);
     }
 
     private static String readAll(NPath file) {
@@ -248,12 +502,6 @@ class NaruSkillManagerImpl implements NaruSkillManager {
         }
     }
 
-    /**
-     * Splits raw file text into the optional {@code ---}-delimited front-matter header and
-     * the body. A first line that is not {@code ---} means no header (legacy flat files);
-     * a header that never closes is reported by the caller as a warning and the whole file
-     * is treated as body.
-     */
     private static Header splitHeader(String raw) {
         if (raw == null || raw.isEmpty()) {
             return new Header(null, new ArrayList<>(), false);
@@ -303,11 +551,6 @@ class NaruSkillManagerImpl implements NaruSkillManager {
         return out;
     }
 
-    /**
-     * Lenient YAML front-matter parsing: never rejects a skill. Malformed YAML, a
-     * non-mapping header, a {@code name} that disagrees with the file/folder, and a
-     * missing {@code description} on a folder skill all produce warnings instead.
-     */
     private static Map<String, Object> parseFrontMatter(String canonical, SkillCopy win,
                                                         String headerText, List<String> warnings) {
         if (NBlankable.isBlank(headerText)) {
@@ -434,30 +677,23 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     private record Header(String header, List<String> bodyLines, boolean unterminatedHeader) {
     }
 
-    private static class SkillCopy {
+    private static final class SkillCopy {
+        final NaruSkillRoot root;
         final NaruVisibility visibility;
         final NaruSkillLayout layout;
         final NPath file;
 
-        SkillCopy(NaruVisibility visibility, NaruSkillLayout layout, NPath file) {
+        SkillCopy(NaruSkillRoot root, NaruVisibility visibility, NaruSkillLayout layout, NPath file) {
+            this.root = root;
             this.visibility = visibility;
             this.layout = layout;
             this.file = file;
         }
-    }
 
-    private static class SkillEntry {
-        SkillCopy publicFlat;
-        SkillCopy privateFlat;
-        SkillCopy publicFolder;
-        SkillCopy privateFolder;
-
-        SkillCopy publicCopy() {
-            return publicFolder != null ? publicFolder : publicFlat;
-        }
-
-        SkillCopy privateCopy() {
-            return privateFolder != null ? privateFolder : privateFlat;
+        /** A copy of this entry under a different (effective) root, for per-task precedence. */
+        SkillCopy withRoot(NaruSkillRoot newRoot) {
+            return newRoot == root ? this
+                    : new SkillCopy(newRoot, visibility, layout, file);
         }
     }
 }

@@ -44,6 +44,22 @@ public interface NaruSkill {
     String getOriginRoot();
 
     /**
+     * The root this copy was read from, with its kind, precedence and trust state (WP6).
+     * Never null.
+     */
+    NaruSkillRoot getRoot();
+
+    /** True when the supplying root is foreign (opt-in, untrusted by default). */
+    default boolean isForeign() {
+        return getRoot() != null && getRoot().kind().foreign();
+    }
+
+    /** True when the supplying root is readable (native, or a trusted foreign one). */
+    default boolean isTrusted() {
+        return getRoot() == null || getRoot().trusted();
+    }
+
+    /**
      * The directory holding the skill file: the skill root for a flat {@code <name>.md}, or
      * {@code <root>/<name>} for the open-standard folder form.
      */

@@ -154,9 +154,13 @@ public class NaruSkillsExtensionTest {
     }
 
     private NaruTask task(NaruTask parent) {
-        return session.newTask(parent == null
+        // hold the skills tool tag so the advertised catalog is visible: the catalog is
+        // emitted only alongside the "skill" tool, matching what a real request sees.
+        NaruTask t = session.newTask(parent == null
                 ? NaruTaskSpec.of()
                 : NaruTaskSpec.of().parentId(parent.id()));
+        t.addToolTag("skills");
+        return t;
     }
 
     /** Rebuilds the discovery snapshot from disk (the manager reads disk only on reload). */

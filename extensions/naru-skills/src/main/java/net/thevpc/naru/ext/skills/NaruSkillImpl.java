@@ -26,11 +26,21 @@ class NaruSkillImpl implements NaruSkill {
     private final List<String> warnings;
     private final List<String> lines = new ArrayList<>();
     private final NaruToolTagExpression requires;
+    private final NaruSkillRoot root;
 
     NaruSkillImpl(String name, NaruVisibility visibility, boolean shadowed, NaruSkillLayout layout,
                   String sourceName, String originRoot, String baseDir, String description,
                   String contentHash, Map<String, Object> frontMatter,
                   NaruToolTagExpression requires, List<String> warnings, List<String> lines) {
+        this(name, visibility, shadowed, layout, sourceName, originRoot, baseDir, description,
+                contentHash, frontMatter, requires, warnings, lines, null);
+    }
+
+    NaruSkillImpl(String name, NaruVisibility visibility, boolean shadowed, NaruSkillLayout layout,
+                  String sourceName, String originRoot, String baseDir, String description,
+                  String contentHash, Map<String, Object> frontMatter,
+                  NaruToolTagExpression requires, List<String> warnings, List<String> lines,
+                  NaruSkillRoot root) {
         this.name = name;
         this.visibility = visibility;
         this.shadowed = shadowed;
@@ -38,6 +48,7 @@ class NaruSkillImpl implements NaruSkill {
         this.sourceName = sourceName;
         this.originRoot = originRoot;
         this.baseDir = baseDir;
+        this.root = root;
         this.description = description == null ? "" : description;
         this.contentHash = contentHash;
         this.frontMatter = Collections.unmodifiableMap(
@@ -48,6 +59,12 @@ class NaruSkillImpl implements NaruSkill {
         if (lines != null) {
             this.lines.addAll(lines);
         }
+    }
+
+    /** A copy of this skill with a recomputed shadowed flag (WP6 effective-root merge). */
+    NaruSkillImpl withShadowed(boolean shadowed) {
+        return new NaruSkillImpl(name, visibility, shadowed, layout, sourceName, originRoot,
+                baseDir, description, contentHash, frontMatter, requires, warnings, lines, root);
     }
 
     @Override
@@ -73,6 +90,11 @@ class NaruSkillImpl implements NaruSkill {
     @Override
     public String getOriginRoot() {
         return originRoot;
+    }
+
+    @Override
+    public NaruSkillRoot getRoot() {
+        return root;
     }
 
     @Override

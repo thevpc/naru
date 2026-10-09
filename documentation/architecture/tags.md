@@ -124,6 +124,7 @@ tagged, which the registry lint (`NaruTagRegistryLintTest`) enforces.
 | `index` | `naru-tools-index` | codebase indexing and symbol search | `code_symbols`, `find_symbol`, `project_map`, `project_summary` |
 | `tags` | `naru-tools-tags` | grant and revoke tool tags at runtime | `tag_add`, `tag_remove` |
 | `plan` | `naru-tools-plan` | planning tools | `plan_create`, `plan_update`, `plan_get` |
+| `skills` | `naru-skills` | load a skill's instructions on demand | `skill` |
 
 `java` and `semantic` are wired **additively**: every Java and semantic tool
 keeps `dev` and *also* wears its specific tag. `/tags enable java` therefore
@@ -362,16 +363,18 @@ guide for the concrete read-only design.
 
 ## 7. Tags and skills
 
-Skills carry **no tags of their own**, and granting a tag never loads a skill —
-but a skill may now *declare* a tag requirement that the spawn seam checks:
+Skills are **markdown instruction text**; a skill has no capability of its own.
+Two things connect skills to the tag system:
 
-- Skills are **markdown instruction text**, selected per task by `/skill load`
-  (or by a spawn `--add-skills` / contract `skills`) and spliced into the model's
-  context verbatim. Visibility is directory-based (`.naru/skills` vs
-  `.naru/local/skills`), not tag-based.
-- A skill file may open with a small front-matter header carrying `requires`, a
-  tag expression using the same grammar as a spawn contract (`&`, `|`, `!`,
-  names, parentheses):
+- **The `skills` tool tag gates the `skill` tool.** The optional `naru-skills`
+  jar declares the tag and owns the `skill` tool; a task that was not granted
+  `skills` sees neither the tool nor the skill catalog, because the catalog is
+  emitted only when the tool is visible. Granting `skills` never loads a skill:
+  it makes the *loading action* available. A loaded skill's body is injected
+  whenever the skill's own `requires` gate holds.
+- **A skill may declare a tag requirement.** A skill file may open with a small
+  front-matter header carrying `requires`, a tag expression using the same
+  grammar as a spawn contract (`&`, `|`, `!`, names, parentheses):
 
   ```markdown
   ---
@@ -380,26 +383,28 @@ but a skill may now *declare* a tag requirement that the spawn seam checks:
   Follow git-flow strictly.
   ```
 
-  The header is stripped from the body (the body is still spliced verbatim); a
-  malformed expression is treated as absent and the skill still loads.
-  Private-wins shadowing applies to `requires` as well as to content.
-- When a skill is loaded onto a spawned task, the skills extension (`onSpawned`)
-  checks the skill's `requires` against the child's **resolved** tags. A mismatch
-  is a **spawn-time warning** naming what is missing (`+fs`) or held in conflict
-  (`-write`) and the fixing flags (`--add-tags=...` / `--revoke-tags=...`). It is
-  a warning, not a refusal: the skill still loads. The core stays ignorant of
-  skills — the check only ever runs when `naru-skills` is on the classpath.
-- Loading a skill does **not** grant tool tags, and granting a tag does **not**
-  load a skill. A skill that instructs the model to call `file_write` is still
-  useless unless the task holds `fs` + `write` — the `requires` header only makes
-  that seam *visible*.
+  The header is stripped from the body. Unlike a spawn-time check, `requires` is
+  evaluated at **request-build time** against the task's *current* tags: a
+  satisfied (or absent) requirement injects the body, and an unsatisfied one
+  withholds the body behind a `SKILL REQUIRES GATE` note instead of silently
+  injecting it. An expression that names a tag no provider declares is reported
+  separately as unsatisfiable. A malformed expression is treated as absent, with
+  a warning. `requires` is never a load-time refusal — a skill stays LOADED when
+  a tag is revoked, it is merely gated until the tags hold again.
+
+- **A skill never grants a tag.** A skill that instructs the model to call
+  `file_write` is still useless unless the task holds `fs` + `write`; the
+  `requires` header only makes that seam *visible*. The `allowed-tools`
+  front-matter is parsed and reported by `/skill doctor` when an entry maps to no
+  tool the task can call, but it can never widen a task's grants.
 - `/start --add-skills=<name>` (and a contract's `skills`) request skills for a
   spawn; when the skills extension is not installed the request is reported as a
   warning rather than silently dropped.
 
-If you want "this skill implies these tools" to *grant* them, that link must still
-be made explicit — e.g. an init script that `load`s the skill and `/tags enable`s
-the tags it needs, or a spawn with `--add-skills=<name> --add-tags=<tags>`.
+If you want "this skill implies these tools" to *grant* them, that link must
+still be made explicit — e.g. an init script that `load`s the skill and
+`/tags enable`s the tags it needs, or a spawn with
+`--add-skills=<name> --add-tags=<tags>`.
 
 ## 8. Tags and agents, sessions and directives
 

@@ -1,2 +1,4 @@
 net.thevpc.naru.ext.skills.NaruSkillsExtension
 net.thevpc.naru.ext.skills.NaruSkillsDirectiveProvider
+net.thevpc.naru.ext.skills.NaruSkillsToolTagProvider
+net.thevpc.naru.ext.skills.NaruSkillsToolsetProvider

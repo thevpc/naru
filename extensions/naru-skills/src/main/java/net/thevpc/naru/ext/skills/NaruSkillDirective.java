@@ -14,7 +14,6 @@ import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NStringBuilder;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -60,7 +59,7 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                     task.log(NaruLogMode.AGENT_RESPONSE, msg);
                     return NaruStmtResult.ofError(msg.toString());
                 }
-                NaruSkill skill = NaruSkillsExtension.skills(task.session()).skills().findSkill(name);
+                NaruSkill skill = NaruSkillsExtension.skills(task.session()).skills().findSkill(task, name);
                 if (skill == null) {
                     return notFound(task, name);
                 }
@@ -87,7 +86,7 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                     task.addHistory(NaruMessage.user(NMsg.ofC("Loaded skill : %s", name).toString()));
                     return NaruStmtResult.ofSuccess(null);
                 }
-                if (!ext.exists(name)) {
+                if (!ext.exists(task, name)) {
                     return notFound(task, name);
                 }
                 // already loaded
@@ -114,7 +113,7 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                     task.log(NaruLogMode.PROGRESS, NMsg.ofC("Unloaded skill context. Back to main."));
                     return NaruStmtResult.ofSuccess(null);
                 }
-                if (!ext.exists(name)) {
+                if (!ext.exists(task, name)) {
                     return notFound(task, name);
                 }
                 NMsg msg = NMsg.ofC("skill not loaded : %s", name);
@@ -174,11 +173,80 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                 return NaruStmtResult.ofSuccess(sb.toString());
             }
         });
+        register(new AbstractSubCommand("trust", NText.ofPlain("trust a foreign skill root so it is read"),
+                new SubCommandHelp("<index|substring>", "trust the foreign root at the index /skill list prints, or whose path/label contains the given text")) {
+            @Override
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return setTrust(context, cmdLine, true);
+            }
+        });
+        register(new AbstractSubCommand("untrust", NText.ofPlain("stop trusting a foreign skill root"),
+                new SubCommandHelp("<index|substring>", "untrust a previously trusted foreign root; NARU-native roots are never trustable")) {
+            @Override
+            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                return setTrust(context, cmdLine, false);
+            }
+        });
+    }
+
+    private static NaruStmtResult setTrust(NaruDirectiveCallContext context, NCmdLine cmdLine, boolean trusted) {
+        NaruTask task = context.task();
+        NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
+        String selector = cmdLine.next().map(x -> x.image()).orElse("");
+        if (selector.isEmpty()) {
+            NMsg msg = NMsg.ofC("missing root selector (index or path fragment)");
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
+        }
+        NaruSkillRoot root = resolveRoot(ext.roots(task), selector);
+        if (root == null) {
+            NMsg msg = NMsg.ofC("no skill root matches '%s'", selector).asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
+        }
+        if (!root.requiresTrust()) {
+            NMsg msg = NMsg.ofC("root %s is NARU-native and always trusted; nothing to change", root.path());
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofSuccess(msg.toString());
+        }
+        boolean changed = ext.trust(root, trusted);
+        NMsg msg = NMsg.ofC("%s foreign root %s (%s)%s",
+                trusted ? "Trusted" : "Untrusted",
+                root.label(),
+                root.path(),
+                changed ? "" : " — no change");
+        task.log(NaruLogMode.AGENT_RESPONSE, msg);
+        return NaruStmtResult.ofSuccess(msg.toString());
+    }
+
+    /**
+     * Resolves a root selector: a 1-based index into the listing, or the first root whose
+     * label/path contains the text. Returns null when nothing matches.
+     */
+    private static NaruSkillRoot resolveRoot(List<NaruSkillRoot> roots, String selector) {
+        try {
+            int index = Integer.parseInt(selector.trim());
+            if (index >= 1 && index <= roots.size()) {
+                return roots.get(index - 1);
+            }
+            return null;
+        } catch (NumberFormatException ignored) {
+            // not an index: fall through to substring matching
+        }
+        String needle = selector.trim().toLowerCase();
+        for (NaruSkillRoot root : roots) {
+            String label = root.label() == null ? "" : root.label().toLowerCase();
+            String path = root.path() == null ? "" : root.path().toString().toLowerCase();
+            if (label.contains(needle) || path.contains(needle)) {
+                return root;
+            }
+        }
+        return null;
     }
 
     private static List<String> doctorOne(NaruSkillsExtension ext, NaruTask task, String name) {
         List<String> problems = new ArrayList<>();
-        NaruSkill snapshot = ext.skills().findSkill(name);
+        NaruSkill snapshot = ext.skills().findSkill(task, name);
         NaruSkill current = ext.skills().read(name);
         if (current == null) {
             if (snapshot == null) {
@@ -248,36 +316,89 @@ public class NaruSkillDirective extends NaruDirectiveBase {
     private static NaruStmtResult list(NaruDirectiveCallContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
-        List<NaruSkill> skills = ext.skills().available();
-        skills.sort(Comparator.comparing(NaruSkill::getName));
+        List<NaruSkillEntry> entries = ext.entries(task);
+        List<NaruSkillRoot> roots = ext.roots(task);
+
+        // distinct names, because a shadowed copy is the same skill seen from a weaker root
+        Set<String> names = new TreeSet<>();
+        for (NaruSkillEntry e : entries) {
+            names.add(e.skill().getName());
+        }
         int loaded = 0;
-        for (NaruSkill s : skills) {
-            if (ext.state(task, s.getName()) == NaruSkillState.LOADED) {
+        for (String name : names) {
+            if (ext.state(task, name) == NaruSkillState.LOADED) {
                 loaded++;
             }
         }
-        int advertised = skills.size() - loaded;
+        int advertised = names.size() - loaded;
         NStringBuilder sb = NStringBuilder.of();
-        NMsg msg = NMsg.ofC("%s skills available (%s loaded, %s advertised)", skills.size(), loaded, advertised);
+        NMsg msg = NMsg.ofC("%s skills available (%s loaded, %s advertised)", names.size(), loaded, advertised);
         task.log(NaruLogMode.AGENT_RESPONSE, msg);
         sb.println(msg.toString());
+
+        // the ordered root model: untrusted foreign roots are shown so they can be trusted
+        sb.println("roots (strongest first):");
+        int rootIndex = 1;
+        for (NaruSkillRoot root : roots) {
+            sb.println(rootRow(rootIndex++, root, task));
+        }
+
+        // every copy, losers included and marked: a NARU-native skill that shadowed a
+        // foreign one stays visible instead of silently winning
         int index = 1;
-        for (NaruSkill s : skills) {
-            sb.println(row(index++, task, ext, s));
+        for (NaruSkillEntry entry : entries) {
+            sb.println(row(index++, task, ext, entry));
         }
         return NaruStmtResult.ofSuccess(sb.toString());
     }
 
-    private static String row(int index, NaruTask task, NaruSkillsExtension ext, NaruSkill skill) {
+    private static String rootRow(int index, NaruSkillRoot root, NaruTask task) {
+        String trust;
+        if (!root.requiresTrust()) {
+            trust = "native";
+        } else if (root.trusted()) {
+            trust = "trusted";
+        } else {
+            trust = "untrusted";
+        }
+        String state = root.exists() ? "" : " (absent)";
+        return String.format("[%2d] %-8s %-14s %-9s %s%s",
+                index,
+                root.kind().id(),
+                root.label(),
+                trust,
+                abridgeRoot(root, task),
+                state);
+    }
+
+    private static String abridgeRoot(NaruSkillRoot root, NaruTask task) {
+        if (root.path() == null) {
+            return "?";
+        }
+        String path = root.path().toString();
+        String project = task.projectDir() == null ? null : task.projectDir().toString();
+        if (project != null && path.startsWith(project)) {
+            String rel = path.substring(project.length());
+            while (rel.startsWith("/")) {
+                rel = rel.substring(1);
+            }
+            return rel.isEmpty() ? path : rel;
+        }
+        return path;
+    }
+
+    private static String row(int index, NaruTask task, NaruSkillsExtension ext, NaruSkillEntry entry) {
+        NaruSkill skill = entry.skill();
         NaruSkillState state = ext.state(task, skill.getName());
         NaruRequiresStatus rs = ext.requiresStatus(skill, task);
         String origin = originOf(skill, task);
+        String shadow = entry.shadowed() ? "shadowed" : "-";
         return String.format("[%2d] %-11s %-22s %-8s %-9s %-16s %s",
                 index,
                 state.name(),
                 origin,
                 skill.getVisibility().name().toLowerCase(),
-                skill.isShadowed() ? "shadowed" : "-",
+                shadow,
                 requiresLabel(rs),
                 skill.getName());
     }
