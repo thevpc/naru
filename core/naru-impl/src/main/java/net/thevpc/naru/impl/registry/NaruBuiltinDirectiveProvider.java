@@ -12,6 +12,7 @@ public class NaruBuiltinDirectiveProvider extends NaruDirectiveProviderBase {
         this.registerDirective(new NaruBufferDirective());
         this.registerDirective(new NaruAssertDirective());
         this.registerDirective(new NaruGoDirective());
+        this.registerDirective(new NaruProjectDirective());
     }
 
 }

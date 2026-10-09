@@ -7,6 +7,7 @@ import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.spawn.NaruSpawnContext;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.spi.NComponent;
 import net.thevpc.nuts.util.NOptional;
@@ -210,6 +211,29 @@ public interface NaruSessionExtension extends NComponent {
 
     /** Called after {@link #load(NaruSession)} and before any task runs. */
     default void open(NaruSession session) {
+    }
+
+    /**
+     * Called once when the session starts serving, before any task runs (WP8). A feature
+     * that owns session-wide defaults installs them here, or declares them in an init
+     * script; the {@code session-start} event is fired alongside this callback.
+     * <p>
+     * Must not throw: a broken extension may not cost the user the session.
+     */
+    default void onSessionStart(NaruSession session) {
+    }
+
+    /**
+     * Called after the session's project directory changed through {@code /project}, with
+     * the old and new roots (WP7). A feature that snapshotted anything rooted at the
+     * project -- skill roots, for instance -- re-resolves it here. Per-task selections and
+     * grants are deliberately <em>not</em> reset: only availability is re-resolved, so a
+     * loaded skill that disappeared is reported by the feature's own doctor rather than
+     * silently unloaded.
+     * <p>
+     * Must not throw: a broken extension may not break the navigation.
+     */
+    default void onProjectChanged(NaruSession session, NPath oldProjectDir, NPath newProjectDir) {
     }
 
     /** Called when the session is terminated. */

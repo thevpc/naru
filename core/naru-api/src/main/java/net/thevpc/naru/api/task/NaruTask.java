@@ -222,6 +222,16 @@ public interface NaruTask extends NToElement {
 
     NaruTask setProjectDir(NPath projectDir);
 
+    /**
+     * Prepends the {@code init.naru} hooks selected by {@code trigger} to this task's
+     * statements (WP7). The trigger names the explicit hook event:
+     * {@link net.thevpc.naru.api.scheduler.NaruEvent#SESSION_START},
+     * {@link net.thevpc.naru.api.scheduler.NaruEvent#TASK_SPAWNED} or
+     * {@link net.thevpc.naru.api.scheduler.NaruEvent#PROJECT_CHANGE}. {@code /cd} never
+     * calls this; {@code /project} calls it once.
+     */
+    NaruTask runInitHooks(String trigger);
+
     NaruInputMode inputMode();
 
     NaruTask inputMode(NaruInputMode inputMode);

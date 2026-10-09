@@ -153,6 +153,11 @@ The manager reads two ways:
 - **Live folder walk.** Roots between the project and the task's current
   `workingDir` are read at request time, because they depend on the task.
 
+`/project` re-resolves the base snapshot: the extension recreates the manager bound
+to the new project root and reloads it, keeping each task's flat `LOADED` selection.
+A skill that disappears at the new root is therefore reported by `/skill doctor`
+rather than silently unloaded.
+
 `/skill doctor` compares a loaded skill's stored hash to the current file, so a
 silent mid-session edit is *reported* rather than auto-applied.
 

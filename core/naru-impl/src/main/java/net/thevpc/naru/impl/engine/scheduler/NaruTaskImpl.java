@@ -2113,9 +2113,20 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         return list.stream().mapToInt(x -> x).toArray();
     }
 
-    public void _prependInitHooks() {
+    /**
+     * Prepends the init hooks found under {@code hookBase} to this task.
+     *
+     * @param forceWorkspace when true the shared workspace init
+     *                       ({@code <shared:naru>/init.naru}) is included regardless of the
+     *                       hook base; when false it is included only when {@code hookBase}
+     *                       is the project root, which is the historical task-spawn rule
+     * @param hookBase       directory whose {@code .naru/hooks} and {@code .naru/local/hooks}
+     *                       are searched for {@code init.naru}; the task's working directory
+     *                       at task-spawn, the new project root on {@code /project}
+     */
+    public void _prependInitHooks(boolean forceWorkspace, NPath hookBase) {
         List<NaruStatement> all = new ArrayList<>();
-        if (workingDir.equals(projectDir)) {
+        if (forceWorkspace || (hookBase != null && hookBase.equals(projectDir))) {
             NPath p = NPath.of(NStoreKey.ofShared(NId.of("net.thevpc.naru:naru"))).resolve("init.naru");
             if (p.exists() && p.isFile()) {
                 List<NaruStatement> c = parseFile(p).orNull();
@@ -2124,19 +2135,37 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 }
             }
         }
-        for (NPath path : ((NaruSessionImpl) session).listOverridablePaths(
-                workingDir.resolve(".naru/hooks"),
-                workingDir.resolve(".naru/local/hooks"),
-                a -> a.equals("init.naru")
-        )) {
-            List<NaruStatement> c = parseFile(path).orNull();
-            if (c != null) {
-                all.addAll(c);
+        if (hookBase != null) {
+            for (NPath path : ((NaruSessionImpl) session).listOverridablePaths(
+                    hookBase.resolve(".naru/hooks"),
+                    hookBase.resolve(".naru/local/hooks"),
+                    a -> a.equals("init.naru")
+            )) {
+                List<NaruStatement> c = parseFile(path).orNull();
+                if (c != null) {
+                    all.addAll(c);
+                }
             }
         }
         if (!all.isEmpty()) {
             prependStatements(all.toArray(new NaruStatement[0]));
         }
+    }
+
+    /**
+     * Explicit hook entry point (WP7). {@code /project} calls this once with
+     * {@link NaruEvent#PROJECT_CHANGE}, which forces the shared workspace init and reads the
+     * hooks from the new project root. Task creation calls it with
+     * {@link NaruEvent#TASK_SPAWNED}, which keeps the historical rule: the shared workspace
+     * init is included only when the working directory is the project root. {@code /cd}
+     * never calls this.
+     */
+    @Override
+    public NaruTask runInitHooks(String trigger) {
+        boolean forceWorkspace = NaruEvent.PROJECT_CHANGE.equals(trigger);
+        NPath hookBase = forceWorkspace ? ((NaruSessionImpl) session).projectDir() : workingDir;
+        _prependInitHooks(forceWorkspace, hookBase);
+        return this;
     }
 
 
@@ -2668,7 +2697,14 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         NPath nf = workingDir.toAbsolute(this.workingDir).normalize();
         if (!nf.equals(this.workingDir)) {
             this.workingDir = nf;
-            _prependInitHooks();
+            NaruSessionImpl s = (NaruSessionImpl) session;
+            if (s.isInitOnCdEnabled()) {
+                // Deprecated pre-WP7 behaviour: changing directory ran that directory's
+                // init hooks. It is kept behind a flag with a warning so existing setups
+                // migrate at their own pace; the default is pure navigation.
+                s.warnInitOnCdDeprecated();
+                _prependInitHooks(false, this.workingDir);
+            }
             fireChanged();
         }
         return this;

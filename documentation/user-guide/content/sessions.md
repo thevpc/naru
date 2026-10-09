@@ -351,7 +351,7 @@ cache one expecting immutability. Ask it again when you need to know.
 ## 11. What the core can run
 
 The core jar ships these directives: `/exit`, `/print`, `/help`, `/buffer`, `/assert`,
-`/goto`. And these statement keywords, which are parsed by the engine rather than looked
+`/goto`, `/project`. And these statement keywords, which are parsed by the engine rather than looked
 up as directives:
 
 `/return` · `/if` · `/else` · `/elseif` · `/end` · `/for` · `/while` · `/goto` · `:` (label)
@@ -366,6 +366,11 @@ Anything else — `/set`, `/ask`, `/plan`, tool calls, model calls — lives in 
 jar. Add it to the classpath and it appears; remove it and the feature is gone, with
 nothing in `naru-api` or `naru-impl` referring to it. See
 [Planning](planning.md) for `naru-tools-plan`.
+
+`/cd` and `/project` are the two navigation directives, and they differ in side effects:
+`/cd` only moves the working directory, while `/project` changes the project root, re-resolves
+what is rooted there and runs the workspace `init.naru` once. See
+[Projects, navigation and hooks](projects-and-hooks.md).
 
 An unknown directive is rejected **when the task is built**, before anything runs, so a
 typo fails immediately instead of half way through.

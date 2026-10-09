@@ -17,6 +17,7 @@ import net.thevpc.nuts.elem.NArrayElement;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
+import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
@@ -184,6 +185,22 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         this.manager.reload();
         this.boundSession = session;
         session.addSessionListener(loadPropagator);
+    }
+
+    /**
+     * Re-resolves the skill roots after {@code /project} (WP7). The manager is recreated so
+     * both its base snapshot (the projectDir-root set) and its trust store are bound to the
+     * new root, then reloaded. The per-task LOADED selection is deliberately kept: only
+     * availability changed, and a loaded skill that disappeared is reported by
+     * {@code /skill doctor} rather than silently dropped from a task.
+     */
+    @Override
+    public void onProjectChanged(NaruSession session, NPath oldProjectDir, NPath newProjectDir) {
+        if (manager == null) {
+            return;
+        }
+        this.manager = new NaruSkillManagerImpl(session);
+        this.manager.reload();
     }
 
     /**

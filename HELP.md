@@ -445,6 +445,17 @@
   ▌   /new  [ help | --help ]
   ▌            show new help
   ▌     -----------------------------------------
+  ▌     /project : change the project directory
+  ▌     | Detailed Specification :
+  ▌ /project  [options...]
+  ▌     change the project directory
+  ▌   /project   <dir>
+  ▌            change the project root to <dir>, re-resolve roots/context/models, run the workspace init.naru once and fire project-change.
+  ▌            ex:
+  ▌            /project /path/to/other/project
+  ▌   /project  [ help | --help ]
+  ▌            show project help
+  ▌     -----------------------------------------
   ▌     /reload : reload from last saved
   ▌     | Detailed Specification :
   ▌ /reload  [options...]

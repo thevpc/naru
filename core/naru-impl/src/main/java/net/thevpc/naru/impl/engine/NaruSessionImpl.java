@@ -137,6 +137,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * it.
      */
     private final Map<String, NaruSpawnPolicy> spawnPolicies = new LinkedHashMap<>();
+    /**
+     * Cached deprecated init-on-cd flag; null until first read. See
+     * {@link #isInitOnCdEnabled()}.
+     */
+    private Boolean initOnCdEnabled;
+    private boolean initOnCdWarned;
 
 
     public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
@@ -346,7 +352,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask.setHistory(plan.contextMessages);
         }
         natuTask.addSystemHistory(s->NaruMessage.system(buildSystemPrompt(s)));
-        natuTask._prependInitHooks();
+        natuTask.runInitHooks(NaruEvent.TASK_SPAWNED);
         natuTask.addStatements(
                 taskBuilder.statements().stream().map(x -> natuTask.parseStatement(x).get().injected(true)).collect(Collectors.toList())
                         .stream().map(x -> x.injected(true)).toArray(NaruStatement[]::new));
@@ -401,6 +407,30 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                         extension.name(), e).asError());
             }
         }
+    }
+
+    /**
+     * Fires {@link NaruEvent#SESSION_START} and gives each feature its
+     * {@link NaruSessionExtension#onSessionStart} callback (WP8). This is where a feature
+     * installs session-wide defaults; the workspace-level {@code init.naru} is a script,
+     * so it runs at the first task's creation, when there is a task to carry its
+     * statements. Every callback is isolated: a broken feature may not cost the session.
+     */
+    private void notifySessionStart() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("projectDir", projectDir == null ? null : projectDir.toString());
+        payload.put("workingDir", workingDir == null ? null : workingDir.toString());
+        for (NaruSessionExtension extension : registry.sessionExtensions()) {
+            try {
+                extension.onSessionStart(this);
+            } catch (Exception e) {
+                // one broken extension must not cost the session
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "session extension '%s' failed on session start: %s",
+                        extension.name(), e).asError());
+            }
+        }
+        fireEvent(NaruEvent.SESSION_START, payload);
     }
 
     /**
@@ -1585,6 +1615,114 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return projectDir;
     }
 
+    /**
+     * Changes the project root (WP7). Every live task follows the new root, each feature is
+     * told through {@link NaruSessionExtension#onProjectChanged} so it can re-resolve what
+     * is rooted at the project (skill roots, for one), and {@code project-change} is fired.
+     * <p>
+     * Per-task selections and granted tag sets are deliberately untouched: only
+     * <em>availability</em> is re-resolved, so a loaded skill that disappeared at the new
+     * root is reported by the feature's own doctor instead of being silently dropped.
+     * <p>
+     * Storage is not migrated: this session keeps writing to the store it was created with
+     * (O9). Running the workspace init is the caller's job -- {@code /project} calls
+     * {@link NaruTask#runInitHooks} once after this returns.
+     */
+    @Override
+    public NaruSession setProjectDir(NPath projectDir) {
+        ensureNotStopped();
+        NPath nf = projectDir.toAbsolute(this.projectDir).normalize();
+        NPath old = this.projectDir;
+        if (!nf.equals(old)) {
+            this.projectDir = nf;
+            // live tasks follow the root; the setProjectDir setter fires their change too,
+            // so each task's projectDir() answer stays consistent between this call and
+            // the next tick
+            for (NaruTask t : tasks.values()) {
+                t.setProjectDir(nf);
+            }
+            for (NaruSessionExtension extension : registry.sessionExtensions()) {
+                try {
+                    extension.onProjectChanged(this, old, nf);
+                } catch (Exception e) {
+                    // one broken feature must not break the navigation
+                    log(NaruLogMode.SCRIPT, NMsg.ofC(
+                            "session extension '%s' failed on project change: %s",
+                            extension.name(), e).asError());
+                }
+            }
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("oldProjectDir", old == null ? null : old.toString());
+            payload.put("newProjectDir", nf.toString());
+            fireEvent(NaruEvent.PROJECT_CHANGE, payload);
+            fireChanged();
+        }
+        return this;
+    }
+
+    /**
+     * Appends a session-scoped event with no task as its source. Used for
+     * {@link NaruEvent#SESSION_START} and {@link NaruEvent#PROJECT_CHANGE}, which are
+     * notifications about the session itself rather than about a task.
+     */
+    @Override
+    public NaruSession fireEvent(String eventName, Map<String, Object> payload) {
+        eventLog.append(new NaruEvent(
+                eventName,
+                payload == null ? new LinkedHashMap<>() : payload,
+                -1L, -1L, Instant.now(),
+                NaruEventTargets.ofEveryone(),
+                NaruRetentionPolicies.ofDefault()));
+        return this;
+    }
+
+    /**
+     * The deprecated init-on-cd flag. Read once (a system property wins, then the session
+     * environment, then the project configuration) and cached: the value is a migration
+     * switch, not something that should be re-read mid-session.
+     */
+    public boolean isInitOnCdEnabled() {
+        if (initOnCdEnabled == null) {
+            initOnCdEnabled = resolveInitOnCd();
+        }
+        return initOnCdEnabled;
+    }
+
+    private boolean resolveInitOnCd() {
+        String[] keys = {"naru.initOnCd", "session.initOnCd", "init.onCd"};
+        String sys = System.getProperty("naru.initOnCd");
+        if (sys != null && !sys.trim().isEmpty()) {
+            return NLiteral.of(sys.trim()).asBoolean().orElse(false);
+        }
+        for (String key : keys) {
+            Boolean b = getSessionEnv(key).map(x -> NLiteral.of(x).asBoolean().orNull()).orNull();
+            if (b != null) {
+                return b;
+            }
+        }
+        for (String key : keys) {
+            Boolean b = getProjectEnv(key).map(x -> NLiteral.of(x).asBoolean().orNull()).orNull();
+            if (b != null) {
+                return b;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * One warning per session, on the first {@code /cd} that would have run hooks under the
+     * old behaviour. Repeating it on every navigation would bury it.
+     */
+    public void warnInitOnCdDeprecated() {
+        if (!initOnCdWarned) {
+            initOnCdWarned = true;
+            warn(NMsg.ofC("⚠ init-on-cd is deprecated: '/cd' no longer runs "
+                    + ".naru/hooks/init.naru. Use '/project <dir>' to switch project (it runs "
+                    + "the workspace init once), or set naru.initOnCd=true to keep the old "
+                    + "behaviour temporarily."));
+        }
+    }
+
     @Override
     public NaruSession terminate() {
         // Idempotent, like stop(): terminating an already stopped/terminated session
@@ -1655,6 +1793,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         interaction.open(this);
 
         scheduler.start();
+        notifySessionStart();
         if (sessionListener != null) {
             sessionListener.sessionStarted(this);
         }

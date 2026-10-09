@@ -19,6 +19,19 @@ public class NaruEvent {
      * nothing — observing it never confers a tag, exclusion or skill.
      */
     public static final String TASK_SPAWNED = "TaskSpawned";
+    /**
+     * Fired once per session, when the session starts serving. This is the trigger for the
+     * workspace-level {@code init.naru}; it is deliberately not fired by {@code /cd}, which
+     * is pure navigation (WP7/O2).
+     */
+    public static final String SESSION_START = "session-start";
+    /**
+     * Fired when the session's project directory changes through {@code /project}. The
+     * payload carries the old and new directories. Task selections and tag sets are kept;
+     * availability is re-resolved by each feature, and a loaded skill that disappeared is
+     * reported by {@code /skill doctor} rather than silently dropped.
+     */
+    public static final String PROJECT_CHANGE = "project-change";
     private final long seq;
     private final String name;
     private final Map<String, Object> payload;

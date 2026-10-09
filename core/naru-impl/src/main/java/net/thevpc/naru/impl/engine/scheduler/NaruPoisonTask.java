@@ -61,6 +61,11 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
+    public NaruTask runInitHooks(String trigger) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
     public NaruInputMode inputMode() {
         throw new NUnsupportedOperationException();
     }

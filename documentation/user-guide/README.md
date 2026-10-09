@@ -9,6 +9,7 @@
 | Guide                                            | Status   |
 |--------------------------------------------------|----------|
 | [Sessions and tasks](content/sessions.md)                | ✅ |
+| [Projects, navigation and hooks](content/projects-and-hooks.md) | ✅ |
 | [Model registrations](content/model-registrations.md)    | ✅ |
 | [Planning](content/planning.md)                           | ✅ |
 | [Context compaction](content/compaction.md)             | ✅ |
@@ -29,6 +30,8 @@
 - [Run a script from Java and read the result](content/sessions.md)
 - [Waiting: block, time out, compose, or react](content/sessions.md#5-waiting-for-a-task)
 - [Running NARU without a terminal](content/sessions.md#9-running-without-a-terminal)
+- [`/cd` vs `/project`, and the init hooks they trigger](content/projects-and-hooks.md)
+- [Session-wide defaults and the deprecated init-on-cd flag](content/projects-and-hooks.md#5-the-deprecated-init-on-cd-behaviour)
 - [Register the same provider with several API keys](content/model-registrations.md#2-quick-start-two-keys-for-one-provider)
 - [Available vs registered models](content/model-registrations.md#1-available-vs-registered)
 - [`/model add` reference](content/model-registrations.md#4-the-model-directive)
