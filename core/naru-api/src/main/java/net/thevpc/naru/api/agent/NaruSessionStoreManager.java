@@ -16,7 +16,36 @@ import java.util.List;
  */
 public interface NaruSessionStoreManager {
     List<NaruResourceInfo> list();
+
     int purge();
+
     String findByUuidOrName(String uuidOrName);
+
     boolean delete(String uuidOrName);
+
+    /**
+     * Renames a session that is saved in the catalog.
+     *
+     * <p>This edits the catalog entry in place; it does not touch a running session. Callers
+     * that hold a live {@link NaruSession} should rename through that object instead, so the
+     * in-memory name and the stored name cannot drift apart.
+     *
+     * @return true when a saved session with that uuid was found and updated
+     */
+    default boolean rename(String uuid, String name) {
+        return false;
+    }
+
+    /**
+     * Moves a saved session between the private and the public catalog.
+     *
+     * <p>Visibility is the location, so this is a move of the whole session folder. As with
+     * {@link #rename(String, String)}, a live session is best changed through its own
+     * {@link NaruSession#setVisibility(NaruVisibility)} and {@link NaruSession#save()}.
+     *
+     * @return true when a saved session with that uuid was found and moved
+     */
+    default boolean setVisibility(String uuid, NaruVisibility visibility) {
+        return false;
+    }
 }

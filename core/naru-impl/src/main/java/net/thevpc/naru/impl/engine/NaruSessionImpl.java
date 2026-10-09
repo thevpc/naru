@@ -1758,6 +1758,18 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return sessionStoreManager;
     }
 
+    /**
+     * The raw store this session is bound to.
+     *
+     * <p>Package-visible on purpose: it exists so {@link NaruSessionStoreManagerImpl} can
+     * read and update <em>other</em> saved sessions' metadata without going through a live
+     * session object. The public seam for catalog operations is
+     * {@link #sessionStoreManager()}.
+     */
+    NaruSessionStore rawSessionStore() {
+        return store;
+    }
+
     @Override
     public NaruRegistry registry() {
         // See eventLog(): a worker can be mid-tick when the session is marked stopped, and the
