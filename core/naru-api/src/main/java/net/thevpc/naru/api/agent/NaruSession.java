@@ -177,6 +177,32 @@ public interface NaruSession {
     NaruTask newTask(NaruTaskSpec taskBuilder);
 
     /**
+     * Defines a named spawn policy for this session. Policies are session-scoped and are
+     * re-declared by the directive that defines them (typically run from an init script),
+     * so they are deliberately not persisted with the session state. Redefining a name
+     * replaces it.
+     */
+    void defineSpawnPolicy(net.thevpc.naru.api.spawn.NaruSpawnPolicy policy);
+
+    /** The named spawn policy, or empty when none was defined for that name. */
+    NOptional<net.thevpc.naru.api.spawn.NaruSpawnPolicy> findSpawnPolicy(String name);
+
+    /** The defined spawn policies, name-indexed. */
+    Map<String, net.thevpc.naru.api.spawn.NaruSpawnPolicy> spawnPolicies();
+
+    /**
+     * Resolves a spawn exactly as {@link #newTask(NaruTaskSpec)} would — policy defaults,
+     * call-site flags, contract validation and provenance — but without creating a task.
+     * This is what {@code /start --explain} uses to print the resolved policy and
+     * provenance without spawning.
+     * <p>
+     * Validation is applied just like a real spawn: an unsatisfied contract still throws,
+     * so an explain run reports exactly what the real spawn would reject, alongside the
+     * resolved sets and their sources.
+     */
+    net.thevpc.naru.api.spawn.NaruSpawnResolution resolveSpawn(NaruTaskSpec taskBuilder);
+
+    /**
      * Create a task from {@code spec}, start it, and return it.
      * <p>
      * This is the main entry point for embedding. The returned task is its own handle: wait on

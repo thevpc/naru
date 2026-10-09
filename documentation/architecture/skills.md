@@ -24,9 +24,11 @@ Follow git-flow strictly.
 - a merge to main is a release: tag it
 ```
 
-A skill has no front-matter, no parameters, no dependencies and no tools — when
-it is *active* its whole file is spliced into the model's context verbatim
-(§4). The only shape NARU imposes is the file name.
+A skill has no *required* front-matter: when it is *active* its file is spliced
+into the model's context verbatim (§4). An **optional** header may carry
+`requires`, a tool-tag expression the spawn seam checks (§1.1); the header is
+stripped from the body. Beyond the name and that optional header, the file is
+opaque — no parameters, no dependencies, no tools of its own.
 
 ### Names
 
@@ -47,6 +49,33 @@ it is *active* its whole file is spliced into the model's context verbatim
   the older design's `ConflictResolution` enum (`PRIVATE_WINS` / `MERGE`,
   including a `MIXED` visibility) was abandoned — only private-wins remains,
   hard-coded.
+
+### The optional `requires` header
+
+A skill's file may open with a `---`-delimited header carrying `requires`, a tag
+expression using the same grammar as spawn contracts (`&`, `|`, `!`, names,
+parentheses — see `tags.md`):
+
+```markdown
+---
+requires: "fs & !write"
+---
+Follow git-flow strictly.
+```
+
+- The header is **stripped** before the body is spliced; the body is what `load`s
+  and `show` operate on.
+- A malformed expression is treated as **absent** — the skill still loads, it
+  simply declares no requirement.
+- Private-wins shadowing covers `requires` too: the local copy's header replaces
+  the public one's along with its content.
+- The requirement is checked against the **spawned task's resolved tags**, at
+  spawn time, by the extension's `onSpawned` hook. A mismatch is a warning that
+  names the missing (`+fs`) / conflicting (`-write`) tags and the fixing spawn
+  flags; it never refuses the load.
+
+The header is metadata, not a grant: a skill with `requires: "fs"` does not grant
+`fs`. See `tags.md` §7 for how the two features meet.
 
 ## 2. Where the state lives
 
@@ -113,7 +142,11 @@ it:
   keyed by `name()` in the store;
 - gets **lifecycle** callbacks (`open(session)` binds the manager because the
   SPI instantiates the extension before a session exists, `close()` clears
-  state).
+  state);
+- gets **spawn hooks** (`onSpawn` / `onSpawned`) — for skills, `onSpawned` loads
+  the resolved skills onto the new child and checks each one's `requires` against
+  the child's resolved tags (§1.1). The core knows nothing about skills; it only
+  offers the seam.
 
 The extension owns *everything* the core used to own: which skills exist
 (`NaruSkillManagerImpl`, filesystem-backed), which are active per task, how
@@ -300,7 +333,7 @@ Two redesign-relevant consequences:
 
 | File | Role |
 |---|---|
-| `extensions/naru-skills/.../NaruSkill.java`, `NaruSkillImpl.java` | value type: name, visibility, source path, lines |
+| `extensions/naru-skills/.../NaruSkill.java`, `NaruSkillImpl.java` | value type: name, visibility, source path, lines, optional `requires` |
 | `.../NaruSkillManager.java`, `NaruSkillManagerImpl.java` | filesystem resolution, canonical-name matching, public/private shadowing, `available()` |
 | `.../NaruSkillsExtension.java` | session extension: selection map, read-time resolve, load/unload/exists, contribute, save/load of `ext/skills.tson` |
 | `.../NaruSkillDirective.java` | `/skill` (alias `skills`) subcommands |
@@ -311,6 +344,7 @@ Two redesign-relevant consequences:
 | `core/naru-impl/.../NaruFileSessionStore.java` | `ext/<extension>.tson` persistence |
 | `core/naru-api/.../NaruSessionExtension.java` | the contract the whole feature rides on |
 | `extensions/naru-skills/.../NaruSkillsExtensionTest.java` | behaviour tests (resolution, selection, contribution, persistence, core-separation) |
+| `extensions/naru-skills/.../NaruSkillsSpawnTest.java` | the `requires` header and the spawn-time (`onSpawned`) load + consistency warning |
 
 Related concepts a redesign must stay consistent with: `NaruSource.SKILL`,
 `NaruSessionExtension` (order()-sorted contribution), prompt-mode `MODE`
@@ -322,10 +356,12 @@ These are the current properties most likely to be reconsidered, with the
 cost of each as it stands. Not all are "problems"; they are the surface the
 feature exposes.
 
-1. **Raw markdown only.** No front-matter, no parameters, no "apply to"
-   clause. A skill cannot say who may load it, what models/modes it fits, or
-   carry metadata (version, source URL, deprecation). All of that would have
-   to live outside the `.md` body today.
+1. **Only a `requires` header is understood.** A skill may declare its tag
+   requirement in front-matter (§1.1), but there are still no parameters, no
+   "apply to" clause, and no metadata (version, source URL, deprecation): a
+   skill cannot say who may load it, what models/modes it fits, or carry
+   governance. Anything beyond `requires` would have to live outside the `.md`
+   body today.
 2. **Manual, positional activation.** Only an explicit `/skill load` on a
    task activates a skill. There are no triggers (auto-load on folder/mode,
    on-project-open, model-based), no glob rules, no defaults file.

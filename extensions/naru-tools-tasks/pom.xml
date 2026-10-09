@@ -19,6 +19,11 @@
 
     <dependencies>
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-api</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.1.0.0</version><scope>test</scope></dependency>
+        <!-- The directive tests spawn tasks, and a root task resolves a model at creation.
+             Without a model provider on the test classpath that lookup throws before the
+             directive is exercised, so the tests could not run at all. -->
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-ai-models</artifactId><version>1.1.0.0</version><scope>test</scope></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.0</version><scope>test</scope></dependency>
     </dependencies>
 

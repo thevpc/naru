@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.mode.NaruPromptMode;
+import net.thevpc.naru.api.spawn.NaruSpawnContext;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
@@ -115,6 +116,39 @@ public interface NaruSessionExtension extends NComponent {
      * @param taskId  the id that was just deregistered
      */
     default void onTaskDeregistered(NaruSession session, long taskId) {
+    }
+
+    // ── spawn ─────────────────────────────────────────────────────────────
+
+    /**
+     * Called while a task is being spawned, before anything is resolved, so an extension
+     * can contribute spawn-kind defaults (tags, exclusions, env, skills, inherit kinds and
+     * the context strategy) through the seed methods of {@link NaruSpawnContext}.
+     * <p>
+     * Applied in precedence order afterwards: extension/spawn-kind defaults → named policy
+     * → call-site flags → contract validation. A broken extension must not break a spawn,
+     * so the core swallows and logs any exception thrown here.
+     *
+     * @param context the spawn under construction; the parent, strategy, policy and
+     *                contract are visible, the resolution is not yet computed
+     */
+    default void onSpawn(NaruSpawnContext context) {
+    }
+
+    /**
+     * Called after a spawned child task was created, registered and its resolved seeds were
+     * applied, with the same {@link NaruSpawnContext} now carrying the
+     * {@code context.resolution()}: the resolved sets and the source of every item.
+     * <p>
+     * This is the post-creation counterpart of {@link #onSpawn(NaruSpawnContext)}: a
+     * feature that needs the actual child task (to load skills onto it, to warn about a
+     * skill/tag mismatch) does it here. Must not throw.
+     *
+     * @param session the session the task was spawned in
+     * @param task    the child task, fully seeded
+     * @param context the spawn context with the resolved plan
+     */
+    default void onSpawned(NaruSession session, NaruTask task, NaruSpawnContext context) {
     }
 
     // ── reacting to the request itself ──────────────────────────────────────

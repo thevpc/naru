@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.routine;
 
 import net.thevpc.naru.api.agent.NaruVisibility;
+import net.thevpc.naru.api.spawn.NaruSpawnContract;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NToElement;
@@ -55,5 +56,13 @@ public interface NaruRoutine extends NToElement {
     String lineCommandAt(int n);
 
     NOptional<List<NaruStatement>> parseStatements(NaruTask task);
+
+    /**
+     * The spawn contract of this routine's file front-matter (per O6: scripts and routines
+     * carry the same {@code requires}/{@code skills} contract an agent {@code .md}
+     * carries), or null when the routine declares none. It is validated at spawn time after
+     * the resolved tag set is computed.
+     */
+    NaruSpawnContract getContract();
 
 }

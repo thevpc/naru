@@ -11,11 +11,18 @@ import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.store.*;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.spawn.NaruSpawnPolicy;
+import net.thevpc.naru.api.spawn.NaruSpawnResolution;
+import net.thevpc.naru.api.spawn.NaruSpawnSeed;
+import net.thevpc.naru.api.spawn.NaruSpawnSource;
+import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 
 
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
+import net.thevpc.naru.impl.engine.spawn.NaruSpawnContextImpl;
+import net.thevpc.naru.impl.engine.spawn.NaruSpawnPlanner;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.naru.impl.engine.routine.NaruRoutineMem;
 import net.thevpc.naru.impl.engine.routine.RoutineHelper;
@@ -123,6 +130,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * built-in provider that happens to share the id.
      */
     private final Set<String> registrationInstanceIds = new HashSet<>();
+    /**
+     * Named spawn policies defined by {@code /spawn-policy}, typically from an init
+     * script. Deliberately in-memory and never persisted: a policy is re-declared on every
+     * session start, which keeps a named policy in lock-step with the script that defines
+     * it.
+     */
+    private final Map<String, NaruSpawnPolicy> spawnPolicies = new LinkedHashMap<>();
 
 
     public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
@@ -276,39 +290,60 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         long parentId = taskBuilder.parentId();
         NPath cwd = taskBuilder.workingDirectory();
         NaruTask parent = tasks.get(parentId);
+        NaruSpawnPolicy policy = resolveSpawnPolicy(taskBuilder);
+        NaruSpawnStrategy strategy = taskBuilder.strategy() == null ? NaruSpawnStrategy.NONE : taskBuilder.strategy();
+        NaruSpawnContextImpl spawnContext = new NaruSpawnContextImpl(
+                this, parent, taskBuilder,
+                taskBuilder.spawnKind() == null ? "task" : taskBuilder.spawnKind(),
+                strategy, taskBuilder.windowTurns(), policy, taskBuilder.contract());
+        notifySpawn(spawnContext);
+        NaruSpawnPlanner.Plan plan = NaruSpawnPlanner.plan(this, taskBuilder, spawnContext);
+
         long id = maxTaskId.incrementAndGet();
         NaruTaskImpl natuTask = new NaruTaskImpl(id, parent == null ? -1 : parent.id(), this);
         natuTask.name(taskBuilder.name());
         if (parent == null) {
             natuTask._setInputMode(NaruInputMode.LINE);
-            natuTask._setWorkingDir(cwd == null ? workingDir : cwd);
+            natuTask._setWorkingDir(plan.workingDir != null ? plan.workingDir : (cwd == null ? workingDir : cwd));
             natuTask._setProjectDir(projectDir);
-            natuTask._setMode(NUtils.firstNonNull(taskBuilder.promptMode(), registry().mode(NaruPromptMode.DEFAULT).get()));
+            natuTask._setMode(NUtils.firstNonNull(plan.promptMode, taskBuilder.promptMode(), registry().mode(NaruPromptMode.DEFAULT).get()));
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);
-            natuTask._setModel(resolveModel().get());
+            natuTask._setModel(plan.model != null ? findModel(plan.model).get() : resolveModel().get());
         } else {
             natuTask._setInputMode(NaruInputMode.LINE);
-            natuTask._setWorkingDir(cwd == null ? parent.workingDir() : cwd);
+            natuTask._setWorkingDir(plan.workingDir != null ? plan.workingDir : (cwd == null ? parent.workingDir() : cwd));
             natuTask._setProjectDir(parent.projectDir());
             // an explicit mode on the spec wins over the inherited one, so that a
             // plan can spawn implement-type executors from a PLANNING parent
-            natuTask._setMode(NUtils.firstNonNull(taskBuilder.promptMode(), parent.promptMode(), registry().mode(NaruPromptMode.DEFAULT).get()));
+            natuTask._setMode(NUtils.firstNonNull(plan.promptMode, taskBuilder.promptMode(), parent.promptMode(), registry().mode(NaruPromptMode.DEFAULT).get()));
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);
-            natuTask._setModel(parent.model());
+            natuTask._setModel(plan.model != null ? findModel(plan.model).get() : parent.model());
         }
         // seeded before the task can run anything, and before the system prompt is built,
         // so a prompt that interpolates an input variable can see it
         for (Map.Entry<String, Object> entry : taskBuilder.vars().entrySet()) {
             natuTask.setTaskEnv(entry.getKey(), entry.getValue());
         }
-        // tags are never inherited: a task only sees a tagged tool when it holds
-        // one of that tool's tags, so grant them explicitly
-        for (String tag : taskBuilder.toolTags()) {
-            natuTask.addToolTag(tag);
+        // the resolved spawn seeds, snapshotted here: a child keeps what it was granted at
+        // spawn time, so later parent changes never reach it
+        for (NaruSpawnSeed<String> tag : plan.resolution.tags()) {
+            natuTask._seedToolTagLenient(tag.value());
+        }
+        for (NaruSpawnSeed<String> exclusion : plan.resolution.exclusions()) {
+            natuTask.addToolExclusion(exclusion.value());
+        }
+        for (Map.Entry<String, NaruSpawnSeed<Object>> envEntry : plan.resolution.env().entrySet()) {
+            natuTask.setTaskEnv(envEntry.getKey(), envEntry.getValue().value());
+        }
+        // the context strategy: seed the conversation the child starts with (fork / window /
+        // summary). NONE and strategy-less spawns keep an empty conversation, exactly as
+        // /start has always behaved.
+        if (plan.contextMessages != null && !plan.contextMessages.isEmpty()) {
+            natuTask.setHistory(plan.contextMessages);
         }
         natuTask.addSystemHistory(s->NaruMessage.system(buildSystemPrompt(s)));
         natuTask._prependInitHooks();
@@ -316,7 +351,120 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 taskBuilder.statements().stream().map(x -> natuTask.parseStatement(x).get().injected(true)).collect(Collectors.toList())
                         .stream().map(x -> x.injected(true)).toArray(NaruStatement[]::new));
         tasks.put(id, natuTask);
+        for (String warning : plan.resolution.warnings()) {
+            log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ %s", warning));
+        }
+        fireSpawnedEvent(natuTask, parent, spawnContext);
+        notifySpawned(natuTask, spawnContext);
         return natuTask;
+    }
+
+    /**
+     * Resolves the named policy a spec references, failing loudly when the name is unknown
+     * — a silently ignored policy would change what a spawn grants without saying so.
+     */
+    private NaruSpawnPolicy resolveSpawnPolicy(NaruTaskSpec taskBuilder) {
+        String policyName = taskBuilder.policy();
+        if (policyName == null || policyName.isBlank()) {
+            return null;
+        }
+        NaruSpawnPolicy policy = spawnPolicies.get(policyName.trim());
+        if (policy == null) {
+            throw new IllegalArgumentException(
+                    "spawn policy '" + policyName + "' is not defined in this session; "
+                            + "define it first, e.g. /spawn-policy " + policyName + " --inherit=tags");
+        }
+        return policy;
+    }
+
+    private void notifySpawn(NaruSpawnContextImpl spawnContext) {
+        for (NaruSessionExtension extension : registry.sessionExtensions()) {
+            try {
+                extension.onSpawn(spawnContext);
+            } catch (Exception e) {
+                // one broken extension must not cost a spawn
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "session extension '%s' failed in onSpawn: %s",
+                        extension.name(), e).asError());
+            }
+        }
+    }
+
+    private void notifySpawned(NaruTask task, NaruSpawnContextImpl spawnContext) {
+        for (NaruSessionExtension extension : registry.sessionExtensions()) {
+            try {
+                extension.onSpawned(this, task, spawnContext);
+            } catch (Exception e) {
+                // one broken extension must not cost a spawn
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "session extension '%s' failed in onSpawned: %s",
+                        extension.name(), e).asError());
+            }
+        }
+    }
+
+    /**
+     * Fires {@link NaruEvent#TASK_SPAWNED} with the resolved sets and the source of every
+     * item. The payload is provenance text only: observing a spawn event never grants a
+     * tag, exclusion or skill — grants are applied directly to the child task before this
+     * event is fired, and the event carries no grant channel.
+     */
+    private void fireSpawnedEvent(NaruTask child, NaruTask parent, NaruSpawnContextImpl spawnContext) {
+        NaruSpawnResolution resolution = spawnContext.resolution();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("child", child.id());
+        payload.put("parent", parent == null ? -1L : parent.id());
+        payload.put("kind", spawnContext.spawnKind());
+        for (String line : resolution.provenanceText()) {
+            int i = line.indexOf('=');
+            if (i > 0) {
+                payload.put(line.substring(0, i), line.substring(i + 1));
+            }
+        }
+        eventLog.append(new NaruEvent(
+                NaruEvent.TASK_SPAWNED,
+                payload,
+                child.id(),
+                parent == null ? -1L : parent.id(),
+                Instant.now(),
+                NaruEventTargets.ofEveryone(),
+                NaruRetentionPolicies.ofDefault()));
+    }
+
+    @Override
+    public NaruSpawnResolution resolveSpawn(NaruTaskSpec taskBuilder) {
+        ensureNotStopped();
+        NaruTask parent = tasks.get(taskBuilder.parentId());
+        NaruSpawnPolicy policy = resolveSpawnPolicy(taskBuilder);
+        NaruSpawnContextImpl spawnContext = new NaruSpawnContextImpl(
+                this, parent, taskBuilder,
+                taskBuilder.spawnKind() == null ? "task" : taskBuilder.spawnKind(),
+                taskBuilder.strategy() == null ? NaruSpawnStrategy.NONE : taskBuilder.strategy(),
+                taskBuilder.windowTurns(), policy, taskBuilder.contract());
+        notifySpawn(spawnContext);
+        NaruSpawnPlanner.plan(this, taskBuilder, spawnContext);
+        return spawnContext.resolution();
+    }
+
+    @Override
+    public void defineSpawnPolicy(NaruSpawnPolicy policy) {
+        if (policy == null || policy.name() == null || policy.name().isBlank()) {
+            throw new IllegalArgumentException("spawn policy needs a name");
+        }
+        spawnPolicies.put(policy.name().trim(), policy);
+    }
+
+    @Override
+    public NOptional<NaruSpawnPolicy> findSpawnPolicy(String name) {
+        if (name == null) {
+            return NOptional.ofNullable(null);
+        }
+        return NOptional.ofNullable(spawnPolicies.get(name.trim()));
+    }
+
+    @Override
+    public Map<String, NaruSpawnPolicy> spawnPolicies() {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(spawnPolicies));
     }
 
     @Override

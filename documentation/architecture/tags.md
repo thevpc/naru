@@ -185,7 +185,7 @@ Three consequences worth spelling out:
 ## 5. Tags and tasks
 
 Every task holds its own **granted tag set** plus a **tool-exclusion set**. Both
-are empty at spawn unless explicitly seeded.
+are empty at spawn unless explicitly seeded or snapshot-inherited.
 
 ### Seed the floor at spawn
 
@@ -197,12 +197,110 @@ NaruTaskSpec.of().toolTags("exec", "plan")   // replaces, never accumulates
 
 Semantics pinned by tests:
 
-- **Tags are never inherited from the parent task.** A child spawned with no
-  spec sees zero tagged tools even if its parent held `exec` and `plan`.
 - `toolTags(...)` **replaces**, it does not accumulate; calling it again clears
   the previous list.
 - Blank and null entries are dropped; entries are trimmed.
 - There is no default grant: a fresh `NaruTaskSpec.of()` yields an empty set.
+- Entries are seeded **leniently** at spawn: a name with no registered provider
+  is kept (so it still round-trips) rather than rejected, because a spec may name
+  a tag whose provider is only present in a later session. The runtime
+  `addToolTag` path stays strict.
+
+### Spawn-time resolution: inherit, add, revoke
+
+A spawn is not just a seed; it is a **resolution with provenance**. `NaruTaskSpec`
+carries the spawn inputs (`inherit(...)`, `addTags(...)`, `revokeTags(...)`,
+`excludeTools(...)`, `addSkills(...)`, `strategy(...)`/`windowTurns(...)`,
+`policy(...)`, `contract(...)`, `spawnKind(...)`, `ext(...)`) and the core resolves
+them through `NaruSession.resolveSpawn(parent, spec)` before the child is created.
+Precedence, lowest to highest:
+
+| Source | Contributed by |
+|---|---|
+| `DEFAULT` | extension / spawn-kind defaults and the strategy implication |
+| `POLICY` | the named policy (`/start --policy=<name>`) |
+| `FLAG` | the call-site flags (`--add-tags`, `--revoke-tags`, ...) |
+| `CONTRACT` | the target's contract — **skills only**; a contract may never add tags |
+
+Rules pinned by `NaruSpawnTest`:
+
+- **Tags are inherited only on request.** A plain spawn (`NaruSpawnStrategy.NONE`,
+  no `--inherit=tags`) still grants nothing, exactly as before. `--inherit=tags`
+  copies the parent's granted **names** as a **snapshot**: a later change to the
+  parent's set never reaches an already-spawned child, while a sibling spawned
+  after the change sees it. Unknown names survive the copy (the raw name set is
+  inherited, not the resolved definitions).
+- **The context strategies imply tag inheritance.** `--fork`, `--window=<n>turns`
+  and `--summary` all inherit tags by default
+  (`NaruSpawnStrategy.impliesTagsInherit()`), because a child that shares the
+  parent's conversation but not its tool floor would be inconsistent. The
+  implication applies only when `--inherit` does not already mention `tags`;
+  explicitly asking for `--inherit=env` does **not** cancel a fork's implied tag
+  snapshot. There is no "no tags" spelling — fewer tags means revoke them.
+- **Add wins over revoke at equal or higher precedence.** Revoking a tag the
+  resolution holds removes it; revoking a name nothing holds is a no-op that
+  raises a `revoke-without-hold` **warning** on the resolution (surfaced on the
+  spawn event and by `/start --explain`) rather than silently doing nothing.
+- **Exclusions and env merge.** The strategies `NONE | FORK | WINDOW(n) | SUMMARY`
+  map onto `/start`; `SUMMARY` needs a context compactor (e.g.
+  `naru-tools-compact`) and degrades to the last turn with a warning without one.
+
+The `/start` flag surface:
+
+```text
+/start --fork | --window=6turns | --summary     # context strategy (last flag wins)
+       --inherit=tags[,env]                     # snapshot-inherit parent state
+       --add-tags=exec,write                    # grant on top of the resolution
+       --revoke-tags=write,exec                 # revoke from the resolution
+       --exclude-tools=run_shell --add-skills=code-review
+       --policy=review-safe                     # apply a /spawn-policy
+       --explain review                         # print the resolution, spawn nothing
+```
+
+### Named spawn policies
+
+`/spawn-policy <name> [flags]` defines an in-memory bundle of the same seeds;
+`/start --policy=<name>` applies it *after* the extension defaults and *before* the
+call-site flags, so a flag add still wins over a policy revoke. Policies are never
+persisted — they are re-declared by whatever init script defines them on each
+session start — and the scalar configs they pin (`model`, `working-dir`,
+`prompt-mode`) are **inherit-or-override only**: there is no scalar revoke.
+
+```text
+/spawn-policy review-safe --inherit=tags --revoke-tags=write,exec --add-skills=code-review
+/start --policy=review-safe review
+```
+
+### Contracts
+
+A spawn target (an agent `.md` front-matter, or a script/routine header) may declare
+a **contract**: `requires` (a tag expression using `&`, `|`, `!`, names and
+parentheses) and `skills`. The contract is
+validated **after** resolution against the resolved tag set; an unsatisfied contract
+fails the spawn with a message naming the fixing flag (`--add-tags=<tag>` /
+`--revoke-tags=<tag>`). A contract **constrains and grants skills only** — it may not
+add, revoke or inherit tags (such keys are rejected at parse time), because it must
+never expand permission. The model-initiated path (`delegate_to_model`) is narrower
+still: it takes a target name plus optional `revoke_tags` / `inherit` **narrowing
+only**, and exposes no parameter that could add a tag.
+
+### Provenance and the `TaskSpawned` event
+
+Every spawn appends a `TaskSpawned` event whose payload is the resolved sets and the
+source of each item — the same lines `/start --explain` prints without spawning:
+
+```text
+strategy=fork (flag)
+inherit=tags (default)
+tags=[fs,git] (inherit − revoke write,exec)
+skills=[code-review] (contract)
+exclusions=[run_shell]
+policy=review-safe
+contract={requires: "fs & !write"}
+```
+
+The payload carries **no grant channel** — it is a record, not an authorization — and
+an already-spawned child is never re-granted by a later parent change.
 
 ### Mutate at runtime
 
@@ -264,23 +362,44 @@ guide for the concrete read-only design.
 
 ## 7. Tags and skills
 
-**Skills have no tags, and the tag system has no skills.** This is a strict
-non-relation, documented to prevent the expectation that the two meet:
+Skills carry **no tags of their own**, and granting a tag never loads a skill —
+but a skill may now *declare* a tag requirement that the spawn seam checks:
 
-- Skills are **markdown instruction text**, selected per task by an explicit
-  `/skill load` and spliced into the model's context verbatim. Their only
-  attribute is visibility (`public` vs `private`, a filesystem concern).
-- Skill visibility is directory-based (`.naru/skills` vs `.naru/local/skills`),
-  not tag-based. There is no such thing as a "skills-authorized" tag.
+- Skills are **markdown instruction text**, selected per task by `/skill load`
+  (or by a spawn `--add-skills` / contract `skills`) and spliced into the model's
+  context verbatim. Visibility is directory-based (`.naru/skills` vs
+  `.naru/local/skills`), not tag-based.
+- A skill file may open with a small front-matter header carrying `requires`, a
+  tag expression using the same grammar as a spawn contract (`&`, `|`, `!`,
+  names, parentheses):
+
+  ```markdown
+  ---
+  requires: "fs & !write"
+  ---
+  Follow git-flow strictly.
+  ```
+
+  The header is stripped from the body (the body is still spliced verbatim); a
+  malformed expression is treated as absent and the skill still loads.
+  Private-wins shadowing applies to `requires` as well as to content.
+- When a skill is loaded onto a spawned task, the skills extension (`onSpawned`)
+  checks the skill's `requires` against the child's **resolved** tags. A mismatch
+  is a **spawn-time warning** naming what is missing (`+fs`) or held in conflict
+  (`-write`) and the fixing flags (`--add-tags=...` / `--revoke-tags=...`). It is
+  a warning, not a refusal: the skill still loads. The core stays ignorant of
+  skills — the check only ever runs when `naru-skills` is on the classpath.
 - Loading a skill does **not** grant tool tags, and granting a tag does **not**
-  load a skill. A skill that instructs the model to call `file_write` is useless
-  unless the task also holds `fs` + `write`.
-- The two features load and unload independently: skills via `/skill`, tags via
-  `/tags` — both per task, neither inherited, both cheap to reset.
+  load a skill. A skill that instructs the model to call `file_write` is still
+  useless unless the task holds `fs` + `write` — the `requires` header only makes
+  that seam *visible*.
+- `/start --add-skills=<name>` (and a contract's `skills`) request skills for a
+  spawn; when the skills extension is not installed the request is reported as a
+  warning rather than silently dropped.
 
-If you want "this skill implies these tools", that link must be made explicit
-today — e.g. an init script that `load`s the skill and `/tags enable`s the tags
-it needs, or a routine that does both.
+If you want "this skill implies these tools" to *grant* them, that link must still
+be made explicit — e.g. an init script that `load`s the skill and `/tags enable`s
+the tags it needs, or a spawn with `--add-skills=<name> --add-tags=<tags>`.
 
 ## 8. Tags and agents, sessions and directives
 
@@ -390,6 +509,27 @@ behaviour are referenced so the delta is easy to audit.
   one dead selection entry per task ever run, because nothing told the extension a
   task had left. The new `NaruSessionExtension.onTaskDeregistered` hook fixes it.
 
+### Added during Phase 3 (the spawn seam, kept for the audit trail)
+
+- **The parent's floor was unreachable by a child except by hand.**
+  `toolTags(...)` could seed a spec, but there was no way to snapshot-inherit the
+  parent's set, combine it with adds/revokes, or record where each item came from.
+  The `NaruTaskSpec` spawn inputs, `NaruSession.resolveSpawn` and
+  `NaruSpawnPlanner` add that; `/start` grew `--fork` / `--window` / `--summary` /
+  `--inherit` / `--add-tags` / `--revoke-tags` / `--exclude-tools` / `--add-skills`
+  / `--policy` / `--explain`.
+- **Strategies and tags were separate axes.** A fork shared the conversation but
+  not the tool floor. Context strategies now imply tag inheritance (unless
+  `--inherit` names `tags` explicitly), pinned by `NaruSpawnTest`.
+- **A spawn could fail silently.** `/start` now records a failure flag and returns
+  an error result for an unknown target, an agent `.md` with no contract, or an
+  invalid flag value, instead of logging and continuing to spawn.
+- **A contract could have expanded permission.** A contract may validate
+  `requires` and grant skills, but tag-add/revoke/inherit keys are rejected at
+  parse time; the model path exposes no add parameter at all.
+- **The resolution was invisible.** `TaskSpawned` and `/start --explain` now carry
+  per-item provenance; the payload has no grant channel.
+
 ## 11. Where the code lives
 
 | Concern | Location |
@@ -400,9 +540,13 @@ behaviour are referenced so the delta is easy to audit.
 | Builtin tag vocabulary (`routine`, `ai`, `network`, `write`, `exec`) | `core/naru-impl/.../impl/registry/NaruBuiltinToolTagProvider.java` |
 | The gate itself (`findTools`) | `core/naru-impl/.../impl/engine/scheduler/NaruTaskImpl.java` |
 | Per-task tag set + grant/revoke/exclusion API | `NaruTaskImpl` (state + methods), `NaruTaskSpec` (spawn seeding) |
+| Spawn API (`NaruSpawnContext/Resolution/Policy/Seed/Source/Strategy/Inherit/Contract/Targets`, `NaruToolTagExpression`) | `core/naru-api/.../api/spawn/` |
+| Spawn resolution (`NaruSpawnPlanner`), `resolveSpawn`, policy registry, `onSpawn`/`onSpawned`, `TaskSpawned` | `core/naru-impl/.../impl/engine/`, `core/naru-impl/.../impl/engine/spawn/NaruSpawnPlanner.java` |
 | Mode veto | `NaruTaskImpl.findTools()`, `NaruPromptMode.acceptToolTags` |
 | `/tags` directive | `extensions/naru-tools-llm/.../NaruTagsDirective.java` |
 | `/tools` directive | `extensions/naru-tools-llm/.../NaruToolsDirective.java` |
+| `/start` spawn flags + `--explain`, `/spawn-policy` | `extensions/naru-tools-tasks/.../NaruStartDirective.java`, `extensions/naru-tools-tasks/.../NaruSpawnPolicyDirective.java` |
+| Model-path spawn (narrowing only) | `extensions/naru-tools-llm/.../ModelDelegateTool.java` |
 | `tag_add` / `tag_remove` tools + `tags` tag + toolset | `extensions/naru-tools-tags/` |
 | Per-extension tag providers | one `*ToolTagProvider` per feature extension (§3) |
-| Behavioural pin | `test/naru-agent-test/.../NaruTagGateTest.java`, `test/naru-agent-test/.../NaruTagRegistryLintTest.java`, `test/naru-agent-test/.../NaruPlanModeToolGateTest.java`, `test/naru-agent-test/.../NaruTaskStatePersistenceTest.java`, `test/naru-agent-test/.../AgentModelIntegrationTest.java`, `core/naru-impl/src/test/.../TaskSpawnConfigTest.java` |
+| Behavioural pin | `test/naru-agent-test/.../NaruTagGateTest.java`, `test/naru-agent-test/.../NaruTagRegistryLintTest.java`, `test/naru-agent-test/.../NaruPlanModeToolGateTest.java`, `test/naru-agent-test/.../NaruTaskStatePersistenceTest.java`, `test/naru-agent-test/.../NaruSpawnTest.java`, `test/naru-agent-test/.../NaruDelegateSpawnTest.java`, `extensions/naru-tools-tasks/src/test/.../NaruSpawnDirectiveTest.java`, `core/naru-impl/src/test/.../TaskSpawnConfigTest.java` |

@@ -624,6 +624,11 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
+    public Set<String> findToolTagNames() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
     public List<NaruToolDefinition> findTools() {
         throw new NUnsupportedOperationException();
     }

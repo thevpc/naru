@@ -3,6 +3,11 @@ package net.thevpc.naru.ext.skills;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.spawn.NaruToolTagExpression;
+import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NElementReader;
+import net.thevpc.nuts.elem.NListContainerElement;
+import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NNameFormat;
@@ -147,16 +152,109 @@ class NaruSkillManagerImpl implements NaruSkillManager {
         }
         List<String> lines = new ArrayList<>();
         Set<String> sources = new HashSet<>();
+        NaruToolTagExpression requires = null;
         if (sf.publicSkill != null) {
             sources.add(sf.publicSkill.toString());
-            lines.addAll(sf.publicSkill.lines().collect(Collectors.toList()));
+            lines.addAll(bodyLines(sf.publicSkill));
+            requires = requiresOf(sf.publicSkill);
         }
         if (sf.privateSkill != null) {
             sources.add(sf.privateSkill.toString());
-            lines.addAll(sf.privateSkill.lines().collect(Collectors.toList()));
+            lines.addAll(bodyLines(sf.privateSkill));
+            // the private copy wins on requirements too
+            NaruToolTagExpression privateRequires = requiresOf(sf.privateSkill);
+            if (privateRequires != null) {
+                requires = privateRequires;
+            }
         }
         return new NaruSkillImpl(sf.name, sf.mode, lines,
-                sources.size() == 1 ? sources.iterator().next() : sources.toString());
+                sources.size() == 1 ? sources.iterator().next() : sources.toString(), requires);
+    }
+
+    // ── front matter (WP3): --- requires: "fs & !write" --- ─────────────────
+
+    /**
+     * Splits a skill file into its optional {@code ---} front-matter header (TSON) and its
+     * body, exactly mirroring the core's {@code MarkdownWithHeader} conventions so the
+     * requirement a spawn validates is the same data the model context would merge.
+     */
+    private static String[] headerAndBody(NPath file) {
+        String raw;
+        try {
+            raw = file.readString(java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return new String[]{null, null};
+        }
+        if (raw == null) {
+            return new String[]{null, null};
+        }
+        String t = raw.trim();
+        if (!t.startsWith("---")) {
+            return new String[]{null, t};
+        }
+        int x = t.indexOf("---", 3);
+        if (x <= 0) {
+            return new String[]{null, t};
+        }
+        return new String[]{t.substring(3, x).trim(), t.substring(x + 3).trim()};
+    }
+
+    /**
+     * The skill body without its front-matter, split into lines the same way
+     * {@link NPath#lines()} presents them (no trailing empty line).
+     */
+    private static List<String> bodyLines(NPath file) {
+        String body = headerAndBody(file)[1];
+        if (body == null || body.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (String line : body.split("\r?\n")) {
+            out.add(line);
+        }
+        while (!out.isEmpty() && out.get(out.size() - 1).isEmpty()) {
+            out.remove(out.size() - 1);
+        }
+        return out;
+    }
+
+    /**
+     * The tag expression of the skill's {@code requires} front-matter key, or null.
+     * A malformed expression is treated as absent: the skill still loads, it just imposes
+     * no spawn-time requirement (a hard failure would make one broken file hide every
+     * working skill).
+     */
+    private static NaruToolTagExpression requiresOf(NPath file) {
+        String header = headerAndBody(file)[0];
+        if (NBlankable.isBlank(header)) {
+            return null;
+        }
+        try {
+            NElement el = NElementReader.ofTson().read(header);
+            List<NElement> children = new ArrayList<>();
+            NListContainerElement list = el.asListContainer().orNull();
+            if (list != null) {
+                children.addAll(list.children());
+            } else {
+                NObjectElement obj = el.asObject().orNull();
+                if (obj != null) {
+                    children.addAll(obj.children());
+                }
+            }
+            for (NElement child : children) {
+                String key = child.isPair() ? child.asPair().get().key().asStringValue().orNull() : null;
+                if ("requires".equals(key)) {
+                    String expr = child.asPair().get().value().asStringValue().orNull();
+                    if (NBlankable.isBlank(expr)) {
+                        return null;
+                    }
+                    return NaruToolTagExpression.parse(expr);
+                }
+            }
+        } catch (Exception ignore) {
+            // absent requirement, see javadoc
+        }
+        return null;
     }
 
     private static class SkillFiles {

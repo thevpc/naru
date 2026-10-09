@@ -254,6 +254,17 @@ public interface NaruTask extends NToElement {
 
     List<NaruToolTag> findToolTags();
 
+    /**
+     * The full granted tag-name set, including names whose provider is not installed
+     * (those have no {@link NaruToolTag} definition and are therefore absent from
+     * {@link #findToolTags()}). A spawn that inherits the parent's tags must copy this set,
+     * not {@link #findToolTags()}: dropping unknown names would silently re-grant them
+     * nowhere.
+     *
+     * @return an unmodifiable snapshot of the granted tag names
+     */
+    Set<String> findToolTagNames();
+
     List<NaruToolDefinition> findTools();
 
     NaruModelRequest context(NaruSource... sources);

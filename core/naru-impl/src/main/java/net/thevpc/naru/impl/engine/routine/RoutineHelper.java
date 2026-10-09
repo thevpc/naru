@@ -124,6 +124,17 @@ public class RoutineHelper {
                                         }
                                         break;
                                     }
+                                    case "contract": {
+                                        if (!NBlankable.isBlank(content)) {
+                                            try {
+                                                rr.setContract(content.trim());
+                                            } catch (Exception ex) {
+                                                // a malformed contract is not worth losing the
+                                                // routine over; it surfaces when the routine is spawned
+                                            }
+                                        }
+                                        break;
+                                    }
                                 }
                             }
                             break;

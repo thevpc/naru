@@ -4,7 +4,11 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
+import net.thevpc.naru.api.spawn.NaruSpawnContext;
+import net.thevpc.naru.api.spawn.NaruSpawnResolution;
+import net.thevpc.naru.api.spawn.NaruSpawnSeed;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.nuts.elem.NArrayElement;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
@@ -24,6 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 /**
  * Makes the skills feature available to the session, without the core knowing that skills
@@ -112,6 +117,47 @@ public class NaruSkillsExtension implements NaruSessionExtension {
     @Override
     public void onTaskDeregistered(NaruSession session, long taskId) {
         selection.remove(taskId);
+    }
+
+    /**
+     * Applies the resolved spawn skills to the freshly spawned child and warns when a
+     * skill's required tags are inconsistent with what the child was granted.
+     * <p>
+     * Loading here (rather than at read time) is what the resolved {@code --add-skills} and
+     * contract skills mean: the child's own selection gains the spawn grants, and the
+     * warning surfaces the mismatch the spawn plan itself cannot see (the core is generic
+     * and never parses a skill requirement).
+     */
+    @Override
+    public void onSpawned(NaruSession session, NaruTask task, NaruSpawnContext context) {
+        if (manager == null) {
+            return;
+        }
+        NaruSpawnResolution resolution = context.resolution();
+        if (resolution == null || resolution.skills().isEmpty()) {
+            return;
+        }
+        Set<String> granted = new TreeSet<>(task.findToolTagNames());
+        for (NaruSpawnSeed<String> seed : resolution.skills()) {
+            NaruSkill skill = skills().findSkill(seed.value());
+            if (skill == null || skill.isEmpty()) {
+                continue;
+            }
+            load(task, seed.value());
+            if (skill.getRequires() == null) {
+                continue;
+            }
+            List<String> violations = skill.getRequires().violations(granted);
+            if (!violations.isEmpty()) {
+                String detail = violations.stream()
+                        .map(v -> v.startsWith("+") ? "lacks " + v.substring(1) : "holds " + v.substring(1))
+                        .collect(Collectors.joining(", "));
+                task.log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "⚠ skill '%s' requires %s, but the spawned task's tags are inconsistent: %s "
+                                + "(grant the missing tags with --add-tags=..., or revoke the conflicting ones with --revoke-tags=...)",
+                        skill.getName(), skill.getRequires(), detail));
+            }
+        }
     }
 
     @Override

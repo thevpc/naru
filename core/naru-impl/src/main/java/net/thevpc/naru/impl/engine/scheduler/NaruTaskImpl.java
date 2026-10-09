@@ -1106,9 +1106,29 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         return out;
     }
 
+    @Override
+    public Set<String> findToolTagNames() {
+        return Collections.unmodifiableSet(new LinkedHashSet<>(taskToolTags));
+    }
+
     public NaruTask addToolTag(String toolTag) {
         NaruToolTag tag = session().registry().findAvailableTag(toolTag).get();
         taskToolTags.add(NNameFormat.LOWER_KEBAB_CASE.format(tag.name()));
+        return this;
+    }
+
+    /**
+     * Internal spawn seeding: adds a granted tag name without resolving it through the
+     * registry, so a spawn can pass through a tag whose provider is not (or is no longer)
+     * installed. This is the same contract the task loader uses: the name is kept — it
+     * still round-trips and is not silently dropped — and an unknown tag warns.
+     * Use {@link #addToolTag(String)} for tags that must exist.
+     */
+    public NaruTask _seedToolTagLenient(String toolTag) {
+        String normalized = NNameFormat.LOWER_KEBAB_CASE.format(NStringUtils.strip(toolTag));
+        if (!normalized.isEmpty()) {
+            taskToolTags.add(normalized);
+        }
         return this;
     }
 

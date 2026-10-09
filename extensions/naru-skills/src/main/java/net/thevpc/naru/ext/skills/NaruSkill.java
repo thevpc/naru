@@ -1,8 +1,10 @@
 package net.thevpc.naru.ext.skills;
 
 import net.thevpc.naru.api.agent.NaruVisibility;
+import net.thevpc.naru.api.spawn.NaruToolTagExpression;
 
 import java.util.List;
+import java.util.Set;
 import java.util.function.IntPredicate;
 
 /**
@@ -31,4 +33,16 @@ public interface NaruSkill {
     String getFormattedText();
 
     boolean isEmpty();
+
+    /**
+     * The tag expression this skill requires of the task using it, parsed from the skill
+     * file's {@code ---} front-matter {@code requires} key (TSON, e.g.
+     * {@code requires: "fs & !write"}), or null when the skill imposes none.
+     */
+    NaruToolTagExpression getRequires();
+
+    /**
+     * The positive tag names required by {@link #getRequires()}, empty when none.
+     */
+    Set<String> getRequiredTags();
 }

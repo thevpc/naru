@@ -8,6 +8,7 @@ public class NaruTasksDirectiveProvider extends NaruDirectiveProviderBase {
         this.registerDirective(new NaruOnDirective());
         this.registerDirective(new NaruFireDirective());
         this.registerDirective(new NaruSourceDirective());
+        this.registerDirective(new NaruSpawnPolicyDirective());
         this.registerDirective(new NaruStartDirective());
         this.registerDirective(new NaruTaskDirective());
         this.registerDirective(new NaruSleepDirective());

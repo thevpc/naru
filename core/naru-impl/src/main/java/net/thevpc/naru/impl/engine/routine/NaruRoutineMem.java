@@ -3,6 +3,7 @@ package net.thevpc.naru.impl.engine.routine;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.routine.NaruIndexedLine;
 import net.thevpc.naru.api.routine.NaruRoutine;
+import net.thevpc.naru.api.spawn.NaruSpawnContract;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.*;
@@ -21,6 +22,7 @@ public class NaruRoutineMem implements NaruRoutine {
     private Instant creationInstant;
     private Instant modificationInstant;
     private TreeMap<Integer, String> lines = new TreeMap<>();
+    private NaruSpawnContract contract;
 
     public NaruRoutineMem(String uuid, String name, NaruVisibility visibility) {
         this.uuid = uuid;
@@ -65,6 +67,7 @@ public class NaruRoutineMem implements NaruRoutine {
                     }
                 }
             }
+            this.contract = NaruSpawnContract.parse(c.getStringValue("contract").orNull());
         } else {
             throw new NIllegalArgumentException(NMsg.ofC("invalid routine", element));
         }
@@ -79,6 +82,9 @@ public class NaruRoutineMem implements NaruRoutine {
         b.add("creationInstant", NElement.ofInstant(creationInstant == null ? Instant.now() : creationInstant));
         b.add("modificationInstant", NElement.ofInstant(modificationInstant == null ? Instant.now() : modificationInstant));
         b.add("lines", NElement.of(lines));
+        if (contract != null) {
+            b.add("contract", contract.toString());
+        }
         return b.build();
     }
 
@@ -121,6 +127,21 @@ public class NaruRoutineMem implements NaruRoutine {
     @Override
     public String name() {
         return name;
+    }
+
+    @Override
+    public NaruSpawnContract getContract() {
+        return contract;
+    }
+
+    public NaruRoutineMem setContract(String contractTson) {
+        this.contract = NaruSpawnContract.parse(contractTson);
+        return this;
+    }
+
+    public NaruRoutineMem setContract(NaruSpawnContract contract) {
+        this.contract = contract;
+        return this;
     }
 
     @Override
