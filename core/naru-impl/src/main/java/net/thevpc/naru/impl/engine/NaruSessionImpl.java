@@ -264,36 +264,65 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         ensureNotStopped();
         return new ArrayList<>(tasks.values());
     }
-    private NOptional<NaruModelConfig> resolveModel(){
-        if(this.model!=null){
+    private NOptional<NaruModelConfig> resolveModel() {
+        if (this.model != null) {
             return NOptional.of(this.model);
         }
-        NaruModelConfig model0 = this.model;
-        NaruModelConfig model = model0;
-        if (model == null) {
-            model = getProjectEnv("model").flatMap(x -> findModel(new NaruModelConfig(x))).orNull();
-        } else {
-            model = findModel(model0).orNull();
+
+        NaruModelConfig requestedModel = getProjectEnv("model")
+                .map(NaruModelConfig::new)
+                .orNull();
+        NaruModelConfig model = null;
+        if (requestedModel != null) {
+            if (!NBlankable.isBlank(requestedModel.name())) {
+                model = findModel(requestedModel.name()).orNull();
+            }
+            if (model == null && !NBlankable.isBlank(requestedModel.model())) {
+                String requestedKey = NBlankable.isBlank(requestedModel.provider())
+                        ? requestedModel.model()
+                        : requestedModel.key().toString();
+                model = findModel(requestedKey).orNull();
+            }
         }
+
         if (model == null) {
-            List<NaruModelInfo> any = registry.modelsInfos(this)
-                    .stream().filter(x -> x.capabilities().isTools()).collect(Collectors.toList());
-            if (any.isEmpty()) {
-                if (model0 == null) {
-                    warn(NMsg.ofC("⚠ no model (with tools capability) was found at all"));
+            List<NaruModelInfo> toolModels = registry.modelsInfos(this)
+                    .stream()
+                    .filter(x -> x.capabilities().isTools())
+                    .collect(Collectors.toList());
+
+            if (toolModels.isEmpty()) {
+                if (requestedModel == null) {
+                    warn(NMsg.ofC("⚠ no model with tools capability is available"));
                 } else {
-                    warn(NMsg.ofC("⚠ model %s not found. actually no model (with tools capability) was found at all", model0));
+                    warn(NMsg.ofC("⚠ requested model %s was not found; no model with tools capability is available",
+                            requestedModel));
                 }
             } else {
-                model = findModel(any.get(0).key().toString()).orNull();
+                for (NaruModelInfo fallbackInfo : toolModels) {
+                    model = findModel(fallbackInfo.key().toString()).orNull();
+                    if (model != null) {
+                        break;
+                    }
+                }
+
                 if (model == null) {
-                    warn(NMsg.ofC("model %s not found.", model0));
+                    if (requestedModel == null) {
+                        warn(NMsg.ofC("⚠ no available model with tools capability could be resolved"));
+                    } else {
+                        warn(NMsg.ofC("⚠ requested model %s was not found; no available model with tools capability could be resolved",
+                                requestedModel));
+                    }
+                } else if (requestedModel == null) {
+                    warn(NMsg.ofC("⚠ no model was requested; auto-selected %s", model.toText()));
                 } else {
-                    warn(NMsg.ofC("model %s not found. auto select %s", model0, model.toText()));
+                    warn(NMsg.ofC("⚠ requested model %s was not found; selected %s instead",
+                            requestedModel, model.toText()));
                 }
             }
         }
-        return NOptional.ofNamed(model,"model");
+
+        return NOptional.ofNamed(model, "model");
     }
 
     @Override
