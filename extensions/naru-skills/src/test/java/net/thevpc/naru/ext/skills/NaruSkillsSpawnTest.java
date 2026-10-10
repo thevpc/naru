@@ -34,8 +34,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The skill front-matter ({@code requires}) and the session extension's {@code onSpawned}:
  * a resolved spawn skill (policy, contract, or {@code --add-skills}) is loaded onto the
- * freshly spawned child. Spawning never evaluates {@code requires} — decision 4 moved the
- * gate to request-build time, where the task's current tags are the ones that matter.
+ * freshly spawned child. Loading never evaluates {@code requires} — decision 4 moved the
+ * gate to request-build time, where the task's current tags are the ones that matter — but
+ * a seeded skill whose {@code requires} the child's resolved tags already fail is reported
+ * as a warning (the spawn is not refused).
  */
 @Timeout(60)
 public class NaruSkillsSpawnTest {
@@ -241,22 +243,46 @@ public class NaruSkillsSpawnTest {
                 () -> "the contract's skills must seed the child: " + ext.activeNames(child));
     }
 
-    // ── requires is evaluated at request-build time, never at spawn ───────
+    // ── requires is enforced at request-build; a spawn-time clash warns, never refuses ──
 
     @Test
-    public void spawnNeverWarnsAboutRequiresEvenWhenItClashes() {
-        publicSkill("fs-aware", "{ requires: \"!write\" }", "fs only, never write");
+    public void aSeededSkillWhoseRequiresClashesWarnsButStillLoads() {
+        // the child is spawned with no tags, so it cannot satisfy "write"
+        publicSkill("write-only", "{ requires: \"write\" }", "write it");
         NaruTask parent = task();
-        // the default task holds write, which the skill forbids — yet spawning must not
-        // complain: the gate is a request-time concern, not a spawn-time refusal
-        NaruTask child = spawn(parent, NaruTaskSpec.of().addSkills("fs-aware"));
 
-        assertEquals(Set.of("fs-aware"), ext.activeNames(child),
+        NaruTask child = spawn(parent, NaruTaskSpec.of().addSkills("write-only"));
+
+        assertEquals(Set.of("write-only"), ext.activeNames(child),
                 "the skill must still load; requires is not a spawn-time rejection");
+        assertTrue(outputs.stream().anyMatch(o -> o.message().toString().contains("requires")),
+                () -> "a seeded skill whose requires is unsatisfied must be reported: " + outputs);
+        assertTrue(outputs.stream().anyMatch(o -> o.message().toString().contains("--add-tags")),
+                () -> "the warning must name the fixing flag: " + outputs);
+    }
+
+    @Test
+    public void aSeededSkillWhoseRequiresHoldsDoesNotWarn() {
+        publicSkill("write-only", "{ requires: \"write\" }", "write it");
+        NaruTask parent = task();
+
+        // the child holds write, so the requirement holds and there is nothing to report
+        NaruTask child = spawn(parent, NaruTaskSpec.of().addTags("write").addSkills("write-only"));
+
+        assertEquals(Set.of("write-only"), ext.activeNames(child));
         assertTrue(outputs.stream().noneMatch(o -> o.message().toString().contains("requires")),
-                () -> "spawn-time must not mention requires at all: " + outputs);
-        assertTrue(outputs.stream().noneMatch(o -> o.message().toString().contains("--add-tags")),
-                () -> "the spawn-time fixing hint is gone: " + outputs);
+                () -> "a satisfied requirement must not be reported at spawn: " + outputs);
+    }
+
+    @Test
+    public void anUntaggedSkillNeverWarns() {
+        publicSkill("plain", null, "no constraint at all");
+        NaruTask parent = task();
+
+        spawn(parent, NaruTaskSpec.of().addSkills("plain"));
+
+        assertTrue(outputs.stream().noneMatch(o -> o.message().toString().contains("requires")),
+                () -> "a skill without requires has nothing to report: " + outputs);
     }
 
     @Test

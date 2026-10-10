@@ -1171,6 +1171,10 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public List<NaruToolDefinition> findTools() {
         List<NaruToolDefinition> toolDefinitions = new ArrayList<>();
         NaruPromptMode mode = promptMode();
+        NaruSessionImpl sessionImpl = session instanceof NaruSessionImpl ? (NaruSessionImpl) session : null;
+        boolean effectAnd = sessionImpl != null && sessionImpl.isEffectTagAndEnabled();
+        boolean effectAndWarn = sessionImpl != null && sessionImpl.isEffectTagAndWarn();
+        List<String> wouldBeHidden = effectAndWarn ? new ArrayList<>() : null;
         for (NaruTool t : session().registry().tools().values()) {
             if (!mode.acceptToolTags(t.tags())) {
                 continue;
@@ -1195,14 +1199,79 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 if (t.isEssential()) {
                     toolDefinitions.add(t.getDefinition(this));
                 }
-            } else if (tt.stream().anyMatch(
-                    x -> taskToolTags.contains(NNameFormat.LOWER_KEBAB_CASE.format(x))
-            )) {
+            } else if (effectAnd) {
+                if (matchesToolTagsAnd(tt)) {
+                    toolDefinitions.add(t.getDefinition(this));
+                }
+            } else if (matchesToolTagsOr(tt)) {
                 toolDefinitions.add(t.getDefinition(this));
+                if (wouldBeHidden != null && !matchesToolTagsAnd(tt)) {
+                    // warning mode (O3): visible under today's OR rule but withdrawn once
+                    // every effect tag must be granted.
+                    wouldBeHidden.add(t.name());
+                }
             }
+        }
+        if (wouldBeHidden != null && !wouldBeHidden.isEmpty()) {
+            sessionImpl.warnEffectTagAnd(wouldBeHidden);
         }
         return toolDefinitions;
     }
+
+    /**
+     * Today's rule (and the default): a tool is visible when <em>any</em> of its tags is
+     * granted.
+     */
+    private boolean matchesToolTagsOr(Set<String> tt) {
+        for (String x : tt) {
+            if (taskToolTags.contains(NNameFormat.LOWER_KEBAB_CASE.format(x))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The O3 gate. The <em>effect</em> tags ({@code write}, {@code exec}, {@code network})
+     * must all be granted, while the remaining <em>domain</em> tags keep the OR rule: a tool
+     * is visible when every effect it declares is held and, if it also declares domain tags,
+     * at least one of those is held.
+     */
+    private boolean matchesToolTagsAnd(Set<String> tt) {
+        boolean anyEffect = false;
+        boolean allEffectsGranted = true;
+        boolean anyDomain = false;
+        boolean anyDomainGranted = false;
+        for (String x : tt) {
+            String tag = NNameFormat.LOWER_KEBAB_CASE.format(x);
+            boolean granted = taskToolTags.contains(tag);
+            if (EFFECT_TAGS.contains(tag)) {
+                anyEffect = true;
+                if (!granted) {
+                    allEffectsGranted = false;
+                }
+            } else {
+                anyDomain = true;
+                if (granted) {
+                    anyDomainGranted = true;
+                }
+            }
+        }
+        if (!allEffectsGranted) {
+            return false;
+        }
+        if (anyDomain) {
+            return anyDomainGranted;
+        }
+        return anyEffect;
+    }
+
+    /**
+     * The effect tags for the O3 AND rule: a tool that mutates state or reaches outside the
+     * process must hold <em>all</em> of them, not any one.
+     */
+    private static final Set<String> EFFECT_TAGS = Set.of(
+            NaruToolTags.WRITE, NaruToolTags.EXECUTE, NaruToolTags.NETWORK);
 
     @Override
     public NaruModelRequest context(NaruSource... sources) {

@@ -3,6 +3,7 @@ package net.thevpc.naru.ext.skills;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.agent.NaruSource;
+import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
@@ -112,6 +113,14 @@ public class NaruSkillsExtension implements NaruSessionExtension {
      */
     private final Map<Long, Set<String>> selection = new TreeMap<>();
 
+    /**
+     * Roots that already produced their one-time untrusted-foreign-root notice, keyed by
+     * {@code kind.id()|path}. The notice fires once per session per root (WP6): it names
+     * what is being held back and how to trust it, and it does not recur until the user
+     * acts or a new untrusted root appears.
+     */
+    private final Set<String> trustNoticedRoots = new LinkedHashSet<>();
+
     private NaruSkillManager manager;
 
     /** The session this extension is bound to, so {@code close()} can detach its listener. */
@@ -185,6 +194,7 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         this.manager.reload();
         this.boundSession = session;
         session.addSessionListener(loadPropagator);
+        noticeUntrustedForeignRoots();
     }
 
     /**
@@ -201,6 +211,41 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         }
         this.manager = new NaruSkillManagerImpl(session);
         this.manager.reload();
+        noticeUntrustedForeignRoots();
+    }
+
+    /**
+     * The one-time untrusted-foreign-root notice (WP6). A foreign skills root is read only
+     * after the user opts in per root, and a root that exists without that decision is
+     * silently contributing nothing — so the first time the extension looks at the root set
+     * (session open, or {@code /project} which re-resolves the roots) it says so once per
+     * root, with the command that fixes it. The decision itself is persisted per root by
+     * {@link NaruSkillTrustStore}; this is only the prompt that surfaces the decision was
+     * never made. Must never throw: it runs during session open.
+     */
+    private void noticeUntrustedForeignRoots() {
+        if (manager == null || boundSession == null) {
+            return;
+        }
+        List<String> pending = new ArrayList<>();
+        for (NaruSkillRoot r : manager.untrustedForeignRoots()) {
+            String key = r.kind().id() + "|" + r.path();
+            if (trustNoticedRoots.add(key)) {
+                pending.add(r.label() + " (" + r.path() + ")");
+            }
+        }
+        if (pending.isEmpty()) {
+            return;
+        }
+        try {
+            boundSession.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+                    "⚠ %s untrusted foreign skills root(s): %s. NARU does not read them until "
+                            + "trusted; run /skills trust <label> [--read|--write|--exec] once per root "
+                            + "(the decision is persisted per root).",
+                    pending.size(), String.join("; ", pending)));
+        } catch (Exception ignored) {
+            // a notice must not fail the session open
+        }
     }
 
     /**
@@ -217,8 +262,12 @@ public class NaruSkillsExtension implements NaruSessionExtension {
      * Seeds the freshly spawned child from the spawn plan: the resolved {@code --add-skills}
      * names, the spawn policy's skills, and the contract's skills are all already merged by
      * the core into {@link NaruSpawnResolution#skills()}. {@code requires} is deliberately
-     * <em>not</em> checked here — decision 4 evaluates it at request-build time, when the
-     * task's current tags are the ones that matter.
+     * <em>not</em> enforced here — decision 4 evaluates it at request-build time, when the
+     * task's current tags are the ones that matter — but a seeded skill whose {@code requires}
+     * the child's resolved tags already fail is reported: the spawn still happens (a warning
+     * is not a refusal), and the mismatch is named so the {@code --add-tags} /
+     * {@code --revoke-tags} flag that would fix it is one edit away instead of a surprise at
+     * the next request.
      */
     @Override
     public void onSpawned(NaruSession session, NaruTask task, NaruSpawnContext context) {
@@ -229,11 +278,27 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         if (resolution == null || resolution.skills().isEmpty()) {
             return;
         }
+        Set<String> granted = task.findToolTagNames();
+        List<String> inconsistent = new ArrayList<>();
         for (NaruSpawnSeed<String> seed : resolution.skills()) {
             // delegates to load(), whose unknown-name path refreshes just that skill from
             // disk: the discovery snapshot may be stale (the skill can be written after the
             // session opened), and a targeted refresh reads nothing else.
             load(task, seed.value());
+            NaruSkill skill = skills().findSkill(task, seed.value());
+            if (skill != null && skill.getRequires() != null
+                    && !skill.getRequires().isSatisfiedBy(granted)) {
+                inconsistent.add(seed.value() + " (requires " + skill.getRequires()
+                        + "; " + String.join(", ", skill.getRequires().violations(granted)) + ")");
+            }
+        }
+        if (!inconsistent.isEmpty()) {
+            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+                    "⚠ %s seeded skill(s) whose 'requires' the spawned task's resolved tags do not "
+                            + "satisfy: %s. The skill(s) stay loaded but their body is gated at "
+                            + "request-build; grant the missing tags with --add-tags=<tag> (or "
+                            + "revoke with --revoke-tags=<tag>) on the spawn.",
+                    inconsistent.size(), String.join("; ", inconsistent)));
         }
     }
 
@@ -869,6 +934,7 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         }
         boundSession = null;
         selection.clear();
+        trustNoticedRoots.clear();
         manager = null;
     }
 }

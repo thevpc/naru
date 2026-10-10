@@ -13,19 +13,20 @@ loads one.
 
 ## 1. What a skill is
 
-A skill is a **named, plain-markdown block of instructions**. It is read either
-from a single file or from an open-standard folder:
+A skill is a **named, plain-markdown block of instructions**. It is read from an
+open-standard folder:
 
 | Layout | Path | Notes |
 |---|---|---|
-| flat | `<root>/<name>.md` | legacy shape, description falls back to the first paragraph |
 | folder | `<root>/<name>/SKILL.md` (or `skill.md`) | the open standard; `references/` and `scripts/` may live beside it |
 
-Within one root the **folder form beats the flat form** of the same name.
+The folder name is the skill name. A skill is always `<root>/<name>/SKILL.md`
+(or `skill.md`); a loose `<name>.md` file in a root is **not** a skill and is
+ignored.
 
 ### Front matter
 
-A folder skill normally opens with a `---`-delimited YAML header. NARU reads the
+A skill normally opens with a `---`-delimited YAML header. NARU reads the
 open-standard keys and preserves the rest:
 
 ```markdown
@@ -44,16 +45,20 @@ requires: "fs & !write"
 
 - `name` should match the file/folder name; a mismatch is a **warning**, not a
   rejection.
-- `description` is what the catalog advertises. A folder skill without one warns
-  and advertises `(no description)`; a flat skill falls back to its first
-  paragraph.
+- `description` is what the catalog advertises. A skill without one warns and
+  advertises `(no description)`.
 - `allowed-tools` is **parsed and reported, never acted on**. A skill cannot
   grant a tool; `/skill doctor` reports every entry that does not map to a tool
   the task can actually call. NARU never silently ignores it (see §7).
 - `requires` is NARU's own key: a tag expression using the spawn grammar
-  (`&`, `|`, `!`, names, parentheses — see `tags.md`). It is evaluated at
-  *request* time against the task's current tool tags (§5), not at spawn or load
-  time. A malformed expression is treated as absent, with a warning.
+  (`&`, `|`, `!`, names, parentheses — see `tags.md`). It is *enforced* at
+  *request* time against the task's current tool tags (§5), never at load time —
+  a skill loads regardless and its body is gated only when a request would inject
+  it. At *spawn* time a seeded skill (from `--add-skills`, a spawn policy or a
+  contract) whose `requires` the child's resolved tags already fail produces a
+  warning naming the fixing `--add-tags`/`--revoke-tags` flag; it is advisory only,
+  and the skill still loads. A malformed expression is treated as absent, with a
+  warning.
 - Unknown keys (`license`, `compatibility`, arbitrary `metadata`, …) survive in
   `getFrontMatter()` untouched.
 
@@ -247,7 +252,10 @@ Both kinds of message carry `NaruSource.SKILL` (so they live in the stable
 - loaded bodies → the file path.
 
 That is how `/context skills` tells an advertisement apart from an injected
-body. `/stats` (where present) attributes by the same `source`.
+body. `/stats` attributes the AGENT bucket by that same `source` (WP5):
+advertised catalog rows (`catalog:*`), loaded bodies, and the "other agent"
+remainder are reported separately so a context that grows with skill count can
+be read at a glance.
 
 ### Compaction
 

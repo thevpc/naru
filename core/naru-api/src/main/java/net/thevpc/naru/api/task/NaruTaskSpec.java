@@ -371,6 +371,10 @@ public class NaruTaskSpec {
      * Generic extension slot: a place for extensions and directives to stash spawn inputs
      * without the core knowing what they mean. Round-tripped by callers that own the keys;
      * the core ignores it during resolution.
+     * <p>
+     * Values are deliberately {@code Object} rather than a structural {@code NElement}: the
+     * core never inspects them, so forcing callers through an element tree would lose no
+     * safety and cost every contributor a (de)serialization round-trip.
      */
     public Map<String, Object> ext() {
         return Collections.unmodifiableMap(ext);

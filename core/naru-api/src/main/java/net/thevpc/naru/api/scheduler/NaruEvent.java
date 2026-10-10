@@ -11,14 +11,14 @@ import java.util.Set;
 
 public class NaruEvent {
 
-    public static final String TASK_TERMINATED = "TaskTerminated";
+    public static final String TASK_TERMINATED = "task-terminated";
     /**
      * Fired when a task is spawned: a child task was created and its resolved spawn sets
      * recorded. The payload carries the resolved sets and the source of each item
      * (default / flag / policy / contract) as provenance text; the event itself grants
      * nothing — observing it never confers a tag, exclusion or skill.
      */
-    public static final String TASK_SPAWNED = "TaskSpawned";
+    public static final String TASK_SPAWNED = "task-spawn";
     /**
      * Fired once per session, when the session starts serving. This is the trigger for the
      * workspace-level {@code init.naru}; it is deliberately not fired by {@code /cd}, which
@@ -93,6 +93,14 @@ public class NaruEvent {
 
     public String name() {
         return name;
+    }
+
+    /**
+     * Whether the name is the spawn event, under either spelling (the current
+     * {@value #TASK_SPAWNED}, or the historical {@value #TASK_SPAWNED_LEGACY}).
+     */
+    public static boolean isTaskSpawned(String name) {
+        return TASK_SPAWNED.equals(name);
     }
 
     public Map<String, Object> payload() {

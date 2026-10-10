@@ -23,6 +23,13 @@ import java.util.Map;
  * called with this same context carrying the {@link #resolution()}: the resolved sets
  * with the source of every item, so an extension (such as skills) can react to what
  * the child actually received.
+ * <p>
+ * There is deliberately <b>no</b> {@code child()} accessor here: before resolution no
+ * child exists to hand out, and after resolution the child is the explicit second
+ * argument of {@code onSpawned}. Spawn kind is intentionally a {@code String} (see
+ * {@link #spawnKind()}) rather than an enum — extension defaults are keyed by kind,
+ * and kinds are an open set contributed by extensions, so a closed enum would force
+ * the core to know every kind.
  */
 public interface NaruSpawnContext {
 

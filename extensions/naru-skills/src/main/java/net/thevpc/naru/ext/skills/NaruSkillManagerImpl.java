@@ -157,6 +157,17 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     }
 
     @Override
+    public List<NaruSkillRoot> untrustedForeignRoots() {
+        List<NaruSkillRoot> out = new ArrayList<>();
+        for (NaruSkillRoot r : rootsFor(null)) {
+            if (r.requiresTrust() && r.exists() && !r.trusted()) {
+                out.add(r);
+            }
+        }
+        return Collections.unmodifiableList(out);
+    }
+
+    @Override
     public boolean trust(NaruSkillRoot selected, boolean trusted) {
         return trust(selected, trusted ? NaruSkillTrustLevel.READ : NaruSkillTrustLevel.NONE);
     }
@@ -629,24 +640,6 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     private static String textOf(Map<String, Object> frontMatter, String key) {
         Object v = frontMatter.get(key);
         return v instanceof String s ? s : null;
-    }
-
-    private static String firstParagraph(List<String> lines) {
-        StringBuilder sb = new StringBuilder();
-        for (String line : lines) {
-            String t = line == null ? "" : line.trim();
-            if (t.isEmpty()) {
-                if (sb.length() > 0) {
-                    break;
-                }
-                continue;
-            }
-            if (sb.length() > 0) {
-                sb.append(' ');
-            }
-            sb.append(t);
-        }
-        return sb.toString();
     }
 
     private static String canonicalName(String name) {

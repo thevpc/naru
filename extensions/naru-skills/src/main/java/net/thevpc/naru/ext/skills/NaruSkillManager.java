@@ -61,6 +61,13 @@ public interface NaruSkillManager {
     List<NaruSkillRoot> roots(NaruTask task);
 
     /**
+     * The foreign roots that exist on disk but are not yet trusted. This is the list a
+     * one-time trust prompt reports: reading there is blocked until the user opts in per
+     * root. NARU-native roots are never listed.
+     */
+    List<NaruSkillRoot> untrustedForeignRoots();
+
+    /**
      * Records a trust decision for a foreign root and reloads the snapshot so the change
      * takes effect. Returns true when the persisted state changed. Convenience form that
      * grants {@link NaruSkillTrustLevel#READ} ({@code trusted}) or revokes entirely.

@@ -19,15 +19,17 @@ import net.thevpc.nuts.util.NBlankable;
  * rooted at the project (skill roots, context files, model defaults), runs the
  * workspace-level {@code init.naru} exactly once, and fires the {@code project-change}
  * event. Per-task selections and granted tag sets are kept; only availability is
- * re-resolved, so a loaded skill that no longer exists at the new root is reported by
- * {@code /skill doctor} rather than silently unloaded.
+ * re-resolved (an existing task's selected model is fixed at task creation, so "models"
+ * here means the model <em>defaults</em> the new root provides), so a loaded skill that
+ * no longer exists at the new root is reported by {@code /skill doctor} rather than
+ * silently unloaded.
  */
 public class NaruProjectDirective extends NaruDirectiveBase {
 
     public NaruProjectDirective() {
         super("project", "session", "change the project directory");
         register(new AbstractSubCommand(new SubCommandHelp("<dir>",
-                "change the project root to <dir>, re-resolve roots/context/models, run the "
+                "change the project root to <dir>, re-resolve roots/context files/model defaults, run the "
                         + "workspace init.naru once and fire project-change.\n"
                         + "ex:\n/project /path/to/other/project")) {
             @Override

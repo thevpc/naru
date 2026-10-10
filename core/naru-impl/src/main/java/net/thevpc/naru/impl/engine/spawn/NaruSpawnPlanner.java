@@ -232,6 +232,27 @@ public final class NaruSpawnPlanner {
                                 + tagNames + " (violations: " + String.join(", ", violations) + "); "
                                 + String.join("; ", hints));
             }
+            // A contract cannot grant a tool -- tags do that -- but it can name the tools the
+            // target needs and refuse to spawn if the resolution excludes one by name.
+            if (!contract.tools().isEmpty()) {
+                Set<String> excludedNames = new LinkedHashSet<>();
+                for (NaruSpawnSeed<String> e : exclusions) {
+                    excludedNames.add(e.value());
+                    excludedNames.add(norm(e.value()));
+                }
+                List<String> missing = new ArrayList<>();
+                for (String t : contract.tools()) {
+                    if (excludedNames.contains(t) || excludedNames.contains(norm(t))) {
+                        missing.add(t);
+                    }
+                }
+                if (!missing.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "spawn contract " + contract + " requires tools the resolution excludes: "
+                                    + String.join(", ", missing) + "; drop the exclusion ("
+                                    + "--exclude-tools=... at the call site or the policy) or remove the tool from the contract");
+                }
+            }
         }
 
         // ── conversation context seeding ─────────────────────────────────────

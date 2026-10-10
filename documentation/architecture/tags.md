@@ -78,6 +78,26 @@ if (!excludedTools.contains(tool.name())) {
 }
 ```
 
+**The effect-tag AND rule (O3), opt-in.** The OR match above reads wrong for a
+tool that reaches outside the process. `run_shell` wears `{network, exec, write}`,
+and "any one" means a task granted only `write` — a right meant for editing a
+file — is also handed a shell. The rule that fixes that is behind
+`naru.tags.effectAnd`, resolved once per session (system property, then session
+env, then project config), with three values:
+
+| Value | Behaviour |
+|---|---|
+| `off` (default) | exactly the OR match above |
+| `warn` | OR is kept, and the first `findTools()` that has a mismatch reports the tools the AND rule would withdraw |
+| `on` | `write`, `exec` and `network` must **all** be granted; the remaining domain tags keep the OR rule |
+
+Under `on`, a tool is visible when every effect tag it declares is held **and**,
+if it also declares domain tags, at least one domain tag is held. `git_commit`
+(`{dev, git, write}`) therefore needs `write` plus `git` or `dev`; `run_shell`
+needs all three effects; a domain-only tool such as `git_status` (`{dev, git}`)
+is unchanged. The flag exists so the change can be measured before it becomes
+the rule.
+
 **Why fail-closed.** "No tags" used to read as "no permission needed", so a tool
 that simply forgot to declare its tags was offered to every task, including ones
 holding none — the exact inverse of what the rest of the gate promises. A tag is
@@ -144,7 +164,9 @@ Notes on the vocabulary:
 - Every provider normalizes its names to lower-kebab, so `"FILESYSTEM"` and
   `"fs"` are the same tag.
 - A tool may wear several tags; the gate matches with **or** semantics — `git_commit`
-  is `{dev, git, write}`, so granting any one of the three reveals it.
+  is `{dev, git, write}`, so granting any one of the three reveals it. The
+  opt-in effect-tag AND rule (§2) tightens only the effect tags (`write`, `exec`,
+  `network`); the domain tags above keep their OR behaviour.
 - The `tags` tag gates the two tools that change tags (§4): it is the
   self-referential key that must be granted before the model may manage grants
   itself.
@@ -276,18 +298,23 @@ session start — and the scalar configs they pin (`model`, `working-dir`,
 
 A spawn target (an agent `.md` front-matter, or a script/routine header) may declare
 a **contract**: `requires` (a tag expression using `&`, `|`, `!`, names and
-parentheses) and `skills`. The contract is
+parentheses), an optional `tools` list, and `skills`. The contract is
 validated **after** resolution against the resolved tag set; an unsatisfied contract
 fails the spawn with a message naming the fixing flag (`--add-tags=<tag>` /
-`--revoke-tags=<tag>`). A contract **constrains and grants skills only** — it may not
-add, revoke or inherit tags (such keys are rejected at parse time), because it must
+`--revoke-tags=<tag>`). `tools` names the tools the target needs by name: a tool the
+resolution reaches via `--exclude-tools` (or a policy) fails the spawn with a message
+naming the exclusion to drop. Naming a tool is a constraint, not a grant — the
+contract cannot add tools any more than it can add tags; a tool missing from the
+registry is not a violation. A contract **constrains and grants skills only** — it may
+not add, revoke or inherit tags (such keys are rejected at parse time), because it must
 never expand permission. The model-initiated path (`delegate_to_model`) is narrower
 still: it takes a target name plus optional `revoke_tags` / `inherit` **narrowing
 only**, and exposes no parameter that could add a tag.
 
-### Provenance and the `TaskSpawned` event
+### Provenance and the `task-spawn` event
 
-Every spawn appends a `TaskSpawned` event whose payload is the resolved sets and the
+Every spawn appends a `task-spawn` event (the pre-kebab historical name
+`TaskSpawned` is still matched) whose payload is the resolved sets and the
 source of each item — the same lines `/start --explain` prints without spawning:
 
 ```text
@@ -532,7 +559,7 @@ behaviour are referenced so the delta is easy to audit.
 - **A contract could have expanded permission.** A contract may validate
   `requires` and grant skills, but tag-add/revoke/inherit keys are rejected at
   parse time; the model path exposes no add parameter at all.
-- **The resolution was invisible.** `TaskSpawned` and `/start --explain` now carry
+- **The resolution was invisible.** `task-spawn` and `/start --explain` now carry
   per-item provenance; the payload has no grant channel.
 
 ## 11. Where the code lives
@@ -546,7 +573,7 @@ behaviour are referenced so the delta is easy to audit.
 | The gate itself (`findTools`) | `core/naru-impl/.../impl/engine/scheduler/NaruTaskImpl.java` |
 | Per-task tag set + grant/revoke/exclusion API | `NaruTaskImpl` (state + methods), `NaruTaskSpec` (spawn seeding) |
 | Spawn API (`NaruSpawnContext/Resolution/Policy/Seed/Source/Strategy/Inherit/Contract/Targets`, `NaruToolTagExpression`) | `core/naru-api/.../api/spawn/` |
-| Spawn resolution (`NaruSpawnPlanner`), `resolveSpawn`, policy registry, `onSpawn`/`onSpawned`, `TaskSpawned` | `core/naru-impl/.../impl/engine/`, `core/naru-impl/.../impl/engine/spawn/NaruSpawnPlanner.java` |
+| Spawn resolution (`NaruSpawnPlanner`), `resolveSpawn`, policy registry, `onSpawn`/`onSpawned`, `task-spawn` | `core/naru-impl/.../impl/engine/`, `core/naru-impl/.../impl/engine/spawn/NaruSpawnPlanner.java` |
 | Mode veto | `NaruTaskImpl.findTools()`, `NaruPromptMode.acceptToolTags` |
 | `/tags` directive | `extensions/naru-tools-llm/.../NaruTagsDirective.java` |
 | `/tools` directive | `extensions/naru-tools-llm/.../NaruToolsDirective.java` |

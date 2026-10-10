@@ -140,6 +140,25 @@ public class NaruTagRegistryLintTest {
                         + "dead weight until they are tagged: " + invisible);
     }
 
+    /**
+     * The fail-closed gate's single escape hatch, pinned. {@code isEssential()} bypasses
+     * the tag match, which means it is a permission granted without ever being granted:
+     * it must stay the one tool the core deliberately keeps unconditional — the
+     * no-op scratchpad — and any second essential tool has to justify itself in the
+     * registry, not slip in unnoticed.
+     */
+    @Test
+    public void thinkIsTheOnlyEssentialTool() {
+        List<String> essentials = tools().values().stream()
+                .filter(NaruTool::isEssential)
+                .map(NaruTool::name)
+                .sorted()
+                .toList();
+        assertEquals(List.of("think"), essentials,
+                "the fail-closed gate has exactly one essential tool and it is 'think'. "
+                        + "Everything else must earn its way through a tag: " + essentials);
+    }
+
     // ── every registered grant must open something ───────────────────────────
 
     @Test

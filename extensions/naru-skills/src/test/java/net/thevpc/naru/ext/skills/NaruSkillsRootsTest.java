@@ -292,6 +292,51 @@ public class NaruSkillsRootsTest {
         assertFalse(file.isRegularFile(), "an empty trust store is removed");
     }
 
+    // ── the one-time untrusted-root notice (WP6) ────────────────────────────
+
+    @Test
+    public void anUntrustedForeignRootIsReportedOnceAtSessionOpen() {
+        // the foreign root exists before the session opens, so the extension can see it
+        foreignSkill("claude", "legacy", "legacy body");
+        List<NaruOutput> freshOutputs = new ArrayList<>();
+        NaruAgent a = new NaruAgentImpl();
+        a.projectDirectory(projectDir);
+        NaruSessionImpl fresh = new NaruSessionImpl(a, projectDir,
+                new NaruStreamInteraction(freshOutputs::add), true, NOOP_LISTENER, null, null, null);
+        try {
+            assertTrue(freshOutputs.stream()
+                            .anyMatch(o -> o.message().toString().contains("untrusted foreign skills root")),
+                    () -> "opening a session over an untrusted foreign root must report it once: " + freshOutputs);
+            assertTrue(freshOutputs.stream()
+                            .anyMatch(o -> o.message().toString().contains("/skills trust")),
+                    () -> "the notice must name the trusting command: " + freshOutputs);
+        } finally {
+            fresh.stop();
+        }
+    }
+
+    @Test
+    public void aPersistedTrustDecisionSuppressesTheNotice() {
+        foreignSkill("claude", "legacy", "legacy body");
+        ext.reload();
+        NaruTask t = task();
+        assertTrue(ext.trust(root(ext.roots(t), "claude"), true),
+                "precondition: the root must be trusted and persisted");
+
+        List<NaruOutput> freshOutputs = new ArrayList<>();
+        NaruAgent a = new NaruAgentImpl();
+        a.projectDirectory(projectDir);
+        NaruSessionImpl fresh = new NaruSessionImpl(a, projectDir,
+                new NaruStreamInteraction(freshOutputs::add), true, NOOP_LISTENER, null, null, null);
+        try {
+            assertTrue(freshOutputs.stream()
+                            .noneMatch(o -> o.message().toString().contains("untrusted foreign skills root")),
+                    () -> "a persisted trust decision must suppress the notice: " + freshOutputs);
+        } finally {
+            fresh.stop();
+        }
+    }
+
     @Test
     public void userLevelForeignTrustIsPersistedUnderTheUserHome() {
         foreignUserSkill("claude", "personal", "personal body");

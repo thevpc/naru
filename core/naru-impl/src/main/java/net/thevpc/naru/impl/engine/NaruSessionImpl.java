@@ -143,6 +143,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      */
     private Boolean initOnCdEnabled;
     private boolean initOnCdWarned;
+    /**
+     * Cached effect-tag AND mode: {@code "on"}, {@code "warn"} or {@code "off"} (default);
+     * null until first read. See {@link #isEffectTagAndEnabled()}.
+     */
+    private String effectTagAndMode;
+    private boolean effectTagAndWarned;
 
 
     public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
@@ -1689,8 +1695,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     private boolean resolveInitOnCd() {
-        String[] keys = {"naru.initOnCd", "session.initOnCd", "init.onCd"};
-        String sys = System.getProperty("naru.initOnCd");
+        String[] keys = {"naru.hooks.initOnCd", "naru.initOnCd", "session.initOnCd", "init.onCd"};
+        String sys = System.getProperty("naru.hooks.initOnCd");
+        if (sys == null || sys.trim().isEmpty()) {
+            sys = System.getProperty("naru.initOnCd");
+        }
         if (sys != null && !sys.trim().isEmpty()) {
             return NLiteral.of(sys.trim()).asBoolean().orElse(false);
         }
@@ -1721,6 +1730,85 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                     + "the workspace init once), or set naru.initOnCd=true to keep the old "
                     + "behaviour temporarily."));
         }
+    }
+
+    /**
+     * The effect-tag matching mode (O3). {@code write}, {@code exec} and {@code network}
+     * are effect tags; under the AND rule a tool is visible only when <em>every</em> effect
+     * tag it wears is granted (domain tags keep their OR behaviour). Off by default: the
+     * flag exists so the change can be evaluated before it becomes the rule.
+     * <p>
+     * Read once (a system property wins, then the session environment, then the project
+     * configuration) and cached.
+     *
+     * @return {@code "on"}, {@code "warn"} or {@code "off"}
+     */
+    public String effectTagAndMode() {
+        if (effectTagAndMode == null) {
+            effectTagAndMode = resolveEffectTagAnd();
+        }
+        return effectTagAndMode;
+    }
+
+    /** Whether the effect-tag AND rule is enforced (O3). */
+    public boolean isEffectTagAndEnabled() {
+        return "on".equals(effectTagAndMode());
+    }
+
+    /** Whether a grant that would be insufficient under the AND rule is reported (O3). */
+    public boolean isEffectTagAndWarn() {
+        return "warn".equals(effectTagAndMode());
+    }
+
+    private String resolveEffectTagAnd() {
+        String[] keys = {"naru.tags.effectAnd", "session.tags.effectAnd", "tags.effectAnd"};
+        String sys = System.getProperty("naru.tags.effectAnd");
+        String raw = sys;
+        if (raw == null || raw.trim().isEmpty()) {
+            for (String key : keys) {
+                Object v = getSessionEnv(key).orNull();
+                if (v != null) {
+                    raw = String.valueOf(v);
+                    break;
+                }
+            }
+        }
+        if (raw == null || raw.trim().isEmpty()) {
+            for (String key : keys) {
+                NElement v = getProjectEnv(key).orNull();
+                if (v != null) {
+                    raw = v.asStringValue().orNull();
+                    if (raw == null) {
+                        raw = String.valueOf(v);
+                    }
+                    break;
+                }
+            }
+        }
+        String s = raw == null ? "" : raw.trim().toLowerCase();
+        return switch (s) {
+            case "on", "true", "yes", "1", "and", "enforce" -> "on";
+            case "warn", "warning", "warn-only" -> "warn";
+            default -> "off";
+        };
+    }
+
+    /**
+     * Reports, once per session, the tools whose visibility OR grants but the effect-tag
+     * AND rule would withdraw. Migration aid for O3: the grant set stays sufficient today,
+     * and the warning says exactly which tools would disappear if the flag were turned on.
+     */
+    public void warnEffectTagAnd(java.util.Collection<String> tools) {
+        if (effectTagAndWarned || tools == null || tools.isEmpty()) {
+            return;
+        }
+        effectTagAndWarned = true;
+        java.util.List<String> sorted = new java.util.ArrayList<>(tools);
+        java.util.Collections.sort(sorted);
+        warn(NMsg.ofC("⚠ effect-tag AND rule (O3, warning mode): these visible tools would "
+                + "need every effect tag (write/exec/network) granted, not just one: %s. "
+                + "Grant the missing effects or leave naru.tags.effectAnd off.",
+                String.join(", ", sorted)));
     }
 
     @Override

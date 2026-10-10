@@ -6,5 +6,6 @@ public class NaruBudgetDirectiveProvider extends NaruDirectiveProviderBase {
     public NaruBudgetDirectiveProvider() {
         super("budget");
         this.registerDirective(new NaruBudgetDirective());
+        this.registerDirective(new NaruStatsDirective());
     }
 }

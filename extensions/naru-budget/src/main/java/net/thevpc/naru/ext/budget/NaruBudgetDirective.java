@@ -255,6 +255,16 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         long toolResults;
         long toolCalls;
 
+        // what the AGENT bucket is made of (WP5): skill messages split by whether the
+        // source-name is a "catalog:" advertisement or a loaded skill body, everything
+        // else (routines, session defaults, ...) in "other agent"
+        long skillCatalogChars;
+        long skillLoadedChars;
+        long agentOtherChars;
+        int skillCatalogMessages;
+        int skillLoadedMessages;
+        int agentOtherMessages;
+
         long chars(Bucket b) {
             return chars[b.ordinal()];
         }
@@ -265,6 +275,39 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
 
         void add(Bucket b, long n) {
             chars[b.ordinal()] += n;
+        }
+
+        long skillCatalogTokens() {
+            return Math.round(skillCatalogChars / CHARS_PER_TOKEN);
+        }
+
+        long skillLoadedTokens() {
+            return Math.round(skillLoadedChars / CHARS_PER_TOKEN);
+        }
+
+        long agentOtherTokens() {
+            return Math.round(agentOtherChars / CHARS_PER_TOKEN);
+        }
+
+        /**
+         * Routes an AGENT-bucket message to the skill split. The {@code catalog:} prefix is
+         * the skills extension's mark on advert rows; anything else with a SKILL source is a
+         * loaded body (a real file path, or {@code skills:<name>} for a missing skill).
+         */
+        void attributeAgent(NaruMessage msg, long msgChars) {
+            if (msg.getSource() == NaruSource.SKILL) {
+                String sourceName = msg.getSourceName();
+                if (sourceName != null && sourceName.startsWith("catalog:")) {
+                    skillCatalogChars += msgChars;
+                    skillCatalogMessages++;
+                } else {
+                    skillLoadedChars += msgChars;
+                    skillLoadedMessages++;
+                }
+            } else {
+                agentOtherChars += msgChars;
+                agentOtherMessages++;
+            }
         }
     }
 
@@ -305,9 +348,9 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
             s.messages = messages.size();
             for (NaruMessage msg : messages) {
                 Bucket b = bucketOf(msg);
-                s.add(b, MSG_OVERHEAD_CHARS);
+                long msgChars = MSG_OVERHEAD_CHARS;
                 if (msg.getContent() != null) {
-                    s.add(b, msg.getContent().length());
+                    msgChars += msg.getContent().length();
                 }
                 // a tool call is assistant text the provider still tokenizes: the name
                 // plus the serialized arguments, and it stays in the history on every
@@ -315,8 +358,12 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                 if (msg.getToolCalls() != null) {
                     for (NaruToolCall call : msg.getToolCalls()) {
                         s.toolCalls++;
-                        s.add(b, chars(call.getName()) + chars(call.getArguments()));
+                        msgChars += chars(call.getName()) + chars(call.getArguments());
                     }
+                }
+                s.add(b, msgChars);
+                if (b == Bucket.AGENT) {
+                    s.attributeAgent(msg, msgChars);
                 }
             }
         }

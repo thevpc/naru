@@ -25,7 +25,7 @@ This page is about the **navigation** directives and the **init scripts** they t
 | Directive          | Changes        | Side effects |
 |--------------------|----------------|--------------|
 | `/cd <dir>`        | working dir    | **none** — pure navigation |
-| `/project <dir>`   | project root   | re-resolves roots/context/models, runs the workspace `init.naru` once, fires `project-change` |
+| `/project <dir>`   | project root   | re-resolves roots/context files/model defaults, runs the workspace `init.naru` once, fires `project-change` |
 
 `/cd` is the cheap one: it moves where relative paths and folder-scoped context are
 resolved, and does nothing else. In particular it **does not run any init script** and
@@ -159,6 +159,10 @@ warned about, never an error.
 | granted tags / excluded tools         | context files |
 | the session's store binding           | model defaults |
 | tasks' working directories            | init hooks (new root) |
+
+"Model defaults" re-resolve (what the new root's config would default a fresh model
+selection to); a task's *selected model* is fixed at task creation and `/project` does
+not switch it.
 
 Storage follows the session: `/project` does **not** migrate the session to another store.
 The session keeps writing to the store it was created with, so a project switch is about

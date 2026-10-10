@@ -405,6 +405,43 @@ public class NaruSpawnTest {
                 () -> "a contract that adds tags must be rejected at parse time: " + e.getMessage());
     }
 
+    @Test
+    public void contractToolsRoundTripThroughParse() {
+        NaruSpawnContract contract = NaruSpawnContract.parse("{ tools: [\"file_read\", \"git_status\"] }");
+        assertNotNull(contract);
+        assertEquals(List.of("file_read", "git_status"), contract.tools());
+    }
+
+    @Test
+    public void contractToolThatTheResolutionExcludesFailsTheSpawn() {
+        NaruTask parent = newTask();
+        parent.addToolTag("fs");
+        NaruSpawnContract contract = NaruSpawnContract.parse("{ tools: [\"run_shell\"] }");
+        assertNotNull(contract);
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> resolve(parent, NaruTaskSpec.of()
+                        .inherit(NaruSpawnInherit.TAGS)
+                        .excludeTools("run_shell")
+                        .contract(contract)));
+        assertTrue(e.getMessage().contains("run_shell"),
+                () -> "the failure must name the tool the resolution excludes: " + e.getMessage());
+    }
+
+    @Test
+    public void contractToolThatSurvivesTheResolutionPasses() {
+        NaruTask parent = newTask();
+        parent.addToolTag("fs");
+        NaruSpawnContract contract = NaruSpawnContract.parse("{ tools: [\"file_read\"] }");
+        assertNotNull(contract);
+
+        // naming a tool is a constraint, not a grant: the spawn succeeds and grants nothing
+        NaruTask child = spawn(parent, NaruTaskSpec.of()
+                .inherit(NaruSpawnInherit.TAGS)
+                .contract(contract));
+        assertEquals(Set.of("fs"), child.findToolTagNames());
+    }
+
     // ── the TaskSpawned event ───────────────────────────────────────────────
 
     @Test

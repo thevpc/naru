@@ -294,4 +294,65 @@ public class NaruBudgetDirectiveTest {
         Assertions.assertTrue(out.contains("reported last call"),
                 "an estimate with nothing to compare against cannot be trusted:\n" + out);
     }
+
+    // ── /stats: catalog vs loaded skill attribution (WP5) ────────────────
+
+    /**
+     * The AGENT bucket lumps every non-user source together, which hides the thing that
+     * actually grows with skill count: catalog advertisements vs spliced skill bodies.
+     */
+    @Test
+    public void agentBucketSplitsCatalogFromLoadedSkillBodies() {
+        NaruBudgetDirective.PromptStats s = estimate(
+                NaruMessage.user("advertised skill named home")
+                        .setSource(NaruSource.SKILL).setSourceName("catalog:home"),
+                NaruMessage.user("the spliced body of a loaded skill with plenty of text")
+                        .setSource(NaruSource.SKILL).setSourceName("/x/.naru/skills/loaded/SKILL.md"),
+                NaruMessage.user("a skill name nobody resolved")
+                        .setSource(NaruSource.SKILL).setSourceName("skills:missing"),
+                NaruMessage.user("something the routine extension contributed")
+                        .setSource(NaruSource.AGENT).setSourceName("routine"));
+
+        Assertions.assertEquals(1, s.skillCatalogMessages);
+        Assertions.assertEquals(2, s.skillLoadedMessages,
+                "a loaded body and a missing skill both belong to the file side");
+        Assertions.assertEquals(1, s.agentOtherMessages);
+        Assertions.assertTrue(s.skillCatalogTokens() > 0);
+        Assertions.assertTrue(s.skillLoadedTokens() > 0);
+        Assertions.assertTrue(s.agentOtherTokens() > 0);
+    }
+
+    @Test
+    public void aRequestWithoutSkillSourceHasNothingToSplit() {
+        NaruBudgetDirective.PromptStats s = estimate(
+                NaruMessage.system("brief"),
+                NaruMessage.user("plain user text"));
+
+        Assertions.assertEquals(0, s.skillCatalogMessages);
+        Assertions.assertEquals(0, s.skillLoadedMessages);
+        Assertions.assertEquals(0, s.agentOtherMessages);
+    }
+
+    @Test
+    public void statsDirectiveReportsTheSplitAndRunsClean() {
+        NaruDirectiveCallContext ctx = new NaruDirectiveCallContextImpl("stats", null, task(
+                NaruMessage.user("catalog row")
+                        .setSource(NaruSource.SKILL).setSourceName("catalog:readme"),
+                NaruMessage.user("loaded body text")
+                        .setSource(NaruSource.SKILL).setSourceName("/x/.naru/skills/readme/SKILL.md"),
+                NaruMessage.system("brief")));
+        NaruStmtResult result = new NaruStatsDirective().execute(ctx);
+
+        Assertions.assertEquals(0, result.exitCode(),
+                "/stats must not fail on a request with skill messages: " + result.errorValue());
+        String out = String.valueOf(result.successValue());
+        Assertions.assertTrue(out.contains("skill contribution"),
+                "the split is the point of /stats:\n" + out);
+        Assertions.assertTrue(out.contains("catalog"),
+                "advertised skills must be a named row:\n" + out);
+        Assertions.assertTrue(out.contains("loaded bodies"),
+                "spliced skill bodies must be a named row:\n" + out);
+        Assertions.assertTrue(out.contains("per model"),
+                "the per-model spend is part of /stats:\n" + out);
+    }
 }
