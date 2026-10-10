@@ -62,9 +62,18 @@ public interface NaruSkillManager {
 
     /**
      * Records a trust decision for a foreign root and reloads the snapshot so the change
-     * takes effect. Returns true when the persisted state changed.
+     * takes effect. Returns true when the persisted state changed. Convenience form that
+     * grants {@link NaruSkillTrustLevel#READ} ({@code trusted}) or revokes entirely.
      */
     boolean trust(NaruSkillRoot root, boolean trusted);
+
+    /**
+     * Records a trust decision at a {@link NaruSkillTrustLevel} for a foreign root and
+     * reloads the snapshot so the change takes effect. A {@code null} or
+     * {@link NaruSkillTrustLevel#NONE} level revokes the entry. Returns true when the
+     * persisted state changed.
+     */
+    boolean trust(NaruSkillRoot root, NaruSkillTrustLevel level);
 
     /**
      * Refreshes a single skill from disk — the targeted form of {@link #reload()} used by

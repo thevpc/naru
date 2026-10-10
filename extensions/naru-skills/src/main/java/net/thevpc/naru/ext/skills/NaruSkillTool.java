@@ -72,6 +72,13 @@ public class NaruSkillTool extends DefaultNaruTool {
             return "error: the skills extension is not installed in this session";
         }
         String canonical = name.trim();
+        NaruSkillTrustLevel shortfall = ext.trustShortfall(task, canonical);
+        if (shortfall != null) {
+            return "error: skill " + canonical + " declares tools that need "
+                    + shortfall.name().toLowerCase()
+                    + " trust, but its foreign root grants less; run /skills trust <root> --"
+                    + shortfall.name().toLowerCase() + " first";
+        }
         // loadAndPropagate also publishes the load to this task's existing children
         ext.loadAndPropagate(task, canonical);
         NaruSkill skill = ext.skills().findSkill(task, canonical);

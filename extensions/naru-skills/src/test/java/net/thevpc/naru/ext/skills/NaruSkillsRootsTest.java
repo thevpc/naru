@@ -312,6 +312,86 @@ public class NaruSkillsRootsTest {
         assertNotNull(ext.skills().findSkill("personal"));
     }
 
+    @Test
+    public void trustLevelsGateDeclaredExecToolsAndPersist() {
+        write(projectDir.resolve(".claude/skills/helper/SKILL.md"),
+                "---", "name: helper", "description: helper",
+                "allowed-tools: \"bash\"", "---", "", "helper body");
+        ext.reload();
+        NaruTask t = task();
+        NaruSkillRoot claude = root(ext.roots(t), "claude");
+        assertNull(ext.skills().findSkill("helper"), "an untrusted foreign root contributes nothing");
+
+        // read-level trust loads the body but must not cover an exec tool
+        ext.trust(claude, NaruSkillTrustLevel.READ);
+        assertEquals(NaruSkillTrustLevel.READ, root(ext.roots(t), "claude").trustLevel());
+        assertEquals(NaruSkillTrustLevel.EXEC, ext.trustShortfall(t, "helper"),
+                "a skill declaring bash must need exec trust");
+
+        // upgrading to exec clears the shortfall
+        ext.trust(claude, NaruSkillTrustLevel.EXEC);
+        assertEquals(NaruSkillTrustLevel.EXEC, root(ext.roots(t), "claude").trustLevel());
+        assertNull(ext.trustShortfall(t, "helper"),
+                "exec trust must cover a declared bash tool");
+        assertNotNull(ext.skills().findSkill("helper"));
+
+        // the level survives a fresh store over the same scope
+        NPath file = projectDir.resolve(".naru/local/skills-trust.tson");
+        assertTrue(file.isRegularFile(), "level trust must be persisted: " + file);
+        String tson = file.readString();
+        assertTrue(tson.contains("\"exec\""), () -> "the level must be in the payload: " + tson);
+        NaruSkillRoot concrete = new NaruSkillRoot(NaruSkillRootKind.FOREIGN_PROJECT,
+                projectDir.resolve(".claude/skills"), "claude", 6000, false);
+        NaruSkillTrustStore store = new NaruSkillTrustStore(projectDir, userHome);
+        assertEquals(NaruSkillTrustLevel.EXEC, store.trustLevel(concrete),
+                "the persisted level must be read back");
+
+        // write-level trust covers file-tools but not the bash tool
+        ext.trust(claude, NaruSkillTrustLevel.WRITE);
+        assertEquals(NaruSkillTrustLevel.WRITE, root(ext.roots(t), "claude").trustLevel());
+        assertEquals(NaruSkillTrustLevel.EXEC, ext.trustShortfall(t, "helper"),
+                "downgrading from exec to write must re-introduce the exec shortfall");
+
+        ext.trust(claude, false);
+        assertNull(ext.skills().findSkill("helper"), "untrusting removes the root again");
+        assertFalse(file.isRegularFile(), "an empty trust store is removed");
+    }
+
+    @Test
+    public void legacyTrustedArrayFormatIsReadAsReadLevel() {
+        write(projectDir.resolve(".naru/local/skills-trust.tson"),
+                "{trusted:[\"claude|.claude/skills\"]}");
+        NaruSkillTrustStore store = new NaruSkillTrustStore(projectDir, userHome);
+        NaruSkillRoot concrete = new NaruSkillRoot(NaruSkillRootKind.FOREIGN_PROJECT,
+                projectDir.resolve(".claude/skills"), "claude", 6000, false);
+
+        assertEquals(NaruSkillTrustLevel.READ, store.trustLevel(concrete),
+                "a legacy array entry is a read grant");
+        assertTrue(store.isTrusted(concrete),
+                "the legacy array form must still trust the root");
+        assertEquals(NaruSkillTrustLevel.READ,
+                new NaruSkillTrustStore(projectDir, userHome).trustLevel(concrete),
+                "reading the legacy file twice must be stable");
+    }
+
+    @Test
+    public void aReadGrantCoversBodyOnlyAndDeclaredFileTools() {
+        write(projectDir.resolve(".agents/skills/shaper/SKILL.md"),
+                "---", "name: shaper", "description: shaper",
+                "allowed-tools: \"write_file\"", "---", "", "shaper body");
+        ext.reload();
+        NaruTask t = task();
+        NaruSkillRoot agents = root(ext.roots(t), "agents");
+
+        ext.trust(agents, NaruSkillTrustLevel.READ);
+        assertEquals(NaruSkillTrustLevel.WRITE, ext.trustShortfall(t, "shaper"),
+                "declared write_file needs write trust");
+
+        ext.trust(agents, NaruSkillTrustLevel.WRITE);
+        assertNull(ext.trustShortfall(t, "shaper"),
+                "write trust must cover a declared file-writing tool");
+    }
+
     // ── folder-scoped walk ─────────────────────────────────────────────────
 
     @Test

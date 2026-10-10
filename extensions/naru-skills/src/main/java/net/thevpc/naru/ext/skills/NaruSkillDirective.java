@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.skills;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
@@ -8,6 +9,10 @@ import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.util.NaruUtils;
+import net.thevpc.nuts.cmdline.NArg;
+import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
+import net.thevpc.nuts.cmdline.NArgCompletePosition;
+import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
@@ -81,6 +86,13 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                     return NaruStmtResult.ofError(msg.toString());
                 }
                 NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
+                NaruSkillTrustLevel shortfall = ext.trustShortfall(task, name);
+                if (shortfall != null) {
+                    NMsg msg = NMsg.ofC("skill %s declares tools that need %s trust, but its foreign root grants less; run /skills trust <root> --%s",
+                            name, shortfall.name().toLowerCase(), shortfall.name().toLowerCase()).asError();
+                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
+                    return NaruStmtResult.ofError(msg.toString());
+                }
                 if (ext.load(task, name)) {
                     context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded skill : %s", name));
                     task.addHistory(NaruMessage.user(NMsg.ofC("Loaded skill : %s", name).toString()));
@@ -173,27 +185,100 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                 return NaruStmtResult.ofSuccess(sb.toString());
             }
         });
-        register(new AbstractSubCommand("trust", NText.ofPlain("trust a foreign skill root so it is read"),
-                new SubCommandHelp("<index|substring>", "trust the foreign root at the index /skill list prints, or whose path/label contains the given text")) {
+        register(new AbstractSubCommand("trust", NText.ofPlain("trust a foreign skill root, and how far"),
+                new SubCommandHelp("<index|substring> [--read|--write|--exec]",
+                        "trust the foreign root at the index /skill list prints, or whose path/label contains the given text; grant read (default), write, or exec level")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                return setTrust(context, cmdLine, true);
+                return setTrust(context, cmdLine, null);
             }
         });
         register(new AbstractSubCommand("untrust", NText.ofPlain("stop trusting a foreign skill root"),
                 new SubCommandHelp("<index|substring>", "untrust a previously trusted foreign root; NARU-native roots are never trustable")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                return setTrust(context, cmdLine, false);
+                return setTrust(context, cmdLine, NaruSkillTrustLevel.NONE);
             }
         });
     }
 
-    private static NaruStmtResult setTrust(NaruDirectiveCallContext context, NCmdLine cmdLine, boolean trusted) {
+    // ── autocomplete ─────────────────────────────────────────────────────────
+
+    /**
+     * Tab-completion for the value words of each subcommand: skill names for the
+     * name-taking commands, root labels for {@code trust}/{@code untrust}. Subcommand
+     * names are delegated to the base resolver.
+     */
+    @Override
+    public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+        String[] words = cmdLine.toStringArray();
+        int wordIndex = pos.wordIndex();
+        if (wordIndex < 2 || words.length < 2) {
+            return super.resolveCandidates(cmdLine, pos, session);
+        }
+        String currentArg = wordIndex < words.length ? words[wordIndex] : "";
+        String sub = words[1];
+        List<NArgCompleteCandidate> candidates = new ArrayList<>();
+        switch (sub) {
+            case "show":
+            case "load":
+            case "unload":
+            case "reload":
+                for (NaruSkill skill : NaruSkillsExtension.skills(session).skills().available()) {
+                    String name = skill.getName();
+                    if (name.toLowerCase().startsWith(currentArg.toLowerCase())) {
+                        candidates.add(NArgCompleteCandidate.of(name));
+                    }
+                }
+                break;
+            case "trust":
+            case "untrust":
+                for (NaruSkillRoot root : NaruSkillsExtension.skills(session).skills().roots(null)) {
+                    String label = root.label();
+                    if (label != null && label.toLowerCase().startsWith(currentArg.toLowerCase())) {
+                        candidates.add(NArgCompleteCandidate.of(label));
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+        return NArgCompleteResult.ofCandidates(candidates);
+    }
+
+    /**
+     * {@code /skills trust <sel> [--read|--write|--exec]} and
+     * {@code /skills untrust <sel>}. The level argument is {@code null} on the trust
+     * command (choose from the flags, read when absent) and {@link NaruSkillTrustLevel#NONE}
+     * on untrust.
+     */
+    private static NaruStmtResult setTrust(NaruDirectiveCallContext context, NCmdLine cmdLine, NaruSkillTrustLevel level) {
         NaruTask task = context.task();
         NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
-        String selector = cmdLine.next().map(x -> x.image()).orElse("");
-        if (selector.isEmpty()) {
+        String selector = null;
+        NaruSkillTrustLevel granted = level;
+        while (!cmdLine.isEmpty()) {
+            NArg a = cmdLine.next().get();
+            String image = a.image();
+            if (image.startsWith("--")) {
+                String flag = image.substring(2).trim();
+                if (granted == NaruSkillTrustLevel.NONE) {
+                    NMsg msg = NMsg.ofC("unexpected flag --%s on untrust", flag).asError();
+                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
+                    return NaruStmtResult.ofError(msg.toString());
+                }
+                NaruSkillTrustLevel byFlag = parseTrustFlag(flag);
+                if (byFlag == null) {
+                    NMsg msg = NMsg.ofC("unknown trust level --%s (expected --read, --write or --exec)", flag).asError();
+                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
+                    return NaruStmtResult.ofError(msg.toString());
+                }
+                granted = byFlag;
+            } else if (selector == null) {
+                selector = image;
+            }
+        }
+        if (selector == null || selector.isEmpty()) {
             NMsg msg = NMsg.ofC("missing root selector (index or path fragment)");
             task.log(NaruLogMode.AGENT_RESPONSE, msg);
             return NaruStmtResult.ofError(msg.toString());
@@ -209,14 +294,25 @@ public class NaruSkillDirective extends NaruDirectiveBase {
             task.log(NaruLogMode.AGENT_RESPONSE, msg);
             return NaruStmtResult.ofSuccess(msg.toString());
         }
-        boolean changed = ext.trust(root, trusted);
-        NMsg msg = NMsg.ofC("%s foreign root %s (%s)%s",
-                trusted ? "Trusted" : "Untrusted",
-                root.label(),
-                root.path(),
-                changed ? "" : " — no change");
+        NaruSkillTrustLevel grant = granted == null ? NaruSkillTrustLevel.READ : granted;
+        boolean changed = ext.trust(root, grant);
+        String verb = grant == NaruSkillTrustLevel.NONE ? "Untrusted" : "Trusted";
+        NMsg msg = grant == NaruSkillTrustLevel.NONE
+                ? NMsg.ofC("%s foreign root %s (%s)%s", verb, root.label(), root.path(),
+                        changed ? "" : " — no change")
+                : NMsg.ofC("%s foreign root %s (%s) at %s level%s", verb, root.label(), root.path(),
+                        grant.name().toLowerCase(), changed ? "" : " — no change");
         task.log(NaruLogMode.AGENT_RESPONSE, msg);
         return NaruStmtResult.ofSuccess(msg.toString());
+    }
+
+    private static NaruSkillTrustLevel parseTrustFlag(String flag) {
+        return switch (flag) {
+            case "read" -> NaruSkillTrustLevel.READ;
+            case "write" -> NaruSkillTrustLevel.WRITE;
+            case "exec" -> NaruSkillTrustLevel.EXEC;
+            default -> null;
+        };
     }
 
     /**
@@ -277,6 +373,11 @@ public class NaruSkillDirective extends NaruDirectiveBase {
             if (!toolMapped(token, toolNames)) {
                 problems.add("allowed-tools '" + token + "' is not mapped to any tool this task can call");
             }
+        }
+        NaruSkillTrustLevel shortfall = ext.trustShortfall(task, name);
+        if (shortfall != null) {
+            problems.add("TRUST: declares tools that need " + shortfall.name().toLowerCase()
+                    + " trust, but its foreign root grants less");
         }
         problems.addAll(current.getWarnings());
         return problems;
@@ -356,10 +457,10 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         String trust;
         if (!root.requiresTrust()) {
             trust = "native";
-        } else if (root.trusted()) {
-            trust = "trusted";
-        } else {
+        } else if (root.trustLevel() == NaruSkillTrustLevel.NONE) {
             trust = "untrusted";
+        } else {
+            trust = root.trustLevel().name().toLowerCase();
         }
         String state = root.exists() ? "" : " (absent)";
         return String.format("[%2d] %-8s %-14s %-9s %s%s",

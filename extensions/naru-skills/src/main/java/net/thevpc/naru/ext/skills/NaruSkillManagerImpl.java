@@ -74,8 +74,8 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     // ── roots ──────────────────────────────────────────────────────────────
 
     private NaruSkillRoot root(NaruSkillRootKind kind, NPath path, String label, int precedence) {
-        NaruSkillRoot r = new NaruSkillRoot(kind, path, label, precedence, false);
-        return kind.foreign() && trust.isTrusted(r) ? r.asTrusted() : r;
+        NaruSkillRoot r = new NaruSkillRoot(kind, path, label, precedence, NaruSkillTrustLevel.NONE);
+        return r.withTrust(trust.trustLevel(r));
     }
 
     /** The foreign families, project level then user level. */
@@ -158,12 +158,18 @@ class NaruSkillManagerImpl implements NaruSkillManager {
 
     @Override
     public boolean trust(NaruSkillRoot selected, boolean trusted) {
+        return trust(selected, trusted ? NaruSkillTrustLevel.READ : NaruSkillTrustLevel.NONE);
+    }
+
+    @Override
+    public boolean trust(NaruSkillRoot selected, NaruSkillTrustLevel level) {
         if (selected == null || !selected.requiresTrust()) {
             return false;
         }
+        NaruSkillTrustLevel levelToGrant = level == null ? NaruSkillTrustLevel.NONE : level;
         NaruSkillRoot concrete = new NaruSkillRoot(selected.kind(), selected.path(),
-                selected.label(), selected.precedence(), false);
-        boolean changed = trust.setTrusted(concrete, trusted);
+                selected.label(), selected.precedence(), levelToGrant);
+        boolean changed = trust.setTrust(concrete, levelToGrant);
         if (changed) {
             reload();
         }

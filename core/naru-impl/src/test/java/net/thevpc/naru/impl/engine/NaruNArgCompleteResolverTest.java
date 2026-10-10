@@ -130,6 +130,34 @@ public class NaruNArgCompleteResolverTest {
     }
 
     @Test
+    public void anAliasedDirectiveStillDelegatesArguments() {
+        // /help also answers to "?", and an argument typed after the alias must
+        // still reach the aliased directive's completer instead of resolving to
+        // nothing, which would make every aliased command un-completable
+        List<String> canonical = argumentCandidates("/help", "p");
+        List<String> aliased = argumentCandidates("/?", "p");
+        assertFalse(canonical.isEmpty(), "sanity: /help must complete directive names: " + canonical);
+        assertEquals(canonical, aliased,
+                "the ? alias must complete exactly like its canonical /help form");
+        assertTrue(aliased.contains("project"),
+                "the help completer should offer matching directive names: " + aliased);
+    }
+
+    /** Argument-position completion, using the same position shape the other suites use. */
+    private List<String> argumentCandidates(String... words) {
+        NCmdLine cmdLine = NCmdLine.of(words);
+        int last = words.length - 1;
+        NArgCompletePosition pos = NArgCompletePosition.of(last, words[last].length(), 0);
+        NArgCompleteResult result = new NaruNArgCompleteResolver(session)
+                .resolveCandidates(cmdLine.completePosition(pos), pos);
+        List<String> out = new ArrayList<>();
+        for (NArgCompleteCandidate c : result.candidates()) {
+            out.add(c.value());
+        }
+        return out;
+    }
+
+    @Test
     public void aPartialDirectiveIsCompleted() {
         // typing "/he" then Tab should narrow to /help
         List<String> all = candidates("/he");

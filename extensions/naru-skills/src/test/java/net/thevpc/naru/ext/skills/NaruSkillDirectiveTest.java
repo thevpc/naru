@@ -12,10 +12,15 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
+import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
+import net.thevpc.nuts.cmdline.NArgCompletePosition;
+import net.thevpc.nuts.cmdline.NArgCompleteResult;
+import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -135,6 +140,23 @@ public class NaruSkillDirectiveTest {
         write(projectDir.resolve(".naru/skills/" + name + "/SKILL.md"), sb.toString().split("\n", -1));
     }
 
+    private void foreignFolder(String label, String name, String frontMatter, String... body) {
+        StringBuilder sb = new StringBuilder();
+        if (frontMatter != null) {
+            sb.append("---\n").append(frontMatter).append("\n---\n");
+        }
+        for (String l : body) {
+            sb.append(l).append('\n');
+        }
+        NPath root = switch (label) {
+            case "claude" -> projectDir.resolve(".claude/skills");
+            case "agents" -> projectDir.resolve(".agents/skills");
+            case "opencode" -> projectDir.resolve(".opencode/skills");
+            default -> throw new IllegalArgumentException(label);
+        };
+        write(root.resolve(name + "/SKILL.md"), sb.toString().split("\n", -1));
+    }
+
     private static void write(NPath file, String... lines) {
         file.mkParentDirs();
         StringBuilder sb = new StringBuilder();
@@ -211,6 +233,109 @@ public class NaruSkillDirectiveTest {
         NaruTask t = parent();
         assertEquals(String.valueOf(call(t, "skill", "").successValue()),
                 String.valueOf(call(t, "skill", "available").successValue()));
+    }
+
+    // ── trust levels ────────────────────────────────────────────────────────
+
+    @Test
+    public void trustSubcommandGrantsLevelsAndGatesLoadsByDeclaredTools() {
+        foreignFolder("claude", "helper",
+                "name: helper\ndescription: helper\nallowed-tools: \"bash\"",
+                "helper body");
+        ext.reload();
+        NaruTask t = parent();
+
+        // default trust is read: the listing shows the level and a bash-declaring skill
+        // is refused at load time
+        NaruStmtResult trustRead = call(t, "skill", "trust claude");
+        assertNull(trustRead.errorValue(), () -> "default read trust must not error: " + trustRead);
+        assertTrue(String.valueOf(trustRead.successValue()).contains("read level"),
+                () -> "the trust message must name the granted level: " + trustRead.successValue());
+        assertTrue(String.valueOf(call(t, "skill", "list").successValue()).contains("read"),
+                () -> "the root row must show the granted level");
+
+        NaruStmtResult refused = call(t, "skill", "load helper");
+        assertNotNull(refused.errorValue(),
+                () -> "a bash-declaring skill must be refused at read trust: " + refused);
+        assertTrue(String.valueOf(refused.errorValue()).contains("exec"),
+                () -> "the refusal must name the missing exec trust: " + refused.errorValue());
+
+        // an explicit --exec upgrade clears the gate
+        NaruStmtResult trustExec = call(t, "skill", "trust claude --exec");
+        assertNull(trustExec.errorValue(), () -> "trust --exec must not error: " + trustExec);
+        NaruStmtResult loaded = call(t, "skill", "load helper");
+        assertNull(loaded.errorValue(), () -> "load must succeed once exec trust is granted: " + loaded);
+        assertEquals(Set.of("helper"), ext.activeNames(t));
+
+        // an unknown flag is rejected
+        NaruStmtResult bad = call(t, "skill", "trust claude --root");
+        assertNotNull(bad.errorValue(), () -> "an unknown trust flag must be rejected: " + bad);
+
+        // untrust revokes everything again
+        NaruStmtResult untrusted = call(t, "skill", "untrust claude");
+        assertNull(untrusted.errorValue(), () -> "untrust must not error: " + untrusted);
+    }
+
+    @Test
+    public void trustWritesArePersistedWithTheirLevel() {
+        foreignFolder("claude", "helper",
+                "name: helper\ndescription: helper\nallowed-tools: \"write_file\"",
+                "helper body");
+        ext.reload();
+        NaruTask t = parent();
+
+        NaruStmtResult r = call(t, "skill", "trust claude --write");
+        assertNull(r.errorValue(), () -> "trust --write must not error: " + r);
+        assertTrue(String.valueOf(r.successValue()).contains("write level"),
+                () -> "the message must name write: " + r.successValue());
+
+        NPath file = projectDir.resolve(".naru/local/skills-trust.tson");
+        assertTrue(file.isRegularFile(), "the decision must be persisted: " + file);
+        assertTrue(file.readString().contains("\"write\""), () -> "the level must persist");
+
+        // a fresh store over the same scope sees the write level
+        NaruSkillRoot concrete = new NaruSkillRoot(NaruSkillRootKind.FOREIGN_PROJECT,
+                projectDir.resolve(".claude/skills"), "claude", 6000, false);
+        NaruSkillTrustStore store = new NaruSkillTrustStore(projectDir, NPath.ofUserHome());
+        assertEquals(NaruSkillTrustLevel.WRITE, store.trustLevel(concrete),
+                "a fresh store must read the persisted write level back");
+    }
+
+    // ── autocomplete ────────────────────────────────────────────────────────
+
+    @Test
+    public void completionOffersSkillNamesAndRootSelectors() {
+        publicSkill("git-flow", "follow git flow", "follow git flow");
+        foreignFolder("claude", "helper",
+                "name: helper\ndescription: helper", "helper body");
+        ext.reload();
+
+        // name-taking subcommands complete skill names (case-insensitive prefix)
+        for (String sub : new String[]{"show", "load", "unload", "reload"}) {
+            List<String> values = complete("/skill", sub, "git");
+            assertTrue(values.contains("git-flow"),
+                    "/skill " + sub + " must complete skill names, got " + values);
+        }
+
+        // trust/untrust complete foreign root labels
+        for (String sub : new String[]{"trust", "untrust"}) {
+            List<String> values = complete("/skill", sub, "cl");
+            assertTrue(values.contains("claude"),
+                    "/skill " + sub + " must complete foreign root labels, got " + values);
+        }
+    }
+
+    private List<String> complete(String... words) {
+        NCmdLine cmdLine = NCmdLine.of(words);
+        int last = words.length - 1;
+        NArgCompletePosition pos = NArgCompletePosition.of(last, words[last].length(), 0);
+        NArgCompleteResult result = new NaruNArgCompleteResolver(session)
+                .resolveCandidates(cmdLine.completePosition(pos), pos);
+        List<String> out = new ArrayList<>();
+        for (NArgCompleteCandidate c : result.candidates()) {
+            out.add(c.value());
+        }
+        return out;
     }
 
     // ── load / unload / show ────────────────────────────────────────────────

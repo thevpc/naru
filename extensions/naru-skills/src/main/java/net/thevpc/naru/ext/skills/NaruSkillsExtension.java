@@ -602,6 +602,49 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         return skills().trust(root, trusted);
     }
 
+    /**
+     * Records a trust decision at a {@link NaruSkillTrustLevel} for a foreign root (WP6).
+     * Returns true when the persisted state changed; a native root is never trustable and
+     * returns false.
+     */
+    public boolean trust(NaruSkillRoot root, NaruSkillTrustLevel level) {
+        return skills().trust(root, level);
+    }
+
+    /**
+     * The trust level at which the skill's declared {@code allowed-tools} would be
+     * honoured, when the skill's origin root does not grant enough. Returns {@code null}
+     * when the skill may be loaded as-is (no origin root, a native root, an untrusted or
+     * read-level root and nothing demanding more, or root covered). Used by
+     * {@code /skills load} and the {@code skill} tool to refuse a load up front with an
+     * explicit reason.
+     */
+    public NaruSkillTrustLevel trustShortfall(NaruTask task, String name) {
+        String canonical = canonical(name);
+        if (canonical == null) {
+            return null;
+        }
+        NaruSkill skill = skills().findSkill(task, canonical);
+        if (skill == null || skill.getOriginRoot() == null) {
+            return null;
+        }
+        NaruSkillRoot origin = null;
+        for (NaruSkillRoot r : roots(task)) {
+            if (r.path() != null && r.path().toString().equals(skill.getOriginRoot())) {
+                origin = r;
+                break;
+            }
+        }
+        if (origin == null || !origin.requiresTrust()) {
+            return null;
+        }
+        NaruSkillTrustLevel needed = NaruSkillTrustLevel.requiredBy(skill.getAllowedTools());
+        if (needed == NaruSkillTrustLevel.READ || origin.trustLevel().atLeast(needed)) {
+            return null;
+        }
+        return needed;
+    }
+
     /** Explicit {@code /skill reload}: rebuild the discovery snapshot from disk. */
     public void reload() {
         skills().reload();

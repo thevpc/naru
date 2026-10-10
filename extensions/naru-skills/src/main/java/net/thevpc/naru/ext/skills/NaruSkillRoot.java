@@ -13,23 +13,34 @@ import java.util.Objects;
  * always have a lower precedence than foreign ones, which is how "NARU-native always
  * wins" falls out without a special case.
  * <p>
- * Foreign roots are read only when {@link #requiresTrust()} is true and the root has been
- * trusted; a root that needs trust but has not been trusted is still listed (marked) but
- * contributes no skills.
+ * Foreign roots are opt-in and carry a {@link NaruSkillTrustLevel}: they are read only
+ * when the level is at least {@link NaruSkillTrustLevel#READ}, and how much of a skill's
+ * declared {@code allowed-tools} is honoured depends on how high the level goes. A root
+ * that needs trust but has not been trusted is still listed (marked) but contributes no
+ * skills.
  */
 public final class NaruSkillRoot {
     private final NaruSkillRootKind kind;
     private final NPath path;
     private final String label;
     private final int precedence;
-    private final boolean trusted;
+    private final NaruSkillTrustLevel trustLevel;
 
     public NaruSkillRoot(NaruSkillRootKind kind, NPath path, String label, int precedence, boolean trusted) {
+        this(kind, path, label, precedence,
+                trusted || !kind.foreign() ? NaruSkillTrustLevel.READ : NaruSkillTrustLevel.NONE);
+    }
+
+    public NaruSkillRoot(NaruSkillRootKind kind, NPath path, String label, int precedence,
+                         NaruSkillTrustLevel trustLevel) {
         this.kind = Objects.requireNonNull(kind, "kind");
         this.path = path;
         this.label = label == null ? kind.family() : label;
         this.precedence = precedence;
-        this.trusted = trusted || !kind.foreign();
+        // a native root is always readable: its trust never goes below READ
+        this.trustLevel = !kind.foreign() && trustLevel == NaruSkillTrustLevel.NONE
+                ? NaruSkillTrustLevel.READ
+                : trustLevel;
     }
 
     public NaruSkillRootKind kind() {
@@ -58,11 +69,21 @@ public final class NaruSkillRoot {
 
     /** True when the root may be read: native roots always, foreign roots once trusted. */
     public boolean trusted() {
-        return trusted;
+        return trustLevel.atLeast(NaruSkillTrustLevel.READ);
+    }
+
+    /** The granted trust level; {@link NaruSkillTrustLevel#NONE} for an untrusted root. */
+    public NaruSkillTrustLevel trustLevel() {
+        return trustLevel;
+    }
+
+    /** A copy of this root at the given trust level. */
+    public NaruSkillRoot withTrust(NaruSkillTrustLevel level) {
+        return level == trustLevel ? this : new NaruSkillRoot(kind, path, label, precedence, level);
     }
 
     public NaruSkillRoot asTrusted() {
-        return trusted ? this : new NaruSkillRoot(kind, path, label, precedence, true);
+        return withTrust(NaruSkillTrustLevel.READ);
     }
 
     /** True when the root directory exists on disk. */
@@ -72,7 +93,10 @@ public final class NaruSkillRoot {
 
     @Override
     public String toString() {
-        return kind.id() + ":" + path + (requiresTrust() ? (trusted ? " (trusted)" : " (untrusted)") : "");
+        if (!requiresTrust()) {
+            return kind.id() + ":" + path + " (native)";
+        }
+        return kind.id() + ":" + path + " (trust: " + trustLevel.name().toLowerCase() + ")";
     }
 
     @Override
