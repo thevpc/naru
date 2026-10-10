@@ -131,7 +131,7 @@ tagged, which the registry lint (`NaruTagRegistryLintTest`) enforces.
 | Tag | Declared by | Description (as registered) | Example tools |
 |---|---|---|---|
 | `routine` | `naru-impl` (builtin) | routine operations including add, edit, search routines | `routine_add_line`, `routine_list_lines` |
-| `ai` | `naru-impl` (builtin) | AI operations including calling other LLMs/models | `delegate_to_model`, `context_compact`, `ollama_*` |
+| `ai` | `naru-impl` (builtin) | AI operations including calling other LLMs/models | `delegate_to_model`, `model_list`, `context_compact`, `ollama_*` |
 | `network` | `naru-impl` (builtin) | networking operations including search web | `search_web`, `run_shell` |
 | `write` | `naru-impl` (builtin) | persistent modifications in files, folders, databases | `file_write`, `file_edit_search_replace`, `git_commit`, `routine_add_line` |
 | `exec` | `naru-impl` (builtin) | spawning new processes or tasks | `run_shell`, `maven_compile/test/package`, `ollama_start/stop/status/ps`, `routine_run` |
@@ -142,7 +142,7 @@ tagged, which the registry lint (`NaruTagRegistryLintTest`) enforces.
 | `git` | `naru-tools-git` | Git version control tools | `git_status`, `git_diff`, `git_log`, `git_commit` |
 | `mcp` | `naru-tools-mcp` | MCP tools | every `McpBackedTool` (only once an MCP server is configured) |
 | `index` | `naru-tools-index` | codebase indexing and symbol search | `code_symbols`, `find_symbol`, `project_map`, `project_summary` |
-| `tags` | `naru-tools-tags` | grant and revoke tool tags at runtime | `tag_add`, `tag_remove` |
+| `tags` | `naru-tools-tags` | grant and revoke tool tags at runtime | `tag_add`, `tag_remove`, `tag_list` |
 | `plan` | `naru-tools-plan` | planning tools | `plan_create`, `plan_update`, `plan_get` |
 | `skills` | `naru-skills` | load a skill's instructions on demand | `skill` |
 
@@ -336,11 +336,13 @@ an already-spawned child is never re-granted by a later parent change.
 |---|---|---|
 | Grant | `task.addToolTag(name)` (throws on unknown tag) | `/tags enable fs`, `tag_add` (model-callable) |
 | Revoke | `task.removeToolTag(name)` (silent no-op on unknown) | `/tags disable fs`, `tag_remove` |
-| Query | `task.findToolTags()` → `List<NaruToolTag>` | `/tags list`, `/tags available` |
+| Query | `task.findToolTags()` → `List<NaruToolTag>` | `/tags list`, `/tags available`, `tag_list` |
 | Ban a tool name | `task.addToolExclusion(name)` | `/tools exclude cd` |
 
 `/tags enable` understands `*`, `all` and glob patterns (`fs*`); `tag_add`
 accepts a comma/space/`;`-separated list of names in a `tags` parameter.
+`tag_add`/`tag_remove` deliberately do **not** inline the tag catalog — ask
+`tag_list` (filters: `enabled`, `disabled`, `all`, `query`) to discover tags.
 
 ### Persistence
 
@@ -444,7 +446,8 @@ still be made explicit — e.g. an init script that `load`s the skill and
   task's tags. This is why a fully ungranted task can still run `/tags enable`
   to bootstrap itself. The tag gate applies to **model-callable tools** only.
 - **The model can manage grants, once admitted.** `tag_add`/`tag_remove`
-  (`{tags}`) let the model flip tags at runtime — but they are themselves tagged,
+  (`{tags}`) let the model flip tags at runtime, and `tag_list` (`{tags}`) lets it
+  see what exists and what is granted — but they are themselves tagged,
   so a task must first be granted `tags` from outside (directive or spawn spec).
   The self-referentiality is deliberate: "the right to change rights" is never
   granted by default. `NaruTagGateTest` pins both halves of this.

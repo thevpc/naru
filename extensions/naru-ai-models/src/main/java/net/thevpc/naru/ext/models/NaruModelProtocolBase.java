@@ -19,6 +19,7 @@ import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NStringUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -254,6 +255,38 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     }
 
     /**
+     * Format the request body once and refuse to send an empty one.
+     *
+     * <p>An empty body used to reach the server and be rejected with a bare
+     * {@code 400 missing request body}, which told the user nothing about which
+     * model or provider was at fault. Failing here names both instead.
+     */
+    private byte[] formatRequestBody(NElement body) {
+        String json = NElementWriter.ofJson().formatPlain(body);
+        if (NBlankable.isBlank(json) || "null".equals(json.trim())) {
+            throw new NIllegalArgumentException(NMsg.ofC(
+                    "empty request body while calling %s (model %s)",
+                    provider().name(), model.model()));
+        }
+        return json.getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * (Re-)arm the HTTP body just before an attempt.
+     *
+     * <p>{@code NHttpRequest} stores its body as a <em>single-read</em> input
+     * source, so the first {@code run()} consumes it. Retrying the very same
+     * request would therefore transmit an empty body -- exactly the state that
+     * made Ollama answer {@code 400 missing request body}. The serialised bytes
+     * are immutable, so re-applying them before every attempt rebuilds a fresh
+     * single-read source and guarantees each attempt sends the identical
+     * payload, which is also what prompt-cache correctness depends on.
+     */
+    private static void armRequestBody(NHttpRequest request, byte[] jsonBody) {
+        request.requestBody(jsonBody).contentType("application/json");
+    }
+
+    /**
      * Serialise with the cache plan when the provider's serializer understands
      * one, and otherwise fall back to the plain three-argument call.
      *
@@ -347,12 +380,13 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
             cachePlan = NaruCachePlanView.none();
         }
         NElement body = serialize(preparedModelRequest, cachePlan, task);
+        byte[] jsonBody = formatRequestBody(body);
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(task, env))
                 .baseUri(url(task, env));
         NHttpRequest request = http.POST(chatPath(task, env))
-                .timeout(readTimeout(task, env))
-                .jsonRequestBody(body);
+                .timeout(readTimeout(task, env));
+        armRequestBody(request, jsonBody);
         prepareRequest(request, body, task);
 
         int maxRetries = maxRetries(task, env);
@@ -360,7 +394,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         AtomicReference<NDuration> dynamicRetryAfter = new AtomicReference<>();
         AtomicInteger attemptCounter = new AtomicInteger(0);
         NElement headersElements = NElement.of(request.headers());
-        try (NRetryCall<NaruResponse> retryCall = NRetryCall.of("llm-" + provider().name() + "-" + UUID.randomUUID(), new NaruProtocolChatWebCall(attemptCounter, request, body, dynamicRetryAfter, task, toolsWrapped, emulate_tool_calls, preparedModelRequest, cachePlan, cachingMode))) {
+        try (NRetryCall<NaruResponse> retryCall = NRetryCall.of("llm-" + provider().name() + "-" + UUID.randomUUID(), new NaruProtocolChatWebCall(attemptCounter, request, body, jsonBody, dynamicRetryAfter, task, toolsWrapped, emulate_tool_calls, preparedModelRequest, cachePlan, cachingMode))) {
             retryCall.maxRetries(maxRetries)
                     .retryPeriod(attempt -> {
                         NDuration custom = dynamicRetryAfter.getAndSet(null);
@@ -431,6 +465,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         // path: a retry must re-send the identical prefix, or it invalidates the
         // very cache state it is relying on.
         NElement body = serialize(preparedModelRequest, cachePlan, task, true);
+        byte[] jsonBody = formatRequestBody(body);
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(connectTimeout(task, env))
                 .baseUri(url(task, env));
@@ -439,8 +474,8 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 // Without this some servers buffer the whole event stream before
                 // flushing, and "streaming" degrades into a slow batch call.
                 .header("Accept", "text/event-stream")
-                .header("Cache-Control", "no-cache")
-                .jsonRequestBody(body);
+                .header("Cache-Control", "no-cache");
+        armRequestBody(request, jsonBody);
         prepareRequest(request, body, task);
 
         int maxRetries = maxRetries(task, env);
@@ -454,6 +489,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
             Throwable error = null;
             try {
                 NaruModelUtils.logWebRequest(request, NMsg.ofC("stream chat with %s (attempt %s)", model, attempt), body);
+                armRequestBody(request, jsonBody);
                 response = request.run();
                 String errorBody = classifyStatus(response, dynamicRetryAfter);
                 if (errorBody != null) {
@@ -540,6 +576,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         private final AtomicInteger attemptCounter;
         private final NHttpRequest request;
         private final NElement body;
+        private final byte[] jsonBody;
         private final AtomicReference<NDuration> dynamicRetryAfter;
         private final NaruTask task;
         private final boolean toolsWrapped;
@@ -548,10 +585,11 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         private final NaruCachePlanView cachePlan;
         private final NaruCachingMode cachingMode;
 
-        public NaruProtocolChatWebCall(AtomicInteger attemptCounter, NHttpRequest request, NElement body, AtomicReference<NDuration> dynamicRetryAfter, NaruTask task, boolean toolsWrapped, boolean emulate_tool_calls, NaruModelRequest preparedModelRequest, NaruCachePlanView cachePlan, NaruCachingMode cachingMode) {
+        public NaruProtocolChatWebCall(AtomicInteger attemptCounter, NHttpRequest request, NElement body, byte[] jsonBody, AtomicReference<NDuration> dynamicRetryAfter, NaruTask task, boolean toolsWrapped, boolean emulate_tool_calls, NaruModelRequest preparedModelRequest, NaruCachePlanView cachePlan, NaruCachingMode cachingMode) {
             this.attemptCounter = attemptCounter;
             this.request = request;
             this.body = body;
+            this.jsonBody = jsonBody;
             this.dynamicRetryAfter = dynamicRetryAfter;
             this.task = task;
             this.toolsWrapped = toolsWrapped;
@@ -571,6 +609,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
             Throwable error = null;
             try {
                 NaruModelUtils.logWebRequest(request, NMsg.ofC("chat with %s (attempt %s)", model, attempt), body);
+                armRequestBody(request, jsonBody);
                 response = request.run();
                 NHttpCode code = response.statusCode();
 

@@ -49,20 +49,11 @@ public class ModelDelegateTool extends DefaultNaruTool {
         return "delegate_to_model";
     }
 
-    private String availableModelsDescription(NaruTask task) {
-        List<NaruModelInfo> models = task.session().registry().modelsInfos(task.session());
-        if (models.isEmpty()) {
-            return "Unknown (try any model name)";
-        } else {
-            return String.join(", ", models.toString());
-        }
-
-    }
-
     @Override
     public String getDescription(NaruTask task) {
-        return "Delegate a sub-task to another AI model. Use this to offload vision tasks to vision models, or complex reasoning to larger models. Available models: "
-                + availableModelsDescription(task);
+        return "Delegate a sub-task to another AI model. Use this to offload vision tasks to vision models, "
+                + "or complex reasoning to larger models. Call model_list first to discover and filter the "
+                + "available models (by capability, cost or provider) instead of guessing a model name.";
     }
 
     @Override

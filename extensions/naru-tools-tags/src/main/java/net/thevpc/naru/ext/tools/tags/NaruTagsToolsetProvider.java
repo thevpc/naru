@@ -39,7 +39,7 @@ public class NaruTagsToolsetProvider implements NaruToolsetProvider {
     }
 
     private List<NaruTool> builtins() {
-        return Arrays.asList(new ToolTagAddTool(), new ToolTagRemoveTool());
+        return Arrays.asList(new ToolTagAddTool(), new ToolTagRemoveTool(), new ToolTagListTool());
     }
 
 

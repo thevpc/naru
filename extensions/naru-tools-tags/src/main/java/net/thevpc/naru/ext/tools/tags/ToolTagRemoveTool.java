@@ -26,20 +26,12 @@ public class ToolTagRemoveTool extends DefaultNaruTool {
 
     @Override
     public NaruToolDefinition getDefinition(NaruTask task) {
-        List<NaruToolTag> alreadyAdded = task.findToolTags();
-        StringBuilder sb = new StringBuilder();
-        if(alreadyAdded.isEmpty()){
-            sb.append("remove one or more tags by name (comma separated), but it seems no tag has already been added yet.");
-        }else{
-            sb.append("remove one or more tags by name (comma separated) from the following list :");
-            for (NaruToolTag value : alreadyAdded) {
-                sb.append("\n        ").append(value.name()).append(" : ").append(value.description());
-            }
-        }
+        String description = "Remove one or more tool tags by name (comma separated). "
+                + "Use tag_list with enabled=true to see the tags currently enabled on this task.";
         return new NaruToolDefinitionFunction(
                 name(),
-                sb.toString(),
-                NaruToolParameter.string("tags", sb.toString(), true).build()
+                description,
+                NaruToolParameter.string("tags", description, true).build()
         );
     }
 

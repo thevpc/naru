@@ -30,23 +30,12 @@ public class ToolTagAddTool extends DefaultNaruTool {
 
     @Override
     public NaruToolDefinition getDefinition(NaruTask task) {
-        Map<String, NaruToolTag> all = task.session().registry().availableTags();
-        for (NaruToolTag toolTag : task.findToolTags()) {
-            all.remove(toolTag.name());
-        }
-        StringBuilder sb = new StringBuilder();
-        if(all.isEmpty()){
-            sb.append("add one or more tags by name (comma separated), however it seems that all tags are already added");
-        }else {
-            sb.append("add one or more tags by name (comma separated) from the following list :");
-            for (NaruToolTag value : all.values()) {
-                sb.append("\n        ").append(value.name()).append(" : ").append(value.description());
-            }
-        }
+        String description = "Add one or more tool tags by name (comma separated). "
+                + "Use tag_list to see the known tags and which are already enabled.";
         return new NaruToolDefinitionFunction(
                 name(),
-                sb.toString(),
-                NaruToolParameter.string("tags", sb.toString(), true).build()
+                description,
+                NaruToolParameter.string("tags", description, true).build()
         );
     }
 
