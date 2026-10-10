@@ -15,6 +15,7 @@ import net.thevpc.naru.ext.tools.index.spi.SymbolKind;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import net.thevpc.nuts.text.NText;
 
 public class FindSymbolTool extends DefaultNaruTool {
     public FindSymbolTool() {
@@ -22,8 +23,8 @@ public class FindSymbolTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Finds symbols by name.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Finds symbols by name.");
     }
 
     @Override

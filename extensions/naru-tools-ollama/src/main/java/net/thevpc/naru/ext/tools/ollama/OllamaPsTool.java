@@ -12,6 +12,7 @@ import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 
 import java.util.List;
+import net.thevpc.nuts.text.NText;
 
 public class OllamaPsTool extends DefaultNaruTool {
 
@@ -20,8 +21,8 @@ public class OllamaPsTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "List models currently active/loaded in GPU VRAM or system RAM on the Ollama server.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("List models currently active/loaded in GPU VRAM or system RAM on the Ollama server.");
     }
 
     @Override

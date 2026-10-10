@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 
 import java.util.Map;
@@ -26,12 +27,12 @@ public class RoutineListLinesTool extends DefaultNaruTool {
 
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Lists the numbered lines of a naru routine (internal REPL buffer). " +
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Lists the numbered lines of a naru routine (internal REPL buffer). " +
                 "This is NOT a filesystem directory listing or shell command output. " +
                 "Returns lines sorted by line_number in 'NN content' format. " +
                 "If routine_name is empty, lists the currently active routine. " +
-                "Use line_start/line_end to filter a range (e.g., show lines 10-30).";
+                "Use line_start/line_end to filter a range (e.g., show lines 10-30).");
     }
 
     @Override

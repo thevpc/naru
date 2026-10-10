@@ -8,6 +8,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.tools.git.GitHelper;
+import net.thevpc.nuts.text.NText;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.revwalk.RevCommit;
 
@@ -20,8 +21,8 @@ public class GitLogTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Show commit logs.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Show commit logs.");
     }
 
     @Override

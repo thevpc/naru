@@ -9,6 +9,7 @@ import net.thevpc.naru.api.task.NaruTask;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import net.thevpc.nuts.text.NText;
 
 public class McpBackedTool extends DefaultNaruTool {
 
@@ -22,8 +23,8 @@ public class McpBackedTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return mcpTool.description();
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain(mcpTool.description());
     }
 
     @Override

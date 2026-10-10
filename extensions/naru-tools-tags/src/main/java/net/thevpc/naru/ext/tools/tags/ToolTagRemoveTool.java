@@ -4,6 +4,7 @@ import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.util.*;
@@ -15,8 +16,8 @@ public class ToolTagRemoveTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Removes tools that define the given tag";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Removes tools that define the given tag");
     }
 
     @Override

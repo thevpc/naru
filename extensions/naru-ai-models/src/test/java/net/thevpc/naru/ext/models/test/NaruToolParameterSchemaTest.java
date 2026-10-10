@@ -242,7 +242,7 @@ public class NaruToolParameterSchemaTest {
      */
     @Test
     public void missingDescriptionsDoNotBreakSerialisation() {
-        NaruToolDefinition bare = new NaruToolDefinitionFunction("bare", null,
+        NaruToolDefinition bare = new NaruToolDefinitionFunction("bare", (String) null,
                 NaruToolParameter.string("x", null, false).build());
         for (Function<NaruModelRequest, NObjectElement> protocol : allProtocols()) {
             NObjectElement schema = protocol.apply(requestWith(bare));
@@ -354,5 +354,59 @@ public class NaruToolParameterSchemaTest {
 
     private static List<String> strings(NArrayElement array) {
         return array.children().stream().map(x -> x.asStringValue().get()).toList();
+    }
+
+    // ── tool description is rich for help, plain for the model ────────────────
+
+    private static String ollamaToolDescription(NaruModelRequest request) {
+        return new NaruOllamaNativeRequestSerializer()
+                .serialize(request, model(), null).asObject().get()
+                .getArray("tools").get().children().get(0).asObject().get()
+                .getObject("function").get()
+                .getStringValue("description").get();
+    }
+
+    private static String openAiToolDescription(NaruModelRequest request) {
+        return new NaruOpenAiRequestSerializer()
+                .serialize(request, model(), null).asObject().get()
+                .getArray("tools").get().children().get(0).asObject().get()
+                .getObject("function").get()
+                .getStringValue("description").get();
+    }
+
+    private static String anthropicToolDescription(NaruModelRequest request) {
+        return new NaruAnthropicRequestSerializer()
+                .serialize(request, model(), null, null).asObject().get()
+                .getArray("tools").get().children().get(0).asObject().get()
+                .getStringValue("description").get();
+    }
+
+    private static String geminiToolDescription(NaruModelRequest request) {
+        return new NaruGeminiNativeRequestSerializer()
+                .serialize(request, model(), null, null).asObject().get()
+                .getArray("tools").get().children().get(0).asObject().get()
+                .getArray("functionDeclarations").get().children().get(0).asObject().get()
+                .getStringValue("description").get();
+    }
+
+    /**
+     * A tool may style its description for the terminal help, but the styling must never
+     * travel over the wire: every serializer reads {@link NaruToolDefinition#getDescription()},
+     * which strips the formatting to plain text.
+     */
+    @Test
+    public void styledToolDescriptionIsFilteredBeforeItReachesTheModel() {
+        NaruToolDefinition tool = new NaruToolDefinitionFunction("plan_create",
+                net.thevpc.nuts.text.NText.ofStyled("Create a new execution plan",
+                        net.thevpc.nuts.text.NTextStyle.primary1()));
+        List<Function<NaruModelRequest, String>> descriptions = Arrays.asList(
+                NaruToolParameterSchemaTest::ollamaToolDescription,
+                NaruToolParameterSchemaTest::openAiToolDescription,
+                NaruToolParameterSchemaTest::anthropicToolDescription,
+                NaruToolParameterSchemaTest::geminiToolDescription);
+        for (Function<NaruModelRequest, String> query : descriptions) {
+            Assertions.assertEquals("Create a new execution plan", query.apply(requestWith(tool)),
+                    "the model must receive plain text, never the NTF styling");
+        }
     }
 }

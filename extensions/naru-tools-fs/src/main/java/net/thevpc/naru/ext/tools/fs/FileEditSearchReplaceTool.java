@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.text.NText;
 
 public class FileEditSearchReplaceTool extends DefaultNaruTool {
 
@@ -15,10 +16,10 @@ public class FileEditSearchReplaceTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Search for an exact string in a text file and replace it with new content. " +
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Search for an exact string in a text file and replace it with new content. " +
                 "Optionally specify occurrence number (1-based, default 1). " +
-                "Use dry=true to preview changes without writing.";
+                "Use dry=true to preview changes without writing.");
     }
 
     @Override

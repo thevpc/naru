@@ -14,6 +14,7 @@ import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.text.NText;
 
 /**
  * Lets the agent compact its own conversation.
@@ -37,13 +38,13 @@ public class ContextCompactTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Summarize the older part of this conversation to free up context. "
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Summarize the older part of this conversation to free up context. "
                 + "Nothing is deleted: the summary stands in for those messages in future "
                 + "requests, and they remain readable in full history. "
                 + "Use when the conversation is long and earlier details no longer need to be "
                 + "quoted exactly. Do not use it to avoid reading something -- the summary is "
-                + "only as good as what was in the messages it replaces.";
+                + "only as good as what was in the messages it replaces.");
     }
 
     @Override

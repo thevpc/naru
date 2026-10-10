@@ -11,6 +11,7 @@ import net.thevpc.naru.ext.tools.index.spi.CodeIndex;
 import net.thevpc.naru.ext.tools.index.spi.CodeSymbol;
 import net.thevpc.naru.ext.tools.index.spi.ProjectScanner;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 
 import java.nio.file.Path;
@@ -24,8 +25,8 @@ public class CodeSymbolsTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Returns indexed symbols as a compact list.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Returns indexed symbols as a compact list.");
     }
 
     @Override

@@ -9,6 +9,7 @@ import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.command.NExec;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 import java.util.List;
 
@@ -32,8 +33,8 @@ public class MavenCompileTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Compile a Maven project using 'mvn compile'. Returns compiler output and exit code.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Compile a Maven project using 'mvn compile'. Returns compiler output and exit code.");
     }
 
     @Override

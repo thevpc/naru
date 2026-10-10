@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 /**
  * Reads a text file from disk and returns its content.
@@ -18,10 +19,10 @@ public class FileReadTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Read contents of a text file. If line constraints are provided, it performs a strict logical 'AND' " +
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Read contents of a text file. If line constraints are provided, it performs a strict logical 'AND' " +
                 "to slice the exact line range (0-indexed or 1-indexed depending on preference, standardizing on 1-based here). " +
-                "Omitting bounds reads from line 1 up to a safe threshold (" + FileToolHelper.DEFAULT_MAX_LINES + " lines).";
+                "Omitting bounds reads from line 1 up to a safe threshold (" + FileToolHelper.DEFAULT_MAX_LINES + " lines).");
     }
 
     @Override

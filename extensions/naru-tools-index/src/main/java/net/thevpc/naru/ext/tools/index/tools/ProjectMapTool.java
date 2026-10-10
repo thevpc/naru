@@ -8,6 +8,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 
 import java.io.IOException;
@@ -20,8 +21,8 @@ public class ProjectMapTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Walks the project directory tree and returns a compact textual tree view.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Walks the project directory tree and returns a compact textual tree view.");
     }
 
     @Override

@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 public class RoutineRunTool extends DefaultNaruTool {
 
@@ -15,8 +16,8 @@ public class RoutineRunTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Requests the agent to start executing a specified script. The script will run sequentially line by line.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Requests the agent to start executing a specified script. The script will run sequentially line by line.");
     }
 
     @Override

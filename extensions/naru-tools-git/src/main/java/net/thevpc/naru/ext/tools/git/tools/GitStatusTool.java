@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.tools.git.GitHelper;
+import net.thevpc.nuts.text.NText;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.Status;
 
@@ -17,8 +18,8 @@ public class GitStatusTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Show working tree status (staged, unstaged, untracked files, current branch).";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Show working tree status (staged, unstaged, untracked files, current branch).");
     }
 
     @Override

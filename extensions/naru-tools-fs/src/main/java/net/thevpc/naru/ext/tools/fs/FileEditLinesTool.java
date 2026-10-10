@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 /**
  * Reads a text file from disk and returns its content.
@@ -18,10 +19,10 @@ public class FileEditLinesTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Insert, replace, or delete lines in a text file. " +
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Insert, replace, or delete lines in a text file. " +
                 "Supports 0-based indexing and negative indices (-1 = last line, -2 = second-to-last). " +
-                "Use dry=true to preview changes without writing.";
+                "Use dry=true to preview changes without writing.");
     }
 
     @Override

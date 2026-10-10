@@ -10,6 +10,7 @@ import net.thevpc.naru.ext.tools.semantic.store.InMemoryVectorStore;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import net.thevpc.nuts.text.NText;
 
 public class SemanticIndexTool extends DefaultNaruTool {
 
@@ -20,8 +21,8 @@ public class SemanticIndexTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Builds or rebuilds the semantic vector index for the project.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Builds or rebuilds the semantic vector index for the project.");
     }
 
     @Override

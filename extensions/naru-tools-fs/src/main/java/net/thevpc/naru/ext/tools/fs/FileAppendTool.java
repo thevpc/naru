@@ -5,6 +5,7 @@ import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 /**
  * Reads a text file from disk and returns its content.
@@ -18,8 +19,8 @@ public class FileAppendTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Append to the end of the file. If the file (and its path) does not exist, it will be created.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Append to the end of the file. If the file (and its path) does not exist, it will be created.");
     }
 
     @Override

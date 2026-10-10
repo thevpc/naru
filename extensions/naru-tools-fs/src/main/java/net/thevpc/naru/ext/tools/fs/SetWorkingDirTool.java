@@ -8,6 +8,7 @@ import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 
 /**
@@ -27,8 +28,8 @@ public class SetWorkingDirTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "update working dir and return the absolute path. when no argument, switches to project directory";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("update working dir and return the absolute path. when no argument, switches to project directory");
     }
 
     @Override

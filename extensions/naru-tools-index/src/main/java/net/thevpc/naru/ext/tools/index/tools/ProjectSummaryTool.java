@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
+import net.thevpc.nuts.text.NText;
 
 public class ProjectSummaryTool extends DefaultNaruTool {
     public ProjectSummaryTool() {
@@ -20,8 +21,8 @@ public class ProjectSummaryTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Scans project root for marker files and module structure.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Scans project root for marker files and module structure.");
     }
 
     @Override

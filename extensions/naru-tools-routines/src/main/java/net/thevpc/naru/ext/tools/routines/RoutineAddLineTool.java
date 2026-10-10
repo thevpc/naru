@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 public class RoutineAddLineTool extends DefaultNaruTool {
 
@@ -15,12 +16,12 @@ public class RoutineAddLineTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Adds or updates a numbered line in a naru routine (internal REPL buffer). " +
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Adds or updates a numbered line in a naru routine (internal REPL buffer). " +
                 "This is NOT a shell command or external script. " +
                 "Supports comments: use '#', '//', or 'REM' at the start (e.g., line=15, content='# Validate input'). " +
                 "Comments get line numbers for ordering but are skipped during execution. " +
-                "If routine_name is empty, uses the currently active routine.";
+                "If routine_name is empty, uses the currently active routine.");
     }
 
     @Override

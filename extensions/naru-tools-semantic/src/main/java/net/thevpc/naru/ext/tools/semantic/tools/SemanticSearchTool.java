@@ -20,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import net.thevpc.nuts.text.NText;
 
 public class SemanticSearchTool extends DefaultNaruTool {
 
@@ -34,8 +35,8 @@ public class SemanticSearchTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Natural language code search using semantic/TF-IDF vector matching.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Natural language code search using semantic/TF-IDF vector matching.");
     }
 
     @Override

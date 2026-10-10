@@ -8,6 +8,7 @@ import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.text.NText;
 
 public class OllamaStopTool extends DefaultNaruTool {
 
@@ -16,8 +17,8 @@ public class OllamaStopTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Stop the Ollama server process.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Stop the Ollama server process.");
     }
 
     @Override

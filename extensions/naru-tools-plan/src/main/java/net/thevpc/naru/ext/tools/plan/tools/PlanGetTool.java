@@ -9,6 +9,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.tools.plan.*;
 import net.thevpc.naru.ext.tools.plan.tags.NaruPlanToolTagProvider;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.Map;
@@ -20,10 +21,10 @@ public class PlanGetTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Read a plan with its item statuses and dependencies. "
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Read a plan with its item statuses and dependencies. "
                 + "Defaults to the active plan; pass plan_id (or 'all') to inspect another one. "
-                + "Use this to re-check the plan before deciding what to do next.";
+                + "Use this to re-check the plan before deciding what to do next.");
     }
 
     @Override

@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.text.NText;
 
 public class OllamaInstallTool extends DefaultNaruTool {
 
@@ -15,8 +16,8 @@ public class OllamaInstallTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Download and install Ollama for the host operating system (Linux, macOS, Windows).";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Download and install Ollama for the host operating system (Linux, macOS, Windows).");
     }
 
     @Override

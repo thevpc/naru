@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 /**
  * Writes (or overwrites) a file on disk.
@@ -18,9 +19,9 @@ public class DiffFilesTool extends DefaultNaruTool {
 
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Compare two text files and return their differences. " +
-                "Useful for comparing .ntx source files or checking what changed between versions.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Compare two text files and return their differences. " +
+                "Useful for comparing .ntx source files or checking what changed between versions.");
     }
 
     @Override

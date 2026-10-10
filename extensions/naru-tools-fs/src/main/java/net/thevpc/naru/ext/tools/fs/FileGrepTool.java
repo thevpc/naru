@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 public class FileGrepTool extends DefaultNaruTool {
 
@@ -19,8 +20,8 @@ public class FileGrepTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Search for lines in a text file matching a pattern. Supports literal and regex search with surrounding context.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Search for lines in a text file matching a pattern. Supports literal and regex search with surrounding context.");
     }
 
     @Override

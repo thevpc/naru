@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 public class FolderFindTool extends DefaultNaruTool {
 
@@ -16,12 +17,12 @@ public class FolderFindTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Find files by name/glob patterns and optionally search their contents. " +
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Find files by name/glob patterns and optionally search their contents. " +
                 "CRITICAL: A strict logical 'AND' is performed across ALL filters. " +
                 "Files must simultaneously match: Location Path AND Glob Filters (include/exclude) " +
                 "AND Time Window Constraints (modified_after/before) AND Content Text Pattern (if provided). " +
-                "Only files satisfying EVERY layer of this constraint chain are processed.";
+                "Only files satisfying EVERY layer of this constraint chain are processed.");
     }
 
     @Override

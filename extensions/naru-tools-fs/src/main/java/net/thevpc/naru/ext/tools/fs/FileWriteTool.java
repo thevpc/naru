@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 /**
  * Writes (or overwrites) a file on disk.
@@ -20,8 +21,8 @@ public class FileWriteTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Write content to a file, creating it (and any parent directories) if necessary. Overwrites existing content.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Write content to a file, creating it (and any parent directories) if necessary. Overwrites existing content.");
     }
 
     @Override

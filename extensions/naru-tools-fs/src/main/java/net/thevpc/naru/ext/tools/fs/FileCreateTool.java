@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.text.NText;
 
 public class FileCreateTool extends DefaultNaruTool {
 
@@ -15,8 +16,8 @@ public class FileCreateTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Create a new file with specified content. Fails if file already exists unless overwrite=true.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Create a new file with specified content. Fails if file already exists unless overwrite=true.");
     }
 
     @Override

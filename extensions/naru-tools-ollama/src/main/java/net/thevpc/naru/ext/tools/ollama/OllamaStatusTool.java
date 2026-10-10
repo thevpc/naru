@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElementWriter;
+import net.thevpc.nuts.text.NText;
 
 public class OllamaStatusTool extends DefaultNaruTool {
 
@@ -15,8 +16,8 @@ public class OllamaStatusTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Check whether Ollama is installed and running, retrieve server info, response latency, loaded VRAM models, and available models.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Check whether Ollama is installed and running, retrieve server info, response latency, loaded VRAM models, and available models.");
     }
 
     @Override

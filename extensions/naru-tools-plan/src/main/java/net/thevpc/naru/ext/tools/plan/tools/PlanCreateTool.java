@@ -15,6 +15,7 @@ import net.thevpc.nuts.elem.NElement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import net.thevpc.nuts.text.NText;
 
 /**
  * Creates a new execution plan as a dependency graph.
@@ -30,12 +31,12 @@ public class PlanCreateTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Create a new execution plan as a dependency graph. "
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Create a new execution plan as a dependency graph. "
                 + "Give each item a short 'key' when other items must wait for it, and list those keys in 'dependsOn'. "
                 + "Items with no unmet dependency start ready; the rest become ready automatically as their dependencies finish. "
                 + "A plan is not executed until a human activates it. "
-                + "Attach a validator (model_review or user_approval) to any item whose output must be judged before it counts as done.";
+                + "Attach a validator (model_review or user_approval) to any item whose output must be judged before it counts as done.");
     }
 
     @Override

@@ -8,6 +8,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.tools.git.GitHelper;
+import net.thevpc.nuts.text.NText;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.diff.DiffFormatter;
 import org.eclipse.jgit.diff.DiffEntry;
@@ -22,8 +23,8 @@ public class GitDiffTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Show changes between commits, commit and working tree, etc.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Show changes between commits, commit and working tree, etc.");
     }
 
     @Override

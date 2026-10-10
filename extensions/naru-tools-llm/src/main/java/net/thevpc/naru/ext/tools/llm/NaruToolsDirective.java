@@ -50,7 +50,7 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                 for (NaruToolDefinition e : collected) {
                     NMsg msg = NMsg.ofC("  %s - %s",
                             NMsg.ofStyledPrimary1(e.getName())
-                            , e.getDescription());
+                            , e.getDescriptionText());
                     context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
                     sb.println(msg.toString());
                 }

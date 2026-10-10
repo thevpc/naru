@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 public class SearchWebScriptTool extends DefaultNaruTool {
 
@@ -15,8 +16,8 @@ public class SearchWebScriptTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "search the web for the provided query";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("search the web for the provided query");
     }
 
     @Override

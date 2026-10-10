@@ -9,6 +9,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 
 public class OllamaStartTool extends DefaultNaruTool {
 
@@ -17,8 +18,8 @@ public class OllamaStartTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Start the Ollama server (ollama serve) as a background process managed by NARU. It will be automatically stopped when NARU exits.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Start the Ollama server (ollama serve) as a background process managed by NARU. It will be automatically stopped when NARU exits.");
     }
 
     @Override

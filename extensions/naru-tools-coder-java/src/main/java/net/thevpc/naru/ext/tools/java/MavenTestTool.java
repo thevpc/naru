@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 
 import net.thevpc.naru.api.registry.DefaultNaruTool;
@@ -25,8 +26,8 @@ public class MavenTestTool extends DefaultNaruTool {
 
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Run Maven tests using 'mvn test'. Optionally run a single test class.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Run Maven tests using 'mvn test'. Optionally run a single test class.");
     }
 
     @Override

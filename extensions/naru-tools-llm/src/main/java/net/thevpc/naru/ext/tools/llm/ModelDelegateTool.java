@@ -13,6 +13,7 @@ import net.thevpc.naru.api.spawn.NaruSpawnTargets;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
 
@@ -50,10 +51,10 @@ public class ModelDelegateTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Delegate a sub-task to another AI model. Use this to offload vision tasks to vision models, "
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Delegate a sub-task to another AI model. Use this to offload vision tasks to vision models, "
                 + "or complex reasoning to larger models. Call model_list first to discover and filter the "
-                + "available models (by capability, cost or provider) instead of guessing a model name.";
+                + "available models (by capability, cost or provider) instead of guessing a model name.");
     }
 
     @Override

@@ -6,6 +6,7 @@ import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 
 /**
@@ -44,12 +45,12 @@ public class NaruSkillTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Load a skill by name and return its full instructions plus the base directory "
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Load a skill by name and return its full instructions plus the base directory "
                 + "holding its reference files. Call this when the task at hand matches one of "
                 + "the advertised skills; the returned body is the skill's procedure to follow. "
                 + "The references/ and scripts/ folders under the returned base directory can be "
-                + "read with the file tools, and scripts run only through the shell tool.";
+                + "read with the file tools, and scripts run only through the shell tool.");
     }
 
     @Override

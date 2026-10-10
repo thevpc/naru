@@ -10,6 +10,7 @@ import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 
 /**
@@ -53,10 +54,10 @@ public class ThinkTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Use this tool to think through something privately before answering or acting. "
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Use this tool to think through something privately before answering or acting. "
                 + "It performs no action and returns no result; use it for planning, reviewing "
-                + "tool output, verifying assumptions, or deciding the next step.";
+                + "tool output, verifying assumptions, or deciding the next step.");
     }
 
     @Override

@@ -6,6 +6,7 @@ import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
+import net.thevpc.nuts.text.NText;
 
 /**
  * Runs {@code mvn compile} in a Maven project directory.
@@ -22,8 +23,8 @@ public class GetWorkingDirTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "return current working dir";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("return current working dir");
     }
 
     @Override

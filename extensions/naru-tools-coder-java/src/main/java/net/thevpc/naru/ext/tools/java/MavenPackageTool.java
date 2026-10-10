@@ -8,6 +8,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 
 /**
@@ -26,8 +27,8 @@ public class MavenPackageTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Package a Maven project using 'mvn package -DskipTests'. Returns build output and exit code.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Package a Maven project using 'mvn package -DskipTests'. Returns build output and exit code.");
     }
 
     @Override

@@ -9,6 +9,7 @@ import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.tools.plan.*;
 import net.thevpc.naru.ext.tools.plan.tags.NaruPlanToolTagProvider;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.Arrays;
@@ -28,12 +29,12 @@ public class PlanUpdateTool extends DefaultNaruTool {
     }
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Report progress on one item of the active plan. Use 'running' when you start it, "
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Report progress on one item of the active plan. Use 'running' when you start it, "
                 + "'blocked' if you cannot proceed (always say why in notes), "
                 + "'validating' when your work is finished and awaiting review. "
                 + "You cannot mark an item done: completion is decided by the item's validator. "
-                + "Item ids are shown as 8-character prefixes; a unique prefix is enough.";
+                + "Item ids are shown as 8-character prefixes; a unique prefix is enough.");
     }
 
     @Override

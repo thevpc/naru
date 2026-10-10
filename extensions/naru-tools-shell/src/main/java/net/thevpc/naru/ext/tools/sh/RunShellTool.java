@@ -9,6 +9,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.nuts.command.NExec;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 
 /**
@@ -31,8 +32,8 @@ public class RunShellTool extends DefaultNaruTool {
 
 
     @Override
-    public String getDescription(NaruTask task) {
-        return "Execute a shell command and return its output (stdout + stderr). Use sparingly; prefer specialised tools like maven_compile when available.";
+    public NText getDescription(NaruTask task) {
+        return NText.ofPlain("Execute a shell command and return its output (stdout + stderr). Use sparingly; prefer specialised tools like maven_compile when available.");
     }
 
     @Override
