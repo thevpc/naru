@@ -1,0 +1,67 @@
+package net.thevpc.naru.bench;
+
+import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.impl.engine.NaruAgentImpl;
+import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.io.NPath;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import org.junit.jupiter.api.Test;
+
+public class NaruWireMeasurementTest {
+    @Test
+    public void testWireMeasurementMin() throws Exception {
+        try {
+            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
+            if (ws != null) ws.share();
+        } catch (Exception ignored) {}
+
+        Path tempDir = Files.createTempDirectory("naru-wire-measure-min");
+        NaruAgent agent = new NaruAgentImpl();
+        agent.projectDirectory(NPath.of(tempDir.toString()));
+
+        // naru-min: fs, write, exec, network minus unwanted tools
+        agent.newSession()
+                .statements(
+                        "/model add mock-ollama --protocol=openai --url=http://127.0.0.1:8089/min/v1 --models=qwen3.8:32k",
+                        "/model use mock-ollama/qwen3.8:32k",
+                        "/tags enable fs write exec network",
+                        "/tools exclude git_commit ollama_status ollama_start ollama_stop ollama_install ollama_ps routine_run routine_add_line maven_compile maven_test maven_package search_web",
+                        "Reply with the single word OK."
+                )
+                .build()
+                .start()
+                .waitFor();
+
+        System.out.println("Wire measurement (min) session finished.");
+    }
+
+    @Test
+    public void testWireMeasurementGranted() throws Exception {
+        try {
+            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
+            if (ws != null) ws.share();
+        } catch (Exception ignored) {}
+
+        Path tempDir = Files.createTempDirectory("naru-wire-measure-granted");
+        NaruAgent agent = new NaruAgentImpl();
+        agent.projectDirectory(NPath.of(tempDir.toString()));
+
+        // naru-granted: standard benchmark tags
+        agent.newSession()
+                .statements(
+                        "/model add mock-ollama --protocol=openai --url=http://127.0.0.1:8089/granted/v1 --models=qwen3.8:32k",
+                        "/model use mock-ollama/qwen3.8:32k",
+                        "/tags enable fs write exec network",
+                        "Reply with the single word OK."
+                )
+                .build()
+                .start()
+                .waitFor();
+
+        System.out.println("Wire measurement (granted) session finished.");
+    }
+}
