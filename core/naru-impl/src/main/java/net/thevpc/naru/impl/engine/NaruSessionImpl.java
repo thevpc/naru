@@ -264,65 +264,17 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         ensureNotStopped();
         return new ArrayList<>(tasks.values());
     }
-    private NOptional<NaruModelConfig> resolveModel() {
-        if (this.model != null) {
-            return NOptional.of(this.model);
-        }
-
-        NaruModelConfig requestedModel = getProjectEnv("model")
-                .map(NaruModelConfig::new)
-                .orNull();
-        NaruModelConfig model = null;
-        if (requestedModel != null) {
-            if (!NBlankable.isBlank(requestedModel.name())) {
-                model = findModel(requestedModel.name()).orNull();
-            }
-            if (model == null && !NBlankable.isBlank(requestedModel.model())) {
-                String requestedKey = NBlankable.isBlank(requestedModel.provider())
-                        ? requestedModel.model()
-                        : requestedModel.key().toString();
-                model = findModel(requestedKey).orNull();
-            }
-        }
-
-        if (model == null) {
-            List<NaruModelInfo> toolModels = registry.modelsInfos(this)
-                    .stream()
-                    .filter(x -> x.capabilities().isTools())
-                    .collect(Collectors.toList());
-
-            if (toolModels.isEmpty()) {
-                if (requestedModel == null) {
-                    warn(NMsg.ofC("⚠ no model with tools capability is available"));
-                } else {
-                    warn(NMsg.ofC("⚠ requested model %s was not found; no model with tools capability is available",
-                            requestedModel));
-                }
-            } else {
-                for (NaruModelInfo fallbackInfo : toolModels) {
-                    model = findModel(fallbackInfo.key().toString()).orNull();
-                    if (model != null) {
-                        break;
-                    }
-                }
-
-                if (model == null) {
-                    if (requestedModel == null) {
-                        warn(NMsg.ofC("⚠ no available model with tools capability could be resolved"));
-                    } else {
-                        warn(NMsg.ofC("⚠ requested model %s was not found; no available model with tools capability could be resolved",
-                                requestedModel));
-                    }
-                } else if (requestedModel == null) {
-                    warn(NMsg.ofC("⚠ no model was requested; auto-selected %s", model.toText()));
-                } else {
-                    warn(NMsg.ofC("⚠ requested model %s was not found; selected %s instead",
-                            requestedModel, model.toText()));
-                }
-            }
-        }
-
-        return NOptional.ofNamed(model, "model");
+    /**
+     * The model definition persisted with the session store, if any (restored
+     * sessions only). Fresh sessions carry the model through the project env
+     * ({@code /model use-global}) instead.
+     *
+     * <p>Resolution itself -- name lookup, then the tools-capable best fit -- is the
+     * task's job now, resolved lazily by {@code NaruTaskImpl#model()}, so neither this
+     * accessor nor anything else can throw "missing model" while a task is born.
+     */
+    public NaruModelConfig sessionModel() {
+        return this.model;
     }
 
     @Override
@@ -351,7 +303,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);
-            natuTask._setModel(plan.model != null ? findModel(plan.model).get() : resolveModel().get());
+            // the model is deliberately not resolved here: resolution is the task's
+            // own lazy business (NaruTaskImpl#model), so a team laptop with no model
+            // installed can still build tasks and report 'no model selected' where
+            // the prompt runs, instead of dying at task creation
+            natuTask._setModelHint(plan.model);
         } else {
             natuTask._setInputMode(NaruInputMode.LINE);
             natuTask._setWorkingDir(plan.workingDir != null ? plan.workingDir : (cwd == null ? parent.workingDir() : cwd));
@@ -362,7 +318,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
             natuTask._setReturnResult(null);
-            natuTask._setModel(plan.model != null ? findModel(plan.model).get() : parent.model());
+            // a child inherits its parent's model lazily through NaruTaskImpl#model():
+            // whichever owns a model wins, and a child that never picks one follows
+            // the parent's resolution instead of taking a snapshot at spawn
+            natuTask._setModelHint(plan.model);
         }
         // seeded before the task can run anything, and before the system prompt is built,
         // so a prompt that interpolates an input variable can see it
@@ -629,6 +588,34 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (env.containsKey(key)) {
             Object u = env.get(key).get();
             return NOptional.ofNullable(u);
+        }
+        return NOptional.ofNamedEmpty(key);
+    }
+
+    @Override
+    public NOptional<Object> getSessionEnv(String key, boolean inherited) {
+        NOptional<Object> sessionValue = getSessionEnv(key);
+        if (sessionValue.isPresent()) {
+            return sessionValue;
+        }
+        if (inherited && agent != null) {
+            // read the agent stores straight from the field: this lookups runs in
+            // the scheduler worker too, during shutdown, when agent() would refuse
+            // with "session is stopped"
+            NaruEnv agentStore = agent.agentEnv();
+            if (agentStore != null) {
+                NOptional<NElement> agentValue = agentStore.get(key);
+                if (agentValue != null && agentValue.isPresent()) {
+                    return NOptional.ofNullable(agentValue.get());
+                }
+            }
+            NaruEnv settings = agent.env();
+            if (settings != null) {
+                NOptional<NElement> settingsValue = settings.get(key);
+                if (settingsValue != null && settingsValue.isPresent()) {
+                    return NOptional.ofNullable(settingsValue.get());
+                }
+            }
         }
         return NOptional.ofNamedEmpty(key);
     }

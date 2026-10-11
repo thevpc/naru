@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.fs;
 
+import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.io.NPathOption;
@@ -33,6 +34,42 @@ public class FileToolHelper {
             Arrays.asList(".class", ".jar", ".zip", ".tar", ".gz", ".png", ".jpg", ".jpeg",
                     ".gif", ".pdf", ".exe", ".dll", ".so", ".dylib", ".bin", ".dat")
     );
+
+    // ── settings ──────────────────────────────────────────────────────────────
+    // Every cap above lives behind a validated env read (NaruTaskConfig's chain:
+    // task → session → agent → settings), so a project can raise or lower a limit
+    // per task, session, agent or config file without touching code. A value that is
+    // not a strictly positive integer never reaches the truncating code below — it
+    // falls back to the built-in default instead, so a typo cannot turn a preview
+    // into a balloon or a listing into a freeze.
+
+    private static int previewChars(NaruTask task) {
+        return NaruTaskConfig.getPositiveInt(task, "naru.fs.read.previewChars", MAX_PREVIEW_CHARS);
+    }
+
+    private static int readMaxLines(NaruTask task) {
+        return NaruTaskConfig.getPositiveInt(task, "naru.fs.read.maxLines", DEFAULT_MAX_LINES);
+    }
+
+    private static int findContextLines(NaruTask task) {
+        return NaruTaskConfig.getPositiveInt(task, "naru.fs.find.contextLines", DEFAULT_CONTEXT);
+    }
+
+    private static int findMaxMatches(NaruTask task) {
+        return NaruTaskConfig.getPositiveInt(task, "naru.fs.find.maxMatches", DEFAULT_MAX_MATCHES);
+    }
+
+    private static int findMaxFiles(NaruTask task) {
+        return NaruTaskConfig.getPositiveInt(task, "naru.fs.find.maxFiles", DEFAULT_MAX_FILES);
+    }
+
+    private static int grepMaxTotalMatches(NaruTask task) {
+        return NaruTaskConfig.getPositiveInt(task, "naru.fs.grep.maxTotalMatches", MAX_TOTAL_MATCHES);
+    }
+
+    private static int grepMaxOutputChars(NaruTask task) {
+        return NaruTaskConfig.getPositiveInt(task, "naru.fs.grep.maxOutputChars", MAX_OUTPUT_CHARS);
+    }
 
     public static String filesDiff(NaruTask task, String path1, String path2, Number number) {
         if (NBlankable.isBlank(path1)) return "Error: file1 is required.";
@@ -137,8 +174,8 @@ public class FileToolHelper {
         try {
             NPath p = task.resolve(path);
             if (Boolean.TRUE.equals(dry)) {
-                String preview = content.length() > MAX_PREVIEW_CHARS
-                        ? content.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
+                String preview = content.length() > previewChars(task)
+                        ? content.substring(0, previewChars(task)) + "\n... [preview truncated]"
                         : content;
                 return String.format("DRY RUN SUCCESS: Would %s content. Preview:\n```\n%s\n```",
                         "append", preview, p.name(), preview);
@@ -197,8 +234,8 @@ public class FileToolHelper {
             String action = newLines.isEmpty() ? "delete" : (start == end ? "insert" : "replace");
 
             if (Boolean.TRUE.equals(dry)) {
-                String preview = finalContent.length() > MAX_PREVIEW_CHARS
-                        ? finalContent.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
+                String preview = finalContent.length() > previewChars(task)
+                        ? finalContent.substring(0, previewChars(task)) + "\n... [preview truncated]"
                         : finalContent;
                 return String.format("DRY RUN SUCCESS: Would %s lines %d-%d in %s. Preview:\n```\n%s\n```",
                         action, start, end, p.name(), preview);
@@ -242,8 +279,8 @@ public class FileToolHelper {
             if (Boolean.TRUE.equals(replaceAll)) {
                 String newText = fullText.replace(search, replace);
                 if (Boolean.TRUE.equals(dry)) {
-                    String preview = newText.length() > MAX_PREVIEW_CHARS
-                            ? newText.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
+                    String preview = newText.length() > previewChars(task)
+                            ? newText.substring(0, previewChars(task)) + "\n... [preview truncated]"
                             : newText;
                     return String.format("DRY RUN SUCCESS: Replaced %d occurrences of search string in %s. Preview:\n```\n%s\n```",
                             matchIndices.size(), p.name(), preview);
@@ -260,8 +297,8 @@ public class FileToolHelper {
                 int matchIdx = matchIndices.get(0);
                 String newText = fullText.substring(0, matchIdx) + replace + fullText.substring(matchIdx + search.length());
                 if (Boolean.TRUE.equals(dry)) {
-                    String preview = newText.length() > MAX_PREVIEW_CHARS
-                            ? newText.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
+                    String preview = newText.length() > previewChars(task)
+                            ? newText.substring(0, previewChars(task)) + "\n... [preview truncated]"
                             : newText;
                     return String.format("DRY RUN SUCCESS: Replaced occurrence 1 of search string in %s. Preview:\n```\n%s\n```",
                             p.name(), preview);
@@ -279,8 +316,8 @@ public class FileToolHelper {
             String newText = fullText.substring(0, matchIdx) + replace + fullText.substring(matchIdx + search.length());
 
             if (Boolean.TRUE.equals(dry)) {
-                String preview = newText.length() > MAX_PREVIEW_CHARS
-                        ? newText.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
+                String preview = newText.length() > previewChars(task)
+                        ? newText.substring(0, previewChars(task)) + "\n... [preview truncated]"
                         : newText;
                 return String.format("DRY RUN SUCCESS: Replaced occurrence %d of search string in %s. Preview:\n```\n%s\n```",
                         targetOcc, p.name(), preview);
@@ -459,14 +496,15 @@ public class FileToolHelper {
         if (!file.permissions().contains(NPathPermission.CAN_READ)) return "ERROR: File is not readable: " + file;
         if (isBinary(file)) return "Cannot read binary file: " + file;
 
-        boolean lineNumbers = net.thevpc.naru.api.agent.NaruTaskConfig.getBoolean(task, "naru.fs.read.lineNumbers", true);
+        boolean lineNumbers = NaruTaskConfig.getBoolean(task, "naru.fs.read.lineNumbers", true);
 
         try {
             List<String> allLines = file.lines().toList();
             int totalLines = allLines.size();
+            int maxLines = readMaxLines(task);
 
             long start1 = (lineStart == null || lineStart <= 0) ? 1L : lineStart;
-            long end1 = (lineEnd != null) ? lineEnd : (lineStart != null ? (start1 + 2000 - 1) : Math.min(totalLines, 2000L));
+            long end1 = (lineEnd != null) ? lineEnd : (lineStart != null ? (start1 + maxLines - 1) : Math.min(totalLines, maxLines));
             if (end1 > totalLines) {
                 end1 = totalLines;
             }
@@ -524,8 +562,8 @@ public class FileToolHelper {
         NPath p = task.resolve(path);
         try {
             if (Boolean.TRUE.equals(dry)) {
-                String preview = content.length() > MAX_PREVIEW_CHARS
-                        ? content.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
+                String preview = content.length() > previewChars(task)
+                        ? content.substring(0, previewChars(task)) + "\n... [preview truncated]"
                         : content;
                 return String.format("DRY RUN SUCCESS: Would %s content. Preview:\n```\n%s\n```",
                         "replace all", preview, p.name(), preview);
@@ -542,9 +580,9 @@ public class FileToolHelper {
         if (path == null) return "ERROR: 'path' is required.";
         boolean regexOk = NUtils.firstNonNull(regex, false);
         boolean caseSensitiveOk = NUtils.firstNonNull(caseSensitive, false);
-        int contextLinesOk = Math.max(0, NUtils.firstNonNull(contextLines, DEFAULT_CONTEXT));
-        int maxMatchesOk = Math.max(1, NUtils.firstNonNull(maxMatches, DEFAULT_MAX_MATCHES));
-        int maxFilesOk = Math.max(1, NUtils.firstNonNull(maxFiles, DEFAULT_MAX_FILES));
+        int contextLinesOk = contextLines != null ? Math.max(0, contextLines) : findContextLines(task);
+        int maxMatchesOk = maxMatches != null ? Math.max(1, maxMatches) : findMaxMatches(task);
+        int maxFilesOk = maxFiles != null ? Math.max(1, maxFiles) : findMaxFiles(task);
         boolean recursiveOk = NUtils.firstNonNull(recursive, true);
 
 
@@ -582,7 +620,7 @@ public class FileToolHelper {
             // Collect matching files applying names, globs, and historical time gates
 
             StringBuilder out = new StringBuilder();
-            List<NPath> files = collectFiles(root, recursiveOk, includeMatcher, excludeMatcher, modifiedAfter, modifiedBefore, maxFilesOk, out, pattern, compiledPattern, root, truncated, totalMatches, contextLinesOk, maxMatchesOk);
+            List<NPath> files = collectFiles(task, root, recursiveOk, includeMatcher, excludeMatcher, modifiedAfter, modifiedBefore, maxFilesOk, out, pattern, compiledPattern, root, truncated, totalMatches, contextLinesOk, maxMatchesOk);
             if (files.isEmpty()) {
                 return "No files found";
             }
@@ -626,7 +664,7 @@ public class FileToolHelper {
             return null;
         }
         Predicate<NPath> includeMatcher = createMatcher(includeGlob);
-        List<NPath> files = collectFiles(root, recursiveOk, includeMatcher, null, null, null, 1,
+        List<NPath> files = collectFiles(task, root, recursiveOk, includeMatcher, null, null, null, 1,
                 new StringBuilder(), null, null, root,
                 NBooleanRef.of(false), NIntRef.of(0), 0, 1);
         if (files.isEmpty()) {
@@ -637,10 +675,10 @@ public class FileToolHelper {
         return rel.isPresent() ? rel.get() : f.toString();
     }
 
-    private static boolean fileContentMatches(String pattern, NPath file, Pattern compiledPattern, boolean caseSensitive, boolean regex, NBooleanRef truncated, NIntRef totalMatches, StringBuilder out, int contextLines, int maxMatches, NPath root) {
+    private static boolean fileContentMatches(NaruTask task, String pattern, NPath file, Pattern compiledPattern, boolean caseSensitive, boolean regex, NBooleanRef truncated, NIntRef totalMatches, StringBuilder out, int contextLines, int maxMatches, NPath root) {
         if (!file.exists() || !file.isRegularFile()) return false;
         if (isBinary(file)) return false;
-        if (totalMatches.get() >= MAX_TOTAL_MATCHES) {
+        if (totalMatches.get() >= grepMaxTotalMatches(task)) {
             truncated.set(true);
             return false;
         }
@@ -649,9 +687,10 @@ public class FileToolHelper {
         if (fileResult != null) {
             totalMatches.add(countMatchesInResult(fileResult));
             out.append(fileResult).append("\n");
-            if (out.length() > MAX_OUTPUT_CHARS) {
+            int outputMax = grepMaxOutputChars(task);
+            if (out.length() > outputMax) {
                 truncated.set(true);
-                String u = out.substring(0, MAX_OUTPUT_CHARS) + "\n... [output truncated]";
+                String u = out.substring(0, outputMax) + "\n... [output truncated]";
                 out.delete(0, out.length());
                 out.append(u);
             }
@@ -714,7 +753,7 @@ public class FileToolHelper {
         return String.format("L%04d:%s%s", lineNum, content, isMatch ? " [MATCH]" : "");
     }
 
-    private static List<NPath> collectFiles(NPath dir, boolean recursive, Predicate<NPath> include, Predicate<NPath> exclude,
+    private static List<NPath> collectFiles(NaruTask task, NPath dir, boolean recursive, Predicate<NPath> include, Predicate<NPath> exclude,
                                             Instant after, Instant before, int limit, StringBuilder out, String pattern,
                                             Pattern compiledPattern,
                                             NPath root,
@@ -757,7 +796,7 @@ public class FileToolHelper {
 //                        out.append(root.relativize(current).orElse(current.toString())).append("\n");
                         result.add(current);
                     } else {
-                        boolean matches = fileContentMatches(pattern, current, compiledPattern, true, true, truncated, totalMatches, out, contextLines, maxMatches, root);
+                        boolean matches = fileContentMatches(task, pattern, current, compiledPattern, true, true, truncated, totalMatches, out, contextLines, maxMatches, root);
                         if (matches) {
                             result.add(current);
                             if (truncated.get()) {

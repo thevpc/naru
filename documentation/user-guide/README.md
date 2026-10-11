@@ -13,6 +13,7 @@
 | [Model registrations](content/model-registrations.md)    | ✅ |
 | [Planning](content/planning.md)                           | ✅ |
 | [Context compaction](content/compaction.md)             | ✅ |
+| [Session settings and the env chain](content/session-settings.md) | ✅ |
 | More guides (routines, tools, ...)                | 🚧 coming |
 
 ---
@@ -42,3 +43,4 @@
 - [Planning tools the model can call](content/planning.md#5-tools)
 - [Summarize an old conversation without losing it](content/compaction.md)
 - [`/compact` directive reference](content/compaction.md#7-directives)
+- [Override a file-tool cap per task, session or project](content/session-settings.md#3-narufs-the-file-tool-limits)

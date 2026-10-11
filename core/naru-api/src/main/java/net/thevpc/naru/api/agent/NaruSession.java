@@ -185,6 +185,48 @@ public interface NaruSession {
 
     NOptional<Object> getSessionEnv(String key);
 
+    /**
+     * Session env value, optionally walking the wider chain when the session env
+     * does not hold the key.
+     *
+     * <p>The stores are consulted in the resolution order of the settings chain:
+     * session env first, then the per-process agent env ({@code /set --agent}, shared
+     * by every session but not persisted), then the on-disk project settings
+     * ({@code .naru/.../env.tson}, private winning). {@code inherited=false} keeps the
+     * lookup on the session env alone, exactly like {@link #getSessionEnv(String)}.
+     *
+     * <p>This is the narrow-to-wide half of the chain a task lookup completes:
+     * {@link net.thevpc.naru.api.task.NaruTask#getTaskEnv(String, boolean)} with
+     * {@code inherited=true} delegates here after exhausting the task env, so a tool
+     * that reads a setting once through the task can be overridden at any level.
+     */
+    default NOptional<Object> getSessionEnv(String key, boolean inherited) {
+        NOptional<Object> sessionValue = getSessionEnv(key);
+        if (sessionValue.isPresent()) {
+            return sessionValue;
+        }
+        if (inherited) {
+            NaruAgent a = agent();
+            if (a != null) {
+                NaruEnv agentStore = a.agentEnv();
+                if (agentStore != null) {
+                    NOptional<NElement> agentValue = agentStore.get(key);
+                    if (agentValue != null && agentValue.isPresent()) {
+                        return NOptional.ofNullable(agentValue.get());
+                    }
+                }
+                NaruEnv settings = a.env();
+                if (settings != null) {
+                    NOptional<NElement> settingsValue = settings.get(key);
+                    if (settingsValue != null && settingsValue.isPresent()) {
+                        return NOptional.ofNullable(settingsValue.get());
+                    }
+                }
+            }
+        }
+        return NOptional.ofNamedEmpty(key);
+    }
+
     NaruSession unsetSessionEnv(String key);
 
     NaruSession setSessionEnv(String key, Object value);

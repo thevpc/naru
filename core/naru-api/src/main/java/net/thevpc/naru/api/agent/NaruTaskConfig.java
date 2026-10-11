@@ -135,8 +135,11 @@ public final class NaruTaskConfig {
         if (task == null || key == null) {
             return NOptional.ofNamedEmpty(NMsg.ofC("no task to resolve '%s' against", key));
         }
-        // 1. task env, inheritance included: a child task is configured by its parent
-        NOptional<Object> taskEnv = task.getTaskEnv(key, true);
+        // 1. task env map alone. Not getTaskEnv(key, true): that inherited variant
+        //    already walks session/agent/settings, and labeling the answer "task"
+        //    would be wrong. The task env here still holds what the parent granted at
+        //    spawn, which is the "inherited from its parent" part of the contract.
+        NOptional<Object> taskEnv = task.getTaskEnv(key, false);
         if (taskEnv != null && taskEnv.isPresent()) {
             return NOptional.of(new Resolved(taskEnv.get(), SCOPE_TASK, null));
         }
@@ -189,6 +192,59 @@ public final class NaruTaskConfig {
         return find(task, key)
                 .map(x -> NLiteral.of(toText(x)).asLong().orElse(defaultValue))
                 .orElse(defaultValue);
+    }
+
+    /** The value as an int, or {@code defaultValue} when unset or not an integer. */
+    public static int getInt(NaruTask task, String key, int defaultValue) {
+        return find(task, key)
+                .map(x -> NLiteral.of(toText(x)).asInt().orElse(defaultValue))
+                .orElse(defaultValue);
+    }
+
+    /**
+     * The value as an int within {@code [min, max]}, or {@code defaultValue} when it is
+     * unset, not an integer, or outside the range.
+     *
+     * <p>This is the validating read for the size/count settings: a limit of {@code 0}, a
+     * negative one, or a garbage value must not reach the code that truncates or counts,
+     * because each of them means something different ("nothing", "infinite", "unset") and
+     * directly trusting them turns a typo into a freeze. The caller's default is the
+     * contract: the setting can lower or raise a cap, never break it.
+     *
+     * @param task the task to resolve against; may be null to force the default
+     * @param key the settings key
+     * @param defaultValue the cap used when the setting is absent or invalid
+     * @param min inclusive lower bound
+     * @param max inclusive upper bound
+     * @throws IllegalArgumentException when {@code min > max}
+     */
+    public static int getIntInRange(NaruTask task, String key, int defaultValue, int min, int max) {
+        if (min > max) {
+            throw new IllegalArgumentException(
+                    "getIntInRange(" + key + "): min (" + min + ") must not exceed max (" + max + ")");
+        }
+        NOptional<Object> found = find(task, key);
+        if (!found.isPresent()) {
+            return defaultValue;
+        }
+        Integer parsed = NLiteral.of(toText(found.get())).asInt().orElse(null);
+        if (parsed == null || parsed < min || parsed > max) {
+            if (task != null) {
+                task.log(NaruLogMode.DEBUG,
+                        NMsg.ofC("'%s' is not an integer in [%d, %d] (got '%s'); using default %d",
+                                key, min, max, toText(found.get()), defaultValue));
+            }
+            return defaultValue;
+        }
+        return parsed;
+    }
+
+    /**
+     * The value as a strictly positive int, or {@code defaultValue} when it is unset,
+     * not an integer, or {@code <= 0}.
+     */
+    public static int getPositiveInt(NaruTask task, String key, int defaultValue) {
+        return getIntInRange(task, key, defaultValue, 1, Integer.MAX_VALUE);
     }
 
     public static double getDouble(NaruTask task, String key, double defaultValue) {

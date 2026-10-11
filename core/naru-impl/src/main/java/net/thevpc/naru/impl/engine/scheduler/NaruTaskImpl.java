@@ -106,6 +106,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private Instant creationDate;
     private Instant modificationDate;
     private NaruModelConfig model;
+    /** Spawn-time string hint ({@code spec.model()} or the policy model); resolved lazily. */
+    private String modelHint;
+    /** One-shot result and flag for the tools-capable best fit, so its warnings fire once. */
+    private NaruModelConfig modelFallback;
+    private boolean modelFallbackAttempted;
     private String extraContext;
 
     /**
@@ -998,6 +1003,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         return this;
     }
 
+    public NaruTaskImpl _setModelHint(String modelHint) {
+        this.modelHint = modelHint;
+        return this;
+    }
+
     @Override
     public NaruTask setProjectDir(NPath projectDir) {
         this.projectDir = projectDir;
@@ -1625,11 +1635,101 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (model != null) {
             return model;
         }
-        NaruModelConfig model = session().agent().env().get("model").map(x -> x == null || x.isNull() ? null : new NaruModelConfig(x)).orNull();
-        if (model != null) {
-            return model;
+        if (modelHint != null) {
+            // the spawn-time hint (spec.model() or the policy model), resolved the
+            // first time it is actually needed
+            NOptional<NaruModelConfig> hinted = session().findModel(modelHint);
+            if (hinted.isPresent()) {
+                return hinted.get();
+            }
         }
-        model = session().registry().modelsKeys(session()).stream().findFirst().map(NaruModelConfig::new).orElse(null);
+        NaruTask parent = parent().orNull();
+        if (parent != null) {
+            // a child inherits the parent's model by default, and follows the parent's
+            // resolution lazily instead of snapshotting it at spawn
+            NaruModelConfig inherited = parent.model();
+            if (inherited != null) {
+                return inherited;
+            }
+        }
+        return fallbackModel();
+    }
+
+    /**
+     * One-shot tools-capable best fit: the session's persisted model definition, then
+     * the project env {@code model} ({@code /model use-global}), then the first model
+     * whose capabilities allow tools. The result is cached so the warnings about what
+     * was requested vs. what got selected fire once, not on every prompt.
+     */
+    private NaruModelConfig fallbackModel() {
+        if (!modelFallbackAttempted) {
+            modelFallbackAttempted = true;
+            modelFallback = resolveBestFitModel();
+        }
+        return modelFallback;
+    }
+
+    private NaruModelConfig resolveBestFitModel() {
+        NaruSession session = session();
+        NaruModelConfig requestedModel = null;
+        if (session instanceof NaruSessionImpl) {
+            requestedModel = ((NaruSessionImpl) session).sessionModel();
+        }
+        if (requestedModel == null) {
+            requestedModel = session.getProjectEnv("model")
+                    .map(NaruModelConfig::new)
+                    .orNull();
+        }
+        NaruModelConfig model = null;
+        if (requestedModel != null) {
+            if (!NBlankable.isBlank(requestedModel.name())) {
+                model = session.findModel(requestedModel.name()).orNull();
+            }
+            if (model == null && !NBlankable.isBlank(requestedModel.model())) {
+                String requestedKey = NBlankable.isBlank(requestedModel.provider())
+                        ? requestedModel.model()
+                        : requestedModel.key().toString();
+                model = session.findModel(requestedKey).orNull();
+            }
+        }
+
+        if (model == null) {
+            List<NaruModelInfo> toolModels = session.registry().modelsInfos(session)
+                    .stream()
+                    .filter(x -> x.capabilities().isTools())
+                    .collect(Collectors.toList());
+
+            if (toolModels.isEmpty()) {
+                if (requestedModel == null) {
+                    log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ no model with tools capability is available"));
+                } else {
+                    log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ requested model %s was not found; no model with tools capability is available",
+                            requestedModel));
+                }
+            } else {
+                for (NaruModelInfo fallbackInfo : toolModels) {
+                    model = session.findModel(fallbackInfo.key().toString()).orNull();
+                    if (model != null) {
+                        break;
+                    }
+                }
+
+                if (model == null) {
+                    if (requestedModel == null) {
+                        log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ no available model with tools capability could be resolved"));
+                    } else {
+                        log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ requested model %s was not found; no available model with tools capability could be resolved",
+                                requestedModel));
+                    }
+                } else if (requestedModel == null) {
+                    log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ no model was requested; auto-selected %s", model.toText()));
+                } else {
+                    log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ requested model %s was not found; selected %s instead",
+                            requestedModel, model.toText()));
+                }
+            }
+        }
+
         return model;
     }
 
@@ -2316,7 +2416,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             return NOptional.ofNullable(env.get(key).get());
         }
         if (inherited) {
-            return session().getSessionEnv(key);
+            // the inherited half of the chain: the session lookup itself walks
+            // session env, then the per-process agent env, then the project settings
+            return session().getSessionEnv(key, true);
         }
         return NOptional.ofNamedEmpty(key);
     }
