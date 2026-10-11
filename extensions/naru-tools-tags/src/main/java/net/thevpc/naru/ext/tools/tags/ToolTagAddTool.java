@@ -46,8 +46,12 @@ public class ToolTagAddTool extends DefaultNaruTool {
         Set<String> added = new LinkedHashSet<>();
         if (t != null) {
             for (String s : NStringUtils.split(t, ", ;", true, true)) {
-                context.task().addToolTag(s);
-                added.add(s);
+                try {
+                    context.task().addToolTag(s);
+                    added.add(s);
+                } catch (Exception ex) {
+                    return "Error adding tag '" + s + "': " + ex.getMessage();
+                }
             }
         }
         return "added " + added.size() + " tags";
