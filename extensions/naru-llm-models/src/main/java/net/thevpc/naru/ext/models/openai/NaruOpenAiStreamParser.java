@@ -259,6 +259,22 @@ public class NaruOpenAiStreamParser extends NaruSseResponseParser {
                                 message.getContent() == null ? "" : message.getContent(), calls)
                         .setThinkingSegments(message.getThinkingSegments());
             }
+        } else {
+            // Parity fallback: a model that does not emit structured tool_calls
+            // writes its call as text -- typically <function=name><parameter=…>
+            // (the common case this covers <tool_call> and <|tool_call|> JSON
+            // blocks too). The batched parser already detects these
+            // (NaruOpenAiResponseParser.parseEmbeddedToolCalls); a streamed turn
+            // must reach the same decision or the actor loop sees a plain answer
+            // where the batch path would have executed a tool.
+            String content = message == null ? null : message.getContent();
+            if (content != null) {
+                List<NaruToolCall> embedded = NaruOpenAiResponseParser.parseEmbeddedToolCalls(content);
+                if (!embedded.isEmpty()) {
+                    message = NaruMessage.assistantWithToolCalls(content, embedded)
+                            .setThinkingSegments(message.getThinkingSegments());
+                }
+            }
         }
         NaruResponse response = new NaruResponse();
         response.setMessage(message);

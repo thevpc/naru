@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruAgent;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
+import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.ext.models.openrouter.NaruOpenRouterProvider;
@@ -45,6 +46,33 @@ public class NaruOpenRouterProviderTest {
         NOptional<NaruModelProtocol> proto = provider.getProtocol(config, session);
         Assertions.assertTrue(proto.isPresent());
         Assertions.assertNotNull(proto.get().getCapabilities());
+    }
+
+    @Test
+    public void testGetProtocolToolsCapabilityCanBeOverriddenDown() {
+        // OpenRouter claims tools=true for everything (the catalogue says the
+        // endpoint accepts tool parameters, not that the model honours them).
+        // The registered <id>.tools=false must override that so the model is
+        // routed through tool-call emulation instead of native calls.
+        NaruOpenRouterProvider provider = new NaruOpenRouterProvider();
+        Map<String, String> env = new HashMap<>();
+        env.put("openrouter.tools", "false");
+        NaruSession session = createMockSession(env);
+
+        NaruModelConfig config = new NaruModelConfig("openrouter", "qwen/qwen-2.5-coder-32b-instruct:free");
+        NaruModelCapabilities capabilities = provider.getProtocol(config, session).get().getCapabilities();
+        Assertions.assertFalse(capabilities.isTools(),
+                "an explicit tools=false registration must beat the catalogue default");
+    }
+
+    @Test
+    public void testGetProtocolToolsCapabilityDefaultRemainsTrue() {
+        NaruOpenRouterProvider provider = new NaruOpenRouterProvider();
+        NaruSession session = createMockSession(Collections.emptyMap());
+
+        NaruModelConfig config = new NaruModelConfig("openrouter", "qwen/qwen-2.5-coder-32b-instruct:free");
+        NaruModelCapabilities capabilities = provider.getProtocol(config, session).get().getCapabilities();
+        Assertions.assertTrue(capabilities.isTools(), "without an override the catalogue default applies");
     }
 
     /**

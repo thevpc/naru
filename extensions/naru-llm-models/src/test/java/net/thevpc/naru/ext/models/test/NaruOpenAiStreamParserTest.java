@@ -226,6 +226,63 @@ public class NaruOpenAiStreamParserTest {
         Assertions.assertEquals(2, second.getArguments().get("y"));
     }
 
+    @Test
+    public void embeddedFunctionXmlInContentBecomesAToolCall() {
+        // a model that does not emit structured tool_calls writes its call as
+        // text in <function=name><parameter=…> form; the batched parser already
+        // detects it and a streamed turn must reach the same decision
+        NaruResponse r = stream(
+                "{\"choices\":[{\"delta\":{\"content\":\"I will read the file.\\n<function=file_read>\"}}]}",
+                "{\"choices\":[{\"delta\":{\"content\":\"<parameter=path>src/Main.java</parameter></function>\"}}]}",
+                "{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}",
+                "[DONE]");
+        Assertions.assertTrue(r.hasToolCalls(),
+                "the XML function call in streamed content must surface as a tool call");
+        NaruToolCall call = r.getMessage().getToolCalls().get(0);
+        Assertions.assertEquals("file_read", call.getName());
+        Assertions.assertEquals("src/Main.java", call.getArguments().get("path"));
+    }
+
+    @Test
+    public void embeddedToolCallJsonInContentBecomesAToolCall() {
+        // the <tool_call>{json}</tool_call> spelling, common on small/free models
+        NaruResponse r = stream(
+                "{\"choices\":[{\"delta\":{\"content\":\"Let me compute.\\n<tool_call>\"}}]}",
+                "{\"choices\":[{\"delta\":{\"content\":\"{\\\"name\\\":\\\"calculator\\\",\\\"arguments\\\":{\\\"expression\\\":\\\"2+2\\\"}}\"}}]}",
+                "{\"choices\":[{\"delta\":{\"content\":\"</tool_call>\"}}]}",
+                "{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}",
+                "[DONE]");
+        Assertions.assertTrue(r.hasToolCalls());
+        NaruToolCall call = r.getMessage().getToolCalls().get(0);
+        Assertions.assertEquals("calculator", call.getName());
+        Assertions.assertEquals("2+2", call.getArguments().get("expression"));
+    }
+
+    @Test
+    public void embeddedToolCallStreamMatchesTheBatchParser() {
+        // Both parsers detect the embedded format and keep the raw block in the
+        // content, so a streamed turn and a batched one are interchangeable apart
+        // from the opaque call ids, which each side generates randomly.
+        String rawBlock = "<tool_call>{\"name\":\"calculator\",\"arguments\":{\"expression\":\"2+2\"}}</tool_call>";
+        // the block goes inside a JSON string value, so its quotes must be escaped
+        NaruResponse batched = parseBatch("{\"choices\":[{\"message\":{\"role\":\"assistant\","
+                + "\"content\":\"" + rawBlock.replace("\\", "\\\\").replace("\"", "\\\"")
+                + "\"},\"finish_reason\":\"stop\"}]}");
+        NaruResponse streamed = stream(
+                "{\"choices\":[{\"delta\":{\"content\":\"<tool_call>\"}}]}",
+                "{\"choices\":[{\"delta\":{\"content\":\"{\\\"name\\\":\\\"calculator\\\",\\\"arguments\\\":{\\\"expression\\\":\\\"2+2\\\"}}\"}}]}",
+                "{\"choices\":[{\"delta\":{\"content\":\"</tool_call>\"}}]}",
+                "{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}",
+                "[DONE]");
+        NaruMessage a = batched.getMessage();
+        NaruMessage b = streamed.getMessage();
+        Assertions.assertEquals(a.getContent(), b.getContent(), "answer text must match");
+        Assertions.assertTrue(a.hasToolCalls() && b.hasToolCalls());
+        Assertions.assertEquals(a.getToolCalls().size(), b.getToolCalls().size());
+        Assertions.assertEquals(a.getToolCalls().get(0).getName(), b.getToolCalls().get(0).getName());
+        Assertions.assertEquals(a.getToolCalls().get(0).getArguments(), b.getToolCalls().get(0).getArguments());
+    }
+
     // ── usage ─────────────────────────────────────────────────────────────────
 
     @Test

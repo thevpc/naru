@@ -6,6 +6,7 @@ import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruModelTimeouts;
+import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.anthropic.NaruModelProtocolAnthropicCompat;
 import net.thevpc.naru.ext.models.gemini.NaruModelProtocolGeminiNative;
 import net.thevpc.nuts.elem.NElement;
@@ -19,6 +20,7 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NIllegalArgumentException;
+import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.*;
@@ -221,9 +223,34 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
         if (!model.provider().equals(name())) {
             return NOptional.ofNamedEmpty(NMsg.ofC("protocol for %s", model));
         }
-        NaruModelCapabilities capabilities = resolveCapabilities(model.model(), session);
+        NaruModelCapabilities capabilities = applyCapabilityOverrides(resolveCapabilities(model.model(), session), session);
         return NOptional.of(protocols.computeIfAbsent(model,
                 k -> createProtocol(model, capabilities, session)));
+    }
+
+    /**
+     * Lets an explicit registration/environment value beat what the provider
+     * inferred about a model's capabilities. Catalogue claims are optimistic --
+     * a provider advertises that an endpoint accepts a parameter, not that a
+     * model reliably honours it -- and the person who tried the model is the
+     * one who knows. {@code <id>.tools=false} (or {@code /model add … --tools=false})
+     * switches the model to tool-call emulation, which is what fixes an
+     * over-eager catalogue for a model that writes its calls as text. The
+     * generic {@code custom} type already read this key; the override makes the
+     * same knob work on every OpenAI-compatible cloud provider.
+     */
+    protected NaruModelCapabilities applyCapabilityOverrides(NaruModelCapabilities capabilities, NaruSession session) {
+        if (capabilities == null) {
+            return null;
+        }
+        Boolean tools = configValue("tools", session)
+                .flatMap(x -> NLiteral.of(x).asBoolean()).orNull();
+        if (tools == null || tools == capabilities.isTools()) {
+            return capabilities;
+        }
+        return new NaruModelCapabilitiesImpl(
+                capabilities.isVision(), tools, capabilities.isThinking(), capabilities.isEmbedding(),
+                capabilities.contextLength(), capabilities.cachingMode(), capabilities.isStreaming());
     }
 
     public boolean isApiKeySet(NaruSession session){

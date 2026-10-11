@@ -7,6 +7,7 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolSchema;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NBlankable;
 
 import java.util.*;
 import java.util.regex.Matcher;
@@ -16,6 +17,54 @@ public class NoToolWrapHelper {
     //    public static final Separators TOOL_CALL = new Separators("<tool_call>", "</tool_call>");
     public static final Separators TOOL_CALL_SEP = new Separators("<|tool_call|>", "<|end_tool_call|>");
     public static final Separators TOOL_RESULT_SEP = new Separators("<|tool_result|>", "<|end_tool_result|>");
+
+    /**
+     * Request/agent env keys a per-model {@code .naru/models/*.md} front matter
+     * may use to spell the tags a model actually emits. They were documented but
+     * previously ignored: the emulator always used its own constants, so a model
+     * with a different tag could not be matched even with the override file.
+     */
+    public static final String ENV_TOOL_CALL_START = "tool_call_start";
+    public static final String ENV_TOOL_CALL_END = "tool_call_end";
+    public static final String ENV_TOOL_RESULT_START = "tool_result_start";
+    public static final String ENV_TOOL_RESULT_END = "tool_result_end";
+
+    /**
+     * The call-tag pair this request emulates: the {@code tool_call_start/end}
+     * overrides when both are set, otherwise {@link #TOOL_CALL_SEP}.
+     */
+    public static Separators forToolCalls(Map<String, NElement> env) {
+        return resolve(env, ENV_TOOL_CALL_START, ENV_TOOL_CALL_END, TOOL_CALL_SEP);
+    }
+
+    /**
+     * The result-tag pair this request emulates: the {@code tool_result_start/end}
+     * overrides when both are set, otherwise {@link #TOOL_RESULT_SEP}.
+     */
+    public static Separators forToolResults(Map<String, NElement> env) {
+        return resolve(env, ENV_TOOL_RESULT_START, ENV_TOOL_RESULT_END, TOOL_RESULT_SEP);
+    }
+
+    /**
+     * A tag override must name both ends to be usable; a half-configured pair
+     * (one end missing) falls back to the default rather than producing a
+     * separator that can never close.
+     */
+    private static Separators resolve(Map<String, NElement> env, String startKey, String endKey, Separators defaults) {
+        if (env == null) {
+            return defaults;
+        }
+        String start = stringValue(env.get(startKey));
+        String end = stringValue(env.get(endKey));
+        if (!NBlankable.isBlank(start) && !NBlankable.isBlank(end)) {
+            return new Separators(start.trim(), end.trim());
+        }
+        return defaults;
+    }
+
+    private static String stringValue(NElement e) {
+        return e == null || e.isNull() ? null : e.asStringValue().orNull();
+    }
 
 
     public static NaruModelRequest wrapRequest(NaruModelRequest mrequest, Separators callSep, Separators resultSep) {
@@ -105,6 +154,14 @@ public class NoToolWrapHelper {
                     Pattern.quote(open) + "(.*?)" + Pattern.quote(close),
                     Pattern.DOTALL
             );
+        }
+
+        public String open() {
+            return open;
+        }
+
+        public String close() {
+            return close;
         }
     }
 

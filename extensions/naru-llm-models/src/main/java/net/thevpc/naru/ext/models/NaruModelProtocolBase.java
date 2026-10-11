@@ -219,14 +219,29 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     }
 
     protected NaruModelRequest preprocessRequest(NaruModelRequest mrequest, NaruTask task) {
-        boolean emulate_tool_calls = false;
-        if (mrequest.env().get("emulate_tool_calls") != null && mrequest.env().get("emulate_tool_calls").isBoolean()) {
-            emulate_tool_calls = mrequest.env().get("emulate_tool_calls").asBooleanValue().get();
-        }
-        if (!capabilities.isTools() && !mrequest.tools().isEmpty() || emulate_tool_calls) {
-            mrequest = NoToolWrapHelper.wrapRequest(mrequest, NoToolWrapHelper.TOOL_CALL_SEP, NoToolWrapHelper.TOOL_RESULT_SEP);
+        if (wrapsTools(mrequest) || emulatesToolCalls(mrequest)) {
+            mrequest = NoToolWrapHelper.wrapRequest(mrequest,
+                    NoToolWrapHelper.forToolCalls(mrequest.env()),
+                    NoToolWrapHelper.forToolResults(mrequest.env()));
         }
         return applyThinking(mrequest, task);
+    }
+
+    /**
+     * Whether the request's tools must be emulated because this model does not
+     * speak the wire's native tool-call format: the model claims no tool
+     * capability yet tools are offered. The explicit {@code emulate_tool_calls}
+     * request-level override forces the same path for a model that <em>does</em>
+     * claim the capability but is known not to honour it (a per-model
+     * {@code .naru/models/*.md} front matter sets it).
+     */
+    protected boolean wrapsTools(NaruModelRequest mrequest) {
+        return !capabilities.isTools() && !mrequest.tools().isEmpty();
+    }
+
+    protected boolean emulatesToolCalls(NaruModelRequest mrequest) {
+        NElement e = mrequest.env() == null ? null : mrequest.env().get("emulate_tool_calls");
+        return e != null && e.isBoolean() && Boolean.TRUE.equals(e.asBooleanValue().orNull());
     }
 
     /**
@@ -404,10 +419,8 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     @Override
     public NaruResponse chat(NaruModelRequest mrequest, NaruTask task) {
         Map<String, NElement> env = mrequest.env();
-        boolean toolsWrapped = (!capabilities.isTools() && !mrequest.tools().isEmpty());
-        boolean emulate_tool_calls = mrequest.env().get("emulate_tool_calls") != null
-                && mrequest.env().get("emulate_tool_calls").isBoolean()
-                && mrequest.env().get("emulate_tool_calls").asBooleanValue().get();
+        boolean toolsWrapped = wrapsTools(mrequest);
+        boolean emulate_tool_calls = emulatesToolCalls(mrequest);
 
         NaruModelRequest preparedModelRequest = preprocessRequest(mrequest, task);
 
@@ -495,6 +508,8 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     protected NaruResponse streamChat(NaruModelRequest mrequest, NaruTask task,
                                       NaruStreamResponseParser parser) {
         Map<String, NElement> env = mrequest.env();
+        boolean toolsWrapped = wrapsTools(mrequest);
+        boolean emulate_tool_calls = emulatesToolCalls(mrequest);
         NaruModelRequest preparedModelRequest = preprocessRequest(mrequest, task);
 
         NaruCachingMode cachingMode = capabilities.cachingMode();
@@ -550,6 +565,14 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 }
                 onResponseReceived(response, task);
                 NaruResponse result = parser.read(response);
+                if (toolsWrapped || emulate_tool_calls) {
+                    // Same emulated-call extraction as the batched path: a wrapped
+                    // request is answered inside the tag pair, and the streamed
+                    // parser only ever assembled text, so the tags must be turned
+                    // into calls here or the turn reads as a plain answer.
+                    result = NoToolWrapHelper.unwrapResponse(result,
+                            NoToolWrapHelper.forToolCalls(preparedModelRequest.env()), task);
+                }
                 commitCacheState(preparedModelRequest, cachePlan, cachingMode, task);
                 return result;
             } catch (NonRetryableWebException nre) {
@@ -689,7 +712,8 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 NaruModelUtils.logWebResponse(request, NMsg.ofC("chat with %s (attempt %s)", model, attempt), body, responseElement != null ? responseElement : responseString, chrono);
                 NaruResponse naruResponse = NaruModelProtocolBase.this.parseResponse(responseString);
                 if (toolsWrapped || emulate_tool_calls) {
-                    naruResponse = NoToolWrapHelper.unwrapResponse(naruResponse, NoToolWrapHelper.TOOL_CALL_SEP, task);
+                    naruResponse = NoToolWrapHelper.unwrapResponse(naruResponse,
+                            NoToolWrapHelper.forToolCalls(preparedModelRequest.env()), task);
                 }
                 // Only now that the provider has accepted the request is the
                 // prefix genuinely stored. Committing earlier — say, right after

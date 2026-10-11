@@ -245,6 +245,48 @@ Values are merged into every model selected under that instance id, so
 `/model use personal/gemini-3.8-flash` selects *personal's* configuration —
 including its key — not the base provider's.
 
+**`--tools` on a cloud provider.** Catalog capabilities are an upper bound: a
+provider advertises that its endpoint accepts a `tools` parameter, not that a
+model reliably honours it. `<id>.tools=false` (or `/model add … --tools=false`)
+now over-rides that claim on every provider — OpenRouter included — and routes the
+model through tool-call emulation instead of native calls. A model that writes its
+calls as text is recognised by default in both streamed and batched responses,
+including the common `<function=name><parameter=…></function>` and
+`<tool_call>{…}</tool_call>` spellings.
+
+**Per-model overrides (`.naru/models/*.md`).** Front matter merges into the model's
+request env on every call:
+
+```markdown
+---
+emulate_tool_calls: true        # force emulation even when the catalog claims tools
+tool_call_start: "<tool_call>"  # the tags the model actually emits
+tool_call_end: "</tool_call>"
+tool_result_start: "<tool_result>"
+tool_result_end: "</tool_result>"
+---
+```
+
+A tag pair must give both ends; a half-configured pair falls back to the emulator's
+defaults (`<|tool_call|>` / `<|end_tool_call|>`). These keys are honoured in the
+batched and the streamed path alike.
+
+**Where these files come from.** NARU resolves the model file — `default.md`,
+`<model>.md`, or `<model>@<tag>.md` for a `name:tag` model id — through four
+sources, in order; every source that has the file contributes, and later sources
+merge over earlier ones:
+
+| Order | Source | Location |
+|-------|--------|----------|
+| 1 | classpath | `META-INF/naru/models/<file>.md` in any jar on the classpath |
+| 2 | user home | `~/.naru/models/<file>.md` |
+| 3 | workspace | the shared nar store `models` dir for `net.thevpc.naru:naru` |
+| 4 | project/folder | `.naru/models/<file>.md` walking working dir up to project dir |
+
+The `naru-llm-models` extension ships defaults for models known to write their
+tool calls as text (e.g. `qwen2.5-coder`, `apodex/apodex-1.1-mini:free`); a
+`.naru/models/<file>.md` of your own simply overrides them.
+
 ## 8. Wire types: `openai`, `anthropic`, `gemini`
 
 A registration has two independent knobs:
