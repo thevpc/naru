@@ -126,6 +126,17 @@ LangGraph has both but is Python-only with a static graph.
 
 ---
 
+## Documentation
+
+Architecture deep-dives live in [`documentation/architecture/`](documentation/architecture/):
+
+- [NAF utilities: what NARU is built on](documentation/architecture/nuts-utilities.md) — why NARU uses the Nuts Application Framework (NAF) utilities (`NPath`, `NExec`, `NExpr`, `NCp`, ...) instead of hand-rolling general-purpose code, with the authoritative enumeration.
+- [Tool tags](documentation/architecture/tags.md) — the capability-tag gate that decides which tools a task may see.
+- [Skills](documentation/architecture/skills.md)
+- [Prompt context caching](documentation/architecture/prompt-context-caching.md)
+
+---
+
 ## Features
 - [X] Metering
 - [X] Skills

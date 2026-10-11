@@ -13,6 +13,7 @@ import net.thevpc.naru.api.task.NaruTask;
 
 import net.thevpc.naru.api.task.NaruTaskStackFrame;
 import net.thevpc.naru.api.task.NaruTaskStackItem;
+import net.thevpc.naru.api.util.NaruExprs;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.engine.stmt.*;
 import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
@@ -2373,12 +2374,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NExprContextBuilder expressionBuilder() {
-        return NExprContextBuilder.of()
-                .declareBuiltins()
-                .declareMathConstants()
-                .declareMathFunctions()
-                .declarePhysicsConstants()
-                .declareVars(varResolver())
+        return NaruExprs.runtimeBuilder(varResolver())
                 .literalMapper((value, context) -> {
                     if (value instanceof NExprLiteralNode && ((NExprLiteralNode) value).value() instanceof String) {
                         return context.ofDollarInterpolatedString((String) ((NExprLiteralNode) value).value());
@@ -2410,12 +2406,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public String expandString(String condition) {
-        NExprContext ctx = NExprContextBuilder.of()
-                .declareBuiltins()
-                .declareMathConstants()
-                .declareMathFunctions()
-                .declarePhysicsConstants()
-                .declareVars(varResolver()).build();
+        NExprContext ctx = NaruExprs.runtimeBuilder(varResolver()).build();
         try {
             return ctx.ofTemplate().withBashStyle().compile(condition).runString();
         } catch (Exception e) {

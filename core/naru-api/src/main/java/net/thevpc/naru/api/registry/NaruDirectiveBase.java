@@ -4,9 +4,9 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.util.NaruExprs;
 import net.thevpc.nuts.cmdline.*;
 import net.thevpc.nuts.expr.NExprContext;
-import net.thevpc.nuts.expr.NExprContextBuilder;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.*;
@@ -227,13 +227,7 @@ public abstract class NaruDirectiveBase implements NaruDirective {
             return arg;
         }
         try {
-            NExprContext ctx = NExprContextBuilder.of()
-                    .declareBuiltins()
-                    .declareMathConstants()
-                    .declareMathFunctions()
-                    .declarePhysicsConstants()
-                    .declareVars(task.varResolver())
-                    .build();
+            NExprContext ctx = NaruExprs.runtimeBuilder(task.varResolver()).build();
             String out = ctx.ofTemplate().withMoustacheStyle().compile(arg).runString();
             return out == null ? arg : out;
         } catch (Exception ignore) {
