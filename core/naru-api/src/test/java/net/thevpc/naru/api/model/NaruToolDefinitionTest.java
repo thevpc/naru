@@ -18,15 +18,6 @@ public class NaruToolDefinitionTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        // NText.of/ofPlain go through the Nuts workspace, which is not implicit in a unit test.
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            Nuts.require();
-        }
         Nuts.require();
     }
 

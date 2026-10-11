@@ -31,14 +31,6 @@ public class NaruMessageSerializationTest {
      */
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            Nuts.require();
-        }
         Nuts.require();
     }
 

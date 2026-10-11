@@ -39,21 +39,7 @@ public class NaruFileSessionStoreTest {
     public static void setUpWorkspace() {
         // the TSON reader needs a workspace for its format options; a shared one keeps
         // every test here from opening its own
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     private NPath projectDir;
     private NaruSessionStore store;

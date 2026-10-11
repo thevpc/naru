@@ -32,21 +32,7 @@ public class NaruSessionUsageReportingTest {
     @BeforeAll
     public static void setUpWorkspace() {
         // NPath.ofTempFolder resolves through the shared workspace
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     private static NaruSessionImpl newSession() {
         NaruAgent agent = new NaruAgentImpl();

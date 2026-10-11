@@ -17,6 +17,7 @@ import net.thevpc.naru.api.model.NaruStreamChunk;
 import net.thevpc.naru.api.model.NaruStreamHandler;
 import net.thevpc.naru.api.model.NaruThinkingExtraction;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NTerminal;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.io.NPath;
@@ -42,21 +43,7 @@ public class NaruTaskStreamingOutputTest {
 
     @BeforeAll
     public static void setUp() {
-        try {
-            net.thevpc.nuts.core.NWorkspace ws =
-                    net.thevpc.nuts.Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                net.thevpc.nuts.core.NWorkspace ws = net.thevpc.nuts.Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
+        Nuts.require();
     }
 
     private final List<String> fragments = new ArrayList<>();

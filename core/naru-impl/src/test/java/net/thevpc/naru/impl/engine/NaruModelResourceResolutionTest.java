@@ -41,20 +41,7 @@ public class NaruModelResourceResolutionTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Throwable e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Throwable ignored) {
-            }
-        }
+        Nuts.require();
     }
 
     @Test

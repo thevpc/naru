@@ -31,21 +31,7 @@ public class NaruThinkingSegmentTest {
      */
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     private static NaruThinkingSegment seg(int i, String text, boolean complete) {
         return new NaruThinkingSegment(i, text, NaruThinkingExtraction.TAG_DELIMITED, "gpt", 12, complete);

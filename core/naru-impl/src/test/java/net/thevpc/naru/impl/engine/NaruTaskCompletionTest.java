@@ -41,23 +41,7 @@ public class NaruTaskCompletionTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            // --sandbox, unlike the --system --standalone the rest of the suite uses, keeps this
-            // class's workspace off the machine's real one. Worth knowing if a test here starts
-            // depending on state another class left behind -- that state will not be there.
-            NWorkspace ws = Nuts.openWorkspace("--sandbox");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
+        Nuts.require();
     }
 
     private static NaruAgentImpl newAgent(String name) {

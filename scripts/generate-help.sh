@@ -45,7 +45,7 @@ fi
 CP="app/naru/target/classes:$(cat "$CP_FILE")"
 
 echo "==> generating /help $*" >&2
-java -cp "$CP" net.thevpc.naru.NaruHelpGenerateMain "$@" > "$GENERATED"
+java -cp "$CP" net.thevpc.naru.NaruApp --help commands "$@" > "$GENERATED"
 
 echo "==> writing HELP.md ($(wc -l < "$GENERATED") lines)" >&2
 {
