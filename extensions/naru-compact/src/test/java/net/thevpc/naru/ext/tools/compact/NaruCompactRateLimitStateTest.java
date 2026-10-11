@@ -34,21 +34,7 @@ class NaruCompactRateLimitStateTest {
     @BeforeAll
     public static void setUpWorkspace() {
         // NDuration.ofSeconds resolves through the Nuts workspace.
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     /** An absent value must read as an absent optional, not as a present null. */
     private static <T> NOptional<T> optional(T value) {

@@ -37,21 +37,7 @@ class NaruCompactCacheTest {
     public static void setUpWorkspace() {
         // NPath.ofTempFolder resolves through the Nuts workspace, so the cache tests need one
         // even though they touch no model and no session.
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     private static List<NaruMessage> items(String... contents) {
         List<NaruMessage> out = new ArrayList<>();

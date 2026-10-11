@@ -79,24 +79,7 @@ public class NaruSessionDirectiveTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Throwable e) {
-            System.err.println("[first workspace attempt failed]");
-            e.printStackTrace();
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Throwable ignored) {
-                System.err.println("[second workspace attempt failed]");
-                ignored.printStackTrace();
-            }
-        }
+        Nuts.require();
     }
 
     @BeforeEach

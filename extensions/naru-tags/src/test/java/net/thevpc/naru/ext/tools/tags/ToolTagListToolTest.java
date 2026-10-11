@@ -34,21 +34,7 @@ public class ToolTagListToolTest {
     @BeforeAll
     public static void setUp() {
         // NText.ofPlain (used by tool descriptions) needs a Nuts workspace.
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     private static final class Fixture {
         final Map<String, NaruToolTag> available = new LinkedHashMap<>();
