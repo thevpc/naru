@@ -1,0 +1,29 @@
+{
+  "run_id": "opencode_qwen3.8_32k_t3_0",
+  "agent": "opencode",
+  "agent_version": "opencode v2.0.23",
+  "model": "qwen3.8:32k",
+  "task": "t3",
+  "run_index": 0,
+  "pass": false,
+  "accept_output": "FAIL: No new tests added in tests/\n.\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK",
+  "wall_s": 1200.07,
+  "exit_code": -1,
+  "hit_cap": true,
+  "requests_main": 3,
+  "requests_title": 1,
+  "requests_other": 0,
+  "prompt_tokens": 19627,
+  "completion_tokens": 699,
+  "reasoning_tokens": 0,
+  "cached_prompt_tokens": 0,
+  "peak_prompt_tokens_single_request": 7121,
+  "tool_calls_by_name": {
+    "shell": 1,
+    "glob": 1,
+    "read": 8
+  },
+  "request_bytes_total": 78165,
+  "files_changed": 2,
+  "final_text": "The tool files exist under `bench/fixtures/t3/csvtool/`. Let me explore that structure in detail."
+}

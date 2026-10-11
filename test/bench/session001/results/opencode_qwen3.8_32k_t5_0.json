@@ -1,0 +1,30 @@
+{
+  "run_id": "opencode_qwen3.8_32k_t5_0",
+  "agent": "opencode",
+  "agent_version": "opencode v2.0.23",
+  "model": "qwen3.8:32k",
+  "task": "t5",
+  "run_index": 0,
+  "pass": false,
+  "accept_output": "FAIL: slugifier/slug.py does not exist",
+  "wall_s": 1200.039,
+  "exit_code": -1,
+  "hit_cap": true,
+  "requests_main": 4,
+  "requests_title": 1,
+  "requests_other": 0,
+  "prompt_tokens": 24564,
+  "completion_tokens": 864,
+  "reasoning_tokens": 0,
+  "cached_prompt_tokens": 0,
+  "peak_prompt_tokens_single_request": 6935,
+  "tool_calls_by_name": {
+    "webfetch": 1,
+    "read": 4,
+    "glob": 2,
+    "shell": 1
+  },
+  "request_bytes_total": 102214,
+  "files_changed": 2,
+  "final_text": "Let me quickly check a representative module in this repo for style conventions (docstrings, type hints)."
+}

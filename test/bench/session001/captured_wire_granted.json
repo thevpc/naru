@@ -1,0 +1,659 @@
+{
+  "model": "qwen3.8:32k",
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are NARU (Nuts AI Reasoning Unit), a durable actor-model based multi-task agent.\nProject directory: /tmp/naru-wire-measure-granted3646377448179665038\n"
+    },
+    {
+      "role": "user",
+      "content": "Reply with the single word OK."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "git_commit",
+        "description": "Stage modified/new files and record changes to the repository.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "Commit message"
+            },
+            "all": {
+              "type": "boolean",
+              "description": "Stage all modified and deleted files before committing (-a)"
+            }
+          },
+          "required": [
+            "message"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "run_shell",
+        "description": "Execute a shell command and return its output (stdout + stderr).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "Shell command to execute"
+            },
+            "working_dir": {
+              "type": "string",
+              "description": "Directory to run the command in (defaults to project dir)"
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "description": "Max seconds to wait (default: 60)"
+            }
+          },
+          "required": [
+            "command"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "search_web",
+        "description": "search the web for the provided query",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "query to look for"
+            }
+          },
+          "required": [
+            "query"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "web_fetch",
+        "description": "Fetches content from a specified URL and converts it to requested format (markdown, text, or html). Defaults to markdown.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "The URL to fetch content from"
+            },
+            "format": {
+              "type": "string",
+              "description": "The format to return the content in (markdown, text, or html). Defaults to markdown.",
+              "default": "markdown"
+            },
+            "timeout": {
+              "type": "integer",
+              "description": "Optional timeout in seconds (max 120)"
+            }
+          },
+          "required": [
+            "url"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "think",
+        "description": "Use this tool to think through something privately before answering or acting. It performs no action and returns no result; use it for planning, reviewing tool output, verifying assumptions, or deciding the next step.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "thought": {
+              "type": "string",
+              "description": "Your private reasoning notes"
+            }
+          },
+          "required": [
+            "thought"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "routine_run",
+        "description": "Requests the agent to start executing a specified script. The script will run sequentially line by line.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "routine_name": {
+              "type": "string",
+              "description": "Name of the routine to run."
+            }
+          },
+          "required": [
+            "routine_name"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "routine_add_line",
+        "description": "Adds or updates a numbered line in a naru routine (internal REPL buffer). This is NOT a shell command or external script. Supports comments: use '#', '//', or 'REM' at the start (e.g., line=15, content='# Validate input'). Comments get line numbers for ordering but are skipped during execution. If routine_name is empty, uses the currently active routine.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "routine_name": {
+              "type": "string",
+              "description": "Name of the routine to modify. If empty, uses the currently active routine."
+            },
+            "line_number": {
+              "type": "integer",
+              "description": "Line number to write (e.g. 10, 20,100). Supports gaps for easy insertion."
+            },
+            "command": {
+              "type": "string",
+              "description": "The instruction, condition, or loop directive to store at this line."
+            }
+          },
+          "required": [
+            "line_number",
+            "command"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "file_read",
+        "description": "Read contents of a text file. If line constraints are provided, lines are 1-based. Omitting bounds reads from line 1 up to 2000 lines.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path to read"
+            },
+            "line_start": {
+              "type": "integer",
+              "description": "First line to read (1-based, optional, defaults to 1)",
+              "default": 1
+            },
+            "line_end": {
+              "type": "integer",
+              "description": "Last line to read (inclusive, optional, defaults to start + 2000)"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "file_write",
+        "description": "Write content to a file, creating it (and any parent directories) if necessary. Overwrites existing content.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Destination file path (absolute or relative to project dir)"
+            },
+            "content": {
+              "type": "string",
+              "description": "Full text content to write"
+            },
+            "dry": {
+              "type": "boolean",
+              "description": "If true, preview changes without modifying the file"
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "file_append",
+        "description": "Append to the end of the file. If the file (and its path) does not exist, it will be created.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path of the file to append to"
+            },
+            "content": {
+              "type": "string",
+              "description": "content to append"
+            },
+            "dry": {
+              "type": "boolean",
+              "description": "If true, preview changes without modifying the file"
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "file_edit_lines",
+        "description": "Insert, replace, or delete lines in a text file. Supports 0-based indexing and negative indices (-1 = last line, -2 = second-to-last). Use dry=true to preview changes without writing.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path to edit"
+            },
+            "from": {
+              "type": "integer",
+              "description": "Start line index (0-based inclusive, supports negatives)"
+            },
+            "to": {
+              "type": "integer",
+              "description": "End line index (0-based exclusive). Omit or equal to 'from' to insert."
+            },
+            "content": {
+              "type": "string",
+              "description": "New lines (\\n separated). Leave empty to delete."
+            },
+            "dry": {
+              "type": "boolean",
+              "description": "If true, preview changes without modifying the file"
+            }
+          },
+          "required": [
+            "path",
+            "from"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "file_edit_search_replace",
+        "description": "Search for an exact string in a text file and replace it with new content. If the string appears multiple times, the edit will fail with an error unless 'replaceAll' is true or an exact 'occurrence' number (1-based) is specified. Use dry=true to preview changes without writing.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path to edit"
+            },
+            "search": {
+              "type": "string",
+              "description": "Exact text string to find"
+            },
+            "replace": {
+              "type": "string",
+              "description": "Replacement text string"
+            },
+            "occurrence": {
+              "type": "integer",
+              "description": "Which occurrence to replace (1-based, default 1)"
+            },
+            "replaceAll": {
+              "type": "boolean",
+              "description": "Replace all occurrences of search string (default false)"
+            },
+            "dry": {
+              "type": "boolean",
+              "description": "If true, preview changes without modifying the file"
+            }
+          },
+          "required": [
+            "path",
+            "search",
+            "replace"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "file_create",
+        "description": "Create a new file with specified content. Fails if file already exists unless overwrite=true.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path to create"
+            },
+            "content": {
+              "type": "string",
+              "description": "Initial file content"
+            },
+            "overwrite": {
+              "type": "boolean",
+              "description": "If true, overwrite existing file"
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "file_grep",
+        "description": "Search for lines matching a pattern in a text file or directory. Supports literal and regex search with surrounding context.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "description": "Search pattern"
+            },
+            "path": {
+              "type": "string",
+              "description": "File or directory to search (optional, defaults to current working directory)"
+            },
+            "include": {
+              "type": "string",
+              "description": "File pattern to include in the search (e.g. *.js, *.java)"
+            },
+            "regex": {
+              "type": "boolean",
+              "description": "Treat pattern as regex",
+              "default": true
+            },
+            "case_sensitive": {
+              "type": "boolean",
+              "description": "Case-sensitive match",
+              "default": true
+            },
+            "context_lines": {
+              "type": "integer",
+              "description": "Lines of context before/after match",
+              "default": 0
+            },
+            "max_matches": {
+              "type": "integer",
+              "description": "Maximum matches to return",
+              "default": 50
+            }
+          },
+          "required": [
+            "pattern"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "diff",
+        "description": "Compare two text files and return their differences. Useful for comparing .ntx source files or checking what changed between versions.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "file1": {
+              "type": "string",
+              "description": "Path to the first file (original)."
+            },
+            "file2": {
+              "type": "string",
+              "description": "Path to the second file (modified)."
+            },
+            "context_lines": {
+              "type": "integer",
+              "description": "Number of context lines around each change (default: 3)."
+            }
+          },
+          "required": [
+            "file1",
+            "file2"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "pwd",
+        "description": "return current working dir",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "folder_find",
+        "description": "Find files by name/glob patterns and optionally search their contents. CRITICAL: A strict logical 'AND' is performed across ALL filters. Files must simultaneously match: Location Path AND Glob Filters (include/exclude) AND Time Window Constraints (modified_after/before) AND Content Text Pattern (if provided). Only files satisfying EVERY layer of this constraint chain are processed.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "description": "Glob pattern to match files by relative path or name (e.g. '**/*.java', 'sub/**/*.java')"
+            },
+            "path": {
+              "type": "string",
+              "description": "Directory to search (optional, defaults to current working directory)"
+            },
+            "content_pattern": {
+              "type": "string",
+              "description": "Search text pattern inside file contents (optional)"
+            },
+            "regex": {
+              "type": "boolean",
+              "description": "Treat pattern as regex",
+              "default": false
+            },
+            "case_sensitive": {
+              "type": "boolean",
+              "description": "Case-sensitive match",
+              "default": false
+            },
+            "context_lines": {
+              "type": "integer",
+              "description": "Lines of context before/after match",
+              "default": 2
+            },
+            "max_matches": {
+              "type": "integer",
+              "description": "Max matches per file",
+              "default": 50
+            },
+            "max_files": {
+              "type": "integer",
+              "description": "Max files to scan",
+              "default": 50
+            },
+            "include_filename": {
+              "type": "string",
+              "description": "Glob patterns to include file by name (comma-separated, e.g. '*.java,*.xml')"
+            },
+            "exclude_filename": {
+              "type": "string",
+              "description": "Glob patterns to exclude file by name (comma-separated, e.g. '*.java,*.xml')"
+            },
+            "recursive": {
+              "type": "boolean",
+              "description": "Search subdirectories",
+              "default": true
+            },
+            "modified_after": {
+              "type": "string",
+              "description": "ISO-8601 timestamp (e.g. 2026-05-01T00:00:00Z) or relative duration (e.g. -24h, -7d)"
+            },
+            "modified_before": {
+              "type": "string",
+              "description": "ISO-8601 timestamp or relative duration"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cd",
+        "description": "update working dir and return the absolute path. when no argument, switches to project directory",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "work_dir": {
+              "type": "string",
+              "description": "Path to the change to, can be relative (to session workdir) or absolute. when empty, return to project dir"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "ollama_status",
+        "description": "Check whether Ollama is installed and running, retrieve server info, response latency, loaded VRAM models, and available models.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "ollama_start",
+        "description": "Start the Ollama server (ollama serve) as a background process managed by NARU. It will be automatically stopped when NARU exits.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "auto_install": {
+              "type": "boolean",
+              "description": "Auto-install Ollama if not present before starting (default: true)"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "ollama_stop",
+        "description": "Stop the Ollama server process.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "force_all": {
+              "type": "boolean",
+              "description": "Force stop all Ollama instances even if not spawned by NARU (default: false)"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "ollama_install",
+        "description": "Download and install Ollama for the host operating system (Linux, macOS, Windows).",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "ollama_ps",
+        "description": "List models currently active/loaded in GPU VRAM or system RAM on the Ollama server.",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "maven_compile",
+        "description": "Compile a Maven project using 'mvn compile'. Returns compiler output and exit code.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "project_dir": {
+              "type": "string",
+              "description": "Path to the Maven project (defaults to agent project dir)"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "maven_test",
+        "description": "Run Maven tests using 'mvn test'. Optionally run a single test class.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "project_dir": {
+              "type": "string",
+              "description": "Path to the Maven project (defaults to agent project dir)"
+            },
+            "test_class": {
+              "type": "string",
+              "description": "Specific test class to run, e.g. 'com.example.MyTest' (optional)"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "maven_package",
+        "description": "Package a Maven project using 'mvn package -DskipTests'. Returns build output and exit code.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "project_dir": {
+              "type": "string",
+              "description": "Path to the Maven project (defaults to agent project dir)"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

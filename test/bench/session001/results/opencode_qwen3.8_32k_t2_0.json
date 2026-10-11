@@ -1,0 +1,27 @@
+{
+  "run_id": "opencode_qwen3.8_32k_t2_0",
+  "agent": "opencode",
+  "agent_version": "opencode v2.0.23",
+  "model": "qwen3.8:32k",
+  "task": "t2",
+  "run_index": 0,
+  "pass": false,
+  "accept_output": "FAIL: Visible unit tests failed\n...F..\n======================================================================\nFAIL: test_subtraction_associativity (test_eval.TestEval.test_subtraction_associativity)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/tmp/bench-opencode-t2-0-yr7df_q6/tests/test_eval.py\", line 16, in test_subtraction_associativity\n    self.assertEqual(evaluate(\"10 - 3 - 2\"), 5)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 9.0 != 5\n\n----------------------------------------------------------------------\nRan 6 tests in 0.002s\n\nFAILED (failures=1)",
+  "wall_s": 1200.014,
+  "exit_code": -1,
+  "hit_cap": true,
+  "requests_main": 5,
+  "requests_title": 1,
+  "requests_other": 0,
+  "prompt_tokens": 29785,
+  "completion_tokens": 636,
+  "reasoning_tokens": 0,
+  "cached_prompt_tokens": 0,
+  "peak_prompt_tokens_single_request": 6698,
+  "tool_calls_by_name": {
+    "shell": 5
+  },
+  "request_bytes_total": 119003,
+  "files_changed": 4,
+  "final_text": "Found it \u2014 the actual task repo lives at `/tmp/bench-opencode-t2-0-yr7df_q6`. Let me explore it."
+}

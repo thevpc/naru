@@ -1,0 +1,29 @@
+{
+  "run_id": "naru_qwen3.8_32k_t2_0",
+  "agent": "naru",
+  "agent_version": "0453af3",
+  "model": "qwen3.8:32k",
+  "task": "t2",
+  "run_index": 0,
+  "pass": false,
+  "accept_output": "FAIL: Test files in tests/ were modified or untracked",
+  "wall_s": 848.648,
+  "exit_code": 0,
+  "hit_cap": false,
+  "requests_main": 6,
+  "requests_title": 0,
+  "requests_other": 0,
+  "prompt_tokens": 18598,
+  "completion_tokens": 519,
+  "reasoning_tokens": 0,
+  "cached_prompt_tokens": 0,
+  "peak_prompt_tokens_single_request": 4135,
+  "tool_calls_by_name": {
+    "run_shell": 5,
+    "pwd": 1,
+    "file_read": 3
+  },
+  "request_bytes_total": 104387,
+  "files_changed": 3,
+  "final_text": ""
+}

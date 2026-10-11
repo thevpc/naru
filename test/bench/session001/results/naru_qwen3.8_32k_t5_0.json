@@ -1,0 +1,30 @@
+{
+  "run_id": "naru_qwen3.8_32k_t5_0",
+  "agent": "naru",
+  "agent_version": "b706a6c",
+  "model": "qwen3.8:32k",
+  "task": "t5",
+  "run_index": 0,
+  "pass": false,
+  "accept_output": "FAIL: slugifier/slug.py does not exist",
+  "wall_s": 950.043,
+  "exit_code": 0,
+  "hit_cap": false,
+  "requests_main": 3,
+  "requests_title": 0,
+  "requests_other": 0,
+  "prompt_tokens": 9283,
+  "completion_tokens": 189,
+  "reasoning_tokens": 0,
+  "cached_prompt_tokens": 0,
+  "peak_prompt_tokens_single_request": 3881,
+  "tool_calls_by_name": {
+    "web_fetch": 1,
+    "pwd": 1,
+    "run_shell": 1,
+    "file_read": 1
+  },
+  "request_bytes_total": 49520,
+  "files_changed": 1,
+  "final_text": ""
+}

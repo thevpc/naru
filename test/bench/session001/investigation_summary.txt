@@ -1,0 +1,39 @@
+INVESTIGATION COMPLETE - NO CORE CHANGES REQUIRED
+
+3.1 Cache Segment Placement:
+- Splitter puts only NaruSource.USER in conversation/turn segments
+- Everything else (including NaruSource.SKILL) goes to stable system-context
+- Solution: Use NaruSource.USER with sourceName "activation:<name>" for activation messages
+- No core changes needed
+
+3.2 Compactor Contract:
+- Compactor summarizes older items, keeps recent items verbatim based on window
+- No mechanism to preserve specific message types verbatim
+- No extension hook for post-compaction re-emission
+- Solution: Extension will re-emit activation messages during contribute() by scanning history
+- No core changes needed
+
+3.3 Directive Appending Messages:
+- Use task.addHistory() with NaruRole.user, NaruSource.USER, sourceName "activation:<name>"
+- Standard, supported approach
+- No core changes needed
+
+3.4 History-Clearing Test:
+- Current test verifies skills survive via re-injection (not in history)
+- New test will verify activation messages survive via history persistence/re-emission
+- Will assert system-context segment unchanged on skill activation
+
+VERIFICATION: ext/skills.tson CAN be dropped
+- Activation state derivable from history by scanning for activation:* sourceName messages
+- Compactor preserves these as regular history items
+- Extension can re-emit any that get summarized during contribute()
+
+RECOMMENDED APPROACH:
+1. Activation messages: user-role, NaruSource.USER, sourceName "activation:<name>"
+2. Shared activation service for resolution, gating, already-active check, framing
+3. Extension contribute() emits only catalog (tiered, alphabetical)
+4. Extension contribute() scans history and represents activation messages
+5. /skill use directive adds activation message via task.addHistory()
+6. Migration: schemaVersion 1/2 LOADED → pending activations via normal activation path
+
+NO CORE CHANGES REQUIRED FOR PHASE 0
