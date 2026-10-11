@@ -4,7 +4,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.agent.NaruVisibility;
-import net.thevpc.naru.api.model.NaruThinkingConfig;
+import net.thevpc.naru.api.registry.NaruConfigKey;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
@@ -64,17 +64,6 @@ import java.util.TreeSet;
  * tool schema, so "thinking off" does not come back as narrated tool calls.
  */
 public class NaruSettingsDirective extends NaruDirectiveBase {
-
-    /**
-     * The keys {@code /settings} advertises. A closed list on purpose: the directive
-     * doubles as the documentation of what can be configured, and any other key is
-     * still readable with {@code /settings <key>}.
-     */
-    private static final String[] KNOWN_KEYS = {
-            NaruThinkingConfig.THINKING_KEY,
-            "model",
-            "model.noStream",
-    };
 
     public NaruSettingsDirective() {
         super("settings", "ai", "read and write config keys", "setting", "config");
@@ -141,12 +130,14 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
     }
 
     private NaruStmtResult list(NaruTask task) {
+        List<NaruConfigKey> keys = task.session().registry().configKeys();
         NStringBuilder sb = NStringBuilder.of();
-        NMsg header = NMsg.ofC("%s settings:", KNOWN_KEYS.length);
+        NMsg header = NMsg.ofC("%s settings:", keys.size());
         task.log(NaruLogMode.AGENT_RESPONSE, header);
         sb.println(header.toString());
-        for (String key : KNOWN_KEYS) {
-            NMsg row = NMsg.ofC("  %s", describe(task, key));
+        for (NaruConfigKey key : keys) {
+            NMsg row = NMsg.ofC("  %s%s", describe(task, key.key()),
+                    key.description().isEmpty() ? "" : " — " + key.description());
             task.log(NaruLogMode.AGENT_RESPONSE, row);
             sb.println(row.toString());
         }
@@ -251,32 +242,50 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
             addCandidates(candidates, currentArg, "--private", "--public", "--local");
             return NArgCompleteResult.ofCandidates(candidates);
         }
-        // word 0 is /settings; the key may be the first or a later word
-        for (String key : settingKeys(session)) {
-            if (key.startsWith(currentArg)) {
-                candidates.add(NArgCompleteCandidate.of(key));
-            }
-            String withValue = key + "=";
-            if (withValue.startsWith(currentArg)) {
-                candidates.add(NArgCompleteCandidate.of(withValue));
+        // word 0 is /settings; the key may be the first or a later word. The
+        // candidates are the declared config keys (with their descriptions and, for
+        // the keys that have a fixed vocabulary, their values once the text reaches
+        // the '=') plus whatever the project config files already hold, so a custom
+        // key is completed once it exists.
+        List<NaruConfigKey> keys = new ArrayList<>(registeredKeys(session));
+        Set<String> present = new TreeSet<>();
+        for (NaruConfigKey k : keys) {
+            present.add(k.key());
+        }
+        for (String key : sessionKeys(session)) {
+            if (present.add(key)) {
+                keys.add(NaruConfigKey.of(key, "key present in the session or agent env"));
             }
         }
+        NaruConfigKey.addCandidates(candidates, currentArg, keys);
         return NArgCompleteResult.ofCandidates(candidates);
     }
 
     /**
-     * The keys {@code /settings} can name: the advertised list plus whatever the project
-     * config files already hold, so a custom key is completed once it exists.
+     * The keys {@code /settings} can name: what the build declares through its
+     * {@link NaruConfigKeyProvider}s, plus whatever the project config files
+     * already hold, so a custom key is completed once it exists.
      */
-    private static List<String> settingKeys(NaruSession session) {
-        Set<String> keys = new TreeSet<>(Arrays.asList(KNOWN_KEYS));
-        if (session != null && session.agent() != null) {
-            try {
-                keys.addAll(session.agent().env().entries().keySet());
-            } catch (RuntimeException ignored) {
-                // completion is best effort; an unreadable config must not break Tab
-            }
+    private static List<NaruConfigKey> registeredKeys(NaruSession session) {
+        if (session == null || session.registry() == null) {
+            return List.of();
         }
-        return new ArrayList<>(keys);
+        try {
+            return session.registry().configKeys();
+        } catch (RuntimeException ignored) {
+            // completion is best effort; an unreadable config must not break Tab
+            return List.of();
+        }
+    }
+
+    private static List<String> sessionKeys(NaruSession session) {
+        if (session == null || session.agent() == null) {
+            return List.of();
+        }
+        try {
+            return new ArrayList<>(session.agent().env().entries().keySet());
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
     }
 }

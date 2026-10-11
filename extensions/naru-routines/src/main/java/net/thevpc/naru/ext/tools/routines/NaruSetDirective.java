@@ -5,6 +5,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.agent.NaruVisibility;
+import net.thevpc.naru.api.registry.NaruConfigKey;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
@@ -26,6 +27,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -261,20 +263,42 @@ public class NaruSetDirective extends NaruDirectiveBase {
             addCandidates(candidates, currentArg, "--task", "--session", "--agent", "--local");
             return NArgCompleteResult.ofCandidates(candidates);
         }
-        // variable names already known in an env scope: session and agent are reachable
-        // from the completion context; task and frame locals are not, and are best served
-        // by the "name=" hole and the flags below
-        for (String key : envKeys(session)) {
-            if (key.startsWith(currentArg)) {
-                candidates.add(NArgCompleteCandidate.of(key));
-            }
-            String withValue = key + "=";
-            if (withValue.startsWith(currentArg)) {
-                candidates.add(NArgCompleteCandidate.of(withValue));
+        // The vocabulary is the config keys the build declares (with descriptions and,
+        // for the fixed-vocabulary keys, their values once the text reaches the '='),
+        // plus whatever variable a session or agent env already holds, so a variable
+        // set by a script is completed once it exists. A declared key wins the name:
+        // it shadows the same-named env value, which only answers when nothing is
+        // declared. Task and frame locals are not reachable from the completion
+        // context, and are best served by the "name=" hole and the scope flags below.
+        TreeMap<String, NaruConfigKey> byKey = new TreeMap<>();
+        for (NaruConfigKey key : registeredKeys(session)) {
+            if (!byKey.containsKey(key.key())) {
+                byKey.put(key.key(), key);
             }
         }
+        for (String key : envKeys(session)) {
+            byKey.putIfAbsent(key, NaruConfigKey.of(key, "key present in the session or agent env"));
+        }
+        NaruConfigKey.addCandidates(candidates, currentArg, byKey.values());
         addCandidates(candidates, currentArg, "--task", "--session", "--agent", "--local");
         return NArgCompleteResult.ofCandidates(candidates);
+    }
+
+    /**
+     * The config keys {@code /set} can address: what the build declares through
+     * its {@link NaruConfigKeyProvider}s, guarded so an unreadable config must
+     * not break Tab.
+     */
+    private static List<NaruConfigKey> registeredKeys(NaruSession session) {
+        if (session == null || session.registry() == null) {
+            return List.of();
+        }
+        try {
+            return session.registry().configKeys();
+        } catch (RuntimeException ignored) {
+            // completion is best effort; an unreadable config must not break Tab
+            return List.of();
+        }
     }
 
     private static Set<String> envKeys(NaruSession session) {

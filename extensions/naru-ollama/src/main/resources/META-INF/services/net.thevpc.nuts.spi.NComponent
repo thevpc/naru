@@ -1,2 +1,3 @@
 net.thevpc.naru.ext.tools.ollama.NaruOllamaDirectiveProvider
 net.thevpc.naru.ext.tools.ollama.NaruOllamaToolsetProvider
+net.thevpc.naru.ext.tools.ollama.NaruOllamaConfigKeysProvider

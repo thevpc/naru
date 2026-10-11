@@ -29,6 +29,16 @@ public interface NaruRegistry {
 
     NaruRegistry registerModelProvider(NaruModelProvider tool);
 
+    NaruRegistry registerConfigKeyProvider(NaruConfigKeyProvider configKeyProvider);
+
+    /**
+     * The configuration keys every registered {@link NaruConfigKeyProvider}
+     * declares for this session, sorted by key. This is the vocabulary
+     * {@code /settings} and {@code /set} autocomplete against and {@code /settings}
+     * lists.
+     */
+    List<NaruConfigKey> configKeys();
+
     String dispatch(String name, Map<String, Object> arguments, NaruTask context);
 
     String dispatch(NaruToolCall toolCall, NaruTask context);

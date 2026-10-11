@@ -10,3 +10,4 @@ net.thevpc.naru.ext.models.ollama.NaruOllamaProvider
 net.thevpc.naru.ext.models.openai.NaruOpenAiProvider
 net.thevpc.naru.ext.models.openrouter.NaruOpenRouterProvider
 net.thevpc.naru.ext.models.xai.NaruXaiProvider
+net.thevpc.naru.ext.models.NaruModelConfigKeysProvider

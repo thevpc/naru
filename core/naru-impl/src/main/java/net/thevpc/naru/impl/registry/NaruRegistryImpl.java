@@ -7,6 +7,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.*;
+import net.thevpc.naru.impl.config.NaruCoreConfigKeyProvider;
 import net.thevpc.naru.impl.ia.mode.NaruModeRegistry;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NPairElement;
@@ -37,6 +38,7 @@ public class NaruRegistryImpl implements NaruRegistry {
     private final Map<String, NaruModelProvider> modelProviders = new HashMap<>();
     private final List<NaruSessionExtension> sessionExtensions = new ArrayList<>();
     private final List<NaruContextCompactor> compactors = new ArrayList<>();
+    private final Map<String, NaruConfigKeyProvider> configKeyProviders = new LinkedHashMap<>();
     private final NaruModeRegistry modeRegistry = new NaruModeRegistry();
     private final NaruSession session;
     private final Predicate<NaruDirective> directiveFilter;
@@ -214,6 +216,46 @@ public class NaruRegistryImpl implements NaruRegistry {
     public NaruRegistry registerModelProvider(NaruModelProvider provider) {
         modelProviders.put(NStringUtils.strip(provider.name()).toLowerCase(), provider);
         return this;
+    }
+
+    @Override
+    public NaruRegistry registerConfigKeyProvider(NaruConfigKeyProvider configKeyProvider) {
+        String n = configKeyProvider.name();
+        if (configKeyProviders.containsKey(n)) {
+            throw new IllegalArgumentException("config key provider " + n + " already registered");
+        }
+        configKeyProviders.put(n, configKeyProvider);
+        return this;
+    }
+
+    /**
+     * Every key the registered providers declare for this session, sorted by key.
+     *
+     * <p>Aggregated on demand because the surface is per-session (dynamic keys
+     * such as {@code model.qwen.readTimeout} follow what the session knows).
+     * Duplicate keys keep the first declaration, which is the one the {@code /settings}
+     * listing shows; a provider that throws is skipped so a broken extension may not
+     * break completion.
+     */
+    @Override
+    public List<NaruConfigKey> configKeys() {
+        TreeMap<String, NaruConfigKey> byKey = new TreeMap<>();
+        for (NaruConfigKeyProvider provider : configKeyProviders.values()) {
+            try {
+                List<NaruConfigKey> keys = provider.configKeys(session);
+                if (keys != null) {
+                    for (NaruConfigKey key : keys) {
+                        if (key != null && !byKey.containsKey(key.key())) {
+                            byKey.put(key.key(), key);
+                        }
+                    }
+                }
+            } catch (RuntimeException e) {
+                session.log(NaruLogMode.DEBUG, NMsg.ofC(
+                        "config-key provider '%s' failed: %s", provider.name(), e.getMessage()));
+            }
+        }
+        return new ArrayList<>(byKey.values());
     }
 
     public Map<String, NaruModelProvider> modelProviders() {
@@ -451,6 +493,7 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerToolsetProvider(new NaruBuiltinToolsetProvider());
         this.registerDirectiveProvider(new NaruBuiltinDirectiveProvider());
         this.registerToolTagProvider(new NaruBuiltinToolTagProvider());
+        this.registerConfigKeyProvider(new NaruCoreConfigKeyProvider());
         for (NaruToolTagProvider provider : NExtensions.of().createAllSupported(NaruToolTagProvider.class, null)) {
             this.registerToolTagProvider(provider);
         }
@@ -462,6 +505,9 @@ public class NaruRegistryImpl implements NaruRegistry {
         }
         for (NaruModelProvider provider : NExtensions.of().createAllSupported(NaruModelProvider.class, null)) {
             this.registerModelProvider(provider);
+        }
+        for (NaruConfigKeyProvider provider : NExtensions.of().createAllSupported(NaruConfigKeyProvider.class, null)) {
+            this.registerConfigKeyProvider(provider);
         }
         for (NaruPromptMode mode : NExtensions.of().createAllSupported(NaruPromptMode.class, null)) {
             this.declareMode(mode);
