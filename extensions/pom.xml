@@ -34,6 +34,7 @@
         <module>naru-tools-git</module>
         <module>naru-tools-semantic</module>
         <module>naru-tools-ollama</module>
+        <module>naru-llama-cpp</module>
     </modules>
     <build>
     </build>

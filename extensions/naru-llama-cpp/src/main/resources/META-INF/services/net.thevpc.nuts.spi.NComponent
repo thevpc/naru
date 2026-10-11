@@ -1,0 +1,3 @@
+net.thevpc.naru.ext.tools.llamacpp.NaruLlamaCppDirectiveProvider
+net.thevpc.naru.ext.tools.llamacpp.NaruLlamaCppToolsetProvider
+net.thevpc.naru.ext.models.llamacpp.NaruLlamaCppProvider
