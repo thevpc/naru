@@ -1,0 +1,302 @@
+package net.thevpc.naru.ext.models.ollama;
+
+import net.thevpc.naru.api.model.NaruCachingMode;
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
+import net.thevpc.naru.ext.models.openai.AbstractOpenAICompatProvider;
+import net.thevpc.naru.ext.models.openai.NaruModelProtocolOpenAICompat;
+import net.thevpc.naru.ext.models.util.NaruModelUtils;
+import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.net.NHttpClient;
+import net.thevpc.nuts.net.NHttpRequest;
+import net.thevpc.nuts.net.NHttpResponse;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.mon.NChronometer;
+import net.thevpc.nuts.time.NDuration;
+import net.thevpc.nuts.util.NOptional;
+
+import java.util.*;
+
+/**
+ * Ollama provider — talks to a local (or remote) Ollama server via REST.
+ *
+ * <p>Endpoint: POST {baseUrl}/api/chat
+ * <p>Compatible with Ollama 0.2.8+ tool-calling format.
+ */
+public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
+
+    private final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
+    private final Map<String, NaruModelCapabilities> cachedCapabilities = new HashMap<>();
+
+    public NaruOllamaProvider() {
+        this("ollama");
+    }
+
+    public NaruOllamaProvider(String name) {
+        super(name, new String[]{});
+    }
+
+
+    @Override
+    public String defaultProtocol() {
+        return NaruModelProtocolOllamaNative.PROTOCOL_ID;
+    }
+
+    @Override
+    public Set<String> supportedProtocols() {
+        // the /api/chat REST wire is the only shape ollama speaks; --protocol=
+        // therefore rejects any other wire id at the directive level
+        return Set.of();
+    }
+
+    /**
+     * The native {@code /api/chat} REST wire (the {@code think} flag, the
+     * stream frame format, ...) — ollama's one and only wire.
+     */
+    @Override
+    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+        return new NaruModelProtocolOllamaNative(this, model, name(), capabilities,
+                isLocal(session), defaultReadTimeout(session));
+    }
+
+    public String baseUrl(NaruSession session) {
+        // §6: the instance's own url (a registration pointing at a remote Ollama)
+        // wins over the env key, with localhost as the built-in default
+        String url = configValue("url", session).orElse("http://localhost:11434");
+        return url.replaceAll("/$", "");
+    }
+
+
+
+    public NaruModelCapabilities resolveCapabilities(String model, NaruSession session) {
+        NaruModelCapabilities c = cachedCapabilities.get(model);
+        if (c != null) {
+            return c;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+
+        NHttpClient http = NHttpClient.of()
+                .connectTimeout(connectTimeout(session))
+                .baseUri(baseUrl(session));
+        NHttpRequest request = http.POST("api/show")
+                .timeout(readTimeout(session))
+                .jsonRequestBody(body);
+        try {
+            NChronometer chrono = NChronometer.of();
+            NaruModelUtils.logWebRequest(request, NMsg.ofC("checking capabilities of %s", model), body);
+            NHttpResponse response = request.run().failFast();
+            String json = response.contentAsString();
+            NElement root = NElementReader.ofJson().read(json);
+            NaruModelCapabilities naruModelCapabilities = parseCapabilities(root);
+            cachedCapabilities.put(model, naruModelCapabilities);
+            NaruModelUtils.logWebResponse(request, NMsg.ofC("checking capabilities of %s", name()), body, json, chrono);
+            return naruModelCapabilities;
+        } catch (Exception e) {
+            // fallback — assume minimal capabilities
+            return NaruModelCapabilitiesImpl.UNKNOWN;
+        }
+    }
+
+    @Override
+    public boolean isSupportedInstallModel() {
+        return true;
+    }
+
+    @Override
+    public boolean isSupportedUninstallModel() {
+        return true;
+    }
+
+    @Override
+    public boolean isSupportedUnloadModel() {
+        return true;
+    }
+
+    @Override
+    public boolean isSupportedPsModel() {
+        return true;
+    }
+
+    @Override
+    public void installModel(NaruModelKey key, NaruSession session) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", key.model());
+        NHttpClient http = NHttpClient.of()
+                .connectTimeout(connectTimeout(session))
+                .baseUri(baseUrl(session));
+        NHttpRequest request = http.POST("api/pull")
+                .timeout(readTimeout(session))
+                .jsonRequestBody(body);
+        NChronometer chrono = NChronometer.of();
+        NaruModelUtils.logWebRequest(request, NMsg.ofC("install of %s", key), body);
+        NHttpResponse response = request.run().failFast();
+        String json = response.contentAsString();
+        NaruModelUtils.logWebResponse(request, NMsg.ofC("install of %s", key), body, json, chrono);
+    }
+
+    @Override
+    public void uninstallModel(NaruModelKey key, NaruSession session) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", key.model());
+        NHttpClient http = NHttpClient.of()
+                .connectTimeout(connectTimeout(session))
+                .baseUri(baseUrl(session));
+        NHttpRequest request = http.POST("api/delete")
+                .timeout(readTimeout(session))
+                .jsonRequestBody(body);
+        NChronometer chrono = NChronometer.of();
+        NaruModelUtils.logWebRequest(request, NMsg.ofC("uninstall of %s", key), body);
+        NHttpResponse response = request.run().failFast();
+        NElement json = response.contentAsJson();
+        NaruModelUtils.logWebResponse(request, NMsg.ofC("uninstall of %s", json), body, json, chrono);
+    }
+
+    @Override
+    public void unloadModel(NaruModelKey key, NaruSession session) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", key.model());
+        body.put("keep_alive", 0);
+        NHttpClient http = NHttpClient.of()
+                .connectTimeout(connectTimeout(session))
+                .baseUri(baseUrl(session));
+        NHttpRequest request = http.POST("api/generate")
+                .timeout(readTimeout(session))
+                .jsonRequestBody(body);
+        NChronometer chrono = NChronometer.of();
+        NaruModelUtils.logWebRequest(request, NMsg.ofC("uninstall of %s", key), body);
+        NHttpResponse response = request.run().failFast();
+        NElement json = response.contentAsJson();
+        NaruModelUtils.logWebResponse(request, NMsg.ofC("uninstall of %s", name()), body, json, chrono);
+    }
+
+    @Override
+    public List<NaruModelPsResult> psModel(NaruSession session) {
+        NHttpClient http = NHttpClient.of()
+                .connectTimeout(connectTimeout(session))
+                .baseUri(baseUrl(session));
+        NHttpRequest request = http.GET("api/ps")
+                .timeout(readTimeout(session));
+        NChronometer chrono = NChronometer.of();
+        NaruModelUtils.logWebRequest(request, NMsg.ofC("ps of %s", name()), null);
+        NHttpResponse response = request.run().failFast();
+        NElement json = response.contentAsJson();
+        List<NaruModelPsResult> results = new ArrayList<>();
+        if (json.isAnyObject()) {
+            for (NElement m : json.asObject().get().getArray("models").orElse(NArrayElement.ofEmpty()).children()) {
+                if (m.isAnyObject()) {
+                    NObjectElement model = m.asObject().get();
+                    results.add(new NaruModelPsResult(
+                            new NaruModelKey(
+                                    name(),
+                                    model.getStringValue("name").get()
+                            ),
+                            model.getLongValue("size").orElse(0L),
+                            model.getInstantValue("expires_at").orNull(),
+                            model.getLongValue("size_vram").orElse(0L)
+                    ));
+                }
+            }
+        }
+        NaruModelUtils.logWebResponse(request, NMsg.ofC("uninstall of %s", name()), null, json, chrono);
+        return results;
+    }
+
+    private NaruModelCapabilities parseCapabilities(NElement root) {
+        if (!root.isAnyObject()) return NaruModelCapabilitiesImpl.UNKNOWN;
+
+        NArrayElement arr = root.asObject().get().getArray("capabilities").orNull();
+        if (arr == null) return NaruModelCapabilitiesImpl.UNKNOWN;
+
+        boolean vision = false, tools = false, thinking = false, embedding = false;
+        for (NElement el : arr) {
+            String cap = el.asStringValue().orNull();
+            if (cap == null) continue;
+            switch (cap) {
+                case "vision":
+                    vision = true;
+                    break;
+                case "tools":
+                    tools = true;
+                    break;
+                case "thinking":
+                    thinking = true;
+                    break;
+                case "embedding":
+                    embedding = true;
+                    break;
+            }
+        }
+        // in parseCapabilities or a separate method
+        NObjectElement modelInfo = root.asObject().get().getObject("model_info").orNull();
+        long contextLength = -1;
+        if (modelInfo != null) {
+            // key is "<arch>.context_length", scan for it
+            for (NPairElement entry : modelInfo.namedPairs()) {
+                if (entry.key().asStringValue().orElse("").endsWith(".context_length")) {
+                    contextLength = entry.value().asLongValue().orElse(0L);
+                }
+            }
+        }
+        String parameters = root.asObject().get().getStringValue("parameters").orNull();
+        long numCtx = parseNumCtx(parameters);
+        if (numCtx > 0) {
+            contextLength = numCtx;
+        } else {
+            // fall back to model_info arch context_length
+        }
+
+        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength, NaruCachingMode.NONE);
+    }
+
+    private long parseNumCtx(String parameters) {
+        if (parameters == null) return 0;
+        for (String line : parameters.split("\n")) {
+            line = line.trim();
+            if (line.startsWith("num_ctx")) {
+                line.replace('=', ' ').trim();
+                String[] parts = line.split("\\s+");
+                if (parts.length >= 2) {
+                    try {
+                        return Long.parseLong(parts[parts.length - 1]);
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+
+    @Override
+    public List<String> findModelIds(NaruSession session) {
+        NHttpClient http = NHttpClient.of()
+                .connectTimeout(NDuration.ofSeconds(30))
+                .baseUri(baseUrl(session));
+        NHttpRequest request = http.GET("api/tags")
+                .connectTimeout(NDuration.ofSeconds(10))
+                .readTimeout(NDuration.ofSeconds(10));
+        try {
+            NHttpResponse response = request.run().failFast();
+            String json = response.contentAsString();
+            NElement root = NElementReader.ofJson().read(json);
+            List<String> models = new ArrayList<>();
+            if (root.isAnyObject()) {
+                NArrayElement modelsArr = root.asObject().get().getArray("models").orNull();
+                if (modelsArr != null) {
+                    for (NElement el : modelsArr) {
+                        el.asObject().ifPresent(obj -> {
+                            obj.getStringValue("name").ifPresent(models::add);
+                        });
+                    }
+                }
+            }
+            return models;
+        } catch (Exception e) {
+            // If we can't list models, return an empty list or a default
+            return new ArrayList<>();
+        }
+    }
+
+
+}

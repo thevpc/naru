@@ -22,23 +22,24 @@
     <dependencies>
         <!-- Naru API dependency -->
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-fs</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-mcp</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-coder-java</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-shell</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-web</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-llm</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-routines</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-plan</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-sessions</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-tags</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-tasks</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-ai-models</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-index</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-index-java</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-git</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-semantic</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tools-ollama</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-fs</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-mcp</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-coder-java</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-shell</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-web</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-llm</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-routines</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-plan</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-sessions</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tags</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tasks</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-llm-models</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-index</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-index-java</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-git</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-semantic</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-ollama</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-llama-cpp</artifactId><version>1.1.0.0</version></dependency>
 
 
         <!-- Test dependencies -->

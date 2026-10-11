@@ -55,7 +55,8 @@ public class NaruLlamaCppProvider extends AbstractOpenAICompatProvider {
     @Override
     protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
         return new NaruModelProtocolOpenAICompat(this, model, name(),
-                resolvedChatPathFor(session), capabilities, resolvedBaseUrl(session, defaultProtocol()));
+                resolvedChatPathFor(session), capabilities, resolvedBaseUrl(session, defaultProtocol()),
+                isLocal(session), defaultReadTimeout(session));
     }
 
     /**

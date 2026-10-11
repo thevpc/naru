@@ -14,26 +14,26 @@
         <maven.compiler.target>25</maven.compiler.target>
     </properties>
     <modules>
-        <module>naru-tools-fs</module>
-        <module>naru-tools-mcp</module>
-        <module>naru-tools-shell</module>
-        <module>naru-tools-web</module>
-        <module>naru-tools-coder-java</module>
-        <module>naru-tools-llm</module>
+        <module>naru-fs</module>
+        <module>naru-mcp</module>
+        <module>naru-shell</module>
+        <module>naru-web</module>
+        <module>naru-coder-java</module>
+        <module>naru-llm</module>
         <module>naru-skills</module>
         <module>naru-budget</module>
-        <module>naru-tools-compact</module>
-        <module>naru-tools-sessions</module>
-        <module>naru-tools-routines</module>
-        <module>naru-tools-plan</module>
-        <module>naru-tools-tasks</module>
-        <module>naru-tools-tags</module>
-        <module>naru-ai-models</module>
-        <module>naru-tools-index</module>
-        <module>naru-tools-index-java</module>
-        <module>naru-tools-git</module>
-        <module>naru-tools-semantic</module>
-        <module>naru-tools-ollama</module>
+        <module>naru-compact</module>
+        <module>naru-sessions</module>
+        <module>naru-routines</module>
+        <module>naru-plan</module>
+        <module>naru-tasks</module>
+        <module>naru-tags</module>
+        <module>naru-llm-models</module>
+        <module>naru-index</module>
+        <module>naru-index-java</module>
+        <module>naru-git</module>
+        <module>naru-semantic</module>
+        <module>naru-ollama</module>
         <module>naru-llama-cpp</module>
     </modules>
     <build>
