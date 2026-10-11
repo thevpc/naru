@@ -5,8 +5,7 @@ import net.thevpc.nuts.command.NExec;
 import net.thevpc.nuts.io.NPath;
 public class ShellTest3 {
     public static void main(String[] args) {
-        NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-        if (ws != null) ws.share();
+        Nuts.require();
         
         test("echo hello");
         test("seq 1 10");
