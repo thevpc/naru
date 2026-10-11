@@ -9,7 +9,6 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NNameFormat;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -25,7 +24,6 @@ public class NaruWebToolsetProvider implements NaruToolsetProvider {
         return Arrays.asList("web");
     }
 
-
     @Override
     public NaruToolset createToolset(String id, NObjectElement config) {
         String type = NNameFormat.LOWER_KEBAB_CASE.format(id);
@@ -39,10 +37,8 @@ public class NaruWebToolsetProvider implements NaruToolsetProvider {
         }
     }
 
-
-
     private List<NaruTool> webTools() {
-        return List.of(new SearchWebScriptTool());
+        return List.of(new SearchWebScriptTool(), new WebFetchTool());
     }
 
 }
