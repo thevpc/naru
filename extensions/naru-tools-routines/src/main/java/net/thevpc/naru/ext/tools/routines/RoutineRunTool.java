@@ -31,14 +31,18 @@ public class RoutineRunTool extends DefaultNaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
-        String scriptName = context.stringArg("script_name").onBlankEmpty().orNull();
+        String scriptName = context.stringArg("routine_name")
+                .orElseGet(() -> context.stringArg("script_name").orNull());
         if (scriptName == null) {
             return "Error: routine_name is required";
         }
 
-        String r = "running routine " + scriptName;
-        context.task().invokeRoutine(scriptName);
-        return r;
+        try {
+            context.task().invokeRoutine(scriptName);
+            return "running routine " + scriptName;
+        } catch (Exception e) {
+            return "Error running routine '" + scriptName + "': " + e.getMessage();
+        }
     }
 
 

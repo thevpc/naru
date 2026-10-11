@@ -22,12 +22,18 @@ public class RoutinesToolHelper {
             return "Error: command is required";
         }
 
-        String oldName = task.editRoutineName();
-        task.useRoutine(scriptName).get();
-        task.setRoutineLine(lineNum, command);
-        task.useRoutine(oldName).orNull();
-
-        return "Successfully wrote line " + lineNum + " to script '" + scriptName + "'";
+        try {
+            String target = NBlankable.isNonBlank(scriptName) ? scriptName : "main";
+            String oldName = task.editRoutineName();
+            task.useRoutine(target).orNull();
+            task.setRoutineLine(lineNum, command);
+            if (oldName != null) {
+                task.useRoutine(oldName).orNull();
+            }
+            return "Successfully wrote line " + lineNum + " to script '" + target + "'";
+        } catch (Exception e) {
+            return "Error writing line to script: " + e.getMessage();
+        }
     }
 
     public static void renum(int start, int increment, NaruRoutine routine) {

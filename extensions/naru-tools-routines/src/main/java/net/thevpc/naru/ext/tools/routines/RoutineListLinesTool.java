@@ -64,20 +64,36 @@ public class RoutineListLinesTool extends DefaultNaruTool {
         if (NBlankable.isBlank(scriptName)) {
             scriptName = task.editRoutineName();
         }
+        if (NBlankable.isBlank(scriptName)) {
+            return "Error: No routine found";
+        }
 
         // Temporarily switch context, put line, switch back
         String oldName = task.editRoutineName();
-        task.useRoutine(scriptName).get();
-        TreeMap<Integer, String> lines = task.editRoutine().get().getLinesSet(x -> {
-            if (startNumObj != null && x < startNumObj.intValue()) return false;
-            return endNumObj == null || x <= endNumObj.intValue();
-        });
-        task.useRoutine(oldName).get();
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<Integer, String> e : lines.entrySet()) {
-            sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
+        try {
+            task.useRoutine(scriptName).get();
+            if (task.editRoutine().isEmpty()) {
+                return "Error: Routine not found: " + scriptName;
+            }
+            TreeMap<Integer, String> lines = task.editRoutine().get().getLinesSet(x -> {
+                if (startNumObj != null && x < startNumObj.intValue()) return false;
+                return endNumObj == null || x <= endNumObj.intValue();
+            });
+            StringBuilder sb = new StringBuilder();
+            for (Map.Entry<Integer, String> e : lines.entrySet()) {
+                sb.append(e.getKey()).append(" ").append(e.getValue()).append("\n");
+            }
+            return sb.toString();
+        } catch (Exception ex) {
+            return "Error: " + ex.getMessage();
+        } finally {
+            if (oldName != null) {
+                try {
+                    task.useRoutine(oldName).get();
+                } catch (Exception ignored) {
+                }
+            }
         }
-        return sb.toString();
     }
 
 }
