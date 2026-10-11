@@ -8,6 +8,7 @@ import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.util.NBlankable;
 
 public class FolderFindTool extends DefaultNaruTool {
 
@@ -29,7 +30,8 @@ public class FolderFindTool extends DefaultNaruTool {
     public NaruToolDefinition getDefinition(NaruTask task) {
         return new NaruToolDefinitionFunction(
                 name(), getDescription(task),
-                NaruToolParameter.string("path", "Directory to search", true).build(),
+                NaruToolParameter.string("pattern", "Glob pattern to match files by relative path or name (e.g. '**/*.java', 'sub/**/*.java')", false).build(),
+                NaruToolParameter.string("path", "Directory to search (optional, defaults to current working directory)", false).build(),
                 NaruToolParameter.string("content_pattern", "Search text pattern inside file contents (optional)", false).build(),
                 NaruToolParameter.bool("regex", "Treat pattern as regex", false, false).build(),
                 NaruToolParameter.bool("case_sensitive", "Case-sensitive match", false, false).build(),
@@ -46,21 +48,31 @@ public class FolderFindTool extends DefaultNaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
+        String path = context.stringArg("path").orNull();
+        if (NBlankable.isBlank(path)) {
+            path = context.task().workingDir().toString();
+        }
+        String contentPattern = context.stringArg("content_pattern").orNull();
+        String glob = context.stringArg("pattern")
+                .orElseGet(() -> context.stringArg("include")
+                        .orElseGet(() -> context.stringArg("include_filename").orNull()));
+        String exclude = context.stringArg("exclude")
+                .orElseGet(() -> context.stringArg("exclude_filename").orNull());
+
         return FileToolHelper.folderFind(
                 context.task(),
-                context.stringArg("path").orNull(),
-                context.stringArg("pattern").orNull(),
+                path,
+                contentPattern,
                 context.booleanArg("regex").orFalse(),
                 context.booleanArg("case_sensitive").orNull(),
                 context.intArg("context_lines").orNull(),
                 context.intArg("max_matches").orNull(),
                 context.intArg("max_files").orNull(),
                 context.booleanArg("recursive").orNull(),
-                context.stringArg("include").orNull(),
-                context.stringArg("exclude").orNull(),
+                glob,
+                exclude,
                 context.stringArg("modified_after").orNull(),
                 context.stringArg("modified_before").orNull()
         );
     }
-
 }

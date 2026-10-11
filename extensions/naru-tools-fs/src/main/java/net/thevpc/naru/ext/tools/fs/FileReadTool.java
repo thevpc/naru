@@ -20,9 +20,8 @@ public class FileReadTool extends DefaultNaruTool {
 
     @Override
     public NText getDescription(NaruTask task) {
-        return NText.ofPlain("Read contents of a text file. If line constraints are provided, it performs a strict logical 'AND' " +
-                "to slice the exact line range (0-indexed or 1-indexed depending on preference, standardizing on 1-based here). " +
-                "Omitting bounds reads from line 1 up to a safe threshold (" + FileToolHelper.DEFAULT_MAX_LINES + " lines).");
+        return NText.ofPlain("Read contents of a text file. If line constraints are provided, lines are 1-based. " +
+                "Omitting bounds reads from line 1 up to " + FileToolHelper.DEFAULT_MAX_LINES + " lines.");
     }
 
     @Override
@@ -37,12 +36,16 @@ public class FileReadTool extends DefaultNaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
-        return FileToolHelper.fileRead(context.task(),context.stringArg("path").orNull(),
-                context.longArg("line_start").orNull(),
-                context.longArg("line_end").orNull()
-                );
-
+        String path = context.stringArg("path")
+                .orElseGet(() -> context.stringArg("filePath").orNull());
+        Long start = context.longArg("line_start")
+                .orElseGet(() -> context.longArg("offset").orNull());
+        Long end = context.longArg("line_end").orNull();
+        if (end == null && context.longArg("limit").isPresent()) {
+            long limitVal = context.longArg("limit").get();
+            long s = (start != null && start > 0) ? start : 1L;
+            end = s + limitVal - 1;
+        }
+        return FileToolHelper.fileRead(context.task(), path, start, end);
     }
-
-
 }

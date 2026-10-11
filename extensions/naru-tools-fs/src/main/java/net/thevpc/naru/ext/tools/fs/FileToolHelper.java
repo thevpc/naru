@@ -24,7 +24,7 @@ public class FileToolHelper {
     public static final int MAX_PREVIEW_CHARS = 8_000;
     public static final int DEFAULT_CONTEXT = 2;
     public static final int DEFAULT_MAX_MATCHES = 50;
-    public static final int DEFAULT_MAX_LINES = 1000;
+    public static final int DEFAULT_MAX_LINES = 2000;
     public static final int MAX_OUTPUT_CHARS = 15_000;
 
     public static final int MAX_TOTAL_MATCHES = 100;
@@ -213,18 +213,21 @@ public class FileToolHelper {
         }
     }
 
-    public static String fileEditSearchReplace(NaruTask task, String path, String search, String replace, Long occurrence, Boolean dry) {
+    public static String fileEditSearchReplace(NaruTask task, String path, String search, String replace, Long occurrence, Boolean replaceAll, Boolean dry) {
         if (NBlankable.isBlank(path)) return "ERROR: 'path' is required.";
         if (search == null || search.isEmpty()) return "ERROR: 'search' string cannot be empty.";
         if (replace == null) replace = "";
 
+        if (search.equals(replace)) {
+            return "No changes to apply: oldString and newString are identical.";
+        }
+
         NPath p = task.resolve(path);
-        if (!p.exists()) return "ERROR: File not found: " + p;
+        if (!p.exists()) return "File not found: " + p;
         if (!p.permissions().contains(NPathPermission.CAN_WRITE)) return "ERROR: File is not writable: " + p;
 
         try {
             String fullText = p.readString();
-            int count = 0;
             int idx = 0;
             List<Integer> matchIndices = new ArrayList<>();
             while ((idx = fullText.indexOf(search, idx)) != -1) {
@@ -233,18 +236,49 @@ public class FileToolHelper {
             }
 
             if (matchIndices.isEmpty()) {
-                return "ERROR: Could not find exact search string in " + p.name();
+                return "Could not find oldString in the file. It must match exactly, including whitespace, indentation, and line endings.";
             }
 
-            int targetOcc = (occurrence == null || occurrence <= 0) ? 1 : occurrence.intValue();
-            if (targetOcc > matchIndices.size()) {
+            if (Boolean.TRUE.equals(replaceAll)) {
+                String newText = fullText.replace(search, replace);
+                if (Boolean.TRUE.equals(dry)) {
+                    String preview = newText.length() > MAX_PREVIEW_CHARS
+                            ? newText.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
+                            : newText;
+                    return String.format("DRY RUN SUCCESS: Replaced %d occurrences of search string in %s. Preview:\n```\n%s\n```",
+                            matchIndices.size(), p.name(), preview);
+                }
+                p.writeString(newText, StandardCharsets.UTF_8);
+                return "Edit applied successfully.";
+            }
+
+            if (occurrence == null) {
+                if (matchIndices.size() > 1) {
+                    return "Found multiple matches for oldString. Provide more surrounding context to make the match unique.";
+                }
+                // Exactly 1 match
+                int matchIdx = matchIndices.get(0);
+                String newText = fullText.substring(0, matchIdx) + replace + fullText.substring(matchIdx + search.length());
+                if (Boolean.TRUE.equals(dry)) {
+                    String preview = newText.length() > MAX_PREVIEW_CHARS
+                            ? newText.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
+                            : newText;
+                    return String.format("DRY RUN SUCCESS: Replaced occurrence 1 of search string in %s. Preview:\n```\n%s\n```",
+                            p.name(), preview);
+                }
+                p.writeString(newText, StandardCharsets.UTF_8);
+                return "Edit applied successfully.";
+            }
+
+            int targetOcc = occurrence.intValue();
+            if (targetOcc <= 0 || targetOcc > matchIndices.size()) {
                 return String.format("ERROR: Requested occurrence %d, but only found %d occurrence(s).", targetOcc, matchIndices.size());
             }
 
             int matchIdx = matchIndices.get(targetOcc - 1);
             String newText = fullText.substring(0, matchIdx) + replace + fullText.substring(matchIdx + search.length());
 
-            if (dry!=null && dry) {
+            if (Boolean.TRUE.equals(dry)) {
                 String preview = newText.length() > MAX_PREVIEW_CHARS
                         ? newText.substring(0, MAX_PREVIEW_CHARS) + "\n... [preview truncated]"
                         : newText;
@@ -253,12 +287,15 @@ public class FileToolHelper {
             }
 
             p.writeString(newText, StandardCharsets.UTF_8);
-            return String.format("SUCCESS: Replaced occurrence %d of search string in %s (found %d total occurrences).",
-                    targetOcc, p.name(), matchIndices.size());
+            return "Edit applied successfully.";
 
         } catch (Exception e) {
             return "ERROR search-replace in file: " + e.getMessage();
         }
+    }
+
+    public static String fileEditSearchReplace(NaruTask task, String path, String search, String replace, Long occurrence, Boolean dry) {
+        return fileEditSearchReplace(task, path, search, replace, occurrence, false, dry);
     }
 
     public static String fileCreate(NaruTask task, String path, String content, Boolean overwrite) {
@@ -284,83 +321,99 @@ public class FileToolHelper {
         return (int) Math.min(idx, total);                  // clamp large positives to total
     }
 
-    public static String fileGrep(NaruTask task, String path, String pattern, Boolean regex, Boolean caseSensitive, Integer contextLines0, Integer maxMatches0) {
-        int contextLines = Math.max(0, NUtils.firstNonNull(contextLines0, DEFAULT_CONTEXT));
-        int maxMatches = Math.max(1, NUtils.firstNonNull(maxMatches0, DEFAULT_MAX_MATCHES));
-
-        if (NBlankable.isBlank(path)) return "ERROR: 'path' is required.";
+    public static String fileGrep(NaruTask task, String path, String pattern, String include, Boolean regex, Boolean caseSensitive, Integer contextLines0, Integer maxMatches0) {
+        if (NBlankable.isBlank(path)) {
+            path = task.workingDir().toString();
+        }
         if (NBlankable.isBlank(pattern)) return "ERROR: 'pattern' is required.";
 
-        // null means default: match case-sensitively (grep semantics)
-        boolean caseSensitiveOk = caseSensitive == null || caseSensitive;
-        boolean regexOk = regex != null && regex;
-
-        NPath p = task.resolve(path);
-        if (!p.exists()) return "ERROR: File not found: " + p;
-        if (!p.permissions().contains(NPathPermission.CAN_READ)) return "ERROR: File is not readable: " + p;
-
-        Pattern compiledPattern = null;
-        if (regexOk) {
-            try {
-                int flags = caseSensitiveOk ? 0 : Pattern.CASE_INSENSITIVE;
-                compiledPattern = Pattern.compile(pattern, flags);
-            } catch (PatternSyntaxException e) {
-                return "ERROR: Invalid regex pattern: " + e.getMessage();
-            }
+        NPath targetPath = task.resolve(path);
+        if (targetPath == null || !targetPath.exists()) {
+            return "File not found: " + path;
         }
+
+        List<String> cmd = new ArrayList<>();
+        cmd.add("rg");
+        cmd.add("-H");
+        cmd.add("--no-heading");
+        cmd.add("--line-number");
+        cmd.add("--color=never");
+        if (contextLines0 != null && contextLines0 > 0) {
+            cmd.add("-C");
+            cmd.add(String.valueOf(contextLines0));
+        }
+        if (NBlankable.isNonBlank(include)) {
+            cmd.add("-g");
+            cmd.add(include);
+        }
+        if (caseSensitive != null && !caseSensitive) {
+            cmd.add("-i");
+        }
+        if (regex != null && !regex) {
+            cmd.add("-F");
+        }
+        cmd.add("-e");
+        cmd.add(pattern);
+        cmd.add(targetPath.toString());
 
         try {
-            NIterator<String> it = p.lines().iterator();
-            Deque<String> beforeBuffer = new ArrayDeque<>(contextLines + 1);
-            int afterContextRemaining = 0;
-            int matchCount = 0;
-            int lineNum = 1;
-            List<String> outputLines = new ArrayList<>();
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectErrorStream(false);
+            Process proc = pb.start();
+            String stdout = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            String stderr = new String(proc.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            int exitCode = proc.waitFor();
 
-            while (it.hasNext() && matchCount < maxMatches) {
-                String line = it.next();
-                boolean isMatch = _grep_matches(line, pattern, compiledPattern, caseSensitiveOk, regexOk);
+            if (exitCode == 2) {
+                return stderr.trim();
+            }
+            if (exitCode == 1 || stdout.trim().isEmpty()) {
+                return "No files found";
+            }
 
-                if (isMatch) {
-                    // 1. Output "before" context from deque
-                    int bufferStart = lineNum - beforeBuffer.size();
-                    for (String ctx : beforeBuffer) {
-                        outputLines.add(_grep_formatLine(bufferStart++, ctx, false));
-                    }
-                    // 2. Output match
-                    outputLines.add(_grep_formatLine(lineNum, line, true));
-                    matchCount++;
-
-                    // 3. Prepare for "after" context
-                    afterContextRemaining = contextLines;
-                    beforeBuffer.clear(); // reset buffer for next search block
-                } else if (afterContextRemaining > 0) {
-                    // Part of "after" context from previous match
-                    outputLines.add(_grep_formatLine(lineNum, line, false));
-                    afterContextRemaining--;
-                } else {
-                    // Normal line: keep in sliding window for future "before" context
-                    beforeBuffer.add(line);
-                    if (beforeBuffer.size() > contextLines) {
-                        beforeBuffer.pollFirst();
+            Map<String, List<String[]>> fileMatches = new LinkedHashMap<>();
+            int totalMatches = 0;
+            String[] lines = stdout.split("\n");
+            for (String line : lines) {
+                if (line.isEmpty()) continue;
+                int firstColon = line.indexOf(':');
+                if (firstColon > 0) {
+                    int secondColon = line.indexOf(':', firstColon + 1);
+                    if (secondColon > firstColon) {
+                        String f = line.substring(0, firstColon);
+                        String lnum = line.substring(firstColon + 1, secondColon);
+                        String lcontent = line.substring(secondColon + 1);
+                        fileMatches.computeIfAbsent(f, k -> new ArrayList<>()).add(new String[]{lnum, lcontent});
+                        totalMatches++;
                     }
                 }
-                lineNum++;
             }
 
-            if (matchCount == 0) {
-                return "No matches found for pattern: " + pattern;
+            if (totalMatches == 0) {
+                return "No files found";
             }
 
-            String result = String.join("\n", outputLines);
-            if (result.length() > MAX_OUTPUT_CHARS) {
-                result = result.substring(0, MAX_OUTPUT_CHARS) + "\n... [output truncated]";
+            List<String> blocks = new ArrayList<>();
+            for (Map.Entry<String, List<String[]>> entry : fileMatches.entrySet()) {
+                StringBuilder b = new StringBuilder();
+                b.append(entry.getKey()).append(":\n");
+                List<String[]> matches = entry.getValue();
+                for (int i = 0; i < matches.size(); i++) {
+                    if (i > 0) b.append("\n");
+                    b.append("  Line ").append(matches.get(i)[0]).append(": ").append(matches.get(i)[1]);
+                }
+                blocks.add(b.toString());
             }
 
-            return String.format("Found %d match(es) in %s:\n%s", matchCount, p.name(), result);
+            return "Found " + totalMatches + " matches\n" + String.join("\n\n\n", blocks) + "\n";
+
         } catch (Exception e) {
-            return "ERROR searching file: " + e.getMessage();
+            return "ERROR executing grep: " + e.getMessage();
         }
+    }
+
+    public static String fileGrep(NaruTask task, String path, String pattern, Boolean regex, Boolean caseSensitive, Integer contextLines0, Integer maxMatches0) {
+        return fileGrep(task, path, pattern, null, regex, caseSensitive, contextLines0, maxMatches0);
     }
 
     private static boolean _grep_matches(String line, String pattern, Pattern compiled, boolean caseSensitive, boolean regex) {
@@ -377,55 +430,91 @@ public class FileToolHelper {
         if (NBlankable.isBlank(pathStr)) return "ERROR: 'path' is required.";
 
         NPath file = task.resolve(pathStr);
-        if (!file.exists()) return "ERROR: File not found: " + file;
-        if (!file.isRegularFile()) return "ERROR: Path is not a regular file: " + file;
-        if (!file.permissions().contains(NPathPermission.CAN_READ)) return "ERROR: File is not readable: " + file;
+        if (!file.exists()) return "File not found: " + file;
 
-        // Model inputs are 1-based
-        long start1 = Math.max(1, NUtils.firstNonNull(lineStart, 1L));
-        long end1 = NUtils.firstNonNull(lineEnd, start1 + DEFAULT_MAX_LINES - 1);
-
-        if (end1 < start1) {
-            return "ERROR: 'line_end' (" + end1 + ") cannot be less than 'line_start' (" + start1 + ").";
+        if (file.isDirectory()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("<path>").append(file).append("</path>\n");
+            sb.append("<type>directory</type>\n");
+            sb.append("<entries>\n");
+            List<NPath> children = safeList(file);
+            List<String> names = new ArrayList<>();
+            for (NPath child : children) {
+                if (child.isDirectory()) {
+                    names.add(child.name() + "/");
+                } else {
+                    names.add(child.name());
+                }
+            }
+            Collections.sort(names);
+            for (String name : names) {
+                sb.append(name).append("\n");
+            }
+            sb.append("\n(").append(names.size()).append(" entries)\n");
+            sb.append("</entries>");
+            return sb.toString();
         }
 
-        // Convert to framework 0-based indices
-        // Assuming your lines(from, to) method works like standard sublists or streams (from inclusive, to exclusive)
-        long from0 = start1 - 1;
-        long to0 = end1;
+        if (!file.isRegularFile()) return "ERROR: Path is not a regular file: " + file;
+        if (!file.permissions().contains(NPathPermission.CAN_READ)) return "ERROR: File is not readable: " + file;
+        if (isBinary(file)) return "Cannot read binary file: " + file;
 
-        StringBuilder out = new StringBuilder();
-        boolean truncated = false;
+        boolean lineNumbers = net.thevpc.naru.api.agent.NaruTaskConfig.getBoolean(task, "naru.fs.read.lineNumbers", true);
 
         try {
-            List<String> targetedLines;
-            // Leverage native framework 0-based stream windowing
-            try (java.util.stream.Stream<String> stream = file.lines(from0, to0).jstream()) {
-                targetedLines = stream.collect(Collectors.toList());
+            List<String> allLines = file.lines().toList();
+            int totalLines = allLines.size();
+
+            long start1 = (lineStart == null || lineStart <= 0) ? 1L : lineStart;
+            long end1 = (lineEnd != null) ? lineEnd : (lineStart != null ? (start1 + 2000 - 1) : Math.min(totalLines, 2000L));
+            if (end1 > totalLines) {
+                end1 = totalLines;
             }
 
-            if (targetedLines.isEmpty()) {
-                return "File is empty or specified range [" + start1 + " to " + end1 + "] is out of file bounds.";
+            if (end1 < start1 && totalLines > 0) {
+                return "ERROR: 'line_end' (" + end1 + ") cannot be less than 'line_start' (" + start1 + ").";
             }
 
-            for (String line : targetedLines) {
-                out.append(line).append("\n");
-                if (out.length() > MAX_OUTPUT_CHARS) {
-                    truncated = true;
-                    break;
+            StringBuilder out = new StringBuilder();
+            if (lineNumbers) {
+                out.append("<path>").append(file).append("</path>\n");
+                out.append("<type>file</type>\n");
+                out.append("<content>\n");
+            }
+
+            int fromIdx = (int) Math.max(0, start1 - 1);
+            int toIdx = (int) Math.min(totalLines, end1);
+
+            for (int i = fromIdx; i < toIdx; i++) {
+                String line = allLines.get(i);
+                int lineNum = i + 1;
+                if (line.length() > 2000) {
+                    line = line.substring(0, 2000) + "... (line truncated to 2000 chars)";
+                }
+                if (lineNumbers) {
+                    out.append(lineNum).append(": ").append(line).append("\n");
+                } else {
+                    out.append(line).append("\n");
                 }
             }
 
+            if (lineNumbers) {
+                out.append("\n");
+                if (toIdx >= totalLines) {
+                    out.append("(End of file - total ").append(totalLines).append(" lines)\n");
+                } else {
+                    out.append("(Showing lines ").append(start1).append("-").append(toIdx)
+                            .append(" of ").append(totalLines)
+                            .append(". Use offset=").append(toIdx + 1).append(" to continue.)\n");
+                }
+                out.append("</content>");
+            }
+
+            return out.toString();
+
         } catch (Exception e) {
-            return "ERROR streaming file lines via framework: " + e.getMessage();
+            return "ERROR reading file: " + e.getMessage();
         }
-
-        String result = out.toString();
-        if (truncated) {
-            result += "\n... [Output Truncated for Context Safety]";
-        }
-
-        return result;
     }
 
     public static String fileWrite(NaruTask task, String path, String content,Boolean dry) {
@@ -442,7 +531,7 @@ public class FileToolHelper {
                         "replace all", preview, p.name(), preview);
             }
             p.mkParentDirs().writeString(content);
-            return "OK: wrote " + content.length() + " chars to " + p;
+            return "Wrote file successfully.";
         } catch (Exception e) {
             return "ERROR writing file: " + e.getMessage();
         }
@@ -486,8 +575,8 @@ public class FileToolHelper {
             }
         }
 
-        Predicate<NPath> includeMatcher = createMatcher(includeGlob);
-        Predicate<NPath> excludeMatcher = createMatcher(excludeGlob);
+        Predicate<NPath> includeMatcher = createMatcher(includeGlob, root);
+        Predicate<NPath> excludeMatcher = createMatcher(excludeGlob, root);
 
         try {
             // Collect matching files applying names, globs, and historical time gates
@@ -495,10 +584,19 @@ public class FileToolHelper {
             StringBuilder out = new StringBuilder();
             List<NPath> files = collectFiles(root, recursiveOk, includeMatcher, excludeMatcher, modifiedAfter, modifiedBefore, maxFilesOk, out, pattern, compiledPattern, root, truncated, totalMatches, contextLinesOk, maxMatchesOk);
             if (files.isEmpty()) {
-                return "No files found matching specified filters in: " + root;
+                return "No files found";
             }
 
-            // --- BRANCH A: Pure File Finder Operation ---
+            if (pattern == null) {
+                // Opencode glob format: newline-delimited paths
+                StringBuilder res = new StringBuilder();
+                for (int i = 0; i < files.size(); i++) {
+                    if (i > 0) res.append("\n");
+                    res.append(files.get(i).toString());
+                }
+                return res.toString();
+            }
+
             if (truncated.get()) {
                 out.append("\n[WARNING: Results limited. Refine search criteria.]\n");
             }
@@ -710,25 +808,87 @@ public class FileToolHelper {
     }
 
     private static Predicate<NPath> createMatcher(String glob) {
+        return createMatcher(glob, null);
+    }
+
+    private static Predicate<NPath> createMatcher(String glob, NPath root) {
         if (NBlankable.isBlank(glob)) return null;
         String[] parts = glob.split(",");
-        return path -> Arrays.stream(parts).anyMatch(p -> path.name().matches(globToRegex(p.trim())));
+        List<Pattern> patterns = new ArrayList<>();
+        for (String p : parts) {
+            String trimmed = p.trim();
+            if (!trimmed.isEmpty()) {
+                patterns.add(Pattern.compile(globToRegex(trimmed)));
+            }
+        }
+        if (patterns.isEmpty()) return null;
+        return path -> {
+            String name = path.name();
+            for (Pattern pattern : patterns) {
+                if (pattern.matcher(name).matches()) return true;
+            }
+            if (root != null) {
+                NOptional<String> rel = root.relativize(path);
+                if (rel.isPresent()) {
+                    String relStr = rel.get();
+                    for (Pattern pattern : patterns) {
+                        if (pattern.matcher(relStr).matches()) return true;
+                    }
+                }
+            }
+            return false;
+        };
     }
 
     private static String globToRegex(String glob) {
         StringBuilder sb = new StringBuilder();
-        for (char c : glob.toCharArray()) {
-            if (c == '*') sb.append(".*");
-            else if (c == '?') sb.append(".");
-            else if ("+(){}[].^$|".indexOf(c) >= 0) sb.append("\\").append(c);
-            else sb.append(c);
+        int i = 0;
+        int len = glob.length();
+        while (i < len) {
+            char c = glob.charAt(i);
+            if (c == '*') {
+                if (i + 1 < len && glob.charAt(i + 1) == '*') {
+                    if (i + 2 < len && glob.charAt(i + 2) == '/') {
+                        sb.append("(?:.*/)?");
+                        i += 3;
+                    } else {
+                        sb.append(".*");
+                        i += 2;
+                    }
+                } else {
+                    sb.append("[^/]*");
+                    i++;
+                }
+            } else if (c == '?') {
+                sb.append("[^/]");
+                i++;
+            } else if ("+(){}[].^$|\\".indexOf(c) >= 0) {
+                sb.append('\\').append(c);
+                i++;
+            } else {
+                sb.append(c);
+                i++;
+            }
         }
         return sb.toString();
     }
 
     private static boolean isBinary(NPath file) {
         String ext = file.nameParts().extension().toLowerCase();
-        return BINARY_EXTENSIONS.contains(ext);
+        if (BINARY_EXTENSIONS.contains(ext) || BINARY_EXTENSIONS.contains("." + ext)) {
+            return true;
+        }
+        try (java.io.InputStream in = file.getInputStream()) {
+            byte[] buf = new byte[512];
+            int n = in.read(buf);
+            for (int i = 0; i < n; i++) {
+                if (buf[i] == 0) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
     }
 
     private static List<NPath> safeList(NPath dir) {

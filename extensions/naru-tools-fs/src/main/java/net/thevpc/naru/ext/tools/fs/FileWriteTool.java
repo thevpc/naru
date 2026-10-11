@@ -38,8 +38,10 @@ public class FileWriteTool extends DefaultNaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
+        String path = context.stringArg("path")
+                .orElseGet(() -> context.stringArg("filePath").orNull());
         return FileToolHelper.fileWrite(context.task()
-                , context.stringArg("path").orNull()
+                , path
                 , context.stringArg("content").orNull()
                 , context.booleanArg("dry").orNull()
         );
