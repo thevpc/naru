@@ -51,20 +51,7 @@ public class NaruEffectTagAndTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
+        Nuts.require();
     }
 
     @BeforeEach
@@ -85,7 +72,9 @@ public class NaruEffectTagAndTest {
         }
     }
 
-    /** Opens a session under the given flag mode ({@code null} leaves it unset). */
+    /**
+     * Opens a session under the given flag mode ({@code null} leaves it unset).
+     */
     private void openSession(String flagMode) {
         if (flagMode != null) {
             System.setProperty(FLAG, flagMode);
@@ -102,7 +91,9 @@ public class NaruEffectTagAndTest {
         return m;
     }
 
-    /** An implement-mode task; plan mode would veto write/exec tools before the tag gate runs. */
+    /**
+     * An implement-mode task; plan mode would veto write/exec tools before the tag gate runs.
+     */
     private NaruTask newTask(String... tags) {
         NaruTask task = session.newTask(NaruTaskSpec.of());
         task.promptMode(mode("implement"));

@@ -14,11 +14,7 @@ import org.junit.jupiter.api.Test;
 public class NaruWireMeasurementTest {
     @Test
     public void testWireMeasurementMin() throws Exception {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) ws.share();
-        } catch (Exception ignored) {}
-
+        Nuts.require();
         Path tempDir = Files.createTempDirectory("naru-wire-measure-min");
         NaruAgent agent = new NaruAgentImpl();
         agent.projectDirectory(NPath.of(tempDir.toString()));
@@ -41,10 +37,7 @@ public class NaruWireMeasurementTest {
 
     @Test
     public void testWireMeasurementGranted() throws Exception {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) ws.share();
-        } catch (Exception ignored) {}
+        Nuts.require();
 
         Path tempDir = Files.createTempDirectory("naru-wire-measure-granted");
         NaruAgent agent = new NaruAgentImpl();

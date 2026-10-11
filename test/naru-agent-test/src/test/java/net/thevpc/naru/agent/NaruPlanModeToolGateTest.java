@@ -54,21 +54,7 @@ public class NaruPlanModeToolGateTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     @BeforeEach
     public void setUp() {

@@ -43,21 +43,7 @@ public class NaruOllamaThinkSettingWireTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     /**
  * Runs a script and hands back its task, with the session still alive.

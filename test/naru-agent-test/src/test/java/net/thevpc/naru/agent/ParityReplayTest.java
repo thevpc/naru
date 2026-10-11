@@ -32,15 +32,7 @@ public class ParityReplayTest {
 
     @BeforeAll
     public static void setUp() throws Exception {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) ws.share();
-        } catch (Exception ignored) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) ws.share();
-            } catch (Exception ignored2) {}
-        }
+        Nuts.require();
 
         NPath projectDir = NPath.of("/tmp/lab/proj2");
         NaruAgent agent = new NaruAgentImpl();

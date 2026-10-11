@@ -32,15 +32,7 @@ public class NaruToolParityRegressionTest {
 
     @BeforeAll
     public static void setUpAll() throws Exception {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) ws.share();
-        } catch (Exception ignored) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) ws.share();
-            } catch (Exception ignored2) {}
-        }
+        Nuts.require();
 
         Path p = Files.createTempDirectory("naru-parity-test");
         tempProjectDir = NPath.of(p.toString());
