@@ -123,7 +123,7 @@ public class NaruPlanModeToolGateTest {
             // planning itself
             "plan_create", "plan_get", "plan_update",
             // read-only research / navigation
-            "delegate_to_model", "model_list", "search_web", "routine_list_lines",
+            "delegate_to_model", "model_list", "search_web", "web_fetch", "routine_list_lines",
             // tag listing/revocation is a permission edit, not a repo write
             "tag_list", "tag_remove"
     );

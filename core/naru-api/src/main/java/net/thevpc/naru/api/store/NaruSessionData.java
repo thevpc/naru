@@ -25,6 +25,7 @@ public class NaruSessionData implements NToElement {
     private NElement model;
     private String projectDir;
     private String workingDir;
+    private long version;
     private final Map<String, Object> env = new LinkedHashMap<>();
 
     public NaruSessionData() {
@@ -43,6 +44,7 @@ public class NaruSessionData implements NToElement {
         }
         d.projectDir = o.getStringValue("projectDir").orNull();
         d.workingDir = o.getStringValue("workingDir").orNull();
+        d.version = o.getLongValue("version").orElse(0L);
         NElement e = o.get("env").orNull();
         if (e != null && e.isAnyObject()) {
             for (NElement child : e.asObject().get().children()) {
@@ -147,6 +149,14 @@ public class NaruSessionData implements NToElement {
         return this;
     }
 
+    /** Monotonic checkpoint version; absent legacy values are interpreted as zero. */
+    public long version() { return version; }
+
+    public NaruSessionData version(long version) {
+        this.version = version;
+        return this;
+    }
+
     public Map<String, Object> env() {
         return env;
     }
@@ -169,6 +179,7 @@ public class NaruSessionData implements NToElement {
         o.set("model", model);
         o.set("projectDir", projectDir);
         o.set("workingDir", workingDir);
+        o.set("version", version);
         NObjectElementBuilder envBuilder = NObjectElementBuilder.of();
         for (Map.Entry<String, Object> e : env.entrySet()) {
             envBuilder.add(e.getKey(), NElement.of(e.getValue()));

@@ -54,6 +54,12 @@ public class NaruBudgetAccumulationTest {
                                         ? (protocol == null ? NOptional.ofEmpty() : NOptional.of(protocol))
                                         : null);
                     }
+                    if ("findModel".equals(method.getName())) {
+                        // the report reads the context length off the resolved model, so the
+                        // stub answers with the same length its protocol reports
+                        return NOptional.of(new NaruModelConfig("some-model", "openrouter",
+                                "some-model", contextLength, null, null, null, null, null));
+                    }
                     if ("toString".equals(method.getName())) {
                         return "stub-session";
                     }
@@ -219,7 +225,7 @@ public class NaruBudgetAccumulationTest {
         NaruModelConfig model = session.findModel(CONFIG.name()).get();
         Assertions.assertEquals(8192, model.contextLength(),
                 "a per-user row must be able to report how full the context is");
-//        Assertions.assertEquals("alice", perUser.userId());
+        Assertions.assertEquals("alice", perUser.userKey());
         Assertions.assertEquals(110, perUser.totalTokens());
         Assertions.assertEquals(1, perUser.calls());
 
@@ -245,7 +251,7 @@ public class NaruBudgetAccumulationTest {
         svc.trackTransaction(userTx("  ", 200, 20));
 
         NaruModelBudgetStats modelRow = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
-//        Assertions.assertNull(modelRow.getUserId());
+        Assertions.assertNull(modelRow.userKey());
         Assertions.assertEquals(220, modelRow.totalTokens(),
                 "a blank user id belongs to the model-wide row");
         Assertions.assertEquals(4096, model.contextLength());
@@ -335,8 +341,8 @@ public class NaruBudgetAccumulationTest {
         NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
         Assertions.assertEquals(0, stats.calls());
         Assertions.assertEquals(0, stats.minDuration());
-//        Assertions.assertEquals(0, stats.avgDuration().toMillis());
-//        Assertions.assertEquals(0, stats.getMaxDuration().toMillis());
+        Assertions.assertEquals(0, stats.accumulatedDuration());
+        Assertions.assertEquals(0, stats.maxDuration());
     }
 
     @Test

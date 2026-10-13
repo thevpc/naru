@@ -6,6 +6,7 @@ import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolset;
+import net.thevpc.naru.api.registry.NaruHibernationPolicy;
 import net.thevpc.nuts.elem.NObjectElement;
 
 import java.net.http.HttpClient;
@@ -56,7 +57,7 @@ public class McpSseToolset implements NaruToolset {
                         })
                         .build();
 
-        McpSyncClient client = McpClient.sync(transport).build();
+        client = McpClient.sync(transport).build();
         client.initialize();
         tools = client.listTools().tools().stream()
                 .map(t -> new McpBackedTool(t, client))
@@ -66,6 +67,15 @@ public class McpSseToolset implements NaruToolset {
     @Override
     public List<NaruTool> tools() { return tools==null?Collections.emptyList():tools; }
 
+    @Override public NaruHibernationPolicy hibernationPolicy() {
+        return config.getBooleanValue("restartable").orElse(false)
+                ? NaruHibernationPolicy.RESTARTABLE : NaruHibernationPolicy.PINS;
+    }
+    @Override public boolean hasLiveResource(NaruSession session) { return client != null; }
+    @Override public void onHibernate(NaruSession session) {
+        if (hibernationPolicy() == NaruHibernationPolicy.RESTARTABLE) close();
+    }
+
     @Override
-    public void close() { client.close(); }
+    public void close() { if (client != null) { client.close(); client = null; } tools = null; }
 }

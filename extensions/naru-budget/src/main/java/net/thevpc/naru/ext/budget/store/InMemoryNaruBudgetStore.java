@@ -62,7 +62,11 @@ public class InMemoryNaruBudgetStore implements NaruBudgetStore {
                             break;
                         }
                     }
-                    if (labels != null && !labels.matches(transaction.getLabels())) {
+                    // the query's labels are the filter; the transaction's labels are
+                    // the candidate, so the candidate must contain every queried label.
+                    // Reversing the two made every filtered lookup miss (the session
+                    // label a transaction carries is never part of the query).
+                    if (labels != null && !transaction.getLabels().matches(labels)) {
                         continue;
                     }
                 }

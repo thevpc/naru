@@ -7,6 +7,7 @@ import io.modelcontextprotocol.client.transport.StdioClientTransport;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolset;
+import net.thevpc.naru.api.registry.NaruHibernationPolicy;
 import net.thevpc.nuts.elem.NArrayElement;
 import net.thevpc.nuts.elem.NObjectElement;
 
@@ -59,6 +60,17 @@ public class McpStdioToolset implements NaruToolset {
     @Override
     public List<NaruTool> tools() { return tools==null?Collections.emptyList():tools; }
 
+    @Override public NaruHibernationPolicy hibernationPolicy() {
+        return config.getBooleanValue("restartable").orElse(false)
+                ? NaruHibernationPolicy.RESTARTABLE : NaruHibernationPolicy.PINS;
+    }
+    @Override public boolean hasLiveResource(NaruSession session) { return client != null; }
+    @Override public void onHibernate(NaruSession session) {
+        if (hibernationPolicy() == NaruHibernationPolicy.RESTARTABLE && client != null) {
+            client.close(); client = null; tools = null;
+        }
+    }
+
     @Override
-    public void close() { client.close(); }
+    public void close() { if (client != null) { client.close(); client = null; } tools = null; }
 }

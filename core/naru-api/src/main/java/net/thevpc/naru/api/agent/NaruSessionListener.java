@@ -20,4 +20,7 @@ public interface NaruSessionListener {
      */
     default void onTaskStatusChanged(NaruTask task, NaruTaskStatus oldStatus, NaruTaskStatus newStatus) {
     }
+
+    /** A complete message body and its stable store cursor have been committed. */
+    default void onMessageComplete(long taskId, String cursor) { }
 }

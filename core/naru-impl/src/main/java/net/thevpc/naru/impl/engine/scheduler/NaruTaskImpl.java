@@ -65,6 +65,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private long parentId;
     private final List<Function<NaruTask, NaruMessage>> systemHistory = new ArrayList<>();
     private final List<NaruMessage> history = new ArrayList<>();
+    private java.util.function.Supplier<List<NaruMessage>> lazyHistoryLoader;
+    private boolean historyLoaded = true;
+    private String loadedHistoryHash;
     private final Set<String> taskToolTags = new TreeSet<>();
     private final Set<String> excludedTools = new TreeSet<>();
     /**
@@ -126,6 +129,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private final Semaphore stepPermit = new Semaphore(0);
     private NaruSchedulerMode schedulerMode = NaruSchedulerMode.AUTO;
     private final List<String> linesDelivered = new ArrayList<>();
+    private final Set<String> deliveredInputKeys = new LinkedHashSet<>();
     private NMsg pendingPrompt;
     private NaruIncrementalStmt pendingStatement;
     private final NaruTaskInboxImpl inbox;
@@ -237,6 +241,36 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public void deliverInput(String line) {
         this.linesDelivered.add(line);
+        this.pendingPrompt = null;
+    }
+
+    public void setLazyHistoryLoader(java.util.function.Supplier<List<NaruMessage>> loader) {
+        this.lazyHistoryLoader = loader;
+        this.historyLoaded = false;
+    }
+
+    public boolean isHistoryLoaded() { return historyLoaded; }
+    public String loadedHistoryHash() { return loadedHistoryHash; }
+
+    private void ensureHistoryLoaded() {
+        if (historyLoaded) return;
+        List<NaruMessage> loaded = lazyHistoryLoader == null ? List.of() : lazyHistoryLoader.get();
+        history.clear();
+        if (loaded != null) history.addAll(loaded);
+        NArrayElementBuilder loadedArray = NArrayElementBuilder.of();
+        for (NaruMessage message : history) loadedArray.add(message.toElement());
+        loadedHistoryHash = loadedArray.build().toString();
+        lazyHistoryLoader = null;
+        historyLoaded = true;
+    }
+
+    /** Returns false when this idempotency key was already consumed by the task. */
+    public synchronized boolean claimInputKey(String key) {
+        return key == null || deliveredInputKeys.add(key);
+    }
+
+    public synchronized boolean hasInputKey(String key) {
+        return key != null && deliveredInputKeys.contains(key);
     }
 
     @Override
@@ -782,6 +816,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public void reset() {
+        ensureHistoryLoaded();
         history.clear();
         held = false;
         status = NaruTaskStatus.READY;
@@ -804,6 +839,14 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public NElement toElement() {
         NObjectElementBuilder o = NObjectElementBuilder.of();
         o.set("schemaVersion", TASK_SCHEMA_VERSION);
+        o.set("status", status.name());
+        o.set("pendingPrompt", pendingPrompt == null ? null : pendingPrompt.toString());
+        NArrayElementBuilder _deliveredLines = NArrayElementBuilder.of();
+        for (String line : linesDelivered) _deliveredLines.add(line);
+        o.set("deliveredLines", _deliveredLines.build());
+        NArrayElementBuilder _inputKeys = NArrayElementBuilder.of();
+        for (String key : deliveredInputKeys) _inputKeys.add(key);
+        o.set("deliveredInputKeys", _inputKeys.build());
         o.set("id", id());
         o.set("parentId", parentId());
         o.set("creationDate", NElement.ofInstant(creationDate));
@@ -856,6 +899,23 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public NaruTask load(NElement element) {
         NObjectElement o = element.asObject().get();
         this.userQueriesCount = o.getIntValue("userQueriesCount").orElse(0);
+        String savedStatus = o.getStringValue("status").orElse(NaruTaskStatus.READY.name());
+        try {
+            this.status = NaruTaskStatus.valueOf(savedStatus);
+            if (this.status == NaruTaskStatus.RUNNING) this.status = NaruTaskStatus.READY;
+        } catch (IllegalArgumentException ignored) {
+            this.status = NaruTaskStatus.READY;
+        }
+        String savedPrompt = o.getStringValue("pendingPrompt").orElse(null);
+        this.pendingPrompt = savedPrompt == null ? null : NMsg.ofC("%s", savedPrompt);
+        this.linesDelivered.clear();
+        NArrayElement deliveredLines = o.get("deliveredLines").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
+        if (deliveredLines != null) for (NElement line : deliveredLines) {
+            this.linesDelivered.add(line.asStringValue().orElse(""));
+        }
+        this.deliveredInputKeys.clear();
+        NArrayElement inputKeys = o.get("deliveredInputKeys").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
+        if (inputKeys != null) for (NElement key : inputKeys) key.asStringValue().ifPresent(this.deliveredInputKeys::add);
         this.id = o.getLongValue("id").orElse(1L);
         this.parentId = o.getLongValue("parentId").orElse(-1L);
         this.creationDate = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
@@ -907,6 +967,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         NArrayElement history1 = o.get("history").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
         history.clear();
+        historyLoaded = true;
+        lazyHistoryLoader = null;
         if (history1 != null) {
             for (NElement nElement : history1) {
                 history.add(new NaruMessage(nElement));
@@ -1564,6 +1626,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public boolean removeHistoryAt(int index) {
+        ensureHistoryLoaded();
         if (index >= 0 && index < history.size()) {
             history.remove(index);
             fireChanged();
@@ -1591,6 +1654,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public int clearHistory() {
+        ensureHistoryLoaded();
         int count = history.size();
         history.clear();
         if (count > 0) {
@@ -1601,16 +1665,19 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public List<NaruMessage> history() {
+        ensureHistoryLoaded();
         return Collections.unmodifiableList(new ArrayList<>(history));
     }
 
     @Override
     public List<NaruMessage> contextView() {
+        ensureHistoryLoaded();
         return Collections.unmodifiableList(NaruContextViews.renderedContextView(history));
     }
 
     @Override
     public void setHistory(List<NaruMessage> messages) {
+        ensureHistoryLoaded();
         history.clear();
         if (messages != null) {
             history.addAll(messages);
@@ -1624,6 +1691,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NaruMessage insertHistory(int index, NaruMessage message) {
+        ensureHistoryLoaded();
+        ensureHistoryLoaded();
         int at = Math.max(0, Math.min(index, history.size()));
         history.add(at, message);
         fireChanged();
@@ -1742,6 +1811,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public int trimHistory(int count) {
+        ensureHistoryLoaded();
         if (count > 0) {
             if (count >= history.size()) {
                 int i = clearHistory();
@@ -1778,6 +1848,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             }
         }
         fireChanged();
+        ((NaruSessionImpl) session).checkpointMessage(id());
     }
 
     @Override
@@ -1908,6 +1979,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public void addHistory(NaruMessage assistantMsg) {
+        ensureHistoryLoaded();
         if (assistantMsg.getRole().equals(NaruRole.system)) {
             systemHistory.add(s -> assistantMsg);
         } else {
@@ -1917,6 +1989,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             history.add(assistantMsg);
         }
         fireChanged();
+        ((NaruSessionImpl) session).checkpointMessage(id());
     }
 
     @Override
@@ -2605,6 +2678,14 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public NaruResponse chat(NaruModelConfig modelKey, NaruModelRequest request) {
         NChronometer chronometer = NChronometer.of();
         NaruModelProtocol protocol = session().registry().protocol(modelKey, session()).get();
+        // Refuse a tail no model can continue from before the transport is touched: a
+        // provider would otherwise answer with a 400 that names a wire format rather
+        // than the message at fault. The protocol decides what it can accept, so a
+        // stricter one overrides validateTail and its reason is the one reported.
+        NOptional<String> tailProblem = protocol.validateTail(request == null ? null : request.messages());
+        if (tailProblem.isPresent()) {
+            throw new NaruInvalidHistoryException(String.valueOf(modelKey), tailProblem.get());
+        }
         NaruResponse r;
         responseStreamed = false;
         if (isStreamingEnabled(protocol)) {

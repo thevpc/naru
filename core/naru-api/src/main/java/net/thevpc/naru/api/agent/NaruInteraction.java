@@ -18,9 +18,10 @@ import net.thevpc.nuts.text.NMsg;
  * through a return value.
  *
  * <h2>Lifecycle</h2>
- * {@link #open(NaruSession)} is called once when the session starts and {@link #close()}
- * when it stops. An implementation that owns a thread starts and stops it there, which is
- * why a headless session has no input thread at all.
+ * {@link #open(NaruSession)} and {@link #close()} bracket one activation of a session.
+ * A session may be hibernated and later resumed through a fresh activation. An
+ * implementation that owns a thread starts and stops it in these methods, which is why
+ * a headless session has no input thread at all.
  */
 public interface NaruInteraction {
 
@@ -38,8 +39,16 @@ public interface NaruInteraction {
         return getClass().getSimpleName();
     }
 
-    /** Called once when the session starts, before any task runs. */
+    /** Called once per activation, before any task runs in that activation. */
     void open(NaruSession session);
+
+    /** Called when an activation is being checkpointed and released for hibernation. */
+    default void onHibernate() {
+    }
+
+    /** Called after {@link #open(NaruSession)} when a fresh activation resumes stored state. */
+    default void onResume(NaruSession session) {
+    }
 
     /**
      * Asks the user a question on behalf of a blocked task. Must return promptly: the task
@@ -65,13 +74,14 @@ public interface NaruInteraction {
      * unrelated log line can never land in the middle of a half-drawn sentence.
      *
      * <p>An implementation may show fragments the moment they arrive, or it may hold
-     * them and emit the joined text once at {@code end}: both are correct, and a
-     * headless host or a test harness has no reason to bother with the first. Neither
-     * may drop them -- a model turn that is streamed but never shown is a turn the
-     * user paid for and did not get.
+     * them and emit the joined text once at {@code end}: both are correct. An
+     * interaction that is the only output channel (such as a terminal) must not drop
+     * them. A network listener may lag; in that case the durable message store remains
+     * the source of truth and the host can resynchronize from its last completed-message
+     * cursor.
      */
     void writeStream(NaruLogMode mode, NMsg fragment, boolean end);
 
-    /** Called once when the session stops. Must not block. */
+    /** Called once per activation when it closes. Must not block. */
     void close();
 }

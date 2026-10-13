@@ -191,7 +191,7 @@ public class NaruFileDirective extends NaruDirectiveBase {
                 ).toString()));
                 return fileResult(task, saveVar.get(), result,
                         result != null && result.startsWith("ERROR") ? 2
-                                : result != null && result.startsWith("No matches") ? 1 : 0);
+                                : result != null && result.startsWith("No files found") ? 1 : 0);
             }
         });
         register(new AbstractSubCommand("find", NText.ofPlain("search for files in a directory"),

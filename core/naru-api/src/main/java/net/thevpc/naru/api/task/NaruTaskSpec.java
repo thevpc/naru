@@ -89,7 +89,7 @@ public class NaruTaskSpec {
 
     /**
      * Prompt mode to run the task in. When {@code null} the task inherits its
-     * parent's mode, falling back to {@code PLANNING} for root tasks.
+     * parent's mode, falling back to {@code DEFAULT} for root tasks.
      * <p>
      * Declaring it here rather than calling {@code NaruTask.promptMode(..)} after
      * {@code newTask(..)} matters: a freshly created task is already visible to

@@ -59,6 +59,9 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      */
     private static final Map<String, ProbeResult> REACHABILITY_CACHE = new ConcurrentHashMap<>();
 
+    private final Map<NaruSession, String> providerErrors =
+            Collections.synchronizedMap(new WeakHashMap<>());
+
     protected final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
 
     protected AbstractOpenAICompatProvider(String name, String[] defaultEnvKeys) {
@@ -296,11 +299,30 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
         return "models";
     }
 
+    private void storeError(NaruSession session, String errorMsg) {
+        if (session != null) {
+            providerErrors.put(session, errorMsg);
+        }
+    }
+
+    private void clearError(NaruSession session) {
+        if (session != null) {
+            providerErrors.remove(session);
+        }
+    }
+
+    /** Returns the last live-model lookup error recorded for this session, if any. */
+    public String getError(NaruSession session) {
+        return session == null ? null : providerErrors.get(session);
+    }
+
     protected List<String> fetchLiveModelIds(NaruSession session) {
         String apiKey = apiKey(session).orNull();
         if (NBlankable.isBlank(apiKey)) {
+            storeError(session, "API key not set");
             return Collections.emptyList();
         }
+        clearError(session);
         String protocolId = resolvedProtocolId(session);
         if (!supportsProtocolId(protocolId)) {
             // the chat wire falls back to the provider's default when the requested
@@ -309,6 +331,7 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
         }
         String path = resolvedModelsPath(session, protocolId);
         if (NBlankable.isBlank(path)) {
+            storeError(session, "Models path not configured");
             return Collections.emptyList();
         }
         // the listing is a wire-level GET: auth header and parse shape belong to
@@ -343,16 +366,16 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
             if (response.isError()) {
                 NHttpCode nHttpCode = response.statusCode();
                 switch (nHttpCode.code()){
-                    case 403:{
-                        //just ignore, no balance!
+                    case 403:
+                    case 429:
+                        storeError(session, "Insufficient balance or rate limited (HTTP " + nHttpCode + ")");
                         break;
-                    }
-                    default:{
+                    default:
+                        storeError(session, "Failed to fetch live models: HTTP " + nHttpCode + " " + response.statusMessage());
                         NLog.of(getClass()).log(NMsg.ofC(
                                 "Failed to fetch live models from %s: HTTP %s %s",
                                 name(), nHttpCode, response.statusMessage()
                         ).asWarning());
-                    }
                 }
                 return Collections.emptyList();
             }
@@ -360,6 +383,7 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
             NElement root = NElementReader.ofJson().read(response.contentAsString());
             return idParser.apply(root);
         } catch (Exception e) {
+            storeError(session, "Error fetching live models: " + e.getMessage());
             NLog.of(getClass()).log(NMsg.ofC(
                     "Error fetching live models from %s: %s", name(), e.getMessage()
             ).asWarning());

@@ -79,11 +79,12 @@ class NaruBudgetServiceImpl implements NaruBudgetService, NAruUnitBudgetSupplier
             q=new DefaultNaruBudgetStoreQuery();
         }
         List<NaruModelBudgetStats> all = new ArrayList<>();
-        for (String e : store.findLabelValues("model", null)) {
-            NaruModelConfig a = session.findModel(e).orNull();
-            if (a != null) {
-                all.add(findModelBudgetStats(q.copy().whereModel(a.key())));
-            }
+        // Discover the tracked models from the store itself rather than resolving each
+        // through the session: a model the budget has seen is not necessarily one the
+        // model registry still knows, and skipping those silently dropped spend from
+        // the listing.
+        for (String e : store.findLabelValues("model", q)) {
+            all.add(findModelBudgetStats(q.copy().whereLabel("model", e)));
         }
         return all;
     }

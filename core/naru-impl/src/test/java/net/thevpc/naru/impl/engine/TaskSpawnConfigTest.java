@@ -13,6 +13,7 @@ import net.thevpc.naru.api.scheduler.NaruTaskSchedulerView;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.impl.ia.mode.NaruStandardPromptModeImpl;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
@@ -85,6 +86,10 @@ public class TaskSpawnConfigTest {
         // model providers and toolsets)
         registerTags(NaruToolTags.ROUTINE, NaruToolTags.AI, NaruToolTags.NETWORK,
                 NaruToolTags.WRITE, NaruToolTags.EXECUTE, "plan");
+        // PLANNING and IMPLEMENT moved to the plan extension, and this session is built
+        // without SPI discovery, so declare the two modes the planner spawns between.
+        session.registry().declareMode(new NaruStandardPromptModeImpl("planning", new String[0], "", tags -> true));
+        session.registry().declareMode(new NaruStandardPromptModeImpl("implement", new String[0], "", tags -> true));
     }
 
     private void registerTags(String... names) {
@@ -126,9 +131,11 @@ public class TaskSpawnConfigTest {
     // ── spawn-time prompt mode ───────────────────────────────────────────────
 
     @Test
-    public void rootTaskDefaultsToPlanning() {
+    public void rootTaskDefaultsToTheDefaultMode() {
+        // PLANNING was the root default before the planning layer moved to an
+        // extension; a session that did not ask for it now starts in DEFAULT.
         NaruTask root = session.newTask(NaruTaskSpec.of());
-        Assertions.assertSame(mode("PLANNING"), root.promptMode());
+        Assertions.assertSame(mode("DEFAULT"), root.promptMode());
     }
 
     @Test
@@ -137,7 +144,8 @@ public class TaskSpawnConfigTest {
         // IMPLEMENT executors. Before NaruTaskSpec.promptMode(..) this was impossible
         // without a post-creation flip that races the scheduler.
         NaruTask selector = session.newTask(NaruTaskSpec.of()
-                .promptMode(mode("PLANNING")));
+                .promptMode(mode("PLANNING")))
+                ;
         NaruTask executor = session.newTask(NaruTaskSpec.of()
                 .parentId(selector.id())
                 .promptMode(mode("IMPLEMENT")));

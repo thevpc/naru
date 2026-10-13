@@ -60,9 +60,13 @@ public class NaruAccumulatorBuilder {
         }
 
         long callTokens = part.getPromptTokens() + part.getCompletionTokens();
-        contextUsage += callTokens;
+        // contextUsage is the size of the most recent call, not a running sum: adding
+        // every call's prompt back in made a long session report a context far larger
+        // than any single request. Only totalTokens accumulates; the peak is the
+        // largest single call seen and must not shrink.
+        contextUsage = callTokens;
         totalTokens += callTokens;
-        peakContextUsage += callTokens;
+        peakContextUsage = Math.max(peakContextUsage, callTokens);
         calls++;
         accumulatedDuration += part.getDuration().toMillis();
         // "no duration recorded yet" is calls == 0, not minDuration == 0: a call

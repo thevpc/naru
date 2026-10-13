@@ -1,6 +1,11 @@
 # hide everything irrelevant to the write->build->test->run loop:
 /ollama serve
 /model use @MODEL@
+# Reasoning/thinking models (qwen3.8:32k) burn minutes of wall-clock on hidden
+# reasoning between tool calls, which blows past the loop's preemptive timeout on
+# local hardware. The codegen goal is fully specified, so reasoning buys nothing
+# here: turn it off (also removes the 'think' tool the model would narrate into).
+/settings model.thinking=false
 # implement mode: authorizes file writes AND shell execution (planning mode is read-only).
 /mode implement
 # file tools are tagged "fs", run_shell is tagged "network"; both are visible to
@@ -10,11 +15,11 @@
 # still hiding: working-dir wanderers, web (offline), git/index/search/semantic
 # and tag tools, plus the redundant maven_* shortcuts. A lean toolset keeps
 # even small models focused on the goal.
-/tools disable cd set_working_dir
-/tools disable search_web tag_add tag_remove
-/tools disable git_status git_diff git_log git_commit
-/tools disable project_map code_symbols find_symbol project_summary
-/tools disable semantic_search semantic_index maven_compile maven_test maven_package
+/tools exclude cd set_working_dir
+/tools exclude search_web tag_add tag_remove
+/tools exclude git_status git_diff git_log git_commit
+/tools exclude project_map code_symbols find_symbol project_summary
+/tools exclude semantic_search semantic_index maven_compile maven_test maven_package
 # maxSteps bounds ONE model turn's tool-call rounds; the budget is reset whenever
 # a turn ends, so each /while re-invocation below gets a full one. It can never
 # run forever: the /while loop is capped at 12 attempts and the test preemptively
@@ -99,8 +104,11 @@ WORK LOOP:
 #    ('.' when pom.xml sits at the top level, e.g. 'proj' when the model nested it).
 /file find . --include=pom.xml --save=pom --dir=pomDir
 /if lastExitCode != 0
-    /print "green: pom.xml not found yet (project may not exist)"
+    # NOTE: /print publishes lastExitCode=0, so the AND-accumulating check MUST
+    # run BEFORE any /print in this branch; otherwise it would read the /print's
+    # 0 instead of the /file find miss (1) and the loop would exit early as "green".
     /assert --set green lastExitCode == 0
+    /print "green: pom.xml not found yet (project may not exist)"
 /else
     /print "green: pom.xml found at {{pom}}"
 # 2. build + run the tests OFFLINE; mvn exits 0 even when NOTHING was

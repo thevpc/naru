@@ -5,6 +5,9 @@ import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionBuilder;
+import net.thevpc.naru.api.agent.*;
+import net.thevpc.naru.api.store.NaruSessionScope;
+import net.thevpc.naru.api.store.NaruSessionStore;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.scheduler.NaruTaskMode;
@@ -23,6 +26,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.function.Predicate;
+import java.time.Duration;
 
 /**
  * Default {@link NaruSessionBuilder}. Created per session by the agent.
@@ -37,6 +41,17 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     private boolean banner;
     private NMsg bannerMessage;
     private boolean richTerm;
+    private String id;
+    private NaruSessionStore store;
+    private NaruSessionScope scope = NaruSessionScope.PRIVATE;
+    private NaruInputBlockPolicy inputBlockPolicy = NaruInputBlockPolicy.HIBERNATE;
+    private Duration hibernateAfter = Duration.ZERO;
+    private boolean streaming = true;
+    private NaruBusyPolicy busyPolicy = NaruBusyPolicy.REJECT;
+    private NaruTurnEventListener turnListener;
+    private int maxLiveSessions = Integer.MAX_VALUE;
+    private boolean checkpointEachMessage = true;
+    private Duration capacityTimeout = Duration.ofSeconds(30);
 
     NaruSessionBuilderImpl(NaruAgentImpl agent) {
         this.agent = agent;
@@ -46,6 +61,27 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     public NaruSessionBuilder directory(NPath directory) {
         this.directory = directory;
         return this;
+    }
+
+    @Override public NaruSessionBuilder id(String id) { this.id = id; return this; }
+    @Override public NaruSessionBuilder store(NaruSessionStore store) { this.store = store; return this; }
+    @Override public NaruSessionBuilder scope(NaruSessionScope scope) { this.scope = scope; return this; }
+    @Override public NaruSessionBuilder onInputBlock(NaruInputBlockPolicy policy) { this.inputBlockPolicy = policy; return this; }
+    @Override public NaruSessionBuilder hibernateAfter(Duration grace) {
+        if (grace == null || grace.isNegative()) throw new IllegalArgumentException("hibernate grace must be non-negative");
+        this.hibernateAfter = grace; return this;
+    }
+    @Override public NaruSessionBuilder streaming(boolean enabled) { this.streaming = enabled; return this; }
+    @Override public NaruSessionBuilder busy(NaruBusyPolicy policy) { this.busyPolicy = policy; return this; }
+    @Override public NaruSessionBuilder listener(NaruTurnEventListener listener) { this.turnListener = listener; return this; }
+    @Override public NaruSessionBuilder maxLiveSessions(int maximum) {
+        if (maximum < 1) throw new IllegalArgumentException("max live sessions must be positive");
+        this.maxLiveSessions = maximum; return this;
+    }
+    @Override public NaruSessionBuilder checkpointEachMessage(boolean enabled) { this.checkpointEachMessage = enabled; return this; }
+    @Override public NaruSessionBuilder capacityTimeout(Duration timeout) {
+        if (timeout == null || timeout.isNegative()) throw new IllegalArgumentException("capacity timeout must be non-negative");
+        this.capacityTimeout = timeout; return this;
     }
 
     @Override
@@ -143,6 +179,15 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
         }
 
         return session;
+    }
+
+    @Override
+    public NaruSessionHandle buildHandle() {
+        return new NaruSessionHandleImpl(agent,
+                directory != null ? directory : agent.defaultSessionDirectory(),
+                interaction, task, id, store, scope, inputBlockPolicy, hibernateAfter,
+                streaming, busyPolicy, turnListener, maxLiveSessions,
+                checkpointEachMessage, capacityTimeout, agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter());
     }
 
     /**

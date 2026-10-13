@@ -475,6 +475,8 @@ public class NaruModelDirective extends NaruDirectiveBase {
         String filter = null;
         String providerFilter = null;
         boolean freeOnly = false;
+        int limit = Integer.MAX_VALUE;
+        int offset = 0;
         while (cmdLine.hasNext()) {
             NArg a = cmdLine.next().get();
             if (a.isOption()) {
@@ -482,6 +484,18 @@ public class NaruModelDirective extends NaruDirectiveBase {
                     providerFilter = a.getStringValue().orNull();
                 } else if (a.key().equals("--free") || a.key().equals("-f")) {
                     freeOnly = true;
+                } else if (a.key().equals("--limit")) {
+                    Integer value = NLiteral.of(a.getStringValue().orNull()).asInt().orNull();
+                    if (value == null || value < 1) {
+                        return fail(context, NMsg.ofC("Error: --limit must be a positive integer"));
+                    }
+                    limit = value;
+                } else if (a.key().equals("--offset")) {
+                    Integer value = NLiteral.of(a.getStringValue().orNull()).asInt().orNull();
+                    if (value == null || value < 0) {
+                        return fail(context, NMsg.ofC("Error: --offset must be a non-negative integer"));
+                    }
+                    offset = value;
                 }
             } else {
                 if (filter == null) {
@@ -553,19 +567,26 @@ public class NaruModelDirective extends NaruDirectiveBase {
         }
 
         String titleSuffix = (filter != null || providerFilter != null || freeOnly) ? " (filtered)" : "";
+        int fromIndex = Math.min(offset, models.size());
+        int toIndex = (int) Math.min((long) models.size(), (long) fromIndex + limit);
+        List<NaruModelInfo> displayedModels = models.subList(fromIndex, toIndex);
         // freeze the displayed order: '/model use <n>' must resolve against these exact
         // rows, not the unfiltered catalog, otherwise filtering renumbers the list and
         // every index the user copies becomes a different model.
-        task.session().setListedModels(models.stream().map(NaruModelInfo::key).collect(Collectors.toList()));
+        task.session().setListedModels(displayedModels.stream().map(NaruModelInfo::key).collect(Collectors.toList()));
         NStringBuilder sb = NStringBuilder.of();
-        NMsg msg = NMsg.ofC("%s Available models%s:", models.size(), titleSuffix);
+        NMsg msg = NMsg.ofC("%s Available models%s: showing %s-%s%s",
+                models.size(), titleSuffix,
+                displayedModels.isEmpty() ? 0 : fromIndex + 1,
+                toIndex,
+                displayedModels.size() == models.size() ? " (all)" : "");
         task.log(NaruLogMode.AGENT_RESPONSE, msg);
         sb.println(msg.toString());
-        int zeros = (int) Math.ceil(Math.log10(models.size()));
+        int zeros = displayedModels.size() <= 1 ? 1 : (int) Math.ceil(Math.log10(displayedModels.size()));
         DecimalFormat zformat = new DecimalFormat(NStringUtils.repeat("0", Math.max(1, zeros)));
         NaruModelConfig selectedModel = task.model();
         int index = 1;
-        for (NaruModelInfo model : models) {
+        for (NaruModelInfo model : displayedModels) {
 
             NaruModelKey mkey = model.key();
 

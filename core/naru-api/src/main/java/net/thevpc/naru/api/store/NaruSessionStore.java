@@ -38,6 +38,106 @@ import java.util.List;
  */
 public interface NaruSessionStore extends AutoCloseable {
 
+    /** Hierarchical view of this session's task records. Existing flat APIs remain supported. */
+    default NaruTaskStore tasks(String uuid, NaruSessionScope scope) {
+        NaruSessionStore owner = this;
+        return new NaruTaskStore() {
+            private final java.util.Map<Long, NaruMessageStore> messageStores = new java.util.HashMap<>();
+            public List<Long> list() { return owner.taskIds(uuid, scope); }
+            public NOptional<NaruTaskState> load(long id) { return owner.loadTask(uuid, scope, id); }
+            public NOptional<NaruTaskState> loadSkeleton(long id) { return owner.loadTaskSkeleton(uuid, scope, id); }
+            public void save(NaruTaskState task) { owner.saveTask(uuid, scope, task); }
+            public void delete(long id) { owner.deleteTask(uuid, scope, id); }
+            public synchronized NaruMessageStore messages(long taskId) {
+                return messageStores.computeIfAbsent(taskId, id -> new NaruMessageStore() {
+                    private NaruTaskState state() {
+                        return owner.loadTask(uuid, scope, id).orNull();
+                    }
+                    private NaruStoredMessage wrap(String messageId, net.thevpc.naru.api.model.NaruMessage message) {
+                        return new NaruStoredMessage(messageId, sequence(messageId), message);
+                    }
+                    public synchronized NaruStoredMessage append(net.thevpc.naru.api.model.NaruMessage message, String key) {
+                        NaruTaskState s = state();
+                        java.util.List<net.thevpc.naru.api.model.NaruMessage> history = s == null
+                                ? new java.util.ArrayList<>() : new java.util.ArrayList<>(s.history());
+                        history.add(message);
+                        NaruHistorySave saved = owner.saveHistory(uuid, scope, id, history);
+                        return wrap(saved.ids().get(saved.ids().size() - 1), message);
+                    }
+                    public synchronized NaruStoredMessage insertAfter(String messageId,
+                            net.thevpc.naru.api.model.NaruMessage message, String key) {
+                        NaruTaskState s = state();
+                        if (s == null) throw new IllegalArgumentException("unknown task " + id);
+                        java.util.List<net.thevpc.naru.api.model.NaruMessage> history = new java.util.ArrayList<>(s.history());
+                        int index = s.historyIds().indexOf(messageId);
+                        if (index < 0) throw new IllegalArgumentException("unknown message " + messageId);
+                        history.add(index + 1, message);
+                        NaruHistorySave saved = owner.saveHistory(uuid, scope, id, history);
+                        return wrap(saved.ids().get(index + 1), message);
+                    }
+                    public synchronized void delete(java.util.List<String> ids) {
+                        NaruTaskState s = state();
+                        if (s == null) return;
+                        java.util.List<net.thevpc.naru.api.model.NaruMessage> history = new java.util.ArrayList<>();
+                        for (int i = 0; i < s.historyIds().size(); i++) {
+                            if (!ids.contains(s.historyIds().get(i))) history.add(s.history().get(i));
+                        }
+                        owner.saveHistory(uuid, scope, id, history);
+                    }
+                    public synchronized java.util.List<NaruStoredMessage> get(java.util.List<String> ids) {
+                        NaruTaskState s = state();
+                        java.util.List<NaruStoredMessage> out = new java.util.ArrayList<>();
+                        if (s != null) for (int i = 0; i < s.historyIds().size(); i++) {
+                            if (ids.contains(s.historyIds().get(i))) out.add(wrap(s.historyIds().get(i), s.history().get(i)));
+                        }
+                        return out;
+                    }
+                    public synchronized NaruMessagePage query(NaruMessageQuery query) {
+                        NaruTaskState s = state();
+                        java.util.List<NaruStoredMessage> all = new java.util.ArrayList<>();
+                        if (s != null) for (int i = 0; i < s.historyIds().size(); i++) {
+                            var msg = s.history().get(i);
+                            if (query.roles().isEmpty() || query.roles().contains(msg.getRole())) all.add(wrap(s.historyIds().get(i), msg));
+                        }
+                        all.sort(java.util.Comparator.comparingLong(NaruStoredMessage::creationSequence));
+                        long cursor = parseCursor(query.cursor());
+                        if (query.direction() == NaruMessageQueryDirection.BACKWARD) java.util.Collections.reverse(all);
+                        java.util.List<NaruStoredMessage> selected = new java.util.ArrayList<>();
+                        for (NaruStoredMessage item : all) {
+                            if (query.cursor() != null && (query.direction() == NaruMessageQueryDirection.FORWARD
+                                    ? item.creationSequence() <= cursor : item.creationSequence() >= cursor)) continue;
+                            if (selected.size() == query.limit()) break;
+                            selected.add(item);
+                        }
+                        boolean more = false;
+                        if (selected.size() == query.limit()) {
+                            long edge = selected.get(selected.size() - 1).creationSequence();
+                            more = all.stream().anyMatch(x -> query.direction() == NaruMessageQueryDirection.FORWARD
+                                    ? x.creationSequence() > edge : x.creationSequence() < edge);
+                        }
+                        String next = selected.isEmpty() ? null : selected.get(selected.size() - 1).id();
+                        String previous = selected.isEmpty() ? null : selected.get(0).id();
+                        return new NaruMessagePage(selected, next, previous, more);
+                    }
+                });
+            }
+        };
+    }
+
+    /** Loads only the task skeleton when supported. */
+    default NOptional<NaruTaskState> loadTaskSkeleton(String uuid, NaruSessionScope scope, long taskId) {
+        return loadTask(uuid, scope, taskId);
+    }
+
+    private static long sequence(String id) {
+        try { return Long.parseLong(id); } catch (RuntimeException ignored) { return id.hashCode() & 0x7fffffffL; }
+    }
+
+    private static long parseCursor(String cursor) {
+        if (cursor == null) return -1;
+        return sequence(cursor);
+    }
+
     // ---------------------------------------------------------------- catalog
 
     /** Sessions in one scope, newest modification first. */
@@ -62,9 +162,26 @@ public interface NaruSessionStore extends AutoCloseable {
 
     void create(NaruSessionData data, NaruSessionScope scope);
 
+    /** Atomically creates a session only when no record with this id exists. */
+    default boolean createIfAbsent(NaruSessionData data, NaruSessionScope scope) {
+        if (exists(data.uuid(), scope)) return false;
+        create(data, scope);
+        return true;
+    }
+
     NOptional<NaruSessionData> loadData(String uuid, NaruSessionScope scope);
 
     void saveData(NaruSessionData data, NaruSessionScope scope);
+
+    /** CAS metadata checkpoint. A successful call increments and returns the version. */
+    default long compareAndSetData(NaruSessionData data, NaruSessionScope scope, long expectedVersion) {
+        NaruSessionData current = loadData(data.uuid(), scope).orNull();
+        long actual = current == null ? -1 : current.version();
+        if (actual != expectedVersion) throw new NaruSessionConflictException(data.uuid(), expectedVersion, actual);
+        data.version(expectedVersion + 1);
+        saveData(data, scope);
+        return data.version();
+    }
 
     // ---------------------------------------------------------------- tasks
 
@@ -76,6 +193,18 @@ public interface NaruSessionStore extends AutoCloseable {
      * written yet.
      */
     void saveTask(String uuid, NaruSessionScope scope, NaruTaskState task);
+
+    /** Updates task metadata while preserving the already committed history bodies. */
+    default void saveTaskSkeleton(String uuid, NaruSessionScope scope, NaruTaskState task) {
+        saveTask(uuid, scope, task);
+    }
+
+    /** Saves a task and returns its committed position-ordered message ids. */
+    default List<String> saveTaskAndGetHistoryIds(String uuid, NaruSessionScope scope, NaruTaskState task) {
+        saveTask(uuid, scope, task);
+        NaruTaskState saved = loadTask(uuid, scope, task.id()).orNull();
+        return saved == null ? List.of() : saved.historyIds();
+    }
 
     NOptional<NaruTaskState> loadTask(String uuid, NaruSessionScope scope, long taskId);
 

@@ -17,6 +17,11 @@ public interface NaruRegistry {
 
     Map<String, NaruTool> tools();
 
+    /** Active toolsets, for lifecycle and hibernation coordination. */
+    default List<NaruToolset> toolsets() { return List.of(); }
+    default void openToolsets() { }
+    default void closeToolsets() { }
+
     Map<String, NaruDirective> directives();
 
     NaruRegistry registerToolsetProvider(NaruToolsetProvider tool);

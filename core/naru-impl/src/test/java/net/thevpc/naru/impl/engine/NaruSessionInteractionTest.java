@@ -178,8 +178,11 @@ public class NaruSessionInteractionTest {
     @Test
     public void modelResolutionProblemsAreReportedThroughTheInteraction() {
         CapturingInteraction interaction = new CapturingInteraction();
-        newSession(interaction, "warn");
-
+        NaruSessionImpl session = newSession(interaction, "warn");
+        // Model resolution is lazy now, so the warning fires when a task first asks for
+        // its model rather than during session construction; nothing is registered in
+        // this session, so that first ask is the "no usable model" case.
+        session.newTask(NaruTaskSpec.of()).model();
         Assertions.assertFalse(interaction.output.isEmpty(),
                 "a session that cannot find a usable model must say so on its own channel");
     }

@@ -25,15 +25,29 @@ public class McpToolsetProvider implements NaruToolsetProvider {
     @Override
     public boolean accept(String id, NObjectElement config) {
         String type = config.getStringValue("type").orElse("");
-        switch (NNameFormat.LOWER_KEBAB_CASE.format(type)){
-            case "mcp-stdio":{
-                return config.getStringValue("command").isPresent();
-            }
-            case "mcp-sse":{
-                return config.getStringValue("url").isPresent();
-            }
+        return accepts(type,
+                config.getStringValue("command").isPresent(),
+                config.getStringValue("url").isPresent());
+    }
+
+    static boolean accepts(String typeValue, boolean hasCommand, boolean hasUrl) {
+        String type = NNameFormat.LOWER_KEBAB_CASE.format(typeValue);
+        if (type.isEmpty()) {
+            // A configured command is enough to retain the historical stdio shorthand.
+            // The empty fallback config synthesized by NaruRegistryImpl must not create
+            // an unconfigured toolset that fails when the session starts.
+            return hasCommand;
         }
-        return NaruToolsetProvider.super.accept(id, config);
+        switch (type) {
+            case "mcp-stdio": {
+                return hasCommand;
+            }
+            case "mcp-sse": {
+                return hasUrl;
+            }
+            default:
+                return false;
+        }
     }
 
     @Override

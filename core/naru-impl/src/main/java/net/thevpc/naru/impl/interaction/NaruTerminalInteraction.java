@@ -207,10 +207,8 @@ public class NaruTerminalInteraction implements NaruInteraction {
 
     private void print(String text, int from, int to) {
         if (to <= from) {
-            if (atLineStart) {
-                terminal.out().print(streamPrefix(streamMode));
-                atLineStart = false;
-            }
+            // nothing to draw: an empty fragment must not leave a stray marker line,
+            // and the line stays "at start" so a later fragment still gets its edge
             return;
         }
         if (atLineStart) {

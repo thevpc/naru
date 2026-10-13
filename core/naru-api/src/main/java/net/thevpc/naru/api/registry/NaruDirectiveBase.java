@@ -99,7 +99,7 @@ public abstract class NaruDirectiveBase implements NaruDirective {
         // untouched so a stray "{{" never breaks a script.
         String argument = context.argument();
         String resolved = resolveTemplates(task, argument);
-        if (Objects.equals(resolved,argument)) {
+        if (!Objects.equals(resolved, argument)) {
             final NaruDirectiveCallContext base = context;
             final String resolvedArgument = resolved;
             context = new NaruDirectiveCallContext() {

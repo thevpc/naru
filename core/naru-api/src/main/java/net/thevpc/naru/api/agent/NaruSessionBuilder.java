@@ -3,6 +3,9 @@ package net.thevpc.naru.api.agent;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.naru.api.store.NaruSessionScope;
+import net.thevpc.naru.api.store.NaruSessionStore;
+import java.time.Duration;
 
 /**
  * Configures and creates one {@link NaruSession}.
@@ -41,6 +44,19 @@ public interface NaruSessionBuilder {
      * user's home directory when the agent has none.
      */
     NaruSessionBuilder directory(NPath directory);
+
+    /** Stable id used by a backend handle; existing ids are resolved by the store. */
+    default NaruSessionBuilder id(String id) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder store(NaruSessionStore store) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder scope(NaruSessionScope scope) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder onInputBlock(NaruInputBlockPolicy policy) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder hibernateAfter(Duration grace) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder streaming(boolean enabled) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder busy(NaruBusyPolicy policy) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder listener(NaruTurnEventListener listener) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder maxLiveSessions(int maximum) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder checkpointEachMessage(boolean enabled) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder capacityTimeout(Duration timeout) { throw new UnsupportedOperationException(); }
 
     /**
      * How the session reaches its user: a terminal, a stream, or anything else.
@@ -102,4 +118,7 @@ public interface NaruSessionBuilder {
      * @throws IllegalStateException if the agent has no project directory and none was set
      */
     NaruSession build();
+
+    /** Builds a lazy backend handle while preserving {@link #build()} for existing callers. */
+    default NaruSessionHandle buildHandle() { throw new UnsupportedOperationException(); }
 }

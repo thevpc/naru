@@ -31,6 +31,7 @@ public class NaruRegistryImpl implements NaruRegistry {
     private final Map<String, NaruDirectiveProvider> directiveProviders = new LinkedHashMap<>();
     private final Map<String, NaruToolTagProvider> toolTagProviders = new LinkedHashMap<>();
     private final List<NaruToolset> activeToolsets = new ArrayList<>();
+    private final Set<NaruToolset> openedToolsets = Collections.newSetFromMap(new IdentityHashMap<>());
     //    private final Map<String, NaruTool> tools = new LinkedHashMap<>();
     private final Map<String, NaruDirective> availableDirectives = new LinkedHashMap<>();
     private final Map<String, NaruToolTag> availableToolTags = new LinkedHashMap<>();
@@ -147,6 +148,7 @@ public class NaruRegistryImpl implements NaruRegistry {
         activeToolsets.add(toolset);
         if (session.isRunning()) {
             toolset.open(session);
+            openedToolsets.add(toolset);
         }
         return this;
     }
@@ -170,6 +172,26 @@ public class NaruRegistryImpl implements NaruRegistry {
             }
         }
         return all;
+    }
+
+    @Override
+    public List<NaruToolset> toolsets() {
+        return List.copyOf(activeToolsets);
+    }
+
+    @Override
+    public void openToolsets() {
+        for (NaruToolset toolset : activeToolsets) {
+            if (openedToolsets.add(toolset)) toolset.open(session);
+        }
+    }
+
+    @Override
+    public void closeToolsets() {
+        for (NaruToolset toolset : activeToolsets) {
+            try { toolset.close(); } catch (Exception ignored) { }
+        }
+        openedToolsets.clear();
     }
 
     public Map<String, NaruDirective> directives() {
@@ -478,6 +500,7 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public void close() {
+        closeToolsets();
         for (NaruSessionExtension e : sessionExtensions) {
             try {
                 e.close();

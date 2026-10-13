@@ -1,26 +1,72 @@
 # NARU — Nuts AI Reasoning Unit
 
-> A durable, actor-based AI agent runtime for the JVM.  
-> No Python. No bridge. No subprocess.
+> A durable, actor-based AI agent runtime for the JVM.
 
 [![Install](https://img.shields.io/badge/install-nuts-blue)]([https://github.com/thevpc/nuts](https://thevpc.github.io/nuts/download.html))
 [![License](https://img.shields.io/badge/license-LGPLv3-blue)](https://www.gnu.org/licenses/lgpl-3.0.html)
 
-Most agent frameworks are stateless processes wrapped around an LLM.
-**NARU** is a runtime. Sessions survive crashes. Tasks run concurrently.
-The agent can rewrite its own script while it runs.
+NARU is a general-purpose Java agent runtime and microkernel-style platform. It is
+designed to be embedded as a library/runtime or launched as a complete application.
+The Nuts-packaged NARU app is one composition of the runtime and its extensions; its
+current tools lean toward software development because that is the use case implemented
+so far, not a limit on what the runtime can host.
 
 ---
 
 ## Features
-- **Full Interpreter Durability** — NARU persists the *entire* execution state (tasks & stack frames, local/task/session variables, event queues, routine definitions, pending LLM prompts, and scheduler state). Sessions survive crashes, support stop-the-world, and resume exactly where they left off.
-- **Dynamic Prompt Pipeline** — The prompt sent to the LLM is built dynamically per call. It intelligently combines history, loaded skills, model-specific formatting (e.g. tool calling instructions), per-task overrides, and folder-specific context (changing directory can inject prompts or auto-run routines).
-- **TSON Persistence** — All state uses a lenient, typed JSON extension (TSON) designed for graceful evolution and partial updates.
-- **Actor-based multi-tasking** — Concurrent tasks with typed, durable events (retention policies: TTL, once, max-count). Events can be fired before receivers exist.
-- **REPL = Script = Routine** — The interactive shell *is* the program. Routines are live, self-modifying, and resilient to changes.
-- **NxP Scheduler** — Efficient N-threads / P-tasks model per session. Multiple isolated sessions can run in one process.
-- **Model & Tool Flexibility** — Per-task formatting, tool-call emulation, and first-class support for MCP tools (same level as built-ins).
-- **Self-modifying agents** — The agent can rewrite its own routines and behavior at runtime.
+
+- **Pluggable persistence** — The runtime depends on the `NaruSessionStore` contract,
+  not on a file layout. A file-backed store ships as one implementation; applications
+  can provide a store backed by their own database or persistence service. Sessions
+  support checkpoint, save, and load through that store boundary.
+- **Concurrent task runtime** — Sessions schedule multiple tasks and coordinate them
+  with durable events, waits, routines, and task-local state.
+- **Scriptable REPL** — Commands, scripts, and routines share the same runtime. Agents
+  can update routines while work is active.
+- **LLM provider and protocol extensions** — Local and cloud providers include Ollama,
+  llama.cpp, OpenAI-compatible services, and provider integrations for OpenAI, Anthropic,
+  Gemini, Groq, OpenRouter, Mistral, DeepSeek, Kimi, Qwen, and others. Models can be
+  selected per task and streamed output is supported.
+- **Tool extensions** — The repository includes filesystem, shell, web, Git, Java
+  development, MCP, skills, planning, task, session, routine, budget, indexing, and
+  semantic-search integrations.
+- **Microkernel-style composition** — Models, directives, tools, session stores, and
+  session extensions are discovered through extension points, so an embedding
+  application can select its own capabilities and compose a domain-specific agent.
+- **Prompt and history controls** — Prompt construction supports task context, skills,
+  model-specific formatting, and history compaction. Prompt-context caching is documented
+  as an architecture feature.
+- **Backend turn API (early)** — An initial `NaruSessionHandle` API can accept inputs,
+  publish turn events, and hibernate sessions that are waiting for input. See the required
+  TODOs below for behaviors and acceptance tests still needed before relying on it in
+  production.
+
+### Project layout
+
+- `core/naru-api` — public APIs, models, task/session interfaces, and store contracts.
+- `core/naru-impl` — runtime, scheduler, file-backed session store, and CLI behavior.
+- `extensions/` — optional model providers and tool integrations.
+- `app/naru` — Nuts package/application entry point.
+- `test/` — shared test support and integration tests.
+
+## Where NARU fits
+
+“Harness” is a reasonable description of part of NARU: it connects models, tools,
+context, and execution policy. The more useful label is **agent runtime/platform** because
+NARU also owns task scheduling, durable sessions, extension lifecycle, and an application
+shell. These projects overlap, but they sit at different layers:
+
+| Project | Main role | How it relates to NARU |
+| --- | --- | --- |
+| [Aider](https://aider.chat/docs/) | Terminal-based AI pair-programming tool | A ready-to-use coding assistant; NARU is a general Java runtime that can host coding or other domain agents. |
+| [OpenCode](https://opencode.ai/) | Open-source coding agent available as terminal, desktop, and IDE experiences | Also a coding-agent product. NARU is more focused on an embeddable runtime and a pluggable full application. |
+| [LangChain4j](https://docs.langchain4j.dev/) | Java library for LLM integrations, tools, agents, and RAG | Closest in language and library use. LangChain4j supplies a broad Java LLM toolbox; NARU emphasizes a durable task/session runtime and microkernel-style application composition. |
+| [LangGraph](https://langchain-ai.github.io/langgraph/) | Stateful agent/workflow orchestration framework, with Python and JavaScript/TypeScript implementations | Closest in orchestration concerns. LangGraph centers on graph-defined workflows; NARU centers on JVM sessions, tasks, routines, and extensions. |
+
+NARU is not a claim that these tools are interchangeable. Aider and OpenCode focus on
+the coding-assistant experience; LangChain4j and LangGraph are building blocks for
+LLM applications and orchestration. NARU aims to provide both an embeddable runtime and
+a complete microkernel-based app, with code assistance as its first substantial domain.
 
 ---
 
@@ -53,8 +99,9 @@ nuts -y naru
 > /session save arch-review
 ```
 
-Come back tomorrow. Resume exactly where you stopped.
-Each session is an isolated durable unit containing routines, tasks, variables, events, and the full prompt pipeline.
+Sessions can be saved and loaded later. A session stores runtime state such as routines,
+tasks, variables, events, and task history; exact recovery behavior depends on the last
+successful checkpoint and the persistence implementation.
 
 ```bash
 nuts -y naru
@@ -103,24 +150,6 @@ One task blocked on a 3-minute LLM call never blocks the others.
 
 ---
 
-## How it compares
-
-|                       | LangChain4j | LangGraph  | AutoGen  | Temporal | **NARU** |
-|-----------------------|-------------|------------|----------|----------|------|
-| **JVM-native**        | ✅           | ❌          | ❌        | ✅        | ✅    |
-| **Durable**           | ❌           | Partial    | ❌        | ✅        | ✅    |
-| **LLM-aware**         | ✅           | ✅          | ✅        | ❌        | ✅    |
-| **Actor/event model** | ❌           | ❌          | Partial  | ❌        | ✅    |
-| **Self-modifying**    | ❌           | ❌          | ❌        | ❌        | ✅    |
-| **REPL-is-script**    | ❌           | ❌          | ❌        | ❌        | ✅    |
-
-Temporal has durability but no LLM awareness.
-LangChain4j has LLM awareness but no durability.
-LangGraph has both but is Python-only with a static graph.
-**NARU** is the only JVM runtime that is durable, LLM-native, and dynamic — and it can call LangChain4j when you need it.
-
----
-
 → [See the full help](HELP.md) for more examples including databases, IDEs, security tools, and games.
 → [See Examples](examples/README.md) for more examples including databases, IDEs, security tools, and games.
 
@@ -137,20 +166,42 @@ Architecture deep-dives live in [`documentation/architecture/`](documentation/ar
 
 ---
 
-## Features
-- [X] Metering
-- [X] Skills
-- [X] MCP
-- [X] Plan
-- [X] Ollama
-- [X] Java Development (File indexing ...)
-- [X] Cloud LLM SPIs (Claude, OpenAI, Gemini, Groq, Open Router, Crebras, Mistral, Github, XAi, OpenAi/Ahthropic compatible,...)
-- [X] Streaming output
+## TODO
 
-## Roadmap
+These are curated project-level follow-ups, not a dump of every source comment. The
+required list covers completeness and reliability for the backend turn/store APIs; the
+nice-to-have list is broader product work.
 
-- [ ] Embedding SPI + pgvector
-- [ ] RAG pipeline
+### Required
+
+- [ ] **Complete the message-store contract.** Enforce append idempotency keys, creation
+  range filters, immutable creation ordering, correct keyset cursors, and position-ordered
+  history paging across the store API and its implementations. Keep old flat store methods
+  compatible. The file-backed store is one adapter, not the reference contract.
+- [ ] **Finish turn concurrency semantics.** Implement `INTERRUPT`, define and persist
+  original outcomes for idempotent retries, and complete queued-input and disconnect
+  behavior.
+- [ ] **Finish resource lifecycle behavior.** Make restartable MCP resources reacquire
+  lazily on wake and verify that live-resource pin declarations prevent unsafe
+  hibernation.
+- [ ] **Add backend acceptance coverage.** Test hibernate/wake round trips, multiple
+  waiting tasks, pinning, concurrent upserts/submits, event ordering and lag, capacity
+  eviction, idempotency, and legacy-session loading.
+- [ ] **Prove checkpoint recovery.** Inject failures between checkpoint pieces and verify
+  that reloads remain valid, message references never dangle, and file-store compatibility
+  is preserved.
+- [ ] **Run the file-store tests in a writable test environment.** The current test setup
+  needs a configurable temporary Nuts home so it can run without writing to a user-global
+  directory.
+
+### Nice to have
+
+- [ ] Add an embedding provider SPI and a pgvector integration.
+- [ ] Add a first-party retrieval-augmented generation (RAG) pipeline.
+- [ ] Surface detailed provider model-discovery errors in `/model list`.
+- [ ] Add end-to-end examples for application-owned stores and backend turn handling.
+- [ ] Review model capability metadata and tune per-model context limits as provider
+  catalogs evolve.
 
 ---
 

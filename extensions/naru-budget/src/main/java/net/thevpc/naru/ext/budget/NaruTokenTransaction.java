@@ -2,6 +2,7 @@ package net.thevpc.naru.ext.budget;
 
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.nuts.time.NDuration;
+import net.thevpc.nuts.util.NStringUtils;
 
 import java.time.Instant;
 
@@ -40,7 +41,9 @@ public class NaruTokenTransaction {
                                 long cacheWriteTokens, long cacheReadTokens, Instant timestamp, NDuration duration) {
         this.labels = labels == null ? buildLabels(sessionId, userId, model) : labels;
         this.sessionId = sessionId;
-        this.userId = userId;
+        // a blank id is no id: storing it raw produced a row the model-wide listing
+        // filtered out, so the call vanished from the report while still counting.
+        this.userId = NStringUtils.stripToNull(userId);
         this.model = model;
         this.promptTokens = promptTokens;
         this.completionTokens = completionTokens;
@@ -55,8 +58,9 @@ public class NaruTokenTransaction {
         if (sessionId != null) {
             b.add("session", sessionId);
         }
-        if (userId != null) {
-            b.add("user", userId);
+        String uid = NStringUtils.stripToNull(userId);
+        if (uid != null) {
+            b.add("user", uid);
         }
         if (model != null) {
             if (model.provider() != null) {

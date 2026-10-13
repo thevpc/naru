@@ -235,12 +235,20 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public void create(NaruSessionData data, NaruSessionScope scope) {
-        NPath dir = rootOf(scope).resolve(data.uuid());
-        if (NaruFileIo.isFile(dir.resolve("session.tson"))) {
+        if (!createIfAbsent(data, scope)) {
             throw new IllegalStateException("session already exists: " + data.uuid());
         }
-        NaruFileIo.mkdirs(dir);
-        writeSessionData(dir, data);
+    }
+
+    @Override
+    public boolean createIfAbsent(NaruSessionData data, NaruSessionScope scope) {
+        NPath dir = rootOf(scope).resolve(data.uuid());
+        return withMetadataLock(dir, () -> {
+            if (NaruFileIo.isFile(dir.resolve("session.tson"))) return false;
+            NaruFileIo.mkdirs(dir);
+            writeSessionData(dir, data);
+            return true;
+        });
     }
 
     @Override
@@ -254,7 +262,40 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public void saveData(NaruSessionData data, NaruSessionScope scope) {
-        writeSessionData(requireDir(data.uuid(), scope), data);
+        NPath dir = requireDir(data.uuid(), scope);
+        withMetadataLock(dir, () -> {
+            writeSessionData(dir, data);
+            return null;
+        });
+    }
+
+    @Override
+    public long compareAndSetData(NaruSessionData data, NaruSessionScope scope, long expectedVersion) {
+        NPath dir = requireDir(data.uuid(), scope);
+        return withMetadataLock(dir, () -> {
+            NaruSessionData current = NaruSessionData.of(read(dir.resolve("session.tson")));
+            if (current.version() != expectedVersion) {
+                throw new NaruSessionConflictException(data.uuid(), expectedVersion, current.version());
+            }
+            data.version(expectedVersion + 1);
+            writeSessionData(dir, data);
+            return data.version();
+        });
+    }
+
+    /** Cross-process metadata lock; static synchronization also avoids overlapping JVM locks. */
+    private static synchronized <T> T withMetadataLock(NPath dir, java.util.function.Supplier<T> action) {
+        try {
+            NaruFileIo.mkdirs(dir);
+            java.nio.file.Path lockPath = NaruFileIo.path(dir.resolve(".metadata.lock"));
+            try (java.nio.channels.FileChannel channel = java.nio.channels.FileChannel.open(lockPath,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE);
+                 java.nio.channels.FileLock ignored = channel.lock()) {
+                return action.get();
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private void writeSessionData(NPath dir, NaruSessionData data) {
@@ -273,6 +314,18 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public void saveTask(String uuid, NaruSessionScope scope, NaruTaskState task) {
+        saveTaskAndGetHistoryIds(uuid, scope, task);
+    }
+
+    @Override
+    public void saveTaskSkeleton(String uuid, NaruSessionScope scope, NaruTaskState task) {
+        NPath dir = taskDir(requireDir(uuid, scope), task.id());
+        NaruFileIo.mkdirs(dir);
+        commitHistory(dir, task.skeleton(), new HistoryWrite(task.historyIds(), List.of()));
+    }
+
+    @Override
+    public List<String> saveTaskAndGetHistoryIds(String uuid, NaruSessionScope scope, NaruTaskState task) {
         NPath sessionDir = requireDir(uuid, scope);
         NPath dir = taskDir(sessionDir, task.id());
         NaruFileIo.mkdirs(dir);
@@ -280,6 +333,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
         // that is not there yet
         HistoryWrite write = writeHistory(dir, task.history());
         commitHistory(dir, task.skeleton(), write);
+        return List.copyOf(write.ids());
     }
 
     private static NElement withHistoryIds(NElement skeleton, List<String> ids) {
@@ -310,6 +364,21 @@ public class NaruFileSessionStore implements NaruSessionStore {
         NElement element = read(taskFile);
         return NOptional.of(NaruTaskState.ofStored(taskId, element,
                 readHistory(taskDir(sessionDir, taskId), element.asObject().get())));
+    }
+
+    @Override
+    public NOptional<NaruTaskState> loadTaskSkeleton(String uuid, NaruSessionScope scope, long taskId) {
+        NPath taskFile = taskDir(rootOf(scope).resolve(uuid), taskId).resolve("task.tson");
+        if (!NaruFileIo.isFile(taskFile)) return NOptional.ofEmpty();
+        NElement element = read(taskFile);
+        NElement history = element.asObject().get().get("history").orNull();
+        // Old layouts stored inline message bodies. Keep their existing migration/read path.
+        if (history != null && history.isAnyArray()) {
+            for (NElement item : history.asArray().get()) {
+                if (!item.isString()) return loadTask(uuid, scope, taskId);
+            }
+        }
+        return NOptional.of(NaruTaskState.ofStored(taskId, element, List.of()));
     }
 
     @Override

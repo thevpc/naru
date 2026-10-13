@@ -6,6 +6,8 @@ import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.registry.NaruToolset;
+import net.thevpc.naru.api.registry.NaruHibernationPolicy;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.store.*;
@@ -75,12 +77,18 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private String name = "NO_NAME";
     private Instant creationInstant = Instant.now();
     private Instant modificationInstant = creationInstant;
+    private long storeVersion;
     // Add to NaruSessionImpl fields:
     //use NOptional because ConcurrentHashMap cannot support null
     private final Map<String, NOptional<Object>> env = new ConcurrentHashMap<>();
     private final AtomicLong maxTaskId = new AtomicLong(0);
     private long foregroundTaskId;
     private final Map<Long, NaruTask> tasks = new ConcurrentHashMap<>();
+    private final Map<Long, String> persistedTaskStates = new HashMap<>();
+    private final Map<Long, String> persistedTaskHistoryStates = new HashMap<>();
+    private final Map<Long, Set<String>> persistedTaskMessageIds = new HashMap<>();
+    private final Map<String, String> persistedRoutineStates = new HashMap<>();
+    private final Map<String, String> persistedExtensionStates = new HashMap<>();
     private NPath workingDir;
     /**
      * Root directory of the project being worked on.
@@ -108,6 +116,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * a headless session runs with none of it.
      */
     private final NaruInteraction interaction;
+    private final Map<String, NaruInputRequest> pendingInputRequests = new ConcurrentHashMap<>();
+    private boolean resumedFromStore;
+    private boolean deferTaskCheckpoints;
+    private boolean checkpointEachMessage = true;
     /**
      * Observers of provider-reported usage. Not persisted, and not part of session state:
      * an extension that wants usage across a reload re-registers in open().
@@ -157,6 +169,17 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             , Predicate<NaruTool> toolFilter
             , Predicate<NaruToolTag> tagFilter
     ) {
+        this(agent, projectDir, interaction, configureDefaults, sessionListener,
+                directiveFilter, toolFilter, tagFilter, null);
+    }
+
+    public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
+            , NaruSessionListener sessionListener
+            , Predicate<NaruDirective> directiveFilter
+            , Predicate<NaruTool> toolFilter
+            , Predicate<NaruToolTag> tagFilter
+            , NaruSessionStore storeOverride
+    ) {
         this.agent = agent;
         // a session created without a stated preference gets the desktop one, which is
         // what every caller did before this seam existed
@@ -164,7 +187,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.projectDir = projectDir.normalize();
         this.workingDir = projectDir.normalize();
         this.sessionStoreManager = new NaruSessionStoreManagerImpl(this);
-        this.store = NaruStoreFactory.open(storeConfig(), storeName());
+        this.store = storeOverride == null ? NaruStoreFactory.open(storeConfig(), storeName()) : storeOverride;
         this.registry = new NaruRegistryImpl(this,directiveFilter, toolFilter, tagFilter);
         this.sessionListener = sessionListener;
         this.scheduler = new NaruSchedulerImpl(this);
@@ -989,10 +1012,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.name = NStringUtils.firstNonBlankStripped(o.getStringValue("name").orElse(null), "NO_NAME");
         this.creationInstant = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
         this.modificationInstant = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationInstant);
+        this.storeVersion = data.version();
         // the scope the state came from is the scope the session is in; visibility is not
         // stored anywhere, because it *is* the location
         this.visibility = scope == NaruSessionScope.PUBLIC ? NaruVisibility.PUBLIC : NaruVisibility.PRIVATE;
         this.loadTimeScope = scope;
+        this.resumedFromStore = true;
+        this.pendingInputRequests.clear();
         NElement mv = o.get("model").orElse(null);
         this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
         this.projectDir = data.projectDir() == null ? projectDir : NPath.of(data.projectDir());
@@ -1003,31 +1029,63 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
 
         routines.clear();
+        persistedRoutineStates.clear();
         for (String name : store.routineNames(uuid, scope)) {
             NElement r = store.loadRoutine(uuid, scope, name).orNull();
             if (r != null) {
                 NaruRoutineMem rm = new NaruRoutineMem(r);
                 if (rm != null) {
                     routines.put(name, rm);
+                    persistedRoutineStates.put(name, r.toString());
                 }
             }
         }
 
         tasks.clear();
-        NLongRef maxLong = NRef.ofLong(0);
+        persistedTaskStates.clear();
+        persistedTaskHistoryStates.clear();
+        persistedTaskMessageIds.clear();
+        NLongRef maxLong = NRef.ofLong(-1);
         for (long taskId : store.taskIds(uuid, scope)) {
-            NaruTaskState state = store.loadTask(uuid, scope, taskId).orNull();
+            NaruTaskState state = store.loadTaskSkeleton(uuid, scope, taskId).orNull();
             if (state == null) {
                 continue;
             }
             NaruTaskImpl t = new NaruTaskImpl(withHistory(state), this);
+            if (state.history().isEmpty() && !state.historyIds().isEmpty()) {
+                t.setLazyHistoryLoader(() -> store.loadHistory(uuid, scope, taskId));
+            }
             maxLong.set(Math.max(maxLong.get(), t.id()));
             tasks.put(t.id(), t);
+            persistedTaskStates.put(t.id(), state.skeleton().toString());
+            if (t.isHistoryLoaded()) persistedTaskHistoryStates.put(t.id(), t.toElement().asObject().get().get("history").orNull().toString());
+            persistedTaskMessageIds.put(t.id(), new LinkedHashSet<>(state.historyIds()));
+            if (t.status() == NaruTaskStatus.BLOCKED_ON_INPUT) {
+                NaruInputRequest request = new TaskInputRequest(t);
+                pendingInputRequests.put(request.requestId(), request);
+            }
         }
-        long finalMaxLong = maxLong.get() == 0 ? 0 : maxLong.get() + 1;
-        maxTaskId.updateAndGet(current -> Math.max(current, finalMaxLong));
+        // maxTaskId is the last id handed out. Starting the scan at -1 matters:
+        // task id 0 is valid in persisted sessions, and the next task must be 1.
+        long lastTaskId = maxLong.get();
+        if (lastTaskId >= 0) maxTaskId.updateAndGet(current -> Math.max(current, lastTaskId));
         loadSessionExtensions(uuid, scope);
         return this;
+    }
+
+    /** Hydrates an existing id on a newly constructed activation. */
+    public void loadStored(String uuid, NaruSessionScope scope) {
+        if (!tasks.isEmpty() || running || stopped) throw new IllegalStateException("loadStored requires a fresh session instance");
+        loadFromStore(uuid, scope);
+        this.visibility = scope == NaruSessionScope.PUBLIC ? NaruVisibility.PUBLIC : NaruVisibility.PRIVATE;
+    }
+
+    public void initializeHandleId(String uuid, NaruSessionScope scope) {
+        if (!tasks.isEmpty() || running || stopped) throw new IllegalStateException("initializeHandleId requires a fresh session instance");
+        this.uuid = Objects.requireNonNull(uuid);
+        this.storeVersion = 0;
+        this.loadTimeScope = scope;
+        this.visibility = scope == NaruSessionScope.PUBLIC ? NaruVisibility.PUBLIC : NaruVisibility.PRIVATE;
     }
 
     /**
@@ -1077,9 +1135,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * state, so the core neither knows nor cares what is in it.
      */
     private void loadSessionExtensions(String uuid, NaruSessionScope scope) {
+        persistedExtensionStates.clear();
         for (NaruSessionExtension extension : registry.sessionExtensions()) {
             try {
-                extension.load(this, store.loadExtensionState(uuid(), scope, extension.name()).orNull());
+                NElement state = store.loadExtensionState(uuid(), scope, extension.name()).orNull();
+                extension.load(this, state);
+                if (state != null) persistedExtensionStates.put(extension.name(), state.toString());
                 extension.open(this);
             } catch (Exception ex) {
                 // one broken extension must not cost the user the whole session
@@ -1231,17 +1292,58 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
     }
 
-    private void writeStateInPlace(NaruSessionScope scope) {
+    private synchronized void writeStateInPlace(NaruSessionScope scope) {
         if (!store.exists(uuid(), scope)) {
-            store.create(sessionData(), scope);
+            if (!store.createIfAbsent(sessionData(), scope)) {
+                long actual = store.loadData(uuid(), scope).map(NaruSessionData::version).orElse(-1L);
+                throw new NaruSessionConflictException(uuid(), storeVersion, actual);
+            }
+            storeVersion = 0;
         } else {
-            store.saveData(sessionData(), scope);
+            storeVersion = store.compareAndSetData(sessionData(), scope, storeVersion);
         }
         for (NaruTask t : tasks.values()) {
-            store.saveTask(uuid(), scope, taskState((NaruTaskImpl) t));
+            NaruTaskImpl impl = (NaruTaskImpl) t;
+            NElement taskElement = impl.toElement();
+            NElement skeleton = NaruTaskState.withoutHistory(taskElement);
+            String skeletonHash = skeleton.toString();
+            if (!impl.isHistoryLoaded()) {
+                if (!skeletonHash.equals(persistedTaskStates.get(t.id()))) {
+                    NaruTaskState state = NaruTaskState.of(t.id(), skeleton,
+                            new ArrayList<>(persistedTaskMessageIds.getOrDefault(t.id(), Set.of())), List.of());
+                    // Preserve store position order rather than the set iteration order.
+                    NaruTaskState old = store.loadTaskSkeleton(uuid(), scope, t.id()).orNull();
+                    if (old != null) state = NaruTaskState.of(t.id(), skeleton, old.historyIds(), List.of());
+                    store.saveTaskSkeleton(uuid(), scope, state);
+                    persistedTaskStates.put(t.id(), skeletonHash);
+                }
+                continue;
+            }
+            String historyHash = taskElement.asObject().get().get("history").orNull().toString();
+            String previousHistoryHash = persistedTaskHistoryStates.get(t.id());
+            if (previousHistoryHash == null) previousHistoryHash = impl.loadedHistoryHash();
+            if (!skeletonHash.equals(persistedTaskStates.get(t.id()))
+                    || !historyHash.equals(previousHistoryHash)) {
+                NaruTaskState state = taskState(impl);
+                List<String> ids = store.saveTaskAndGetHistoryIds(uuid(), scope, state);
+                Set<String> oldIds = persistedTaskMessageIds.computeIfAbsent(t.id(), x -> new LinkedHashSet<>());
+                for (String cursor : ids) {
+                    if (oldIds.add(cursor)) {
+                        if (sessionListener != null) sessionListener.onMessageComplete(t.id(), cursor);
+                        for (NaruSessionListener listener : sessionListeners) listener.onMessageComplete(t.id(), cursor);
+                    }
+                }
+                persistedTaskStates.put(t.id(), skeletonHash);
+                persistedTaskHistoryStates.put(t.id(), historyHash);
+            }
         }
         for (Map.Entry<String, NaruRoutine> e : routines.entrySet()) {
-            store.saveRoutine(uuid(), scope, e.getKey(), e.getValue().toElement());
+            NElement state = e.getValue().toElement();
+            String hash = state.toString();
+            if (!hash.equals(persistedRoutineStates.get(e.getKey()))) {
+                store.saveRoutine(uuid(), scope, e.getKey(), state);
+                persistedRoutineStates.put(e.getKey(), hash);
+            }
         }
         saveSessionExtensions(scope);
     }
@@ -1260,6 +1362,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 .model(model == null ? null : model.toElement())
                 .projectDir(projectDir.toString())
                 .workingDir(workingDir == null ? null : workingDir.toString())
+                .version(storeVersion)
                 .env(values);
     }
 
@@ -1284,9 +1387,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 if (state == null) {
                     // an extension with nothing to persist must not leave a stale record
                     // behind, or a later load would resurrect discarded state
-                    store.deleteExtensionState(uuid(), scope, extension.name());
+                    if (persistedExtensionStates.remove(extension.name()) != null) {
+                        store.deleteExtensionState(uuid(), scope, extension.name());
+                    }
                 } else {
-                    store.saveExtensionState(uuid(), scope, extension.name(), state);
+                    String hash = state.toString();
+                    if (!hash.equals(persistedExtensionStates.get(extension.name()))) {
+                        store.saveExtensionState(uuid(), scope, extension.name(), state);
+                        persistedExtensionStates.put(extension.name(), hash);
+                    }
                 }
             } catch (Exception ex) {
                 // failing to persist one extension must not fail the whole session save
@@ -1423,7 +1532,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      */
     public void onInputRequested(NaruTask task) {
         ensureNotStopped();
-        interaction.requestInput(new TaskInputRequest(task));
+        NaruInputRequest request = new TaskInputRequest(task);
+        pendingInputRequests.put(request.requestId(), request);
+        interaction.requestInput(request);
     }
 
     /**
@@ -1452,13 +1563,25 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
 
         @Override
+        public String requestId() {
+            return Long.toString(task.id());
+        }
+
+        @Override
         public void deliver(String line) {
+            deliver(line, null);
+        }
+
+        @Override
+        public void deliver(String line, String idempotencyKey) {
             if (!answered.compareAndSet(false, true)) {
                 return;
             }
             if (stopped) {
                 return;
             }
+            if (idempotencyKey != null && task instanceof NaruTaskImpl impl && !impl.claimInputKey(idempotencyKey)) return;
+            pendingInputRequests.remove(requestId(), this);
             ((NaruTaskSchedulerView) task).deliverInput(line);
             ((NaruTaskSchedulerView) task).status(NaruTaskStatus.READY);
             ((NaruSchedulerImpl) scheduler).enqueue(task);
@@ -1472,6 +1595,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             if (stopped) {
                 return;
             }
+            pendingInputRequests.remove(requestId(), this);
             // Nobody is going to answer, so the task must not stay blocked forever.
             log(NaruLogMode.SCRIPT, NMsg.ofC("input cancelled: %s", reason));
             try {
@@ -1485,6 +1609,77 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 // a task that refuses to change state is already terminal
             }
         }
+    }
+
+    public List<NaruPendingInput> pendingInputs() {
+        List<NaruPendingInput> out = new ArrayList<>();
+        for (NaruInputRequest request : pendingInputRequests.values()) {
+            out.add(new NaruPendingInput(request.task().id(), request.requestId(),
+                    request.prompt() == null ? "" : request.prompt().toString()));
+        }
+        out.sort(java.util.Comparator.comparingLong(NaruPendingInput::taskId));
+        return out;
+    }
+
+    public boolean deliverPendingInput(String requestId, String text) {
+        return deliverPendingInput(requestId, text, null);
+    }
+
+    public boolean hasDeliveredInputKey(String key) {
+        if (key == null) return false;
+        for (NaruTask task : tasks.values()) {
+            if (task instanceof NaruTaskImpl impl && impl.hasInputKey(key)) return true;
+        }
+        NaruSessionScope scope = loadTimeScope == null ? scopeForNewState() : loadTimeScope;
+        for (long taskId : store.taskIds(uuid(), scope)) {
+            NaruTaskState state = store.loadTaskSkeleton(uuid(), scope, taskId).orNull();
+            if (state == null) continue;
+            NElement keys = state.skeleton().asObject().get().get("deliveredInputKeys").orNull();
+            if (keys != null && keys.isAnyArray()) {
+                for (NElement storedKey : keys.asArray().get()) {
+                    if (key.equals(storedKey.asStringValue().orNull())) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public boolean deliverPendingInput(String requestId, String text, String idempotencyKey) {
+        NaruInputRequest request = pendingInputRequests.get(requestId);
+        if (request == null) return false;
+        request.deliver(text, idempotencyKey);
+        return true;
+    }
+
+    public boolean isHibernateEligible() {
+        if (tasks.isEmpty()) return false;
+        for (NaruTask task : tasks.values()) {
+            if (task.status() != NaruTaskStatus.BLOCKED_ON_INPUT) return false;
+        }
+        for (NaruToolset toolset : registry.toolsets()) {
+            if (toolset.hibernationPolicy() == NaruHibernationPolicy.PINS && toolset.hasLiveResource(this)) return false;
+        }
+        for (NaruTool tool : registry.tools().values()) {
+            if (tool.hibernationPolicy() == NaruHibernationPolicy.PINS && tool.hasLiveResource(this)) return false;
+        }
+        return true;
+    }
+
+    public boolean hasLiveTasks() { return !tasks.isEmpty(); }
+
+    public synchronized void hibernate() {
+        if (!isHibernateEligible()) throw new IllegalStateException("session is not quiescent on input");
+        save();
+        for (NaruToolset toolset : registry.toolsets()) toolset.onHibernate(this);
+        for (NaruTool tool : registry.tools().values()) tool.onHibernate(this);
+        interaction.onHibernate();
+        registry.closeToolsets();
+        // Toolsets with restartable resources release them in onHibernate; clearing the
+        // open marker lets the next activation lazily reopen them when tools are resolved.
+        stopped = true;
+        running = false;
+        scheduler.shutdown();
+        interaction.close();
     }
 
     private void handleSessionCommand(String line) {
@@ -1907,8 +2102,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         // headless. Opening it before the scheduler means input can be accepted from the
         // moment the first task starts asking.
         interaction.open(this);
+        registry.openToolsets();
+        if (resumedFromStore) {
+            for (NaruToolset toolset : registry.toolsets()) toolset.onResume(this);
+            for (NaruTool tool : registry.tools().values()) tool.onResume(this);
+        }
 
-        scheduler.start();
         notifySessionStart();
         if (sessionListener != null) {
             sessionListener.sessionStarted(this);
@@ -1916,6 +2115,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         for (NaruSessionListener listener : sessionListeners) {
             listener.sessionStarted(this);
         }
+        // Start the scheduler last: a task that finishes instantly (e.g. a bare "noop")
+        // auto-stops the session when the last task deregisters, and that stop must find
+        // the session already registered with its listeners. Otherwise sessionStarted fires
+        // after sessionStopped, the agent-side removal is a no-op, and the session stays in
+        // the agent's live-session set forever (NaruAgentSessionsTest.concurrentSessionChurnIsSafe).
+        scheduler.start();
         return this;
     }
 
@@ -1951,6 +2156,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         stopped = true;
         scheduler.shutdown();
         running = false;
+        registry.close();
         // close the interaction before announcing the stop: that cancels any input request
         // still waiting, so a worker is never left blocked on a question the host is gone
         // for. The terminal interaction also shuts down its readline thread here.
@@ -2060,6 +2266,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             foregroundTaskId(-1);
         }
         if (tasks.containsKey(tid)) {
+            if (deferTaskCheckpoints) {
+                // Persist the terminal task before deregistration removes it from the live
+                // task map. This is the last consistent point at which its final status and
+                // history can be checkpointed.
+                writeToStore(scopeForNewState());
+            }
             NaruTask i = tasks.remove(tid);
             notifyTaskDeregistered(tid);
             Map<String, Object> payload = NMaps.of(
@@ -2263,6 +2475,22 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * conversation costs one file rather than the whole conversation.
      */
     public void fireChangedTask(long id) {
+        if (deferTaskCheckpoints) return;
+        checkpointTask(id);
+    }
+
+    /** Configures the backend turn's message-boundary checkpoint policy. */
+    public void configureTurnPersistence(boolean defer, boolean eachMessage) {
+        this.deferTaskCheckpoints = defer;
+        this.checkpointEachMessage = eachMessage;
+    }
+
+    /** Called after a complete history message has been added. */
+    public void checkpointMessage(long taskId) {
+        if (deferTaskCheckpoints && checkpointEachMessage) checkpointTask(taskId);
+    }
+
+    private synchronized void checkpointTask(long id) {
         NaruTask t = tasks.get(id);
         if (t == null) {
             return;
@@ -2272,8 +2500,34 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             return;
         }
         try {
-            store.saveTask(uuid(), scope, taskState((NaruTaskImpl) t));
+            NaruTaskImpl impl = (NaruTaskImpl) t;
+            NElement element = impl.toElement();
+            NElement skeleton = NaruTaskState.withoutHistory(element);
+            String skeletonHash = skeleton.toString();
+            String historyHash = element.asObject().get().get("history").orNull().toString();
+            String previousHistoryHash = persistedTaskHistoryStates.get(id);
+            if (previousHistoryHash == null) previousHistoryHash = impl.loadedHistoryHash();
+            boolean skeletonChanged = !skeletonHash.equals(persistedTaskStates.get(id));
+            boolean historyChanged = impl.isHistoryLoaded() && !historyHash.equals(previousHistoryHash);
+            if (!skeletonChanged && !historyChanged) return;
+            storeVersion = store.compareAndSetData(sessionData(), scope, storeVersion);
+            if (!impl.isHistoryLoaded()) {
+                NaruTaskState old = store.loadTaskSkeleton(uuid(), scope, id).orNull();
+                if (old != null) store.saveTaskSkeleton(uuid(), scope,
+                        NaruTaskState.of(id, skeleton, old.historyIds(), List.of()));
+            } else {
+                NaruTaskState state = taskState(impl);
+                List<String> ids = store.saveTaskAndGetHistoryIds(uuid(), scope, state);
+                Set<String> oldIds = persistedTaskMessageIds.computeIfAbsent(id, x -> new LinkedHashSet<>());
+                for (String cursor : ids) if (oldIds.add(cursor)) {
+                    if (sessionListener != null) sessionListener.onMessageComplete(id, cursor);
+                    for (NaruSessionListener listener : sessionListeners) listener.onMessageComplete(id, cursor);
+                }
+                persistedTaskHistoryStates.put(id, historyHash);
+            }
+            persistedTaskStates.put(id, skeletonHash);
         } catch (Exception ex) {
+            if (ex instanceof NaruSessionConflictException conflict) throw conflict;
             log(NaruLogMode.SCHEDULER, NMsg.ofC(
                     "could not persist task %s: %s", id, ex.getMessage()).asError());
         }

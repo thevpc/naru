@@ -72,14 +72,26 @@ public class ParityReplayTest {
         toolMapping.put("bash", "run_shell");
         toolMapping.put("webfetch", "web_fetch");
 
-        File goldenFile = new File("bench/opencode-golden-probes.json");
-        if (!goldenFile.exists()) {
-            goldenFile = new File("../../bench/opencode-golden-probes.json");
+        // The golden probes are produced by the bench harness under test/bench/session001
+        // (tracked in-repo). The test JVM runs with CWD = test/naru-agent-test, so the
+        // canonical candidate is "../bench/session001". The older "bench/" at the repo
+        // root is kept as a fallback for workspaces where the bench was relocated.
+        File[] goldenCandidates = new File[]{
+                new File("../bench/session001/opencode-golden-probes.json"),
+                new File("../../bench/session001/opencode-golden-probes.json"),
+                new File("bench/opencode-golden-probes.json"),
+                new File("../../bench/opencode-golden-probes.json"),
+                new File("/home/vpc/xprojects/nuts-world/nuts-productivity/naru/test/bench/session001/opencode-golden-probes.json"),
+                new File("/home/vpc/xprojects/nuts-world/nuts-productivity/naru/bench/opencode-golden-probes.json"),
+        };
+        File goldenFile = null;
+        for (File c : goldenCandidates) {
+            if (c.exists()) {
+                goldenFile = c;
+                break;
+            }
         }
-        if (!goldenFile.exists()) {
-            goldenFile = new File("/home/vpc/xprojects/nuts-world/nuts-productivity/naru/bench/opencode-golden-probes.json");
-        }
-        assertTrue(goldenFile.exists(), "Golden probes file must exist: " + goldenFile.getAbsolutePath());
+        assertTrue(goldenFile != null, "Golden probes file must exist (looked under test/bench/session001 and bench/): " + goldenCandidates[0].getAbsolutePath());
 
         String goldenJson = new String(Files.readAllBytes(goldenFile.toPath()));
         Map<String, Object> root = NElementReader.ofJson().read(goldenJson, Map.class);
