@@ -64,6 +64,7 @@ public class NaruSkillDirectiveTest {
     };
 
     private NPath projectDir;
+    private NPath userHome;
     private NaruSessionImpl session;
     private NaruSkillsExtension ext;
     private final List<NaruOutput> outputs = new ArrayList<>();
@@ -75,6 +76,10 @@ public class NaruSkillDirectiveTest {
     @BeforeEach
     public void setUp() {
         projectDir = NPath.ofTempFolder("naru-skill-directive-" + System.nanoTime());
+        // isolate from the real user home: trusting a foreign root here must never touch
+        // the machine's ~/.naru/skills-trust.tson nor read skills an actual user has there
+        userHome = NPath.ofTempFolder("naru-skill-directive-home-" + System.nanoTime());
+        System.setProperty("naru.skills.userHome", userHome.toString());
         NaruAgent agent = new NaruAgentImpl();
         agent.projectDirectory(projectDir);
         outputs.clear();
@@ -86,6 +91,7 @@ public class NaruSkillDirectiveTest {
 
     @AfterEach
     public void tearDown() {
+        System.clearProperty("naru.skills.userHome");
         if (session != null) {
             try {
                 session.stop();
@@ -172,53 +178,179 @@ public class NaruSkillDirectiveTest {
         return out;
     }
 
-    // ── /skill list (unified) ───────────────────────────────────────────────
+    // ── /skill available (not loaded) and /skill list (loaded) ──────────────
 
     @Test
-    public void listShowsStateOriginVisibilityShadowedAndRequiresStatus() {
+    public void availableShowsUnloadedSkillsWithOriginVisibilityShadowedAndRequiresStatus() {
         publicSkill("git-flow", "follow git flow", "follow git flow");
         publicSkill("javadoc", "use javadoc style", "use javadoc style");
         privateSkill("javadoc", "PRIVATE javadoc rules", "PRIVATE javadoc rules");
         ext.reload();
         NaruTask t = parent();
 
-        NaruStmtResult r = call(t, "skill", "");
+        NaruStmtResult r = call(t, "skill", "available");
 
-        assertNull(r.errorValue(), () -> "list must not error: " + r);
+        assertNull(r.errorValue(), () -> "available must not error: " + r);
         String out = String.valueOf(r.successValue());
-        assertTrue(out.contains("2 skills available (0 loaded, 2 advertised)"), out);
-        // the unified columns, in order
+        assertTrue(out.contains("2 skills not loaded (of 2 available)"), out);
+        // the columns: state, origin family, visibility, requires, name, description
         assertTrue(out.contains("ADVERTISED"), out);
+        assertTrue(out.contains("naru"), out);
         assertTrue(out.contains(".naru/skills"), out);
         assertTrue(out.contains(".naru/local/skills"), out);
         assertTrue(out.contains("public"), out);
         assertTrue(out.contains("private"), out);
-        assertTrue(out.contains("shadowed"), out);
+        assertTrue(out.contains("(shadowed)"), out);
         assertTrue(out.contains("requires=none"), out);
         assertTrue(out.contains("git-flow"), out);
         assertTrue(out.contains("javadoc"), out);
+        // the description is printed next to the name
+        assertTrue(out.contains("follow git flow"), out);
+        assertTrue(out.contains("PRIVATE javadoc rules"), out);
         assertFalse(out.contains("ACTIVE SKILL DIRECTIVE"), "a listing is not a prompt injection");
     }
 
     @Test
-    public void listMarksLoadedSkillsAndAdvertisedDefaults() {
+    public void listShowsOnlyLoadedSkillsWithDescriptionAndSource() {
         publicSkill("git-flow", "follow git flow", "follow git flow");
+        publicSkill("javadoc", "use javadoc style", "use javadoc style");
         ext.reload();
         NaruTask t = parent();
         call(t, "skill", "load git-flow");
 
         NaruStmtResult r = call(t, "skill", "list");
-        assertTrue(String.valueOf(r.successValue()).contains("1 skills available (1 loaded, 0 advertised)"), String.valueOf(r.successValue()));
-        assertTrue(String.valueOf(r.successValue()).contains("LOADED"), String.valueOf(r.successValue()));
+
+        assertNull(r.errorValue(), () -> "list must not error: " + r);
+        String out = String.valueOf(r.successValue());
+        assertTrue(out.contains("1 loaded skills (of 2 available)"), out);
+        assertTrue(out.contains("LOADED"), out);
+        assertTrue(out.contains("git-flow"), out);
+        assertTrue(out.contains("follow git flow"), "the description must be printed: " + out);
+        assertTrue(out.contains("naru"), "the origin family must be reported: " + out);
+        assertFalse(out.contains("javadoc"), "an unloaded skill must not appear in list: " + out);
     }
 
     @Test
-    public void availableIsAnAliasOfList() {
+    public void listAndAvailableAreComplementary() {
+        publicSkill("git-flow", "follow git flow", "follow git flow");
+        publicSkill("javadoc", "use javadoc style", "use javadoc style");
+        ext.reload();
+        NaruTask t = parent();
+        call(t, "skill", "load git-flow");
+
+        String loaded = String.valueOf(call(t, "skill", "list").successValue());
+        String unloaded = String.valueOf(call(t, "skill", "available").successValue());
+
+        assertTrue(loaded.contains("git-flow"), loaded);
+        assertFalse(loaded.contains("javadoc"), loaded);
+        assertTrue(unloaded.contains("javadoc"), unloaded);
+        assertFalse(unloaded.contains("git-flow"), unloaded);
+    }
+
+    @Test
+    public void listAllShowsBothStates() {
+        publicSkill("git-flow", "follow git flow", "follow git flow");
+        publicSkill("javadoc", "use javadoc style", "use javadoc style");
+        ext.reload();
+        NaruTask t = parent();
+        call(t, "skill", "load git-flow");
+
+        NaruStmtResult r = call(t, "skill", "list --all");
+
+        assertNull(r.errorValue(), () -> "list --all must not error: " + r);
+        String out = String.valueOf(r.successValue());
+        assertTrue(out.contains("2 skills (1 loaded, 1 not loaded)"), out);
+        assertTrue(out.contains("git-flow"), out);
+        assertTrue(out.contains("javadoc"), out);
+    }
+
+    @Test
+    public void bareSkillDefaultsToListLoaded() {
         publicSkill("git-flow", "follow git flow", "follow git flow");
         ext.reload();
         NaruTask t = parent();
-        assertEquals(String.valueOf(call(t, "skill", "").successValue()),
-                String.valueOf(call(t, "skill", "available").successValue()));
+        call(t, "skill", "load git-flow");
+
+        assertEquals(String.valueOf(call(t, "skill", "list").successValue()),
+                String.valueOf(call(t, "skill", "").successValue()));
+    }
+
+    @Test
+    public void listFiltersBySourceFamily() {
+        publicSkill("native-one", "native skill", "native body");
+        foreignFolder("claude", "claude-one",
+                "name: claude-one\ndescription: claude skill", "claude body");
+        foreignFolder("agents", "agents-one",
+                "name: agents-one\ndescription: agents skill", "agents body");
+        ext.reload();
+        NaruTask t = parent();
+        // foreign roots are opt-in: trust them so their skills are even discovered
+        trustAllForeign(ext, t);
+
+        NaruStmtResult claude = call(t, "skill", "available --source=claude");
+        assertNull(claude.errorValue(), () -> "source filter must not error: " + claude);
+        String claudeOut = String.valueOf(claude.successValue());
+        assertTrue(claudeOut.contains("claude-one"), claudeOut);
+        assertTrue(claudeOut.contains("claude"), claudeOut);
+        assertFalse(claudeOut.contains("agents-one"), claudeOut);
+        assertFalse(claudeOut.contains("native-one"), claudeOut);
+
+        String nativeOut = String.valueOf(call(t, "skill", "available --source=native").successValue());
+        assertTrue(nativeOut.contains("native-one"), nativeOut);
+        assertFalse(nativeOut.contains("claude-one"), nativeOut);
+
+        String foreignOut = String.valueOf(call(t, "skill", "available --source=claude,agents").successValue());
+        assertTrue(foreignOut.contains("claude-one"), foreignOut);
+        assertTrue(foreignOut.contains("agents-one"), foreignOut);
+        assertFalse(foreignOut.contains("native-one"), foreignOut);
+    }
+
+    @Test
+    public void listFiltersByKeywordInNameOrDescription() {
+        publicSkill("git-flow", "follow git flow", "follow git flow");
+        publicSkill("javadoc", "use javadoc style", "use javadoc style");
+        publicSkill("pdf-reader", "extract text from pdfs", "extract text from pdfs");
+        ext.reload();
+        NaruTask t = parent();
+
+        // keyword from the description
+        String byDesc = String.valueOf(call(t, "skill", "available pdf").successValue());
+        assertTrue(byDesc.contains("pdf-reader"), byDesc);
+        assertFalse(byDesc.contains("git-flow"), byDesc);
+
+        // --search= form matches the description too
+        String bySearch = String.valueOf(call(t, "skill", "available --search=javadoc").successValue());
+        assertTrue(bySearch.contains("javadoc"), bySearch);
+        assertFalse(bySearch.contains("pdf-reader"), bySearch);
+
+        // no match is reported, not silently empty
+        String none = String.valueOf(call(t, "skill", "available --search=zzz").successValue());
+        assertTrue(none.contains("no skills match the filter"), none);
+    }
+
+    @Test
+    public void semanticSearchRanksTheMostRelevantSkillFirst() {
+        publicSkill("git-flow", "follow the git flow branching model", "branch merge release");
+        publicSkill("release-notes", "write release notes", "changelog release version");
+        ext.reload();
+        NaruTask t = parent();
+
+        String out = String.valueOf(call(t, "skill",
+                "available --semantic --search=release notes changelog").successValue());
+
+        assertTrue(out.contains("release-notes"), out);
+        assertTrue(out.contains("semantic"), () -> "the ranking mode must be named in the header: " + out);
+        assertTrue(out.indexOf("release-notes") < out.indexOf("git-flow"),
+                () -> "semantic ranking must put the more relevant skill first: " + out);
+    }
+
+    private static void trustAllForeign(NaruSkillsExtension ext, NaruTask t) {
+        for (NaruSkillRoot root : ext.roots(t)) {
+            if (root.requiresTrust() && root.exists()) {
+                ext.trust(root, NaruSkillTrustLevel.READ);
+            }
+        }
+        ext.reload();
     }
 
     // ── trust levels ────────────────────────────────────────────────────────
@@ -309,6 +441,62 @@ public class NaruSkillDirectiveTest {
             assertTrue(values.contains("claude"),
                     "/skill " + sub + " must complete foreign root labels, got " + values);
         }
+    }
+
+    @Test
+    public void completionOffersListingOptionsAndSourceFamilies() {
+        publicSkill("git-flow", "follow git flow", "follow git flow");
+        publicSkill("javadoc", "use javadoc style", "use javadoc style");
+        foreignFolder("claude", "claude-one",
+                "name: claude-one\ndescription: claude skill", "claude body");
+        foreignFolder("agents", "agents-one",
+                "name: agents-one\ndescription: agents skill", "agents body");
+        ext.reload();
+
+        // flags for the listing commands
+        for (String sub : new String[]{"list", "available"}) {
+            assertTrue(complete("/skill", sub, "--s").contains("--source="),
+                    "/skill " + sub + " must complete --source=, got " + complete("/skill", sub, "--s"));
+            assertTrue(complete("/skill", sub, "--se").contains("--search="),
+                    "/skill " + sub + " must complete --search=, got " + complete("/skill", sub, "--se"));
+            assertTrue(complete("/skill", sub, "--sem").contains("--semantic"),
+                    "/skill " + sub + " must complete --semantic, got " + complete("/skill", sub, "--sem"));
+            assertTrue(complete("/skill", sub, "--a").contains("--all"),
+                    "/skill " + sub + " must complete --all, got " + complete("/skill", sub, "--a"));
+        }
+
+        // the family values after --source=, including the native/foreign aliases
+        assertTrue(complete("/skill", "list", "--source=cl").contains("--source=claude"),
+                "must complete claude after --source=");
+        assertTrue(complete("/skill", "available", "--source=nat").contains("--source=native"),
+                "must complete the native alias after --source=");
+        assertTrue(complete("/skill", "available", "--source=for").contains("--source=foreign"),
+                "must complete the foreign alias after --source=");
+        // and after a comma, so a second family can be appended
+        assertTrue(complete("/skill", "list", "--source=claude,ag").contains("--source=claude,agents"),
+                "must complete a comma-separated family");
+
+        // skill names as the positional keyword, and after --search=
+        assertTrue(complete("/skill", "available", "git").contains("git-flow"),
+                "must complete skill names as the positional keyword");
+        assertTrue(complete("/skill", "list", "--search=jav").contains("--search=javadoc"),
+                "must complete skill names after --search=");
+    }
+
+    @Test
+    public void completionOffersTrustLevelFlags() {
+        foreignFolder("claude", "helper", "name: helper\ndescription: helper", "helper body");
+        ext.reload();
+
+        assertTrue(complete("/skill", "trust", "--r").contains("--read"),
+                "trust must complete --read, got " + complete("/skill", "trust", "--r"));
+        assertTrue(complete("/skill", "trust", "--w").contains("--write"),
+                "trust must complete --write, got " + complete("/skill", "trust", "--w"));
+        assertTrue(complete("/skill", "trust", "--e").contains("--exec"),
+                "trust must complete --exec, got " + complete("/skill", "trust", "--e"));
+        // untrust takes no flags: a selector is completed instead
+        assertTrue(complete("/skill", "untrust", "cl").contains("claude"),
+                "untrust must still complete root labels");
     }
 
     private List<String> complete(String... words) {

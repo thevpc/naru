@@ -30,8 +30,13 @@ import java.util.stream.Collectors;
  * Ships in the {@code naru-skills} jar alongside the extension that owns the state, so the
  * command disappears together with the feature.
  * <p>
- * The unified {@code list} shows every available skill with its per-task state
- * (ADVERTISED or LOADED), origin, visibility, shadowing, and requires-status. {@code doctor}
+ * The two listings split by per-task state: {@code list} shows the skills loaded for the
+ * task, {@code available} shows the discovered skills that are still advertised (not
+ * loaded). Both print the description and the origin family ({@code naru} for native
+ * roots, {@code claude}/{@code agents}/{@code opencode} for foreign ones), and both accept
+ * a {@code --source=} family filter plus a keyword ({@code --search=} or a positional word)
+ * that matches the name and description; {@code --semantic} ranks by TF-IDF relevance
+ * instead of a substring test, and {@code --all} shows both states at once. {@code doctor}
  * is the report that surfaces silent problems — missing, empty, or silently changed
  * selected skills, unmet requirements, and unmapped {@code allowed-tools} — and
  * {@code reload} is the deliberate act that re-reads disk changes into the snapshot.
@@ -40,16 +45,20 @@ public class NaruSkillDirective extends NaruDirectiveBase {
     public NaruSkillDirective() {
         super("skills", "ai", "manage AI skills", "skill");
         noCommand("list");
-        register(new AbstractSubCommand("list", NText.ofPlain("list skills and their per-task state")) {
+        register(new AbstractSubCommand("list", NText.ofPlain("list the skills loaded for this task"),
+                new SubCommandHelp("[<keyword>] [--source=<native|naru|claude|agents|opencode>] [--search=<keyword>] [--semantic] [--all]",
+                        "list the loaded skills with their description and origin; filter by origin family and by a name/description keyword, or rank by relevance with --semantic")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                return list(context, cmdLine);
+                return renderList(context, cmdLine, ListMode.LOADED);
             }
         });
-        register(new AbstractSubCommand("available", NText.ofPlain("alias of list")) {
+        register(new AbstractSubCommand("available", NText.ofPlain("list the skills that are not loaded yet"),
+                new SubCommandHelp("[<keyword>] [--source=<native|naru|claude|agents|opencode>] [--search=<keyword>] [--semantic] [--all]",
+                        "list the discovered skills that are still advertised (not loaded) with their description and origin; same filters as list")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                return list(context, cmdLine);
+                return renderList(context, cmdLine, ListMode.UNLOADED);
             }
         });
         register(new AbstractSubCommand("show", NText.ofPlain("list skill content"),
@@ -204,10 +213,19 @@ public class NaruSkillDirective extends NaruDirectiveBase {
 
     // ── autocomplete ─────────────────────────────────────────────────────────
 
+    /** Flags the {@code list} / {@code available} listings accept. */
+    private static final String[] LIST_FLAGS = {
+            "--source=", "--search=", "--semantic", "--all"
+    };
+
     /**
      * Tab-completion for the value words of each subcommand: skill names for the
-     * name-taking commands, root labels for {@code trust}/{@code untrust}. Subcommand
-     * names are delegated to the base resolver.
+     * name-taking commands, root labels for {@code trust}/{@code untrust} (plus its
+     * {@code --read|--write|--exec} levels). The {@code list}/{@code available}
+     * listings complete their {@code --source=}, {@code --search=}, {@code --semantic}
+     * and {@code --all} options, the family values after {@code --source=}, and skill
+     * names as the positional keyword. Subcommand names are delegated to the base
+     * resolver.
      */
     @Override
     public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
@@ -220,30 +238,107 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         String sub = words[1];
         List<NArgCompleteCandidate> candidates = new ArrayList<>();
         switch (sub) {
+            case "list":
+            case "available":
+                listingCandidates(candidates, currentArg, session);
+                break;
             case "show":
             case "load":
             case "unload":
             case "reload":
-                for (NaruSkill skill : NaruSkillsExtension.skills(session).skills().available()) {
-                    String name = skill.getName();
-                    if (name.toLowerCase().startsWith(currentArg.toLowerCase())) {
-                        candidates.add(NArgCompleteCandidate.of(name));
-                    }
-                }
+                addSkillNames(candidates, currentArg, session);
                 break;
             case "trust":
-            case "untrust":
-                for (NaruSkillRoot root : NaruSkillsExtension.skills(session).skills().roots(null)) {
-                    String label = root.label();
-                    if (label != null && label.toLowerCase().startsWith(currentArg.toLowerCase())) {
-                        candidates.add(NArgCompleteCandidate.of(label));
-                    }
+                if (currentArg.startsWith("-")) {
+                    addCandidates(candidates, currentArg, "--read", "--write", "--exec");
+                } else {
+                    addRootLabels(candidates, currentArg, session);
                 }
+                break;
+            case "untrust":
+                addRootLabels(candidates, currentArg, session);
                 break;
             default:
                 break;
         }
         return NArgCompleteResult.ofCandidates(candidates);
+    }
+
+    /**
+     * Completion for the listing options: flags while the word starts with {@code --},
+     * the family values once it reaches {@code --source=} (including after a comma, so
+     * {@code --source=claude,ag} offers {@code agents}), skill names after
+     * {@code --search=}, and skill names as a bare positional keyword.
+     */
+    private void listingCandidates(List<NArgCompleteCandidate> candidates, String currentArg, NaruSession session) {
+        if (currentArg.startsWith("--source=")) {
+            String body = currentArg.substring("--source=".length());
+            int comma = body.lastIndexOf(',');
+            String typed = comma >= 0 ? body.substring(comma + 1) : body;
+            String head = comma >= 0 ? "--source=" + body.substring(0, comma + 1) : "--source=";
+            for (String family : sourceFamilies(session)) {
+                if (family.toLowerCase().startsWith(typed.toLowerCase())) {
+                    candidates.add(NArgCompleteCandidate.of(head + family, family));
+                }
+            }
+            return;
+        }
+        if (currentArg.startsWith("--search=")) {
+            addNamesWithPrefix(candidates, currentArg, "--search=", session);
+            return;
+        }
+        if (currentArg.startsWith("-")) {
+            addCandidates(candidates, currentArg, LIST_FLAGS);
+            return;
+        }
+        addSkillNames(candidates, currentArg, session);
+    }
+
+    /** Completes available skill names by case-insensitive prefix. */
+    private void addSkillNames(List<NArgCompleteCandidate> candidates, String currentArg, NaruSession session) {
+        for (NaruSkill skill : NaruSkillsExtension.skills(session).skills().available()) {
+            String name = skill.getName();
+            if (name.toLowerCase().startsWith(currentArg.toLowerCase())) {
+                candidates.add(NArgCompleteCandidate.of(name));
+            }
+        }
+    }
+
+    /** Completes {@code <prefix><skill-name>} values (e.g. {@code --search=javadoc}). */
+    private void addNamesWithPrefix(List<NArgCompleteCandidate> candidates, String currentArg, String prefix,
+                                    NaruSession session) {
+        for (NaruSkill skill : NaruSkillsExtension.skills(session).skills().available()) {
+            String candidate = prefix + skill.getName();
+            if (candidate.toLowerCase().startsWith(currentArg.toLowerCase())) {
+                candidates.add(NArgCompleteCandidate.of(candidate, skill.getName()));
+            }
+        }
+    }
+
+    /** Completes the labels of the discovered foreign/native roots. */
+    private void addRootLabels(List<NArgCompleteCandidate> candidates, String currentArg, NaruSession session) {
+        for (NaruSkillRoot root : NaruSkillsExtension.skills(session).skills().roots(null)) {
+            String label = root.label();
+            if (label != null && label.toLowerCase().startsWith(currentArg.toLowerCase())) {
+                candidates.add(NArgCompleteCandidate.of(label));
+            }
+        }
+    }
+
+    /**
+     * The families a {@code --source=} filter accepts: the aliases the matcher understands
+     * ({@code native}/{@code naru}/{@code foreign}) followed by the labels of the roots that
+     * were actually discovered (e.g. {@code claude}, {@code agents}, {@code opencode}).
+     */
+    private List<String> sourceFamilies(NaruSession session) {
+        List<String> out = new ArrayList<>(List.of("native", "naru", "foreign"));
+        for (NaruSkillRoot root : NaruSkillsExtension.skills(session).skills().roots(null)) {
+            String label = root.label();
+            if (label != null && !label.isBlank() && !out.contains(label)) {
+                out.add(label);
+            }
+        }
+        return out;
     }
 
     /**
@@ -414,43 +509,245 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         return false;
     }
 
-    private static NaruStmtResult list(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    // ── listing (loaded / available) ────────────────────────────────────────
+
+    private enum ListMode {
+        LOADED, UNLOADED, ALL
+    }
+
+    private static final class ListOptions {
+        String query = "";
+        final List<String> sources = new ArrayList<>();
+        boolean semantic;
+        boolean all;
+        String error;
+    }
+
+    private static NaruStmtResult renderList(NaruDirectiveCallContext context, NCmdLine cmdLine, ListMode mode) {
         NaruTask task = context.task();
         NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
-        List<NaruSkillEntry> entries = ext.entries(task);
-        List<NaruSkillRoot> roots = ext.roots(task);
-
-        // distinct names, because a shadowed copy is the same skill seen from a weaker root
-        Set<String> names = new TreeSet<>();
-        for (NaruSkillEntry e : entries) {
-            names.add(e.skill().getName());
+        ListOptions opts = parseListOptions(cmdLine);
+        if (opts.error != null) {
+            NMsg msg = NMsg.ofC(opts.error).asError();
+            task.log(NaruLogMode.AGENT_RESPONSE, msg);
+            return NaruStmtResult.ofError(msg.toString());
         }
+
+        List<NaruSkill> available = ext.skills().available(task);
         int loaded = 0;
-        for (String name : names) {
-            if (ext.state(task, name) == NaruSkillState.LOADED) {
+        int unloaded = 0;
+        List<NaruSkill> candidates = new ArrayList<>();
+        for (NaruSkill skill : available) {
+            boolean isLoaded = ext.state(task, skill.getName()) == NaruSkillState.LOADED;
+            if (isLoaded) {
                 loaded++;
+            } else {
+                unloaded++;
+            }
+            if (!accepts(mode, opts.all, isLoaded)) {
+                continue;
+            }
+            if (!opts.sources.isEmpty() && !matchesSource(skill, opts.sources)) {
+                continue;
+            }
+            candidates.add(skill);
+        }
+        List<NaruSkillSearch.Hit> hits = NaruSkillSearch.search(candidates, opts.query, opts.semantic);
+        boolean filtered = !opts.sources.isEmpty() || !opts.query.isBlank();
+
+        NStringBuilder sb = NStringBuilder.of();
+        NMsg header = NMsg.ofC(headerText(mode, loaded, unloaded, available.size(), opts, filtered));
+        task.log(NaruLogMode.AGENT_RESPONSE, header);
+        sb.println(header.toString());
+
+        if (hits.isEmpty()) {
+            sb.println(emptyText(mode, loaded, unloaded, available.size(), filtered));
+        } else {
+            int index = 1;
+            for (NaruSkillSearch.Hit hit : hits) {
+                sb.println(skillRow(index++, task, ext, hit, opts.semantic));
             }
         }
-        int advertised = names.size() - loaded;
-        NStringBuilder sb = NStringBuilder.of();
-        NMsg msg = NMsg.ofC("%s skills available (%s loaded, %s advertised)", names.size(), loaded, advertised);
-        task.log(NaruLogMode.AGENT_RESPONSE, msg);
-        sb.println(msg.toString());
 
         // the ordered root model: untrusted foreign roots are shown so they can be trusted
-        sb.println("roots (strongest first):");
-        int rootIndex = 1;
-        for (NaruSkillRoot root : roots) {
-            sb.println(rootRow(rootIndex++, root, task));
-        }
-
-        // every copy, losers included and marked: a NARU-native skill that shadowed a
-        // foreign one stays visible instead of silently winning
-        int index = 1;
-        for (NaruSkillEntry entry : entries) {
-            sb.println(row(index++, task, ext, entry));
+        List<NaruSkillRoot> roots = ext.roots(task);
+        if (!roots.isEmpty()) {
+            sb.println("roots (strongest first):");
+            int rootIndex = 1;
+            for (NaruSkillRoot root : roots) {
+                sb.println(rootRow(rootIndex++, root, task));
+            }
         }
         return NaruStmtResult.ofSuccess(sb.toString());
+    }
+
+    private static boolean accepts(ListMode mode, boolean all, boolean isLoaded) {
+        if (all || mode == ListMode.ALL) {
+            return true;
+        }
+        return (mode == ListMode.LOADED) == isLoaded;
+    }
+
+    private static String headerText(ListMode mode, int loaded, int unloaded, int total,
+                                     ListOptions opts, boolean filtered) {
+        ListMode effective = opts.all ? ListMode.ALL : mode;
+        String head = switch (effective) {
+            case LOADED -> String.format("%d loaded skills (of %d available)", loaded, total);
+            case UNLOADED -> String.format("%d skills not loaded (of %d available)", unloaded, total);
+            case ALL -> String.format("%d skills (%d loaded, %d not loaded)", total, loaded, unloaded);
+        };
+        if (filtered) {
+            List<String> parts = new ArrayList<>();
+            if (!opts.sources.isEmpty()) {
+                parts.add("source=" + String.join("/", opts.sources));
+            }
+            if (!opts.query.isBlank()) {
+                parts.add((opts.semantic ? "semantic '" : "'") + opts.query + "'");
+            }
+            if (!parts.isEmpty()) {
+                head += " matching " + String.join(", ", parts);
+            }
+        }
+        return head;
+    }
+
+    private static String emptyText(ListMode mode, int loaded, int unloaded, int total, boolean filtered) {
+        if (filtered) {
+            return "no skills match the filter";
+        }
+        if (total == 0) {
+            return "no skills available on this project";
+        }
+        return switch (mode) {
+            case LOADED -> "no skills loaded yet (use /skills available to see " + unloaded + " not loaded)";
+            case UNLOADED -> "all " + total + " skill(s) are loaded";
+            case ALL -> "no skills available on this project";
+        };
+    }
+
+    private static String skillRow(int index, NaruTask task, NaruSkillsExtension ext,
+                                   NaruSkillSearch.Hit hit, boolean semantic) {
+        NaruSkill skill = hit.skill();
+        NaruSkillState state = ext.state(task, skill.getName());
+        NaruRequiresStatus rs = ext.requiresStatus(skill, task);
+        String score = semantic
+                ? String.format(java.util.Locale.ROOT, "%-6s", String.format(java.util.Locale.ROOT, "%.2f", hit.score()))
+                : "";
+        String name = skill.getName() + (skill.isShadowed() ? " (shadowed)" : "");
+        String row = String.format("[%2d] %s%-9s %-8s %-8s %-22s %s",
+                index,
+                score,
+                state.name(),
+                NaruSkillSearch.sourceLabel(skill),
+                skill.getVisibility().name().toLowerCase(),
+                requiresLabel(rs),
+                name);
+        String desc = oneLine(skill.getDescription());
+        return desc.isEmpty() ? row : row + " — " + desc;
+    }
+
+    /** Single-line, whitespace-collapsed, length-capped description for a listing row. */
+    private static String oneLine(String s) {
+        if (s == null) {
+            return "";
+        }
+        String t = s.replace('\n', ' ').replace('\r', ' ').trim();
+        while (t.contains("  ")) {
+            t = t.replace("  ", " ");
+        }
+        if (t.length() > 140) {
+            t = t.substring(0, 137) + "...";
+        }
+        return t;
+    }
+
+    /**
+     * Parses the shared listing options. {@code --source=} may repeat or carry a
+     * comma-separated list; a bare positional word (or {@code --search=}) is the keyword.
+     * Values are attached with {@code =} because that is the form {@code NCmdLine} accepts.
+     */
+    private static ListOptions parseListOptions(NCmdLine cmdLine) {
+        ListOptions o = new ListOptions();
+        StringBuilder query = new StringBuilder();
+        while (cmdLine != null && !cmdLine.isEmpty()) {
+            NArg a = cmdLine.next().get();
+            String image = a.image();
+            if (image == null) {
+                continue;
+            }
+            if (image.startsWith("--")) {
+                String body = image.substring(2);
+                String flag;
+                String value = null;
+                int eq = body.indexOf('=');
+                if (eq >= 0) {
+                    flag = body.substring(0, eq);
+                    value = body.substring(eq + 1);
+                } else {
+                    flag = body;
+                    value = a.value();
+                }
+                switch (flag.toLowerCase()) {
+                    case "source" -> {
+                        if (value == null || value.isBlank()) {
+                            o.error = "option --source needs a value (use --source=native|naru|claude|agents|opencode)";
+                            return o;
+                        }
+                        for (String part : value.split(",")) {
+                            if (!part.isBlank()) {
+                                o.sources.add(part.trim());
+                            }
+                        }
+                    }
+                    case "search", "keyword", "query" -> {
+                        if (value == null) {
+                            o.error = "option --" + flag + " needs a value (use --" + flag + "=<text>)";
+                            return o;
+                        }
+                        if (query.length() > 0) {
+                            query.append(' ');
+                        }
+                        query.append(value);
+                    }
+                    case "semantic" -> o.semantic = true;
+                    case "all" -> o.all = true;
+                    default -> {
+                        o.error = "unknown option --" + flag + " (expected --source=, --search=, --semantic or --all)";
+                        return o;
+                    }
+                }
+            } else {
+                if (query.length() > 0) {
+                    query.append(' ');
+                }
+                query.append(image);
+            }
+        }
+        o.query = query.toString().trim();
+        return o;
+    }
+
+    private static boolean matchesSource(NaruSkill skill, List<String> sources) {
+        boolean foreign = skill.isForeign();
+        String label = NaruSkillSearch.sourceLabel(skill).toLowerCase();
+        for (String raw : sources) {
+            String s = raw.trim().toLowerCase();
+            if (s.isEmpty() || s.equals("all")) {
+                return true;
+            }
+            if (s.equals("native") || s.equals("naru")) {
+                if (!foreign) {
+                    return true;
+                }
+            } else if (s.equals("foreign")) {
+                if (foreign) {
+                    return true;
+                }
+            } else if (s.equals(label)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String rootRow(int index, NaruSkillRoot root, NaruTask task) {
@@ -488,22 +785,6 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         return path;
     }
 
-    private static String row(int index, NaruTask task, NaruSkillsExtension ext, NaruSkillEntry entry) {
-        NaruSkill skill = entry.skill();
-        NaruSkillState state = ext.state(task, skill.getName());
-        NaruRequiresStatus rs = ext.requiresStatus(skill, task);
-        String origin = originOf(skill, task);
-        String shadow = entry.shadowed() ? "shadowed" : "-";
-        return String.format("[%2d] %-11s %-22s %-8s %-9s %-16s %s",
-                index,
-                state.name(),
-                origin,
-                skill.getVisibility().name().toLowerCase(),
-                shadow,
-                requiresLabel(rs),
-                skill.getName());
-    }
-
     private static String requiresLabel(NaruRequiresStatus rs) {
         return switch (rs) {
             case NONE -> "requires=none";
@@ -511,22 +792,6 @@ public class NaruSkillDirective extends NaruDirectiveBase {
             case UNSATISFIED -> "requires=unsatisfied";
             case UNSATISFIABLE -> "requires=unsatisfiable";
         };
-    }
-
-    private static String originOf(NaruSkill skill, NaruTask task) {
-        String origin = skill.getOriginRoot();
-        if (origin == null) {
-            return "?";
-        }
-        String project = task.projectDir().toString();
-        if (origin.startsWith(project)) {
-            String rel = origin.substring(project.length());
-            while (rel.startsWith("/")) {
-                rel = rel.substring(1);
-            }
-            return rel.isEmpty() ? origin : rel;
-        }
-        return origin;
     }
 
     private static NaruStmtResult notFound(NaruTask task, String name) {

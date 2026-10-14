@@ -79,6 +79,51 @@ Available Native Core Directives:
 /history  trim <count>
            trim <count> lines
     -----------------------------------------
+    /llamacpp : manage llama.cpp installation and local GGUF models
+    | Detailed Specification :
+  /llamacpp  check 
+           alias for status
+
+  /llamacpp  install 
+           download and install the prebuilt llama.cpp bundle for the current operating system
+
+  /llamacpp  list 
+           list all local GGUF models
+
+  /llamacpp  models 
+           alias for list
+
+  /llamacpp  ps 
+           show the model currently served by the running llama.cpp server
+
+/llamacpp  pull <model>
+           hf.co/<owner>/<repo>[:quant], <owner>/<repo>[:quant], hf.co/<repo>/<file>.gguf, or an https .gguf URL
+
+/llamacpp  restart [<model>]
+           restart llama-server, optionally with the given model
+
+/llamacpp  rm <model>
+           id or file name of the model to delete (all its shards)
+
+/llamacpp  run [<model>] [--install]
+           start llama-server with a model, optionally auto-installing if missing
+
+  /llamacpp  serve 
+           alias for run
+
+  /llamacpp  start 
+           alias for run
+
+/llamacpp 
+  /llamacpp  status 
+           show detailed llama.cpp status (installation, server, models)
+
+/llamacpp  stop [--all|--force]
+           stop the llama.cpp server (use --all to stop non-NARU instances)
+
+/llamacpp  uninstall [--purge]
+           uninstall llama.cpp (use --purge to also delete the models directory)
+    -----------------------------------------
     /mode : manage AI modes
     | Detailed Specification :
 /mode   <name>
@@ -198,15 +243,15 @@ Available Native Core Directives:
     -----------------------------------------
     /skills : manage AI skills
     | Detailed Specification :
-  /skills  available 
-           alias of list
+/skills  available [<keyword>] [--source=<native|naru|claude|agents|opencode>] [--search=<keyword>] [--semantic] [--all]
+           list the discovered skills that are still advertised (not loaded) with their description and origin; same filters as list
 
 /skills  doctor 
            report missing, empty, silently changed, unsatisfied-requires, and unmapped allowed-tools
 
-  /skills 
-  /skills  list 
-           list skills and their per-task state
+/skills 
+  /skills  list [<keyword>] [--source=<native|naru|claude|agents|opencode>] [--search=<keyword>] [--semantic] [--all]
+           list the loaded skills with their description and origin; filter by origin family and by a name/description keyword, or rank by relevance with --semantic
 
 /skills  load <name>
            load skill named <name>
@@ -225,6 +270,11 @@ Available Native Core Directives:
 
 /skills  untrust <index|substring>
            untrust a previously trusted foreign root; NARU-native roots are never trustable
+    -----------------------------------------
+    /stats : attribute the current request: catalog vs loaded skills, buckets, per-model spend
+    | Detailed Specification :
+  /stats   
+           attribute the current request: catalog vs loaded skills, buckets, per-model spend
     -----------------------------------------
     /tags : enable/disable tool tags
     | Detailed Specification :
@@ -491,7 +541,7 @@ Available Native Core Directives:
     /project : change the project directory
     | Detailed Specification :
 /project   <dir>
-           change the project root to <dir>, re-resolve roots/context/models, run the workspace init.naru once and fire project-change.
+           change the project root to <dir>, re-resolve roots/context files/model defaults, run the workspace init.naru once and fire project-change.
            ex:
            /project /path/to/other/project
     -----------------------------------------

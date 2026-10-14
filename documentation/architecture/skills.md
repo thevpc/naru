@@ -168,9 +168,17 @@ silent mid-session edit is *reported* rather than auto-applied.
 
 `entries(task)` returns **every copy of every name**, winners and losers, with
 `NaruSkillEntry.shadowed()` true exactly for the losing copies. `available(task)`
-collapses to one winner per name. The `/skill list` listing prints the ordered
-roots and then every entry, so a collision between a native skill and a foreign
-one is visible instead of silently resolved.
+collapses to one winner per name. `/skill list` prints the ordered roots followed
+by the skills **loaded** for the task, and `/skill available` prints the same
+roots followed by the discovered skills still **not loaded**. Each row carries the
+origin family (`naru` for native roots, `claude`/`agents`/`opencode` for foreign
+ones) and the description, so a collision between a native skill and a foreign one
+is visible instead of silently resolved. Both listings accept `--source=<family>`
+(repeatable or comma-separated, plus `native`/`foreign`), a keyword — `--search=`
+or a bare positional word — matched against the name and description, `--semantic`
+for TF-IDF relevance ranking, and `--all` to show both states at once. The same
+keyword/semantic search backs the `skill` tool's `query` argument, so the model can
+find the right skill when the advertised catalog is not enough.
 
 ## 4. The selection model: flat, per task
 

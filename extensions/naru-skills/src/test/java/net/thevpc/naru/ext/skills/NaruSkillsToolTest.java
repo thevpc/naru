@@ -144,9 +144,13 @@ public class NaruSkillsToolTest {
     }
 
     private static String executeTool(NaruTask task, String name) {
+        return executeTool(task, Map.of("name", name));
+    }
+
+    private static String executeTool(NaruTask task, Map<String, Object> args) {
         NaruTool tool = task.session().registry().findTool("skill")
                 .orElseThrow(() -> new AssertionError("the skill tool is not registered"));
-        return tool.execute(new NaruToolCallContextImpl(Map.of("name", name), task));
+        return tool.execute(new NaruToolCallContextImpl(args, task));
     }
 
     // ── registration and the visibility gate ───────────────────────────────
@@ -223,6 +227,52 @@ public class NaruSkillsToolTest {
         String result = executeTool(t, "does-not-exist");
         assertTrue(result.startsWith("error: skill not found"), result);
         assertEquals(java.util.Set.of(), ext.activeNames(t));
+    }
+
+    // ── search (model picks the skill by keyword or meaning) ───────────────
+
+    @Test
+    public void theToolSearchesByQueryWithoutLoading() {
+        NaruTask t = taskWithSkillsTag();
+
+        String result = executeTool(t, Map.of("query", "javadoc"));
+
+        assertTrue(result.contains("javadoc"), result);
+        assertFalse(result.contains("git-flow"), () -> "an unrelated skill must not be returned: " + result);
+        assertTrue(result.contains("use javadoc style"), () -> "the description must be returned: " + result);
+        assertEquals(java.util.Set.of(), ext.activeNames(t), "a search must not load anything");
+    }
+
+    @Test
+    public void theToolSemanticSearchRanksTheMostRelevantSkillFirst() {
+        publicFolder("pdf-reader", "name: pdf-reader\ndescription: extract text from pdf documents", "read pdf");
+        publicFolder("doc-tools", "name: doc-tools\ndescription: extract document metadata", "doc tools");
+        ext.reload();
+        NaruTask t = taskWithSkillsTag();
+
+        String result = executeTool(t, Map.of("query", "extract text from pdf documents", "semantic", true));
+
+        assertTrue(result.contains("ranked by relevance"), result);
+        assertTrue(result.contains("pdf-reader"), result);
+        assertTrue(result.contains("doc-tools"), result);
+        assertTrue(result.indexOf("pdf-reader") < result.indexOf("doc-tools"),
+                () -> "the more relevant skill must come first: " + result);
+        assertEquals(java.util.Set.of(), ext.activeNames(t));
+    }
+
+    @Test
+    public void theToolReportsNoMatchRatherThanAnEmptyBody() {
+        NaruTask t = taskWithSkillsTag();
+        String result = executeTool(t, Map.of("query", "zzz-nothing-matches"));
+        assertTrue(result.startsWith("no skill matches"), result);
+    }
+
+    @Test
+    public void theToolWithoutNameOrQueryExplainsHowToUseIt() {
+        NaruTask t = taskWithSkillsTag();
+        String result = executeTool(t, Map.of());
+        assertTrue(result.startsWith("error:"), result);
+        assertTrue(result.contains("query"), result);
     }
 
     // ── foreign framing ────────────────────────────────────────────────────

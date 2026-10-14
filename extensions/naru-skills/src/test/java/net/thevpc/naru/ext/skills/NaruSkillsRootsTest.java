@@ -493,7 +493,7 @@ public class NaruSkillsRootsTest {
                 () -> outputs.toString());
         assertNotNull(ext.skills().findSkill("legacy"), "after /skill trust the foreign skill resolves");
 
-        NaruStmtResult list = call(t, "list");
+        NaruStmtResult list = call(t, "available");
         String out = String.valueOf(list.successValue());
         assertTrue(out.contains("roots (strongest first):"), out);
         assertTrue(out.contains("claude"), out);
