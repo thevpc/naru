@@ -12,7 +12,7 @@ import net.thevpc.nuts.text.NText;
 public class SearchWebScriptTool extends DefaultNaruTool {
 
     public SearchWebScriptTool() {
-        super("search_web", new String[]{NaruToolTags.NETWORK});
+        super("web_search", new String[]{NaruToolTags.NETWORK});
     }
 
     @Override

@@ -85,7 +85,7 @@ The following catalog was compiled directly from the live `NaruSession.registry(
 | `plan_create` | `[plan]` | No | Yes | Creates dependency DAG plan |
 | `plan_update` | `[plan]` | No | Yes | Updates plan step status |
 | `plan_get` | `[plan]` | No | Yes | Inspects active plan |
-| `search_web` | `[network]` | No | Yes | DuckDuckGo web search |
+| `web_search` | `[network]` | No | Yes | DuckDuckGo web search |
 | `routine_run` | `[routine, exec]` | No | Yes | Runs internal script routine |
 | `routine_add_line` | `[routine, write]` | No | Yes | Adds line to internal routine |
 | `routine_list_lines` | `[routine]` | No | Yes | Lists lines in routine |
@@ -128,7 +128,7 @@ The table below maps each of the 10 reference tools sent by Opencode 1.18.35 to 
 | **`skill`** | `skill` (`naru-skills`) | **EQUIVALENT** | Opencode: `name`.<br>NARU: `name`, `args` (in `naru-skills` extension). | Both load skill instructions from configured skill roots. NARU requires the `skills` tag. | Ensure `naru-skills` extension is active and `skills` tag is granted. |
 | **`task`** | *(None for LLM)* | **MISSING** | Opencode: `description`, `prompt`, `subagent_type` (`explore`, `general`), `task_id`.<br>NARU: Subagents are CLI/API directives only; no tool exposed for LLM to spawn subagents dynamically. | Opencode models can delegate exploratory searches to subagents. NARU models cannot spawn subagents via tool call. | Add a `task_delegate` tool if multi-agent subtasking is tested. |
 | **`todowrite`**| `plan_create` / `plan_update` | **PARTIAL** | Opencode: structured list of tasks (`todos`: array of objects with `content`, `status`, `priority`).<br>NARU: dependency graph (`items`: array of objects with `key`, `description`, `dependsOn`, `validator`). | Different planning paradigm (flat status checklist vs DAG dependency plan). NARU plans require human approval unless validators are omitted. | Model prompt instructions must guide NARU tool usage if plan benchmarking is evaluated. |
-| **`webfetch`** | *(None)* | **MISSING** | Opencode: `url`, `format` (markdown, text, html), `timeout`.<br>NARU: Has `search_web` (DuckDuckGo search), but **no tool to fetch and parse URL contents**. | Model cannot read documentation or URLs directly in NARU without running `curl` in `run_shell`. | Implement a `web_fetch` tool using Java `HttpClient` / Jsoup. |
+| **`webfetch`** | *(None)* | **MISSING** | Opencode: `url`, `format` (markdown, text, html), `timeout`.<br>NARU: Has `web_search` (DuckDuckGo search), but **no tool to fetch and parse URL contents**. | Model cannot read documentation or URLs directly in NARU without running `curl` in `run_shell`. | Implement a `web_fetch` tool using Java `HttpClient` / Jsoup. |
 
 ---
 

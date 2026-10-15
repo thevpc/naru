@@ -16,7 +16,7 @@
 # and tag tools, plus the redundant maven_* shortcuts. A lean toolset keeps
 # even small models focused on the goal.
 /tools exclude cd set_working_dir
-/tools exclude search_web tag_add tag_remove
+/tools exclude web_search tag_add tag_remove
 /tools exclude git_status git_diff git_log git_commit
 /tools exclude project_map code_symbols find_symbol project_summary
 /tools exclude semantic_search semantic_index maven_compile maven_test maven_package

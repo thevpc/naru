@@ -25,7 +25,7 @@ public class NaruWireMeasurementTest {
                         "/model add mock-ollama --protocol=openai --url=http://127.0.0.1:8089/min/v1 --models=qwen3.8:32k",
                         "/model use mock-ollama/qwen3.8:32k",
                         "/tags enable fs write exec network",
-                        "/tools exclude git_commit ollama_status ollama_start ollama_stop ollama_install ollama_ps routine_run routine_add_line maven_compile maven_test maven_package search_web",
+                        "/tools exclude git_commit ollama_status ollama_start ollama_stop ollama_install ollama_ps routine_run routine_add_line maven_compile maven_test maven_package web_search",
                         "Reply with the single word OK."
                 )
                 .build()

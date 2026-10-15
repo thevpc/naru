@@ -132,9 +132,9 @@ tagged, which the registry lint (`NaruTagRegistryLintTest`) enforces.
 |---|---|---|---|
 | `routine` | `naru-impl` (builtin) | routine operations including add, edit, search routines | `routine_add_line`, `routine_list_lines` |
 | `ai` | `naru-impl` (builtin) | AI operations including calling other LLMs/models | `delegate_to_model`, `model_list`, `context_compact`, `ollama_*` |
-| `network` | `naru-impl` (builtin) | networking operations including search web | `search_web`, `run_shell` |
+| `network` | `naru-impl` (builtin) | networking operations including search web | `web_search`, `run_shell` |
 | `write` | `naru-impl` (builtin) | persistent modifications in files, folders, databases | `file_write`, `file_edit_search_replace`, `git_commit`, `routine_add_line` |
-| `exec` | `naru-impl` (builtin) | spawning new processes or tasks | `run_shell`, `maven_compile/test/package`, `ollama_start/stop/status/ps`, `routine_run` |
+| `exec` | `naru-impl` (builtin) | spawning new processes or tasks | `run_shell`, `maven_compile/test/package`, `ollama_status/ps`, `routine_run` |
 | `fs` | `naru-tools-fs` | file system operations including add, edit, search files | `file_read`, `file_grep`, `folder_find`, `cd`, `pwd`, `diff` |
 | `dev` | `naru-tools-coder-java` | development operations including compile and test | `maven_compile/test/package`, `git_*`, `code_symbols`, `project_map`, `semantic_*` |
 | `java` | `naru-tools-coder-java` | java development operations | `maven_compile`, `maven_test`, `maven_package` |
@@ -466,7 +466,7 @@ A scripted task that must write files and run commands:
 # naru script (init or session statements)
 /mode implement                     # remove nothing (implement vetoes nothing)
 /tags enable fs                     # open the file tools
-/tags enable network                # open run_shell / search_web
+/tags enable network                # open run_shell / web_search
 /tools exclude cd pwd               # ...but ban the working-dir wanderers
 /tags list                          # floor now: fs, network
 ```

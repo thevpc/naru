@@ -37,7 +37,7 @@ public class NaruHeadlessRunner {
         stmts.add("/tags enable fs write exec network");
 
         if ("min".equalsIgnoreCase(config)) {
-            stmts.add("/tools exclude git_commit ollama_status ollama_start ollama_stop ollama_install ollama_ps routine_run routine_add_line maven_compile maven_test maven_package search_web");
+            stmts.add("/tools exclude git_commit ollama_status ollama_start ollama_stop ollama_install ollama_ps routine_run routine_add_line maven_compile maven_test maven_package web_search");
         }
 
         stmts.add(prompt);

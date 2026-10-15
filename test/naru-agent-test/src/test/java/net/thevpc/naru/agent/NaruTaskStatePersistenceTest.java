@@ -108,9 +108,9 @@ public class NaruTaskStatePersistenceTest {
         NaruTask task = session.newTask(NaruTaskSpec.of().toolTags("fs", "network"));
         // sanity: both are actually offered before the ban takes effect
         List<String> before = toolNames(task);
-        assertTrue(before.contains("search_web"), () -> before.toString());
+        assertTrue(before.contains("web_search"), () -> before.toString());
         assertTrue(before.contains("file_read"), () -> before.toString());
-        task.addToolExclusion("search_web");
+        task.addToolExclusion("web_search");
         task.addToolExclusion("file_read");
 
         long id = task.id();
@@ -119,7 +119,7 @@ public class NaruTaskStatePersistenceTest {
 
         List<String> tools = toolNames(session.findTask(id)
                 .orElseThrow(() -> new AssertionError("the task did not come back after the reload")));
-        assertFalse(tools.contains("search_web"), () -> "the restored task still sees a banned tool: " + tools);
+        assertFalse(tools.contains("web_search"), () -> "the restored task still sees a banned tool: " + tools);
         assertFalse(tools.contains("file_read"), () -> "the restored task still sees a banned tool: " + tools);
     }
 

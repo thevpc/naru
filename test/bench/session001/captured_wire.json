@@ -610,7 +610,7 @@
     {
       "type": "function",
       "function": {
-        "name": "search_web",
+        "name": "web_search",
         "description": "search the web for the provided query",
         "parameters": {
           "type": "object",

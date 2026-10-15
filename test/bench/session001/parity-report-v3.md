@@ -28,12 +28,12 @@ By default, `isEffectTagAndEnabled()` is `false`. NARU defaults to **`matchesToo
 - `ollama_*` (tags: `[ai, exec]`, `[ai, network]`)
 - `routine_*` (tags: `[routine, exec]`, `[routine, write]`)
 - `maven_*` (tags: `[dev, java, exec]`)
-- `search_web` (tags: `[ai, network]`)
+- `web_search` (tags: `[ai, network]`)
 
 ### 1.2 Safety Enforcement & Named NARU Configurations
 To ensure safety in benchmark runs—specifically preventing a model from calling `ollama_stop` (which kills the local Ollama server), `ollama_install`, or `git_commit`—unwanted tools are excluded using NARU's session directive:
 ```text
-/tools exclude git_commit ollama_status ollama_start ollama_stop ollama_install ollama_ps routine_run routine_add_line maven_compile maven_test maven_package search_web
+/tools exclude git_commit ollama_status ollama_start ollama_stop ollama_install ollama_ps routine_run routine_add_line maven_compile maven_test maven_package web_search
 ```
 
 Two configurations were captured on the wire against mock server `127.0.0.1:8089` using the prompt `"Reply with the single word OK."`:
@@ -48,7 +48,7 @@ Two configurations were captured on the wire against mock server `127.0.0.1:8089
 
 #### B. `naru-granted` (T0 Reference Configuration)
 - **Tool count:** **26 tools**
-- **Tool names:** `['search_web', 'web_fetch', 'run_shell', 'routine_run', 'routine_add_line', 'maven_compile', 'maven_test', 'maven_package', 'file_read', 'file_write', 'file_append', 'file_edit_lines', 'file_edit_search_replace', 'file_create', 'file_grep', 'diff', 'pwd', 'folder_find', 'cd', 'think', 'git_commit', 'ollama_status', 'ollama_start', 'ollama_stop', 'ollama_install', 'ollama_ps']`
+- **Tool names:** `['web_search', 'web_fetch', 'run_shell', 'routine_run', 'routine_add_line', 'maven_compile', 'maven_test', 'maven_package', 'file_read', 'file_write', 'file_append', 'file_edit_lines', 'file_edit_search_replace', 'file_create', 'file_grep', 'diff', 'pwd', 'folder_find', 'cd', 'think', 'git_commit', 'ollama_status', 'ollama_start', 'ollama_stop', 'ollama_install', 'ollama_ps']`
 - **System prompt length:** **154 characters**
 - **Tool schema length:** **13,666 characters**
 - **Total request body length:** **14,028 characters**
