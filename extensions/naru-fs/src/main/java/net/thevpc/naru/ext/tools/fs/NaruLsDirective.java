@@ -1,5 +1,7 @@
 package net.thevpc.naru.ext.tools.fs;
 
+import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
@@ -75,6 +77,11 @@ public class NaruLsDirective extends NaruDirectiveBase {
 
                 NTextBuilder result = NTextBuilder.of();
                 for (NPath target : targetPaths) {
+                    String denied = NaruFsGuard.deny(task, target, NaruResourceType.DIR, NaruAction.LIST);
+                    if (denied != null) {
+                        result.append(denied).append("\n");
+                        continue;
+                    }
                     if (targetPaths.size() > 1) {
                         result.append(target).append(":\n");
                     }

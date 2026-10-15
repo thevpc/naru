@@ -1,5 +1,9 @@
 package net.thevpc.naru.ext.tools.sh;
 
+import net.thevpc.naru.api.access.NaruAccessDecision;
+import net.thevpc.naru.api.access.NaruAccessGuard;
+import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.access.NaruResource;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
@@ -20,6 +24,12 @@ public class NaruShDirective extends NaruDirectiveBase {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
+                NaruResource shell = NaruResource.shell(context.argument());
+                NaruAccessDecision access = NaruAccessGuard.check(task, shell, NaruAction.EXECUTE);
+                if (!access.allowed()) {
+                    String denied = NaruAccessGuard.denyMessage(task, shell, NaruAction.EXECUTE, access);
+                    return NaruStmtResult.ofError(denied);
+                }
                 final NRef<NaruStmtResult> outcome = NRef.of();
                 try (NSession session = NSession.of().copy()) {
                     session.logTermLevel(Level.OFF);

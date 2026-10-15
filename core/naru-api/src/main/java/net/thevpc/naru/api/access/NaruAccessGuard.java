@@ -35,7 +35,10 @@ public final class NaruAccessGuard {
         if (policy == null) {
             return NaruAccessDecision.allow(null, "no access policy in effect");
         }
-        return policy.check(resource, action, actorOf(task));
+        // The task travels with the request so a path-like rule written
+        // project-relative (e.g. `src/**`) resolves against the project directory
+        // at check time; without it the policy would only ever see a bare triple.
+        return policy.check(NaruAccessRequest.of(resource, action, actorOf(task)).task(task));
     }
 
     public static boolean isAllowed(NaruTask task, NaruResource resource, NaruAction action) {

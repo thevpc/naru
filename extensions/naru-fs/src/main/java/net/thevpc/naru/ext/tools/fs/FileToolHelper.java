@@ -1,5 +1,7 @@
 package net.thevpc.naru.ext.tools.fs;
 
+import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.io.NPath;
@@ -79,8 +81,17 @@ public class FileToolHelper {
             contextLines = 3;
         }
         try {
-            List<String> lines1 = task.resolve(path1).lines().toList();
-            List<String> lines2 = task.resolve(path2).lines().toList();
+            NPath p1 = task.resolve(path1);
+            NPath p2 = task.resolve(path2);
+            String denied = NaruFsGuard.deny(task, p1, NaruAction.READ);
+            if (denied == null) {
+                denied = NaruFsGuard.deny(task, p2, NaruAction.READ);
+            }
+            if (denied != null) {
+                return denied;
+            }
+            List<String> lines1 = p1.lines().toList();
+            List<String> lines2 = p2.lines().toList();
             return computeUnifiedDiff(path1, path2, lines1, lines2, contextLines);
         } catch (Exception e) {
             return "Error reading files: " + e.getMessage();
@@ -171,8 +182,12 @@ public class FileToolHelper {
         if (content == null || content.isEmpty()) {
             return "WARNING: 'content' was empty. ignored";
         }
+        NPath p = task.resolve(path);
+        String denied = NaruFsGuard.deny(task, p, NaruAction.WRITE);
+        if (denied != null) {
+            return denied;
+        }
         try {
-            NPath p = task.resolve(path);
             if (Boolean.TRUE.equals(dry)) {
                 String preview = content.length() > previewChars(task)
                         ? content.substring(0, previewChars(task)) + "\n... [preview truncated]"
@@ -192,6 +207,8 @@ public class FileToolHelper {
         if (NBlankable.isBlank(path)) return "ERROR: 'path' is required.";
 
         NPath p = task.resolve(path);
+        String denied = NaruFsGuard.deny(task, p, NaruAction.WRITE);
+        if (denied != null) return denied;
         if (!p.exists()) return "ERROR: File not found: " + p;
         if (!p.permissions().contains(NPathPermission.CAN_WRITE)) return "ERROR: File is not writable: " + p;
 
@@ -260,6 +277,8 @@ public class FileToolHelper {
         }
 
         NPath p = task.resolve(path);
+        String denied = NaruFsGuard.deny(task, p, NaruAction.WRITE);
+        if (denied != null) return denied;
         if (!p.exists()) return "File not found: " + p;
         if (!p.permissions().contains(NPathPermission.CAN_WRITE)) return "ERROR: File is not writable: " + p;
 
@@ -340,6 +359,8 @@ public class FileToolHelper {
         if (content == null) content = "";
 
         NPath p = task.resolve(path);
+        String denied = NaruFsGuard.deny(task, p, NaruResourceType.FILE, NaruAction.WRITE);
+        if (denied != null) return denied;
         if (p.exists() && (overwrite == null || !overwrite)) {
             return "ERROR: File already exists at " + p + ". Set overwrite=true to overwrite.";
         }
@@ -365,6 +386,8 @@ public class FileToolHelper {
         if (NBlankable.isBlank(pattern)) return "ERROR: 'pattern' is required.";
 
         NPath targetPath = task.resolve(path);
+        String denied = NaruFsGuard.deny(task, targetPath, NaruAction.READ);
+        if (denied != null) return denied;
         if (targetPath == null || !targetPath.exists()) {
             return "File not found: " + path;
         }
@@ -467,6 +490,8 @@ public class FileToolHelper {
         if (NBlankable.isBlank(pathStr)) return "ERROR: 'path' is required.";
 
         NPath file = task.resolve(pathStr);
+        String denied = NaruFsGuard.deny(task, file, NaruAction.READ);
+        if (denied != null) return denied;
         if (!file.exists()) return "File not found: " + file;
 
         if (file.isDirectory()) {
@@ -560,6 +585,8 @@ public class FileToolHelper {
         if (content == null) content = "";
 
         NPath p = task.resolve(path);
+        String denied = NaruFsGuard.deny(task, p, NaruAction.WRITE);
+        if (denied != null) return denied;
         try {
             if (Boolean.TRUE.equals(dry)) {
                 String preview = content.length() > previewChars(task)
@@ -599,6 +626,8 @@ public class FileToolHelper {
         NIntRef totalMatches = NIntRef.of(0);
 
         NPath root = task.resolve(path);
+        String denied = NaruFsGuard.deny(task, root, NaruResourceType.DIR, NaruAction.LIST);
+        if (denied != null) return denied;
         if (!root.exists()) return "ERROR: Path not found: " + root;
         if (!root.isDirectory()) return "ERROR: Path is not a directory: " + root;
         if (!root.permissions().contains(NPathPermission.CAN_READ)) return "ERROR: Directory is not readable: " + root;
@@ -660,6 +689,9 @@ public class FileToolHelper {
         }
         boolean recursiveOk = NUtils.firstNonNull(recursive, true);
         NPath root = task.resolve(path);
+        if (NaruFsGuard.deny(task, root, NaruResourceType.DIR, NaruAction.LIST) != null) {
+            return null;
+        }
         if (!root.exists() || !root.isDirectory()) {
             return null;
         }

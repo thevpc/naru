@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.fs;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -61,6 +62,11 @@ public class NaruCatDirective extends NaruDirectiveBase {
                     NPath p = NPath.of(t);
                     if (!p.isAbsolute()) p = baseDir.resolve(t);
 
+                    String denied = NaruFsGuard.deny(task, p, NaruAction.READ);
+                    if (denied != null) {
+                        result.append(NMsg.ofC("%s\n", denied), NTextStyle.danger());
+                        continue;
+                    }
                     if (!p.exists()) {
                         result.append(NMsg.ofC("view: cannot access '%s': No such file or directory\n", p),NTextStyle.danger());
                         continue;

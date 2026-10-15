@@ -2,6 +2,11 @@ package net.thevpc.naru.ext.tools.mcp;
 
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import net.thevpc.naru.api.access.NaruAccessDecision;
+import net.thevpc.naru.api.access.NaruAccessGuard;
+import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.access.NaruResource;
+import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.*;
@@ -172,10 +177,27 @@ public class McpBackedTool extends DefaultNaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
+        String denied = denied(context.task(), mcpTool.name());
+        if (denied != null) {
+            return denied;
+        }
         return client.callTool(new McpSchema.CallToolRequest(mcpTool.name(), context.arguments()))
                 .content().stream()
                 .filter(c -> c instanceof McpSchema.TextContent)
                 .map(c -> ((McpSchema.TextContent) c).text())
                 .collect(Collectors.joining("\n"));
+    }
+
+    /**
+     * The MCP domain's access check (design hook #10): may the task's actor call
+     * this bridged MCP tool. A denied bridge is answered without touching the
+     * MCP client, so a rule can cut a remote tool off entirely.
+     *
+     * <p>Package-private so it can be exercised without a live MCP client.
+     */
+    static String denied(NaruTask task, String toolName) {
+        NaruResource resource = NaruResource.of(NaruResourceType.MCP_TOOL, toolName);
+        NaruAccessDecision decision = NaruAccessGuard.check(task, resource, NaruAction.CALL);
+        return decision.allowed() ? null : NaruAccessGuard.denyMessage(task, resource, NaruAction.CALL, decision);
     }
 }

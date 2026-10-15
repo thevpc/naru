@@ -1,5 +1,7 @@
 package net.thevpc.naru.ext.tools.fs;
 
+import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -21,6 +23,12 @@ public class NaruCdDirective extends NaruDirectiveBase {
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NPath p2 = NBlankable.isBlank(context.argument()) ? context.task().projectDir() : NPath.of(context.argument());
+                String denied = NaruFsGuard.deny(task, p2, NaruResourceType.DIR, NaruAction.LIST);
+                if (denied != null) {
+                    NMsg msg = NMsg.ofC("%s", denied).asError();
+                    context.task().addResultMessage(msg);
+                    return NaruStmtResult.ofError(denied);
+                }
                 if (p2.isDirectory()) {
                     task.setWorkingDir(p2);
                     context.task().addResultMessage(NMsg.ofC("change working directory to %s", task.workingDir()));

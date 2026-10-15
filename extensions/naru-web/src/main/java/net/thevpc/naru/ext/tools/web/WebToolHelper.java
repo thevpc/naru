@@ -1,5 +1,9 @@
 package net.thevpc.naru.ext.tools.web;
 
+import net.thevpc.naru.api.access.NaruAccessDecision;
+import net.thevpc.naru.api.access.NaruAccessGuard;
+import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.access.NaruResource;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.net.NHttpClient;
 import net.thevpc.nuts.net.NHttpResponse;
@@ -18,14 +22,21 @@ import java.util.stream.Collectors;
 
 public class WebToolHelper {
 
+    /** The DuckDuckGo endpoint {@link #searchWeb} talks to, named so the guard can name it. */
+    public static final String SEARCH_URL = "https://html.duckduckgo.com/html/";
+
     public static String searchWeb(NaruTask task, String query) {
         if (query == null) {
             return "Error: query is required";
         }
+        String denied = deny(task, SEARCH_URL);
+        if (denied != null) {
+            return denied;
+        }
 
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(30));
-        NHttpResponse response = http.GET("https://html.duckduckgo.com/html/")
+        NHttpResponse response = http.GET(SEARCH_URL)
                 .parameter("q", query)
                 .header("User-Agent", "Mozilla/5.0")
                 .run();
@@ -58,6 +69,10 @@ public class WebToolHelper {
     public static String webFetch(NaruTask task, String urlStr, String format, Integer timeoutSec) {
         if (NBlankable.isBlank(urlStr)) {
             return "Error: url is required";
+        }
+        String denied = deny(task, urlStr);
+        if (denied != null) {
+            return denied;
         }
         String fmt = (format == null || format.isBlank()) ? "markdown" : format.toLowerCase().trim();
         int tSec = (timeoutSec == null || timeoutSec <= 0) ? 30 : Math.min(timeoutSec, 120);
@@ -100,6 +115,17 @@ public class WebToolHelper {
         } catch (Exception e) {
             return "Error fetching " + urlStr + ": " + e.getMessage();
         }
+    }
+
+    /**
+     * The web domain's single call into the session access policy (design hooks
+     * #7/#8). Both the fetch and the search back end ask before any socket is
+     * opened, so a denied URL never leaves the process.
+     */
+    private static String deny(NaruTask task, String url) {
+        NaruResource resource = NaruResource.url(url);
+        NaruAccessDecision decision = NaruAccessGuard.check(task, resource, NaruAction.FETCH);
+        return decision.allowed() ? null : NaruAccessGuard.denyMessage(task, resource, NaruAction.FETCH, decision);
     }
 
     public static String htmlToText(String html) {

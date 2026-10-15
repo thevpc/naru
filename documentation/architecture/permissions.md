@@ -5,10 +5,9 @@ one question everywhere in the runtime — *may this actor perform this action o
 this resource, right now?* — and an event-driven extension that mints and revokes
 rules while a session runs.
 
-This document is a design + implementation plan, not a description of shipped
-code. It names the classes, fields and method signatures to add, the minimal
-changes to existing core types, the single enforcement choke points, and an
-incremental delivery plan.
+This document began as a design + implementation plan. Sections 1–6 remain the
+design of record — the classes, fields, method signatures, and the single
+enforcement choke points — and section 9 tracks delivery.
 
 ---
 
@@ -825,8 +824,8 @@ is one line; there is no signature churn.
 | 2 | `NaruRegistryImpl.dispatch(NaruToolCall, NaruTask)` | delegates to #1 | `tool` | `call` | task |
 | 3 | `NaruTaskImpl.invokeDirective(NaruDirective dir, NaruDirectiveCallContext ctx)` (`core/naru-impl`) | `check(directive(dir.name()), CALL, currentActor())` before `dir.execute(ctx)` | `directive` | `call` | task |
 | 4 | `NaruTaskImpl.findTools()` (`core/naru-impl`) | filter `t.getDefinition` when `!isAllowed(tool(t.name(), t.tags()), CALL, currentActor())` | `tool` | `call` | task |
-| 5 | `FileToolHelper.*` (`extensions/naru-fs`) | new `NaruFsGuard.check(task, resolvedPath, action)` at every entry (`fileRead`, `fileWrite`, `fileAppend`, `fileEdit*`, `fileCreate`, `fileGrep`, `folderFind`, `filesDiff`, `snippet`) | `file`/`dir` | `read`/`write`/`delete`/`list` | task |
-| 6 | `NaruFileDirective`, `NaruCatDirective`, `NaruLsDirective`, `NaruCdDirective` (`extensions/naru-fs`) | same guard for path arguments | `file`/`dir` | `read`/`list` | task |
+| 5 | `FileToolHelper.*` (`extensions/naru-fs`) | `NaruFsGuard.deny(task, resolvedPath, action)` at every entry (`fileRead`, `fileWrite`, `fileAppend`, `fileEdit*`, `fileCreate`, `fileGrep`, `filesDiff`) | `file`/`dir` | `read`/`write`/`list` | task |
+| 6 | `NaruCatDirective`, `NaruLsDirective`, `NaruCdDirective` (`extensions/naru-fs`) | same guard for path arguments (`/file` is covered transitively through `FileToolHelper`) | `file`/`dir` | `read`/`list` | task |
 | 7 | `WebToolHelper.webFetch(...)` (`extensions/naru-web`) | `check(url(urlStr), FETCH, task.currentActor())` | `url` | `fetch` | task |
 | 8 | `WebToolHelper.searchWeb(...)` (`extensions/naru-web`) | `check(url(searchHost), FETCH, actor)` | `url`/`host` | `fetch` | task |
 | 9 | `RunShellTool` / `NaruShDirective` (`extensions/naru-shell`) | `check(shell(cmd), EXECUTE, actor)` | `shell`/`process` | `execute` | task |
@@ -875,6 +874,8 @@ inserts a new first-match denial ahead of the allow.
 
 Each milestone is independently shippable and leaves the system green.
 
+Implemented and tested: **M0–M6**. Not started: **M7**.
+
 ### M0 — Value types (no behaviour change)
 - Add `net.thevpc.naru.api.access`: `NaruPrincipal(Type)`, `NaruActorKind`,
   `NaruActor`, `NaruResourceType(s)`, `NaruAction(s)`, `NaruResource`,
@@ -920,12 +921,26 @@ Each milestone is independently shippable and leaves the system green.
 - `NaruAccessPolicy.addBuiltin` + `NaruPermissionsBuiltins` installing the safe
   defaults on session start (re-seeded by `clearRules()`).
 
-### M6 — Per-domain fine-grained guards
-- FS: `NaruFsGuard` in `FileToolHelper` and FS directives (#5, #6).
-- Web: `WebToolHelper` (#7, #8).
-- Shell: `RunShellTool`/`NaruShDirective` (#9).
-- MCP: bridge (#10).
-- Optional model gate (#11).
+### M6 — Per-domain fine-grained guards (implemented)
+- FS: `NaruFsGuard` (`extensions/naru-fs`) called from every entry of
+  `FileToolHelper` (`fileRead` `read`, `fileGrep` read, `fileWrite`/
+  `fileAppend`/`fileEdit`/`fileEditSearchReplace`/`fileCreate` write,
+  `folderFind`/`folderFindFirst` list, `filesDiff` read) and from the
+  `/cat`, `/ls` and `/cd` directives. `/file` is covered transitively because it
+  delegates to the helpers. A directory is a `dir` resource, a file a `file`; the
+  `deny` overloads let a caller fix the type before the path exists.
+- Web: `WebToolHelper` (#7, #8) asks for `url` `fetch` before any socket is
+  opened, for both `web_fetch` and the fixed search backend.
+- Shell: `RunShellTool`/`NaruShDirective` (#9) ask for `shell` `execute`.
+- MCP: `McpBackedTool` (#10) asks for `mcp-tool` `call` before touching the
+  client.
+- The central guard now carries the task on the request, so a project-relative
+  file pattern (`src/**`) is resolved against the project directory for these
+  fine-grained checks too.
+- Tests: `NaruFsGuardTest`, `NaruWebGuardTest`, `NaruShellGuardTest`,
+  `NaruMcpGuardTest`.
+- Deferred: the optional model gate (#11) and the readline identity (#12) are not
+  wired yet; the model dispatch still runs un-policed.
 
 ### M7 — Hardening (opt-in)
 - `defaultEffect=deny` via `naru.perm.defaultEffect` config; built-in safe rules.

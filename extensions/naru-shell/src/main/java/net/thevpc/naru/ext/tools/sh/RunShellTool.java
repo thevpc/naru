@@ -1,5 +1,9 @@
 package net.thevpc.naru.ext.tools.sh;
 
+import net.thevpc.naru.api.access.NaruAccessDecision;
+import net.thevpc.naru.api.access.NaruAccessGuard;
+import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.access.NaruResource;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
@@ -57,6 +61,12 @@ public class RunShellTool extends DefaultNaruTool {
                 .orElseGet(() -> context.numberArg("timeout").map(n -> Math.max(1, n.intValue() / 1000)).orElse(60));
 
         if (NBlankable.isBlank(command)) return "ERROR: 'command' is required.";
+
+        NaruResource shell = NaruResource.shell(command);
+        NaruAccessDecision access = NaruAccessGuard.check(context.task(), shell, NaruAction.EXECUTE);
+        if (!access.allowed()) {
+            return NaruAccessGuard.denyMessage(context.task(), shell, NaruAction.EXECUTE, access);
+        }
 
         NPath cwdPath = !NBlankable.isBlank(workDir) ? context.task().resolve(workDir) : context.task().projectDir();
         File cwd = cwdPath != null ? new File(cwdPath.toString()) : new File(".");
