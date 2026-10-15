@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.ollama;
 
 import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
+import java.util.List;
 
 public class OllamaServiceTest {
 
@@ -96,23 +98,27 @@ public class OllamaServiceTest {
     public void testToolsetTools() {
         NaruOllamaToolset toolset = new NaruOllamaToolset("ollama");
         Assertions.assertEquals("ollama", toolset.id());
-        Assertions.assertEquals(5, toolset.tools().size());
+        // Only read-only tools are registered; the mutating ones (start/stop/install)
+        // are commented out in the constructor. See NaruOllamaToolset.
+        Assertions.assertEquals(
+                List.of("ollama_status", "ollama_ps"),
+                toolset.tools().stream().map(NaruTool::name).toList()
+        );
 
         OllamaStatusTool statusTool = new OllamaStatusTool();
         NaruToolDefinition def = statusTool.getDefinition(null);
         Assertions.assertEquals("ollama_status", def.getName());
 
-        OllamaStartTool startTool = new OllamaStartTool();
-        Assertions.assertEquals("ollama_start", startTool.getDefinition(null).getName());
-
-        OllamaStopTool stopTool = new OllamaStopTool();
-        Assertions.assertEquals("ollama_stop", stopTool.getDefinition(null).getName());
-
-        OllamaInstallTool installTool = new OllamaInstallTool();
-        Assertions.assertEquals("ollama_install", installTool.getDefinition(null).getName());
-
         OllamaPsTool psTool = new OllamaPsTool();
         Assertions.assertEquals("ollama_ps", psTool.getDefinition(null).getName());
+
+        // The mutating tools still exist as classes (used by /ollama) but are not
+        // registered as agent tools.
+        Assertions.assertEquals("ollama_start", new OllamaStartTool().getDefinition(null).getName());
+        Assertions.assertEquals("ollama_stop", new OllamaStopTool().getDefinition(null).getName());
+        Assertions.assertEquals("ollama_install", new OllamaInstallTool().getDefinition(null).getName());
+        Assertions.assertNull(toolset.tools().stream()
+                .filter(t -> t.name().equals("ollama_install")).findFirst().orElse(null));
 
         NaruOllamaToolsetProvider provider = new NaruOllamaToolsetProvider();
         Assertions.assertEquals("ollama", provider.name());

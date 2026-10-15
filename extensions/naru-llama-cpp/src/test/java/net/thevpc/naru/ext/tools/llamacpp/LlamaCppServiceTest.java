@@ -2,6 +2,7 @@ package net.thevpc.naru.ext.tools.llamacpp;
 
 import net.thevpc.naru.api.model.NaruModelPsResult;
 import net.thevpc.naru.api.model.NaruToolDefinition;
+import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 public class LlamaCppServiceTest {
 
@@ -114,16 +116,26 @@ public class LlamaCppServiceTest {
     public void testToolsetTools() {
         NaruLlamaCppToolset toolset = new NaruLlamaCppToolset("llamacpp");
         Assertions.assertEquals("llamacpp", toolset.id());
-        Assertions.assertEquals(8, toolset.tools().size());
+        // Only read-only tools are registered; the mutating ones (install/start/
+        // stop/pull/rm) are commented out in the constructor. See NaruLlamaCppToolset.
+        Assertions.assertEquals(
+                List.of("llamacpp_status", "llamacpp_list", "llamacpp_ps"),
+                toolset.tools().stream().map(NaruTool::name).toList()
+        );
 
         Assertions.assertEquals("llamacpp_status", new LlamaCppStatusTool().getDefinition(null).getName());
+        Assertions.assertEquals("llamacpp_list", new LlamaCppListTool().getDefinition(null).getName());
+        Assertions.assertEquals("llamacpp_ps", new LlamaCppPsTool().getDefinition(null).getName());
+
+        // The mutating tools still exist as classes (used by /llamacpp) but are not
+        // registered as agent tools.
         Assertions.assertEquals("llamacpp_install", new LlamaCppInstallTool().getDefinition(null).getName());
         Assertions.assertEquals("llamacpp_start", new LlamaCppStartTool().getDefinition(null).getName());
         Assertions.assertEquals("llamacpp_stop", new LlamaCppStopTool().getDefinition(null).getName());
-        Assertions.assertEquals("llamacpp_list", new LlamaCppListTool().getDefinition(null).getName());
         Assertions.assertEquals("llamacpp_pull", new LlamaCppPullTool().getDefinition(null).getName());
         Assertions.assertEquals("llamacpp_rm", new LlamaCppRmTool().getDefinition(null).getName());
-        Assertions.assertEquals("llamacpp_ps", new LlamaCppPsTool().getDefinition(null).getName());
+        Assertions.assertNull(toolset.tools().stream()
+                .filter(t -> t.name().equals("llamacpp_pull")).findFirst().orElse(null));
 
         NaruToolDefinition def = new LlamaCppPullTool().getDefinition(null);
         Assertions.assertEquals("llamacpp_pull", def.getName());

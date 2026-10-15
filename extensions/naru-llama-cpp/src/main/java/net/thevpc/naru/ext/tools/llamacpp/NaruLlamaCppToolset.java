@@ -16,13 +16,18 @@ public class NaruLlamaCppToolset implements NaruToolset {
     public NaruLlamaCppToolset(String id) {
         this.id = id;
         List<NaruTool> list = new ArrayList<>();
+        // Only read-only diagnostics are exposed to the agent. The state-mutating
+        // tools (install/start/stop/pull/rm) are intentionally not registered: they
+        // spawn or kill processes, download binaries and multi-GB models, or delete
+        // them -- none of which a prompt-injected agent should be able to do. The
+        // user keeps full lifecycle control through the /llamacpp directive.
         list.add(new LlamaCppStatusTool());
-        list.add(new LlamaCppInstallTool());
-        list.add(new LlamaCppStartTool());
-        list.add(new LlamaCppStopTool());
+//        list.add(new LlamaCppInstallTool());
+//        list.add(new LlamaCppStartTool());
+//        list.add(new LlamaCppStopTool());
         list.add(new LlamaCppListTool());
-        list.add(new LlamaCppPullTool());
-        list.add(new LlamaCppRmTool());
+//        list.add(new LlamaCppPullTool());
+//        list.add(new LlamaCppRmTool());
         list.add(new LlamaCppPsTool());
         this.tools = Collections.unmodifiableList(list);
     }
