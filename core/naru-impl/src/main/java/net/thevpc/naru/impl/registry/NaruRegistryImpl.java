@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.registry;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.access.*;
 import net.thevpc.naru.api.context.NaruContextCompactor;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.mode.NaruPromptMode;
@@ -403,6 +404,18 @@ public class NaruRegistryImpl implements NaruRegistry {
         NaruTool tool = findTool(name).orNull();
         if (tool == null) {
             return "ERROR: Unknown tool '" + name + "'. Available tools: " + tools().keySet().stream().sorted().collect(Collectors.joining(", "));
+        }
+        // Central tool gate: the same check every domain makes, resolved against the
+        // actor in effect for the statement that requested this call. An empty policy
+        // (the default) allows, so this adds a choke point without changing behaviour.
+        NaruResource resource = NaruResource.tool(tool.name(), tool.tags());
+        NaruAccessDecision access = NaruAccessGuard.check(task, resource, NaruAction.CALL);
+        if (!access.allowed()) {
+            String deny = NaruAccessGuard.denyMessage(task, resource, NaruAction.CALL, access);
+            if (task != null) {
+                task.log(NaruLogMode.SCRIPT, NMsg.ofC(deny).asError());
+            }
+            return deny;
         }
         try {
             return tool.execute(new NaruToolCallContextImpl(arguments, task));

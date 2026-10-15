@@ -1,5 +1,8 @@
 package net.thevpc.naru.api.agent;
 
+import net.thevpc.naru.api.access.NaruAccessPolicy;
+import net.thevpc.naru.api.access.NaruActor;
+import net.thevpc.naru.api.access.NaruPrincipal;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.scheduler.NaruScheduler;
@@ -28,6 +31,28 @@ public interface NaruSession {
     NaruSession setVisibility(NaruVisibility visibility);
 
     NaruAgent agent();
+
+    /**
+     * The principal that owns this session — the user (or service identity) on
+     * whose behalf every task in it runs. Never null.
+     *
+     * <p>It is the default owner of a spawned agent and the subject most rules
+     * are written against; a task that was created without an explicit actor
+     * inherits this one.
+     */
+    NaruPrincipal user();
+
+    /** {@link #user()} as an acting principal (kind {@code USER}). Never null. */
+    NaruActor userActor();
+
+    /**
+     * The transversal access policy for this session: one ordered rule set,
+     * consulted by every domain (files, urls, tools, directives, shell).
+     *
+     * <p>It starts empty with a default effect of {@code ALLOW}, so nothing about
+     * behaviour changes until a rule is written.
+     */
+    NaruAccessPolicy accessPolicy();
 
     boolean hasMoreStatements();
 

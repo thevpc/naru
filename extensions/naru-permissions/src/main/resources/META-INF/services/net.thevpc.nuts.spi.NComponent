@@ -1,0 +1,5 @@
+net.thevpc.naru.ext.tools.perm.NaruPermissionsExtension
+net.thevpc.naru.ext.tools.perm.NaruPermissionsDirectiveProvider
+net.thevpc.naru.ext.tools.perm.NaruPermissionsToolsetProvider
+net.thevpc.naru.ext.tools.perm.NaruPermToolTagProvider
+net.thevpc.naru.ext.tools.perm.NaruPermConfigKeysProvider

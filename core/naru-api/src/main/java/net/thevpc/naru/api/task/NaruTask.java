@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.task;
 
 import net.thevpc.naru.api.agent.*;
+import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -351,6 +352,39 @@ public interface NaruTask extends NToElement {
     boolean isKillRequested();
 
     boolean hasMoreStatements();
+
+    /**
+     * The actor in effect for this task. Never null for a real task: it inherits
+     * its parent's actor, or the session's user otherwise.
+     *
+     * <p>It is the identity every access check on this task is evaluated against
+     * when the statement being executed did not carry one of its own.
+     */
+    default NaruActor currentActor() {
+        return null;
+    }
+
+    default NaruTask currentActor(NaruActor actor) {
+        return this;
+    }
+
+    /**
+     * The actor accountable for one statement: the statement's creator when it
+     * has one, else the task's {@link #currentActor()}.
+     */
+    default NaruActor effectiveActor(NaruStatement stmt) {
+        return (stmt != null && stmt.creatorActor() != null) ? stmt.creatorActor() : currentActor();
+    }
+
+    /** The actor accountable for the work in flight: {@link #currentActor()}. */
+    default NaruActor effectiveActor() {
+        return currentActor();
+    }
+
+    /** Adds a statement stamped with the actor that authored it. */
+    default NaruTask addStatement(NaruStatement stmt, NaruActor actor) {
+        return addStatement(stmt.creatorActor(actor));
+    }
 
     NaruTask addStatement(NaruStatement any);
 

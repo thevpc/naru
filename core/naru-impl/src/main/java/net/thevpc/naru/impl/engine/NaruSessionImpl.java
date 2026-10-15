@@ -21,6 +21,10 @@ import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 
 
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.access.NaruAccessPolicy;
+import net.thevpc.naru.api.access.NaruActor;
+import net.thevpc.naru.api.access.NaruPrincipal;
+import net.thevpc.naru.impl.access.NaruAccessPolicyImpl;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
 import net.thevpc.naru.impl.engine.spawn.NaruSpawnContextImpl;
@@ -161,6 +165,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      */
     private String effectTagAndMode;
     private boolean effectTagAndWarned;
+    /**
+     * The principal this session runs for. Resolved lazily from the OS user when
+     * unset, so a single-user host never has to name one and a multi-user host
+     * sets it at build time.
+     */
+    private volatile NaruPrincipal user;
+    /** {@link #user} as an acting principal; resolved lazily alongside it. */
+    private volatile NaruActor userActor;
+    /**
+     * The one transversal access policy for the session. Empty and default-ALLOW,
+     * so introducing it changes nothing until a rule is added.
+     */
+    private final NaruAccessPolicyImpl accessPolicy = new NaruAccessPolicyImpl();
 
 
     public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
@@ -225,6 +242,56 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     public NaruSession throttleDelay(long ms) {
         this.schedulerThrottleDelayMs = ms;
         return this;
+    }
+
+    @Override
+    public NaruPrincipal user() {
+        NaruPrincipal u = user;
+        if (u == null) {
+            synchronized (this) {
+                u = user;
+                if (u == null) {
+                    u = NaruPrincipal.user(System.getProperty("user.name", "user"));
+                    user = u;
+                }
+            }
+        }
+        return u;
+    }
+
+    /** Overrides the owner, typically from the builder. Applied before any task is created. */
+    public NaruSessionImpl user(NaruPrincipal u) {
+        this.user = u;
+        this.userActor = u == null ? null : NaruActor.user(u);
+        return this;
+    }
+
+    @Override
+    public NaruActor userActor() {
+        NaruActor a = userActor;
+        if (a == null) {
+            synchronized (this) {
+                a = userActor;
+                if (a == null) {
+                    a = NaruActor.user(user());
+                    userActor = a;
+                }
+            }
+        }
+        return a;
+    }
+
+    public NaruSessionImpl userActor(NaruActor a) {
+        this.userActor = a;
+        if (a != null) {
+            this.user = a.principal();
+        }
+        return this;
+    }
+
+    @Override
+    public NaruAccessPolicy accessPolicy() {
+        return accessPolicy;
     }
 
     public int getSchedulerThreadCount() {
@@ -317,6 +384,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
         long id = maxTaskId.incrementAndGet();
         NaruTaskImpl natuTask = new NaruTaskImpl(id, parent == null ? -1 : parent.id(), this);
+        // A task runs as an actor: the one its spec declares, else its parent's (the
+        // agent that spawned it), else the session's user. Seeded before any statement
+        // is parsed, so every statement created for this task can be stamped right away.
+        NaruActor specActor = taskBuilder.actor().orNull();
+        NaruActor inheritedActor = parent != null ? parent.currentActor() : userActor();
+        natuTask.currentActor(specActor != null ? specActor : inheritedActor);
         natuTask.name(taskBuilder.name());
         if (parent == null) {
             natuTask._setInputMode(NaruInputMode.LINE);
@@ -370,9 +443,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         natuTask.addSystemHistory(s->NaruMessage.system(buildSystemPrompt(s)));
         natuTask.runInitHooks(NaruEvent.TASK_SPAWNED);
+        // Every statement is stamped with the actor that authored it: the task's actor,
+        // which is what carries "user X wrote this" or "user X's agent wrote this" all the
+        // way down to where the statement is executed and access is decided.
+        NaruActor stmtActor = natuTask.currentActor();
         natuTask.addStatements(
-                taskBuilder.statements().stream().map(x -> natuTask.parseStatement(x).get().injected(true)).collect(Collectors.toList())
-                        .stream().map(x -> x.injected(true)).toArray(NaruStatement[]::new));
+                taskBuilder.statements().stream()
+                        .map(x -> natuTask.parseStatement(x).get().injected(true).creatorActor(stmtActor))
+                        .toArray(NaruStatement[]::new));
         tasks.put(id, natuTask);
         for (String warning : plan.resolution.warnings()) {
             log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ %s", warning));

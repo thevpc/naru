@@ -1,6 +1,11 @@
 package net.thevpc.naru.impl.engine.scheduler;
 
 import net.thevpc.naru.api.agent.*;
+import net.thevpc.naru.api.access.NaruActor;
+import net.thevpc.naru.api.access.NaruAccessDecision;
+import net.thevpc.naru.api.access.NaruAccessGuard;
+import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.access.NaruResource;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.*;
@@ -134,6 +139,12 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private NaruIncrementalStmt pendingStatement;
     private final NaruTaskInboxImpl inbox;
     private NaruStatement doing;
+    /**
+     * The actor in effect for this task. Set at creation (parent's actor, or the
+     * session's user) and swapped for the duration of a statement that carries a
+     * creator of its own, then restored — see {@link #_exeRollableStmt}.
+     */
+    private volatile NaruActor currentActor;
 
     // ── completion ────────────────────────────────────────────────────────────
     // A task is its own handle on its own result, so it keeps the means of being waited on
@@ -509,6 +520,26 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     public void doing(NaruStatement doing) {
         this.doing = doing;
+    }
+
+    @Override
+    public NaruActor currentActor() {
+        NaruActor a = currentActor;
+        if (a != null) {
+            return a;
+        }
+        // A task always has an actor: the parent's when it was spawned from one,
+        // the session's user otherwise. This is a fallback for the window before a
+        // newly created task has been seeded, and for a task reloaded from an old
+        // saved state that predates actors.
+        NaruTask parent = parentId >= 0 ? session.findTask(parentId).orNull() : null;
+        return parent != null ? parent.currentActor() : session.userActor();
+    }
+
+    @Override
+    public NaruTask currentActor(NaruActor actor) {
+        this.currentActor = actor;
+        return this;
     }
 
     public void status(NaruTaskStatus newStatus) {
@@ -892,6 +923,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (doing != null) {
             o.set("doing", doing.toElement());
         }
+        if (currentActor != null) {
+            o.set("actor", currentActor.toElement());
+        }
         return o.build();
     }
 
@@ -987,6 +1021,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         inbox.load(inbox1);
         NElement _doing = o.get("doing").orNull();
         this.doing = _doing == null ? null : NaruStatementHelper.of(_doing);
+        // the actor is identity, so it is restored before anything can consult it
+        NElement _actor = o.get("actor").orNull();
+        this.currentActor = (_actor == null || _actor.isNull()) ? null : NaruActor.of(_actor);
         return this;
     }
 
@@ -1249,6 +1286,12 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         boolean effectAndWarn = sessionImpl != null && sessionImpl.isEffectTagAndWarn();
         List<String> wouldBeHidden = effectAndWarn ? new ArrayList<>() : null;
         for (NaruTool t : session().registry().tools().values()) {
+            // Visibility is a check too: a tool the actor may not call is never offered
+            // to the model, so the denial is invisible instead of a runtime error the
+            // model would have to recover from.
+            if (!NaruAccessGuard.isAllowed(this, NaruResource.tool(t.name(), t.tags()), NaruAction.CALL)) {
+                continue;
+            }
             if (!mode.acceptToolTags(t.tags())) {
                 continue;
             }
@@ -2129,11 +2172,19 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private void _exeRollableStmt(NaruStatement op) {
         log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] invoke : %s", id(), op.toElement()));
         doing = op;
+        // A statement that names its author runs as that author: a tool call an agent
+        // emitted is checked as the agent, and the identity is restored the moment the
+        // statement ends, so a later statement of a different author is not tainted by it.
+        NaruActor prevActor = currentActor;
+        if (op.creatorActor() != null) {
+            currentActor = op.creatorActor();
+        }
         fireChanged();
         try {
             op.exec(this);
         } finally {
             doing = null;
+            currentActor = prevActor;
             fireChanged();
         }
     }
@@ -2167,6 +2218,16 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     public NaruStmtResult invokeDirective(NaruDirective dir, NaruDirectiveCallContext context) {
+        // Central directive gate, symmetric with the tool gate in the registry: a
+        // directive is a capability too, so it is checked before it runs. Denial is a
+        // failed statement rather than an exception, so scripts can branch on it.
+        NaruResource resource = NaruResource.directive(dir.name());
+        NaruAccessDecision access = NaruAccessGuard.check(this, resource, NaruAction.CALL);
+        if (!access.allowed()) {
+            String deny = NaruAccessGuard.denyMessage(this, resource, NaruAction.CALL, access);
+            log(NaruLogMode.SCRIPT, NMsg.ofC(deny).asError());
+            return NaruStmtResult.ofError(deny);
+        }
         NaruStmtResult r;
         try {
             r = dir.execute(context);

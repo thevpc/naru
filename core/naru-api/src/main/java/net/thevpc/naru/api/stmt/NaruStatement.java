@@ -1,5 +1,6 @@
 package net.thevpc.naru.api.stmt;
 
+import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
@@ -10,6 +11,13 @@ import net.thevpc.nuts.util.NNameFormat;
 public abstract class NaruStatement implements NToElement, NCopiable, Cloneable {
     public Type type;
     public boolean injected;
+    /**
+     * Who authored this statement. Null means "no claim", and the task's
+     * {@link NaruTask#currentActor()} is used instead — which is the case for
+     * every statement that existed before actors and for one the runtime injects
+     * while executing another.
+     */
+    public NaruActor creatorActor;
 
     public enum Type {
         READLINE,
@@ -45,6 +53,9 @@ public abstract class NaruStatement implements NToElement, NCopiable, Cloneable 
         if (injected) {
             a.set("injected", injected);
         }
+        if (creatorActor != null) {
+            a.set("actor", creatorActor.toElement());
+        }
         return a.build();
     }
 
@@ -79,6 +90,16 @@ public abstract class NaruStatement implements NToElement, NCopiable, Cloneable 
 
     public NaruStatement injected(boolean injected) {
         this.injected = injected;
+        return this;
+    }
+
+    /** The actor that authored this statement, or null when it carries no claim. */
+    public NaruActor creatorActor() {
+        return creatorActor;
+    }
+
+    public NaruStatement creatorActor(NaruActor actor) {
+        this.creatorActor = actor;
         return this;
     }
 

@@ -1,6 +1,8 @@
 package net.thevpc.naru.api.agent;
 
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.access.NaruActor;
+import net.thevpc.naru.api.access.NaruPrincipal;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.store.NaruSessionScope;
@@ -44,6 +46,16 @@ public interface NaruSessionBuilder {
      * user's home directory when the agent has none.
      */
     NaruSessionBuilder directory(NPath directory);
+
+    /**
+     * The principal that owns the session. Defaults to the OS user
+     * ({@code System.getProperty("user.name")}), so a single-user host needs to
+     * say nothing; a host that serves several people sets it explicitly.
+     */
+    default NaruSessionBuilder user(NaruPrincipal user) { throw new UnsupportedOperationException(); }
+
+    /** Binds the owner as an already-acted actor, carrying its kind and groups. */
+    default NaruSessionBuilder userActor(NaruActor actor) { throw new UnsupportedOperationException(); }
 
     /** Stable id used by a backend handle; existing ids are resolved by the store. */
     default NaruSessionBuilder id(String id) { throw new UnsupportedOperationException(); }

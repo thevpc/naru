@@ -1,11 +1,13 @@
 package net.thevpc.naru.api.task;
 
+import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.spawn.NaruSpawnContract;
 import net.thevpc.naru.api.spawn.NaruSpawnInherit;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NOptional;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -37,6 +39,12 @@ public class NaruTaskSpec {
     private NaruSpawnContract contract;
     private String model;
     private final Map<String, Object> ext = new LinkedHashMap<>();
+
+    /**
+     * The actor that authors this task's statements. Null means the task
+     * inherits its parent's actor, or the session's user for a root task.
+     */
+    private NaruActor actor;
 
     public static NaruTaskSpec of() {
         return new NaruTaskSpec();
@@ -75,6 +83,27 @@ public class NaruTaskSpec {
 
     public NaruTaskSpec statements(List<String> commands) {
         this.statements = commands == null ? new ArrayList<>() : new ArrayList<>(commands);
+        return this;
+    }
+
+    /**
+     * The actor that authored this task's statements, if declared. Carries who
+     * created the instruction, so a task an agent spawns runs as that agent and
+     * not as an unowned nameless run.
+     */
+    public NOptional<NaruActor> actor() {
+        return NOptional.ofNullable(actor);
+    }
+
+    public NaruTaskSpec actor(NaruActor actor) {
+        this.actor = actor;
+        return this;
+    }
+
+    /** Declares statements and stamps them, in one call, with their author. */
+    public NaruTaskSpec statements(String[] lines, NaruActor actor) {
+        this.statements = lines == null ? new ArrayList<>() : new ArrayList<>(Arrays.asList(lines));
+        this.actor = actor;
         return this;
     }
 

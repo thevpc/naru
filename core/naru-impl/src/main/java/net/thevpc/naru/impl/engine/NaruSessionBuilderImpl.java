@@ -13,6 +13,8 @@ import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.scheduler.NaruTaskMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.access.NaruActor;
+import net.thevpc.naru.api.access.NaruPrincipal;
 import net.thevpc.naru.api.util.NaruTerminalFormatter;
 import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
 import net.thevpc.naru.impl.interaction.NaruTerminalInteraction;
@@ -52,6 +54,10 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     private int maxLiveSessions = Integer.MAX_VALUE;
     private boolean checkpointEachMessage = true;
     private Duration capacityTimeout = Duration.ofSeconds(30);
+    /** Owner of the session; null means "the OS user", resolved by the session. */
+    private NaruPrincipal user;
+    /** Owner already bound as an actor; takes precedence over {@link #user}. */
+    private NaruActor userActor;
 
     NaruSessionBuilderImpl(NaruAgentImpl agent) {
         this.agent = agent;
@@ -60,6 +66,18 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     @Override
     public NaruSessionBuilder directory(NPath directory) {
         this.directory = directory;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder user(NaruPrincipal user) {
+        this.user = user;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder userActor(NaruActor actor) {
+        this.userActor = actor;
         return this;
     }
 
@@ -163,6 +181,11 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
         NaruSessionImpl session = new NaruSessionImpl(
                 agent, dir.toAbsolute(), useInteraction, true,
                 agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter());
+        if (userActor != null) {
+            session.userActor(userActor);
+        } else if (user != null) {
+            session.user(user);
+        }
         if (task != null) {
             // the task is its own builder, so the mode is set on the handle rather than
             // on the spec

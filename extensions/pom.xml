@@ -28,6 +28,7 @@
         <module>naru-plan</module>
         <module>naru-tasks</module>
         <module>naru-tags</module>
+        <module>naru-permissions</module>
         <module>naru-llm-models</module>
         <module>naru-index</module>
         <module>naru-index-java</module>
