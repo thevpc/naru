@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.registry.builtindirectives;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
@@ -13,12 +14,9 @@ import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
@@ -51,16 +49,23 @@ public class NaruGoDirectiveTest {
     }
 
     private RecordingProtocol protocol;
-    private NaruSessionImpl session;
+    private NaruSession session;
 
     @BeforeEach
     public void setUp() {
         protocol = new RecordingProtocol();
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-go-" + System.nanoTime()));
-        session = new NaruSessionImpl(agent, agent.projectDirectory(),
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        session = agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         session.registry().registerModelProvider(new FakeProvider(protocol));
     }
 

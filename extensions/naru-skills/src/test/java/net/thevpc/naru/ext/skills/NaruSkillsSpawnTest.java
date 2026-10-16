@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.skills;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
@@ -10,11 +10,8 @@ import net.thevpc.naru.api.spawn.NaruSpawnPolicy;
 import net.thevpc.naru.api.spawn.NaruToolTagExpression;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -61,7 +58,7 @@ public class NaruSkillsSpawnTest {
     };
 
     private NPath projectDir;
-    private NaruSessionImpl session;
+    private NaruSession session;
     private NaruSkillsExtension ext;
     private final List<NaruOutput> outputs = new ArrayList<>();
 
@@ -72,12 +69,17 @@ public class NaruSkillsSpawnTest {
     @BeforeEach
     public void setUp() {
         projectDir = NPath.ofTempFolder("naru-skills-spawn-" + System.nanoTime());
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         outputs.clear();
-        session = new NaruSessionImpl(agent, projectDir,
-                new NaruStreamInteraction(o -> outputs.add(o)), true,
-                NOOP_LISTENER, null, null, null);
+        session = agent.newSession()
+                .directory(projectDir)
+                .interaction(new NaruStreamInteraction(o -> outputs.add(o)))
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         ext = NaruSkillsExtension.skills(session);
     }
 

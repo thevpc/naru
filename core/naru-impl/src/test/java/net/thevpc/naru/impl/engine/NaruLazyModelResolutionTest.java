@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruMessage;
@@ -14,7 +15,6 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
@@ -46,11 +46,18 @@ public class NaruLazyModelResolutionTest {
 
     @Test
     public void newTaskDoesNotResolveTheModelEagerly() {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(tempProject());
-        NaruSessionImpl session = new NaruSessionImpl(agent, tempProject(),
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        NaruSession session = agent.newSession()
+                .directory(tempProject())
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         // deliberately no provider registered and no model anywhere
         NaruTask task = session.newTask(NaruTaskSpec.of());
         Assertions.assertNotNull(task, "a task with no resolvable model must still be created");
@@ -117,12 +124,19 @@ public class NaruLazyModelResolutionTest {
         return sessionFor(projectDir, true).newTask(spec);
     }
 
-    private NaruSessionImpl sessionFor(NPath projectDir, boolean withProvider) {
-        NaruAgentImpl agent = new NaruAgentImpl();
+    private NaruSession sessionFor(NPath projectDir, boolean withProvider) {
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
-        NaruSessionImpl session = new NaruSessionImpl(agent, projectDir,
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        NaruSession session = agent.newSession()
+                .directory(projectDir)
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         if (withProvider) {
             session.registry().registerModelProvider(new FakeProvider());
         }

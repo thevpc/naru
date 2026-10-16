@@ -1,13 +1,14 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.*;
-import net.thevpc.naru.api.model.*;
+import net.thevpc.naru.api.registry.NaruAgentExtension;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.nuts.concurrent.NCallable;
+import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.io.*;
 import net.thevpc.nuts.log.NLogger;
 import net.thevpc.nuts.text.NMsg;
@@ -34,7 +35,7 @@ import java.util.function.Predicate;
  * <p>This class is pure Java — no Nuts dependency — so it can be extracted
  * into a standalone library later.
  */
-public class NaruAgentImpl implements NaruAgent {
+public class NaruWorkspaceImpl implements NaruWorkspace {
 
     /**
      * Optional step listener for CLI progress printing.
@@ -81,6 +82,15 @@ public class NaruAgentImpl implements NaruAgent {
     private Predicate<NaruTool> toolFilter;
     private Predicate<NaruToolTag> tagFilter;
 
+    /**
+     * Agent-level extensions, retained for the agent's lifetime. Created lazily on
+     * first lookup, mirroring how a session registry retains its session extensions:
+     * a project-level feature owns state that outlives every session, so creating it
+     * per-lookup would split that state across instances.
+     */
+    private final Map<String, NaruAgentExtension> agentExtensions = new ConcurrentHashMap<>();
+    private volatile boolean agentExtensionsLoaded;
+
     private final NaruSessionListener asSessionListener = new NaruSessionListener() {
 
         @Override
@@ -110,10 +120,38 @@ public class NaruAgentImpl implements NaruAgent {
         }
     };
 
-    public NaruAgentImpl() {
+    public NaruWorkspaceImpl() {
         this.logger = a -> {
             NOut.resetLine().println(a);
         };
+    }
+
+    @Override
+    public <T extends NaruAgentExtension> NOptional<T> extension(String name, Class<T> as) {
+        if (!agentExtensionsLoaded) {
+            synchronized (this) {
+                if (!agentExtensionsLoaded) {
+                    try {
+                        for (NaruAgentExtension e : NExtensions.of()
+                                .createAllSupported(NaruAgentExtension.class, null)) {
+                            if (agentExtensions.containsKey(e.name())) {
+                                continue;
+                            }
+                            e.open(this);
+                            agentExtensions.put(e.name(), e);
+                        }
+                    } catch (Exception ex) {
+                        // discovery must never break the agent; an extension that cannot
+                        // be listed is simply not available
+                        log(NaruLogMode.SCRIPT, NMsg.ofC(
+                                "agent extensions unavailable: %s", ex.getMessage()));
+                    }
+                    agentExtensionsLoaded = true;
+                }
+            }
+        }
+        NaruAgentExtension e = agentExtensions.get(name);
+        return NOptional.ofNullable(e == null || !as.isInstance(e) ? null : as.cast(e));
     }
 
     @Override
@@ -122,7 +160,7 @@ public class NaruAgentImpl implements NaruAgent {
     }
 
     @Override
-    public NaruAgent directiveFilter(Predicate<NaruDirective> directiveFilter) {
+    public NaruWorkspace directiveFilter(Predicate<NaruDirective> directiveFilter) {
         this.directiveFilter = directiveFilter;
         return this;
     }
@@ -133,7 +171,7 @@ public class NaruAgentImpl implements NaruAgent {
     }
 
     @Override
-    public NaruAgentImpl toolFilter(Predicate<NaruTool> toolFilter) {
+    public NaruWorkspaceImpl toolFilter(Predicate<NaruTool> toolFilter) {
         this.toolFilter = toolFilter;
         return this;
     }
@@ -144,7 +182,7 @@ public class NaruAgentImpl implements NaruAgent {
     }
 
     @Override
-    public NaruAgentImpl tagFilter(Predicate<NaruToolTag> tagFilter) {
+    public NaruWorkspaceImpl tagFilter(Predicate<NaruToolTag> tagFilter) {
         this.tagFilter = tagFilter;
         return this;
     }
@@ -239,7 +277,7 @@ public class NaruAgentImpl implements NaruAgent {
     }
 
     @Override
-    public NaruAgent projectDirectory(NPath projectDirectory) {
+    public NaruWorkspace projectDirectory(NPath projectDirectory) {
         this.projectDirectory = projectDirectory;
         registrations = new NaruRegistrationStore(
                 projectDirectory.resolve(".naru/config/registrations.tson"),
@@ -265,7 +303,7 @@ public class NaruAgentImpl implements NaruAgent {
         return registrations;
     }
 
-    public NaruAgent logger(NLogger logger) {
+    public NaruWorkspace logger(NLogger logger) {
         this.logger = logger;
         return this;
     }

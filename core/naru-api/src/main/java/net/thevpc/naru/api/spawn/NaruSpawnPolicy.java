@@ -4,7 +4,9 @@ import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.nuts.io.NPath;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -35,6 +37,8 @@ public final class NaruSpawnPolicy {
     private final Set<NaruSpawnInherit> inherit = new LinkedHashSet<>();
     private final Set<String> addTags = new LinkedHashSet<>();
     private final Set<String> revokeTags = new LinkedHashSet<>();
+    private final Map<String, String> addLabels = new LinkedHashMap<>();
+    private final Set<String> revokeLabels = new LinkedHashSet<>();
     private final Set<String> addSkills = new LinkedHashSet<>();
     private final Set<String> excludeTools = new LinkedHashSet<>();
     private NaruSpawnStrategy strategy;
@@ -121,6 +125,44 @@ public final class NaruSpawnPolicy {
             for (String s : skills) {
                 if (s != null && !s.isBlank()) {
                     addSkills.add(s.trim());
+                }
+            }
+        }
+        return this;
+    }
+
+    /** User-defined budget labels to add for the spawned task ({@code --add-labels=k=v}). */
+    public Map<String, String> addLabels() {
+        return Collections.unmodifiableMap(addLabels);
+    }
+
+    public NaruSpawnPolicy addLabels(Map<String, String> labels) {
+        addLabels.clear();
+        if (labels != null) {
+            for (Map.Entry<String, String> e : labels.entrySet()) {
+                if (e.getKey() != null && !e.getKey().isBlank() && e.getValue() != null) {
+                    addLabels.put(e.getKey().trim(), e.getValue());
+                }
+            }
+        }
+        return this;
+    }
+
+    /** User-defined budget label keys to revoke ({@code --revoke-labels=...}). */
+    public Set<String> revokeLabels() {
+        return Collections.unmodifiableSet(revokeLabels);
+    }
+
+    public NaruSpawnPolicy revokeLabels(String... keys) {
+        return revokeLabels(keys == null ? Collections.emptyList() : java.util.Arrays.asList(keys));
+    }
+
+    public NaruSpawnPolicy revokeLabels(java.util.List<String> keys) {
+        revokeLabels.clear();
+        if (keys != null) {
+            for (String k : keys) {
+                if (k != null && !k.isBlank()) {
+                    revokeLabels.add(k.trim());
                 }
             }
         }

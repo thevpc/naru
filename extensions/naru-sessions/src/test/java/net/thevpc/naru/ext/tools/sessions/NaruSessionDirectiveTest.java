@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.agent.NaruVisibility;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.AbstractNaruModelProvider;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
@@ -20,8 +21,6 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
@@ -29,7 +28,6 @@ import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
 import net.thevpc.nuts.cmdline.NArgCompletePosition;
 import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
@@ -74,8 +72,8 @@ public class NaruSessionDirectiveTest {
     };
 
     private NPath projectDir;
-    private NaruAgentImpl agent;
-    private NaruSessionImpl session;
+    private NaruWorkspace agent;
+    private NaruSession session;
 
     @BeforeAll
     public static void setUpWorkspace() {
@@ -85,7 +83,7 @@ public class NaruSessionDirectiveTest {
     @BeforeEach
     public void setUp() {
         projectDir = NPath.ofTempFolder("naru-session-directive-" + System.nanoTime());
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         // configureDefaults=false: no SPI discovery, no network, no real models. The test
         // registers exactly the directive provider and the offline model it needs, so a
@@ -94,9 +92,17 @@ public class NaruSessionDirectiveTest {
     }
 
     /** A session sharing this test's project directory, and so its saved-session catalog. */
-    private NaruSessionImpl newSession(String name) {
-        NaruSessionImpl s = new NaruSessionImpl(agent, projectDir, new NaruStreamInteraction(o -> {
-        }), false, NOOP_LISTENER, null, null, null);
+    private NaruSession newSession(String name) {
+        NaruSession s = agent.newSession()
+                .directory(projectDir)
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         s.registry().registerDirectiveProvider(new NaruSessionsDirectiveProvider());
         s.registry().registerModelProvider(new OfflineProvider());
         s.name(name);
@@ -108,8 +114,8 @@ public class NaruSessionDirectiveTest {
      * started, so {@link NaruAgent#sessions()} does not know it. This is the fallback half
      * of the id/name selection.
      */
-    private NaruSessionImpl savedSession(String name) {
-        NaruSessionImpl s = newSession(name);
+    private NaruSession savedSession(String name) {
+        NaruSession s = newSession(name);
         s.save();
         return s;
     }
@@ -237,7 +243,7 @@ public class NaruSessionDirectiveTest {
      */
     @Test
     public void renameSavedSessionByUniqueIdPrefix() {
-        NaruSessionImpl saved = savedSession("old-name");
+        NaruSession saved = savedSession("old-name");
         String prefix = uniquePrefix(saved.uuid(), session.uuid());
 
         NaruStmtResult r = call("rename --id " + prefix + " new-name");
@@ -272,7 +278,7 @@ public class NaruSessionDirectiveTest {
 
     @Test
     public void renameSavedSessionByName() {
-        NaruSessionImpl saved = savedSession("old-name");
+        NaruSession saved = savedSession("old-name");
 
         NaruStmtResult r = call("rename --name old-name new-name");
 
@@ -284,7 +290,7 @@ public class NaruSessionDirectiveTest {
     /** The terse spelling from the request ({@code -id aa}) must work too. */
     @Test
     public void terseIdOptionIsAccepted() {
-        NaruSessionImpl saved = savedSession("old-name");
+        NaruSession saved = savedSession("old-name");
         String prefix = uniquePrefix(saved.uuid(), session.uuid());
 
         NaruStmtResult r = call("rename -id " + prefix + " new-name");
@@ -297,7 +303,7 @@ public class NaruSessionDirectiveTest {
     /** The same terse spelling for {@code -name}. */
     @Test
     public void terseNameOptionIsAccepted() {
-        NaruSessionImpl saved = savedSession("old-name");
+        NaruSession saved = savedSession("old-name");
 
         NaruStmtResult r = call("rename -name old-name new-name");
 
@@ -308,7 +314,7 @@ public class NaruSessionDirectiveTest {
 
     @Test
     public void unknownIdIsAnErrorNotAGuess() {
-        NaruSessionImpl saved = savedSession("old-name");
+        NaruSession saved = savedSession("old-name");
 
         NaruStmtResult r = call("rename --id deadbeef ghost");
 
@@ -324,8 +330,8 @@ public class NaruSessionDirectiveTest {
      */
     @Test
     public void ambiguousNameIsReported() {
-        NaruSessionImpl first = savedSession("dup");
-        NaruSessionImpl second = savedSession("dup");
+        NaruSession first = savedSession("dup");
+        NaruSession second = savedSession("dup");
 
         NaruStmtResult r = call("rename --name dup ghost");
 
@@ -338,7 +344,7 @@ public class NaruSessionDirectiveTest {
 
     @Test
     public void currentShowsASessionPickedByIdPrefix() {
-        NaruSessionImpl saved = savedSession("other");
+        NaruSession saved = savedSession("other");
         String prefix = uniquePrefix(saved.uuid(), session.uuid());
 
         NaruStmtResult r = call("current --id " + prefix);
@@ -350,7 +356,7 @@ public class NaruSessionDirectiveTest {
 
     @Test
     public void visibilityOfASavedSessionCanBeChanged() {
-        NaruSessionImpl saved = savedSession("share-me");
+        NaruSession saved = savedSession("share-me");
         String prefix = uniquePrefix(saved.uuid(), session.uuid());
         assertEquals(NaruVisibility.PRIVATE, savedEntry(saved.uuid()).getMode());
 
@@ -367,7 +373,7 @@ public class NaruSessionDirectiveTest {
 
     @Test
     public void deleteSelectsASavedSessionByIdPrefix() {
-        NaruSessionImpl saved = savedSession("gone");
+        NaruSession saved = savedSession("gone");
         String prefix = uniquePrefix(saved.uuid(), session.uuid());
 
         NaruStmtResult r = call("delete --id " + prefix);
@@ -378,7 +384,7 @@ public class NaruSessionDirectiveTest {
 
     @Test
     public void loadSelectsASavedSessionByIdPrefix() {
-        NaruSessionImpl saved = savedSession("destination");
+        NaruSession saved = savedSession("destination");
         String prefix = uniquePrefix(saved.uuid(), session.uuid());
 
         NaruStmtResult r = call("load --id " + prefix);
@@ -402,7 +408,7 @@ public class NaruSessionDirectiveTest {
 
     @Test
     public void saveOnASavedOnlySessionIsANoOp() {
-        NaruSessionImpl saved = savedSession("already-saved");
+        NaruSession saved = savedSession("already-saved");
         String prefix = uniquePrefix(saved.uuid(), session.uuid());
 
         NaruStmtResult r = call("save --id " + prefix);
@@ -413,7 +419,7 @@ public class NaruSessionDirectiveTest {
 
     @Test
     public void resetOnASavedOnlySessionAsksForARunningOne() {
-        NaruSessionImpl saved = savedSession("not-running");
+        NaruSession saved = savedSession("not-running");
         String prefix = uniquePrefix(saved.uuid(), session.uuid());
 
         NaruStmtResult r = call("reset --id " + prefix);
@@ -429,7 +435,7 @@ public class NaruSessionDirectiveTest {
     /** The request's exact case: {@code --id=} must complete the id from the catalog. */
     @Test
     public void inlineIdOptionCompletesTheUuid() {
-        NaruSessionImpl saved = savedSession("inline-id");
+        NaruSession saved = savedSession("inline-id");
         String prefix = uniquePrefix(saved.uuid(), session.uuid());
 
         List<String> values = complete("/session", "current", "--id=" + prefix);
@@ -441,7 +447,7 @@ public class NaruSessionDirectiveTest {
     /** {@code --id <prefix>} as two words must complete the id too. */
     @Test
     public void separateIdOptionCompletesTheUuid() {
-        NaruSessionImpl saved = savedSession("separate-id");
+        NaruSession saved = savedSession("separate-id");
         String prefix = uniquePrefix(saved.uuid(), session.uuid());
 
         List<String> values = complete("/session", "current", "--id", prefix);

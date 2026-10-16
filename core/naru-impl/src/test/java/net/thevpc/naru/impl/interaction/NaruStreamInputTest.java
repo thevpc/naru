@@ -5,12 +5,11 @@ import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
@@ -182,9 +181,16 @@ public class NaruStreamInputTest {
     }
 
     private static NaruSessionImpl newSession(NaruInteraction interaction) {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-stream-input"));
-        return new NaruSessionImpl(agent, agent.projectDirectory(),
-                interaction, false, null, null, null, null);
+        return (NaruSessionImpl) agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(interaction)
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 }

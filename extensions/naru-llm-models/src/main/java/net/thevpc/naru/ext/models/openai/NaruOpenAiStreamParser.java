@@ -207,13 +207,13 @@ public class NaruOpenAiStreamParser extends NaruSseResponseParser {
         totalTokens = usage.getIntValue("total_tokens").orElse(totalTokens);
         // Same split as the batch parser: a cached token is already inside
         // prompt_tokens, so this decomposes the input total rather than adding
-        // to it.
+        // to it, and OpenAI has no cache-write class (see the batch parser).
         NObjectElement details = usage.getObject("prompt_tokens_details").orNull();
         if (details != null) {
             int cached = details.getIntValue("cached_tokens").orElse(-1);
             if (cached >= 0) {
                 cacheReadTokens = cached;
-                cacheWriteTokens = Math.max(0, promptTokens - cached);
+                cacheWriteTokens = 0;
             }
         }
     }

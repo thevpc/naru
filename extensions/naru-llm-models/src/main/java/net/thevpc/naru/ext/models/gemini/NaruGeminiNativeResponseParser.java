@@ -46,19 +46,24 @@ public class NaruGeminiNativeResponseParser implements NElementDeserializer<Naru
         NObjectElement usage = root.getObject("usageMetadata").orNull();
         if (usage != null) {
             int promptTokens = usage.getIntValue("promptTokenCount").orElse(0);
-            int outputTokens = usage.getIntValue("candidatesTokenCount").orElse(0);
+            int candidates = usage.getIntValue("candidatesTokenCount").orElse(0);
+            // Gemini reports reasoning ("thoughts") outside candidatesTokenCount
+            // but bills it as output, so normalize evalTokens to include it.
+            int thoughts = usage.getIntValue("thoughtsTokenCount").orElse(-1);
+            int outputTokens = candidates + Math.max(0, thoughts);
             response.setPromptTokens(promptTokens);
             response.setEvalTokens(outputTokens);
             response.setTotalTokens(usage.getIntValue("totalTokenCount")
                     .orElse(promptTokens + outputTokens));
 
             // As with every other provider, cached tokens are a breakdown of the
-            // prompt total rather than an addition to it. Whatever was not
-            // served from cache was processed at full rate this turn.
+            // prompt total rather than an addition to it, and Gemini has no
+            // cache-write class (see the OpenAI parser for why 0, not the
+            // uncached remainder).
             int cached = usage.getIntValue("cachedContentTokenCount").orElse(-1);
             if (cached >= 0) {
                 response.setCacheReadTokens(cached);
-                response.setCacheWriteTokens(Math.max(0, promptTokens - cached));
+                response.setCacheWriteTokens(0);
             }
         }
 

@@ -1,13 +1,10 @@
 package net.thevpc.naru.ext.skills;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.scheduler.NaruEvent;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -216,9 +213,16 @@ public class NaruSkillsStandardValidatorTest {
         Files.createDirectories(md.getParent());
         Files.writeString(md, "---\nname: pdf-reader\ndescription: Read and extract text from PDF files\n---\n# pdf-reader\nextracts text\n");
 
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.of(tmp));
-        NaruSession session = new NaruSessionImpl(agent, NPath.of(tmp), null, true, NOOP_LISTENER, null, null, null);
+        NaruSession session = agent.newSession()
+                .directory(NPath.of(tmp))
+                .interaction(null)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         try {
             NaruSkill s = NaruSkillsExtension.skills(session).skills().findSkill("pdf-reader");
             assertNotNull(s, "naru must load the skill the reference validator accepted");

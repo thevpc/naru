@@ -18,28 +18,56 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * In-memory token accounting for a single session.
+ * Token accounting for a single session's view of the shared, project-level store.
  * <p>
- * Deliberately not persisted: spend is a fact about the run that incurred it, and restoring
- * yesterday's totals into today's report would misstate current cost. A reload starts from
- * zero, which is also what makes the number trustworthy.
+ * The store and the price table are owned by the agent ({@link NaruBudgetAgentExtension})
+ * and shared by every session; this service is the per-session facade the directive and
+ * the usage listener talk to. When no agent extension is available (unit tests, a bare
+ * session without SPI discovery), it falls back to a private in-memory store and price
+ * table so accounting still works, just without persistence or sharing.
  */
-class NaruBudgetServiceImpl implements NaruBudgetService, NAruUnitBudgetSupplier {
+class NaruBudgetServiceImpl implements NaruBudgetService {
 
     private final NaruSession session;
-    private final NaruBudgetStore store = new InMemoryNaruBudgetStore();
+    private final NaruBudgetStore store;
+    private final NaruBudgetPriceTable priceTable;
     /**
      * Keyed by sessionId/provider, but this instance only ever sees one session.
      */
     private final Map<String, NaruProviderRateLimitInfo> latestInfoByProvider = new ConcurrentHashMap<>();
 
-    NaruBudgetServiceImpl(NaruSession session) {
+    NaruBudgetServiceImpl(NaruSession session, NaruBudgetAgentExtension agentExtension) {
         this.session = session;
+        if (agentExtension != null) {
+            this.store = agentExtension.store();
+            this.priceTable = agentExtension.priceTable();
+        } else {
+            this.store = new InMemoryNaruBudgetStore();
+            this.priceTable = new NaruBudgetPriceTable();
+        }
     }
 
     @Override
     public void trackTransaction(NaruTokenTransaction t) {
+        if (t.getPrice() == null) {
+            // Snapshot the price the call was made under. From here on the cost of
+            // this call is fixed, whatever `price set` does later.
+            NaruUnitPrice price = priceFor(t.getLabels());
+            if (price != null) {
+                t = t.withPrice(price);
+            }
+        }
         store.saveTransaction(t);
+    }
+
+    @Override
+    public NaruUnitPrice priceFor(Labels labels) {
+        return priceTable.priceFor(labels);
+    }
+
+    @Override
+    public NaruBudgetPriceTable priceTable() {
+        return priceTable;
     }
 
 
@@ -58,8 +86,7 @@ class NaruBudgetServiceImpl implements NaruBudgetService, NAruUnitBudgetSupplier
         }
         Labels labels2 = Labels.of(map);
         return store.aggregate(new DefaultNaruBudgetStoreQuery()
-                        .whereLabels(labels2),
-                this
+                        .whereLabels(labels2)
         );
     }
 
@@ -68,9 +95,7 @@ class NaruBudgetServiceImpl implements NaruBudgetService, NAruUnitBudgetSupplier
         if (query == null) {
             query = new DefaultNaruBudgetStoreQuery();
         }
-        return store.aggregate(query,
-                this
-        );
+        return store.aggregate(query);
     }
 
     @Override
@@ -87,6 +112,14 @@ class NaruBudgetServiceImpl implements NaruBudgetService, NAruUnitBudgetSupplier
             all.add(findModelBudgetStats(q.copy().whereLabel("model", e)));
         }
         return all;
+    }
+
+    @Override
+    public List<NaruTokenTransaction> findTransactions(NaruBudgetStoreQuery query) {
+        if (query == null) {
+            query = new DefaultNaruBudgetStoreQuery();
+        }
+        return store.findTransactions(query);
     }
 
     @Override

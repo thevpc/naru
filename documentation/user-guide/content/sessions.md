@@ -35,7 +35,7 @@ Three objects, each with one job:
 
 | Object         | What it is                                                        |
 |----------------|-------------------------------------------------------------------|
-| `NaruAgent`    | The engine. Holds your project directory and your configuration.  |
+| `NaruWorkspace`    | The engine. Holds your project directory and your configuration.  |
 | `NaruSession`  | One conversation with the engine. Owns a scheduler and a worker pool. |
 | `NaruTask`     | One run of a script. **Its own handle on its own result.**         |
 

@@ -102,7 +102,8 @@ public class NaruAnthropicResponseParserTest {
                 "    \"cache_read_input_tokens\": 800\n" +
                 "  }\n" +
                 "}");
-        Assertions.assertEquals(10, r.getPromptTokens());
+        Assertions.assertEquals(2010, r.getPromptTokens(),
+                "input_tokens excludes the cache classes, so prompt is the billed total");
         Assertions.assertEquals(1200, r.getCacheWriteTokens());
         Assertions.assertEquals(800, r.getCacheReadTokens());
         Assertions.assertTrue(r.hasCacheAccounting());

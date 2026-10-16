@@ -18,6 +18,7 @@
         <module>core/naru-impl</module>
 
         <module>extensions</module>
+        <module>profiles</module>
         <module>test</module>
 
         <module>app/naru</module>

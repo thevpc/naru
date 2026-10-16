@@ -36,12 +36,13 @@ public class NaruPermissionsBuiltinsTest {
         s.accessPolicy().putRule(new NaruPermissionRule().id("user-rule")
                 .resourceType(NaruResourceType.TOOL).patterns("x").effect(NaruAccessEffect.ALLOW));
 
-        assertEquals(2, NaruPermissionsBuiltins.install(s.accessPolicy()));
+        assertEquals(3, NaruPermissionsBuiltins.install(s.accessPolicy()));
 
         List<NaruPermissionRule> rules = s.accessPolicy().rules();
         assertEquals(NaruPermissionsBuiltins.NO_AGENT_POLICY_DIRECTIVE, rules.get(0).id(),
                 "a built-in is a baseline guarantee and precedes rules added later");
         assertEquals(NaruPermissionsBuiltins.NO_AGENT_SECRET_FILES, rules.get(1).id());
+        assertEquals(NaruPermissionsBuiltins.NO_AGENT_BUDGET_WRITE, rules.get(2).id());
         assertEquals(NaruAccessPolicy.SOURCE_CORE, rules.get(0).source());
         assertEquals("user-rule", rules.get(rules.size() - 1).id());
     }
@@ -54,7 +55,7 @@ public class NaruPermissionsBuiltinsTest {
 
         long core = s.accessPolicy().rules().stream()
                 .filter(r -> NaruAccessPolicy.SOURCE_CORE.equals(r.source())).count();
-        assertEquals(2, core);
+        assertEquals(3, core);
     }
 
     @Test
@@ -67,7 +68,8 @@ public class NaruPermissionsBuiltinsTest {
 
         assertEquals(List.of(
                         NaruPermissionsBuiltins.NO_AGENT_POLICY_DIRECTIVE,
-                        NaruPermissionsBuiltins.NO_AGENT_SECRET_FILES),
+                        NaruPermissionsBuiltins.NO_AGENT_SECRET_FILES,
+                        NaruPermissionsBuiltins.NO_AGENT_BUDGET_WRITE),
                 s.accessPolicy().rules().stream().map(NaruPermissionRule::id).toList());
     }
 
@@ -99,5 +101,28 @@ public class NaruPermissionsBuiltinsTest {
                         NaruResource.of(NaruResourceType.FILE, home + "/notes.txt"),
                         NaruAction.READ, NaruActor.agent("a1", null))).allowed(),
                 "an ordinary file is unaffected");
+    }
+
+    /**
+     * An agent that can set prices or labels can rewrite its own bill, so the
+     * mutation path is denied while the report stays readable: a model still needs to
+     * know what it has spent.
+     */
+    @Test
+    public void anAgentMayNotMutateBudgetButAUserMay() {
+        NaruSessionImpl s = NaruPermissionsTestSupport.session();
+        NaruPermissionsBuiltins.install(s.accessPolicy());
+        NaruResource price = NaruResource.of(NaruPermissionsBuiltins.BUDGET_RESOURCE, "price");
+        NaruResource label = NaruResource.of(NaruPermissionsBuiltins.BUDGET_RESOURCE, "label");
+        NaruAction update = NaruPermissionsBuiltins.BUDGET_UPDATE;
+
+        assertFalse(s.accessPolicy().check(price, update, NaruActor.agent("a1", null)).allowed(),
+                "an agent must not set its own prices");
+        assertFalse(s.accessPolicy().check(label, update, NaruActor.agent("a1", null)).allowed(),
+                "an agent must not relabel its own calls");
+        assertTrue(s.accessPolicy().check(price, update, NaruActor.user("alice")).allowed(),
+                "a human may set prices");
+        assertTrue(s.accessPolicy().check(price, NaruAction.READ, NaruActor.agent("a1", null)).allowed(),
+                "an agent may still read the report");
     }
 }

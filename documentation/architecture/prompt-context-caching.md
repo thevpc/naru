@@ -195,8 +195,14 @@ the path (`models/{model}:generateContent`), which is why
 - **No history-edit events.** Invalidation is computed by re-diffing the segment
   chain on every call, which is correct but does O(segments) of hashing per turn.
   An explicit event would let it skip untouched prefixes.
-- **No `/stats` surface for cache ratios.** The counters are tracked and exposed
-  on `NaruModelStats.getCacheHitRatio()`, but nothing displays them yet.
+- **Cache ratios now surface in `/budget`.** The counters are tracked
+  (`NaruModelBudgetStats.cacheHitRatio()` / `cacheRatioPartial()`) and the
+  `/budget` report prints a `cache-hit` figure per row: a percentage when the
+  providers in the group reported cache data, `n/a` when none did, and a
+  `partial` marker when only some did. The ratio is computed over only the calls
+  that reported cache tokens, so a provider that reports nothing does not dilute
+  it. (This replaces the earlier `/stats`-only gap and the retired `/stats`
+  command.)
 - **Metering had a pre-existing bug**, fixed in the same change:
   `NaruMeteringServiceImpl.accumulate` assigned instead of added, so a model that
   had served ten calls reported the token counts of the tenth alone. This is

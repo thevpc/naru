@@ -210,6 +210,57 @@ public final class NaruSpawnPlanner {
             }
         }
 
+        // ── user labels ─────────────────────────────────────────────────────
+        Map<String, NaruSpawnSeed<String>> labelAdds = new LinkedHashMap<>();
+        for (Map.Entry<String, NaruSpawnSeed<String>> e : ctx.labelSeeds().entrySet()) {
+            mergeSeed(labelAdds, e.getKey(), e.getValue());
+        }
+        if (policy != null) {
+            for (Map.Entry<String, String> e : policy.addLabels().entrySet()) {
+                mergeSeed(labelAdds, e.getKey(), NaruSpawnSeed.of(e.getValue(), NaruSpawnSource.POLICY));
+            }
+        }
+        for (Map.Entry<String, String> e : spec.addLabels().entrySet()) {
+            mergeSeed(labelAdds, e.getKey(), NaruSpawnSeed.of(e.getValue(), NaruSpawnSource.FLAG));
+        }
+
+        Map<String, NaruSpawnSeed<String>> labelRevokes = new LinkedHashMap<>();
+        for (Map.Entry<String, NaruSpawnSeed<String>> e : ctx.revokeLabelSeeds().entrySet()) {
+            mergeSeed(labelRevokes, e.getKey(), e.getValue());
+        }
+        if (policy != null) {
+            for (String k : policy.revokeLabels()) {
+                mergeSeed(labelRevokes, k, NaruSpawnSeed.of(k, NaruSpawnSource.POLICY));
+            }
+        }
+        for (String k : spec.revokeLabels()) {
+            mergeSeed(labelRevokes, k, NaruSpawnSeed.of(k, NaruSpawnSource.FLAG));
+        }
+
+        // Labels inherit by default: a caller who enumerates no inherit set at all still
+        // gets them (unlike tags/env), because a child almost always shares its spawner's
+        // descriptive dimensions. A caller who enumerates an inherit set without labels
+        // has opted out.
+        boolean inheritLabels = inherited.containsKey(NaruSpawnInherit.LABELS) || inherited.isEmpty();
+        Map<String, NaruSpawnSeed<String>> labelMap = new TreeMap<>();
+        if (inheritLabels && parent != null) {
+            NaruSpawnSource labelSource = inherited.getOrDefault(NaruSpawnInherit.LABELS, NaruSpawnSource.DEFAULT);
+            for (Map.Entry<String, String> e : parent.labels().entrySet()) {
+                mergeSeed(labelMap, e.getKey(), NaruSpawnSeed.of(e.getValue(), labelSource));
+            }
+        }
+        for (Map.Entry<String, NaruSpawnSeed<String>> e : labelAdds.entrySet()) {
+            mergeSeed(labelMap, e.getKey(), e.getValue());
+        }
+        for (Map.Entry<String, NaruSpawnSeed<String>> e : labelRevokes.entrySet()) {
+            String key = e.getKey();
+            NaruSpawnSeed<String> add = labelAdds.get(key);
+            if (add != null && rank(add.source()) >= rank(e.getValue().source())) {
+                continue; // add-wins-over-revoke at equal or higher precedence
+            }
+            labelMap.remove(key);
+        }
+
         // ── contract validation ─────────────────────────────────────────────
         NaruSpawnContract contract = ctx.contract();
         if (contract != null) {
@@ -279,6 +330,7 @@ public final class NaruSpawnPlanner {
                 exclusions,
                 skills,
                 envMap,
+                labelMap,
                 policy == null ? null : policy.name(),
                 contract,
                 warnings);

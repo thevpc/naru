@@ -11,6 +11,7 @@ import java.util.Map;
 
 public class DefaultNaruBudgetStoreQuery implements NaruBudgetStoreQuery {
     private Map<String, String> labels = new HashMap<>();
+    private Map<String, String> prefixLabels = new HashMap<>();
     private Instant from;
     private Instant to;
 
@@ -22,6 +23,7 @@ public class DefaultNaruBudgetStoreQuery implements NaruBudgetStoreQuery {
             this.from = other.from();
             this.to = other.to();
             labels.putAll(other.labels().asMap());
+            prefixLabels.putAll(other.labelPrefixes());
         }
     }
 
@@ -60,6 +62,19 @@ public class DefaultNaruBudgetStoreQuery implements NaruBudgetStoreQuery {
             labels.put(key, value);
         }
         return this;
+    }
+
+    @Override
+    public NaruBudgetStoreQuery whereLabelStartsWith(String key, String prefix) {
+        if (key != null && prefix != null) {
+            prefixLabels.put(key, prefix);
+        }
+        return this;
+    }
+
+    @Override
+    public Map<String, String> labelPrefixes() {
+        return prefixLabels;
     }
 
     public NaruBudgetStoreQuery wherePeriod(Instant from, Instant to) {

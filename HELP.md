@@ -19,8 +19,42 @@ Available Native Core Directives:
   ai Directives:
     /budget : show and manage budget
     | Detailed Specification :
-  /budget   
-           show and manage budget
+/budget 
+  /budget   [--level=task|session|project]
+           scope; default is the current session, project drops the session filter
+/budget 
+  /budget   [--group-by=<k>[,<k>...]]
+           one row per distinct tuple of label keys; default provider
+/budget 
+  /budget   [--user=<name|all>] [--session=<uuid>] [--provider=<p>] [--label k=v]...
+           narrow the scope; --label may repeat
+/budget 
+  /budget   [--task=<id>]
+           one task and everything it spawned
+/budget 
+  /budget   [--since=<dur>] [--from=<ts>] [--to=<ts>]
+           narrow by time
+/budget 
+  /budget   [--explain]
+           add the request estimate, bucket shares and skill attribution (opt-in)
+
+/budget  label set <key>=<value>...
+           add or replace labels on the current task
+/budget  label unset <key>...
+           remove labels from the current task
+/budget  label list
+           list the current task's labels
+/budget  label clear
+           remove every label from the current task
+
+/budget  price list
+           list the prices in effect
+/budget  price set <provider>[/<model>] input=<x> output=<y> [cache-read=<x>] [cache-write=<y>]
+           set a price, per 1M tokens; the bare provider key applies to every model of that provider
+/budget  price unset <provider>[/<model>]
+           remove a price
+/budget  price refresh
+           fetch prices from a public source (network call; agent-denied)
     -----------------------------------------
     /context : show AI context
     | Detailed Specification :
@@ -271,11 +305,6 @@ Available Native Core Directives:
 /skills  untrust <index|substring>
            untrust a previously trusted foreign root; NARU-native roots are never trustable
     -----------------------------------------
-    /stats : attribute the current request: catalog vs loaded skills, buckets, per-model spend
-    | Detailed Specification :
-  /stats   
-           attribute the current request: catalog vs loaded skills, buckets, per-model spend
-    -----------------------------------------
     /tags : enable/disable tool tags
     | Detailed Specification :
   /tags  available 
@@ -425,6 +454,35 @@ Available Native Core Directives:
     | Detailed Specification :
   /system   
            run system command
+    -----------------------------------------
+
+  permissions Directives:
+    /permission : list and edit access-control rules
+    | Detailed Specification :
+  /permission  add 
+           add or replace a rule (kept in the session)
+
+  /permission  check 
+           answer whether an action is allowed
+
+  /permission  default 
+           show or change the fallback effect
+
+  /permission  explain 
+           check and show every rule that was weighed
+
+  /permission 
+  /permission  list 
+           list the rules in evaluation order
+
+  /permission  move 
+           change a rule's position (order is precedence)
+
+  /permission  remove 
+           remove a rule by id
+
+  /permission  update 
+           change fields of an existing rule in place
     -----------------------------------------
 
   plan Directives:

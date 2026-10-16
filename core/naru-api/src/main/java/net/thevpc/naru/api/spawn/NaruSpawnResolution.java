@@ -30,6 +30,7 @@ public final class NaruSpawnResolution {
     private final List<NaruSpawnSeed<String>> exclusions;
     private final List<NaruSpawnSeed<String>> skills;
     private final Map<String, NaruSpawnSeed<Object>> env;
+    private final Map<String, NaruSpawnSeed<String>> labels;
     private final String policyName;
     private final NaruSpawnContract contract;
     private final List<String> warnings;
@@ -44,6 +45,7 @@ public final class NaruSpawnResolution {
             List<NaruSpawnSeed<String>> exclusions,
             List<NaruSpawnSeed<String>> skills,
             Map<String, NaruSpawnSeed<Object>> env,
+            Map<String, NaruSpawnSeed<String>> labels,
             String policyName,
             NaruSpawnContract contract,
             List<String> warnings) {
@@ -56,6 +58,7 @@ public final class NaruSpawnResolution {
         this.exclusions = Collections.unmodifiableList(new ArrayList<>(exclusions));
         this.skills = Collections.unmodifiableList(new ArrayList<>(skills));
         this.env = Collections.unmodifiableMap(new LinkedHashMap<>(env));
+        this.labels = Collections.unmodifiableMap(new LinkedHashMap<>(labels));
         this.policyName = policyName;
         this.contract = contract;
         this.warnings = Collections.unmodifiableList(new ArrayList<>(warnings));
@@ -109,6 +112,14 @@ public final class NaruSpawnResolution {
      */
     public Map<String, NaruSpawnSeed<Object>> env() {
         return env;
+    }
+
+    /**
+     * The resolved user-defined budget labels, keyed by label key; each seed value is the
+     * label value.
+     */
+    public Map<String, NaruSpawnSeed<String>> labels() {
+        return labels;
     }
 
     /** The name of the applied named policy, or null. */
@@ -185,6 +196,13 @@ public final class NaruSpawnResolution {
                 parts.add(e.getKey() + "=" + e.getValue().value() + " (" + e.getValue().source() + ")");
             }
             out.add("env=" + String.join(", ", parts));
+        }
+        if (!labels.isEmpty()) {
+            List<String> parts = new ArrayList<>();
+            for (Map.Entry<String, NaruSpawnSeed<String>> e : labels.entrySet()) {
+                parts.add(e.getKey() + "=" + e.getValue().value() + " (" + e.getValue().source() + ")");
+            }
+            out.add("labels=" + String.join(", ", parts));
         }
         if (policyName != null && !policyName.isEmpty()) {
             out.add("policy=" + policyName);

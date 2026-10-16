@@ -1,5 +1,8 @@
 package net.thevpc.naru.api.agent;
 
+import net.thevpc.naru.api.registry.NaruDirective;
+import net.thevpc.naru.api.registry.NaruTool;
+import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.access.NaruPrincipal;
@@ -7,7 +10,9 @@ import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.store.NaruSessionScope;
 import net.thevpc.naru.api.store.NaruSessionStore;
+
 import java.time.Duration;
+import java.util.function.Predicate;
 
 /**
  * Configures and creates one {@link NaruSession}.
@@ -52,23 +57,63 @@ public interface NaruSessionBuilder {
      * ({@code System.getProperty("user.name")}), so a single-user host needs to
      * say nothing; a host that serves several people sets it explicitly.
      */
-    default NaruSessionBuilder user(NaruPrincipal user) { throw new UnsupportedOperationException(); }
+    default NaruSessionBuilder user(NaruPrincipal user) {
+        throw new UnsupportedOperationException();
+    }
 
-    /** Binds the owner as an already-acted actor, carrying its kind and groups. */
-    default NaruSessionBuilder userActor(NaruActor actor) { throw new UnsupportedOperationException(); }
+    /**
+     * Binds the owner as an already-acted actor, carrying its kind and groups.
+     */
+    default NaruSessionBuilder userActor(NaruActor actor) {
+        throw new UnsupportedOperationException();
+    }
 
-    /** Stable id used by a backend handle; existing ids are resolved by the store. */
-    default NaruSessionBuilder id(String id) { throw new UnsupportedOperationException(); }
-    default NaruSessionBuilder store(NaruSessionStore store) { throw new UnsupportedOperationException(); }
-    default NaruSessionBuilder scope(NaruSessionScope scope) { throw new UnsupportedOperationException(); }
-    default NaruSessionBuilder onInputBlock(NaruInputBlockPolicy policy) { throw new UnsupportedOperationException(); }
-    default NaruSessionBuilder hibernateAfter(Duration grace) { throw new UnsupportedOperationException(); }
-    default NaruSessionBuilder streaming(boolean enabled) { throw new UnsupportedOperationException(); }
-    default NaruSessionBuilder busy(NaruBusyPolicy policy) { throw new UnsupportedOperationException(); }
-    default NaruSessionBuilder listener(NaruTurnEventListener listener) { throw new UnsupportedOperationException(); }
-    default NaruSessionBuilder maxLiveSessions(int maximum) { throw new UnsupportedOperationException(); }
-    default NaruSessionBuilder checkpointEachMessage(boolean enabled) { throw new UnsupportedOperationException(); }
-    default NaruSessionBuilder capacityTimeout(Duration timeout) { throw new UnsupportedOperationException(); }
+    /**
+     * Stable id used by a backend handle; existing ids are resolved by the store.
+     */
+    default NaruSessionBuilder id(String id) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder store(NaruSessionStore store) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder scope(NaruSessionScope scope) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder onInputBlock(NaruInputBlockPolicy policy) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder hibernateAfter(Duration grace) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder streaming(boolean enabled) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder busy(NaruBusyPolicy policy) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder listener(NaruTurnEventListener listener) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder maxLiveSessions(int maximum) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder checkpointEachMessage(boolean enabled) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder capacityTimeout(Duration timeout) {
+        throw new UnsupportedOperationException();
+    }
 
     /**
      * How the session reaches its user: a terminal, a stream, or anything else.
@@ -124,6 +169,26 @@ public interface NaruSessionBuilder {
      */
     NaruSessionBuilder richTerm(boolean richTerm);
 
+    NaruSessionBuilder sessionListener(NaruSessionListener value);
+
+    /**
+     * Whether the session registers the built-in directives, tools, tags and every
+     * extension provider found on the classpath.
+     * <p>
+     * On by default: that is what makes a session useful the moment it is built. A test
+     * that wants to observe one subsystem in isolation turns it off and registers only
+     * what it is exercising, so an unrelated provider cannot perturb it.
+     */
+    default NaruSessionBuilder configureDefaults(boolean value) {
+        throw new UnsupportedOperationException();
+    }
+
+    NaruSessionBuilder directiveFilter(Predicate<NaruDirective> value);
+
+    NaruSessionBuilder toolFilter(Predicate<NaruTool> value);
+
+    NaruSessionBuilder tagFilter(Predicate<NaruToolTag> value);
+
     /**
      * Creates the session without starting it.
      *
@@ -131,6 +196,10 @@ public interface NaruSessionBuilder {
      */
     NaruSession build();
 
-    /** Builds a lazy backend handle while preserving {@link #build()} for existing callers. */
-    default NaruSessionHandle buildHandle() { throw new UnsupportedOperationException(); }
+    /**
+     * Builds a lazy backend handle while preserving {@link #build()} for existing callers.
+     */
+    default NaruSessionHandle buildHandle() {
+        throw new UnsupportedOperationException();
+    }
 }

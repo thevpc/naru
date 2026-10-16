@@ -5,7 +5,6 @@ import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
 import net.thevpc.naru.ext.budget.store.NaruBudgetStoreQuery;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -23,6 +22,18 @@ public interface NaruBudgetService {
     void trackTransaction(NaruTokenTransaction transaction);
 
     /**
+     * The price stored for these labels' {@code provider}/{@code model}, or null
+     * when the model is unpriced.
+     */
+    NaruUnitPrice priceFor(Labels labels);
+
+    /**
+     * The session's price table. Prices are configured here and snapshotted into
+     * each transaction as it is tracked.
+     */
+    NaruBudgetPriceTable priceTable();
+
+    /**
      * Totals for one model, or null-safe zeroes when nothing has been recorded.
      *
      * @param user may be null, meaning "all users"
@@ -36,6 +47,13 @@ public interface NaruBudgetService {
      * already folded in.
      */
     List<NaruModelBudgetStats> findByModelBudgetStats(NaruBudgetStoreQuery query);
+
+    /**
+     * The raw transactions matching a query. The report groups these in memory by an
+     * arbitrary tuple of label keys, which an aggregate cannot express; the aggregate
+     * helpers stay for the callers that only want one row.
+     */
+    List<NaruTokenTransaction> findTransactions(NaruBudgetStoreQuery query);
 
     /**
      * Records a provider's self-reported rate limits, replacing any previous report from

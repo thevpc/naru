@@ -4,12 +4,12 @@ import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.Assertions;
@@ -61,10 +61,17 @@ public class NaruSessionInteractionTest {
     }
 
     private static NaruSessionImpl newSession(NaruInteraction interaction, String name) {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-interaction-" + name));
-        return new NaruSessionImpl(agent, agent.projectDirectory(), interaction, false,
-                null, null, null, null);
+        return (NaruSessionImpl) agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(interaction)
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     private static NaruTask blockedTask(NaruSessionImpl session) {

@@ -4,10 +4,10 @@ import net.thevpc.naru.api.access.NaruAccessEffect;
 import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.access.NaruResourceType;
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
@@ -28,13 +28,14 @@ public class NaruWebGuardTest {
         Nuts.require();
     }
 
-    private static NaruSessionImpl session() {
+    private static NaruSession session() {
         NPath dir = NPath.ofTempFolder("naru-web-guard-" + System.nanoTime());
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
-        return new NaruSessionImpl(agent, dir,
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        return agent.newSession()
+                .directory(dir)
+                .interaction(new NaruStreamInteraction(o -> {
+                })).build();
     }
 
     private static NaruPermissionRule denyFetch(String id, String pattern) {
@@ -48,7 +49,7 @@ public class NaruWebGuardTest {
 
     @Test
     public void fetchRuleBlocksBeforeAnySocketIsOpened() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
         s.accessPolicy().putRule(denyFetch("deny-evil", "**evil.example**"));
 
@@ -60,7 +61,7 @@ public class NaruWebGuardTest {
 
     @Test
     public void unrelatedUrlIsNotDenied() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
         s.accessPolicy().putRule(denyFetch("deny-evil", "**evil.example**"));
 
@@ -71,7 +72,7 @@ public class NaruWebGuardTest {
 
     @Test
     public void searchBackendIsPoliced() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
         s.accessPolicy().putRule(denyFetch("deny-search", WebToolHelper.SEARCH_URL));
 

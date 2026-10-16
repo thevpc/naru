@@ -20,9 +20,9 @@ public class InMemoryNaruBudgetStore implements NaruBudgetStore {
     }
 
     @Override
-    public NaruModelBudgetStats aggregate(NaruBudgetStoreQuery query, NAruUnitBudgetSupplier supplier) {
+    public NaruModelBudgetStats aggregate(NaruBudgetStoreQuery query) {
         NaruAccumulatorBuilder b = new NaruAccumulatorBuilder();
-        visitTransactions(query, t -> b.accumulate(t, supplier));
+        visitTransactions(query, b::accumulate);
         return b.build();
     }
 
@@ -49,7 +49,6 @@ public class InMemoryNaruBudgetStore implements NaruBudgetStore {
         synchronized (allTransactions) {
             Instant f = query == null ? null : query.from();
             Instant t = query == null ? null : query.to();
-            Labels labels = query == null ? null : query.labels();
             for (NaruTokenTransaction transaction : allTransactions) {
                 if (query != null) {
                     if (f != null) {
@@ -62,11 +61,9 @@ public class InMemoryNaruBudgetStore implements NaruBudgetStore {
                             break;
                         }
                     }
-                    // the query's labels are the filter; the transaction's labels are
-                    // the candidate, so the candidate must contain every queried label.
-                    // Reversing the two made every filtered lookup miss (the session
-                    // label a transaction carries is never part of the query).
-                    if (labels != null && !transaction.getLabels().matches(labels)) {
+                    // equality and prefix label constraints are shared with the file
+                    // store; keeping two copies is how they drift
+                    if (!NaruBudgetStore.matchesLabels(transaction, query)) {
                         continue;
                     }
                 }

@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
 import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
@@ -10,7 +10,6 @@ import net.thevpc.nuts.cmdline.NArgCompletePosition;
 import net.thevpc.nuts.cmdline.NArgCompleteResolver;
 import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NIO;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.BeforeAll;
@@ -45,7 +44,7 @@ public class NaruNArgCompleteResolverTest {
 
     @BeforeEach
     public void setUp() {
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-complete-test"));
         session = agent.newSession()
                 .build();
@@ -188,7 +187,7 @@ public class NaruNArgCompleteResolverTest {
     public void buildingARichTerminalSessionRegistersTheCompleter() {
         NArgCompleteResolver previous = NIO.of().systemTerminal().autoCompleteResolver();
         try {
-            NaruAgent agent = new NaruAgentImpl();
+            NaruWorkspace agent = NaruWorkspace.of();
             agent.projectDirectory(NPath.ofTempFolder("naru-complete-wiring"));
             agent.newSession()
                     .richTerm(true)
@@ -210,7 +209,7 @@ public class NaruNArgCompleteResolverTest {
         // the registration is process-global, so a session that does not own the
         // console must leave it alone
         NArgCompleteResolver previous = NIO.of().systemTerminal().autoCompleteResolver();
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-complete-headless"));
         agent.newSession()
                 .richTerm(false)

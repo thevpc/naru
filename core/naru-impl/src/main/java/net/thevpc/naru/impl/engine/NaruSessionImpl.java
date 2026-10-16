@@ -16,7 +16,6 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.spawn.NaruSpawnPolicy;
 import net.thevpc.naru.api.spawn.NaruSpawnResolution;
 import net.thevpc.naru.api.spawn.NaruSpawnSeed;
-import net.thevpc.naru.api.spawn.NaruSpawnSource;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 
 
@@ -35,7 +34,6 @@ import net.thevpc.naru.impl.engine.routine.RoutineHelper;
 import net.thevpc.naru.impl.engine.scheduler.NaruSchedulerImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruSessionEventLogImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
-import net.thevpc.naru.impl.store.NaruFileSessionStore;
 import net.thevpc.naru.impl.store.NaruStoreFactory;
 import net.thevpc.naru.impl.util.ImplNaruUtils;
 import net.thevpc.nuts.concurrent.NCallable;
@@ -58,7 +56,7 @@ import java.util.stream.Collectors;
 import net.thevpc.naru.impl.interaction.NaruTerminalInteraction;
 
 public class NaruSessionImpl implements NaruSession, NToElement {
-    private final NaruAgent agent;
+    private final NaruWorkspace agent;
     /**
      * public|private
      */
@@ -180,7 +178,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final NaruAccessPolicyImpl accessPolicy = new NaruAccessPolicyImpl();
 
 
-    public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
+    public NaruSessionImpl(NaruWorkspace agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
             , NaruSessionListener sessionListener
             , Predicate<NaruDirective> directiveFilter
             , Predicate<NaruTool> toolFilter
@@ -190,7 +188,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 directiveFilter, toolFilter, tagFilter, null);
     }
 
-    public NaruSessionImpl(NaruAgent agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
+    public NaruSessionImpl(NaruWorkspace agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
             , NaruSessionListener sessionListener
             , Predicate<NaruDirective> directiveFilter
             , Predicate<NaruTool> toolFilter
@@ -435,6 +433,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         for (Map.Entry<String, NaruSpawnSeed<Object>> envEntry : plan.resolution.env().entrySet()) {
             natuTask.setTaskEnv(envEntry.getKey(), envEntry.getValue().value());
         }
+        for (Map.Entry<String, NaruSpawnSeed<String>> labelEntry : plan.resolution.labels().entrySet()) {
+            natuTask.setLabel(labelEntry.getKey(), labelEntry.getValue().value());
+        }
         // the context strategy: seed the conversation the child starts with (fork / window /
         // summary). NONE and strategy-less spawns keep an empty conversation, exactly as
         // /start has always behaved.
@@ -642,7 +643,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         // the agent is held as the interface type, but the callback pool is an
         // implementation detail that only the impl class owns. Fall back to running
         // callbacks on the calling thread rather than failing a completion outright.
-        return agent instanceof NaruAgentImpl impl
+        return agent instanceof NaruWorkspaceImpl impl
                 ? impl.runCallbackExecutor()
                 : Runnable::run;
     }
@@ -789,7 +790,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     private NaruRegistrationStore registrationStore() {
-        return agent instanceof NaruAgentImpl ? ((NaruAgentImpl) agent).getRegistrations() : null;
+        return agent instanceof NaruWorkspaceImpl ? ((NaruWorkspaceImpl) agent).getRegistrations() : null;
     }
 
     /**
@@ -1300,7 +1301,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     private <T> Future<T> stopTheWorldAndDo(NCallable<T> e) {
 //        ensureNotStopped();
-        return ((NaruAgentImpl) agent).postAction(
+        return ((NaruWorkspaceImpl) agent).postAction(
                 () -> {
                     if (!scheduler.isHeld()) {
                         log(NaruLogMode.SCHEDULER, NMsg.ofC("Stop the world..."));
@@ -2124,7 +2125,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NaruAgent agent() {
+    public NaruWorkspace agent() {
         ensureNotStopped();
         return agent;
     }
@@ -2275,11 +2276,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * observing: metering and rate-limit reporting are side channels, and a broken one
      * must not cost the user their answer.
      */
-    public void fireModelCallUsage(NaruModelKey model, long promptTokens, long completionTokens,
+    public void fireModelCallUsage(NaruTask task, NaruModelKey model, long promptTokens, long completionTokens,
                             long cacheWriteTokens, long cacheReadTokens, NDuration duration) {
         for (NaruSessionUsageListener l : usageListeners) {
             try {
-                l.onModelCall(model, promptTokens, completionTokens, cacheWriteTokens, cacheReadTokens, duration);
+                l.onModelCall(task, model, promptTokens, completionTokens, cacheWriteTokens, cacheReadTokens, duration);
             } catch (Exception ex) {
                 log(NaruLogMode.SCRIPT, NMsg.ofC(
                         "usage listener %s failed on model call: %s", l.getClass().getSimpleName(), ex.getMessage()));

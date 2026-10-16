@@ -499,6 +499,31 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
+    public Map<String, String> labels() {
+        return Map.of();
+    }
+
+    @Override
+    public NaruTask labels(Map<String, String> labels) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask setLabel(String key, String value) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask removeLabel(String key) {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
+    public NaruTask clearLabels() {
+        throw new NUnsupportedOperationException();
+    }
+
+    @Override
     public NaruTask kill() {
         throw new NUnsupportedOperationException();
     }

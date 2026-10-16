@@ -1,7 +1,6 @@
 package bench;
 
-import net.thevpc.naru.api.agent.NaruAgent;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
@@ -14,7 +13,7 @@ public class NaruWireTest {
         Nuts.require();
 
         Path tempDir = Files.createTempDirectory("naru-wire");
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.of(tempDir.toString()));
 
         agent.newSession()

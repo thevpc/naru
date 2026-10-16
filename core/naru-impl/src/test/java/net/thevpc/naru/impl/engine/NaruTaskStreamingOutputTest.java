@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruChunkKind;
 import net.thevpc.naru.api.model.NaruMessage;
@@ -18,7 +19,6 @@ import net.thevpc.naru.api.model.NaruStreamHandler;
 import net.thevpc.naru.api.model.NaruThinkingExtraction;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.io.NTerminal;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
@@ -280,10 +280,17 @@ public class NaruTaskStreamingOutputTest {
     }
 
     private NaruTask taskFor(FixedProtocol protocol) {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-stream-" + System.nanoTime()));
-        NaruSessionImpl session = new NaruSessionImpl(agent, agent.projectDirectory(),
-                new RecordingInteraction(), false, null, null, null, null);
+        NaruSession session = agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(new RecordingInteraction())
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         session.registry().registerModelProvider(new FakeProvider(protocol));
         NaruTask task = session.newTask(net.thevpc.naru.api.task.NaruTaskSpec.of()
                 .statements("noop"));

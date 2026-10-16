@@ -30,7 +30,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         Thread t = new Thread(r, "naru-turn"); t.setDaemon(true); return t;
     });
 
-    private final NaruAgentImpl agent;
+    private final NaruWorkspaceImpl agent;
     private final NPath directory;
     private final NaruInteraction customInteraction;
     private final NaruTaskSpec task;
@@ -50,7 +50,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     private final Predicate<NaruTool> toolFilter;
     private final Predicate<NaruToolTag> tagFilter;
 
-    NaruSessionHandleImpl(NaruAgentImpl agent, NPath directory, NaruInteraction interaction,
+    NaruSessionHandleImpl(NaruWorkspaceImpl agent, NPath directory, NaruInteraction interaction,
                           NaruTaskSpec task, String id, NaruSessionStore store, NaruSessionScope scope,
                           NaruInputBlockPolicy inputPolicy, Duration grace, boolean streaming,
                           NaruBusyPolicy busy, NaruTurnEventListener listener, int maxLive,

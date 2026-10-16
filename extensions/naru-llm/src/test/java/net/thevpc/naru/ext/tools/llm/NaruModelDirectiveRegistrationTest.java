@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.tools.llm;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
@@ -23,7 +23,6 @@ import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
 import net.thevpc.nuts.cmdline.NArgCompletePosition;
 import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
@@ -108,8 +107,8 @@ public class NaruModelDirectiveRegistrationTest {
             public void put(String key, NElement value, NaruVisibility visibility) {
             }
         };
-        NaruAgent agent = (NaruAgent) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{NaruAgent.class},
+        NaruWorkspace agent = (NaruWorkspace) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{NaruWorkspace.class},
                 (proxy, method, args) -> "env".equals(method.getName()) ? env : null);
 
         NaruRegistry registry = (NaruRegistry) Proxy.newProxyInstance(getClass().getClassLoader(),

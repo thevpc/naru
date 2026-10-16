@@ -2,7 +2,7 @@ package net.thevpc.naru.ext.models.test;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
@@ -233,9 +233,9 @@ public class NaruEmulatedToolCallsTest {
             }
         };
 
-        NaruAgent agent = (NaruAgent) Proxy.newProxyInstance(
+        NaruWorkspace agent = (NaruWorkspace) Proxy.newProxyInstance(
                 getClass().getClassLoader(),
-                new Class<?>[]{NaruAgent.class},
+                new Class<?>[]{NaruWorkspace.class},
                 (proxy, method, args) -> {
                     String m = method.getName();
                     if ("env".equals(m) || "agentEnv".equals(m)) {

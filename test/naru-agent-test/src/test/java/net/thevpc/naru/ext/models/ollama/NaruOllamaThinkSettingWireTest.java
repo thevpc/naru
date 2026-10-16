@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.models.ollama;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruMessage;
@@ -11,10 +11,8 @@ import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.BeforeAll;
@@ -55,7 +53,7 @@ public class NaruOllamaThinkSettingWireTest {
      * replying, or it is cancelled as a leak.
      */
     private static NaruTask runScript(String... statements) {
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-think-wire"));
         NaruSession session = agent.newSession()
                 .interaction(new NaruStreamInteraction(o -> {

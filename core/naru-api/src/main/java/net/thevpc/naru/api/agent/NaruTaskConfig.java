@@ -151,7 +151,7 @@ public final class NaruTaskConfig {
                 return NOptional.of(new Resolved(sessionEnv.get(), SCOPE_SESSION, null));
             }
             // 3. agent env, shared by every session of this process but not persisted
-            NaruAgent agent = session.agent();
+            NaruWorkspace agent = session.agent();
             if (agent != null) {
                 NOptional<NElement> agentValue = agent.agentEnv().get(key);
                 if (agentValue != null && agentValue.isPresent()) {

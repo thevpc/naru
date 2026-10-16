@@ -1,1 +1,2 @@
 net.thevpc.naru.impl.store.NaruFileSessionStoreFactory
+net.thevpc.naru.impl.engine.NaruWorkspaceBuilderImpl

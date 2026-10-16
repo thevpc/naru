@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.agent.NaruVisibility;
@@ -12,7 +12,6 @@ import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruModelRegistration;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
@@ -43,11 +42,14 @@ public class RegistrationWiringTest {
 
     @BeforeEach
     public void setUp() {
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-reg-wiring-" + System.nanoTime()));
         // configureDefaults=false: no SPI provider discovery, no network, no real models
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), null, false,
-                new NaruSessionListener() {
+        session = agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(null)
+                .configureDefaults(false)
+                .sessionListener(new NaruSessionListener() {
                     @Override
                     public void onEventAppended(NaruEvent newEvent) {
                     }
@@ -63,7 +65,11 @@ public class RegistrationWiringTest {
                     @Override
                     public void onSessionReloaded(NaruSession naruSession) {
                     }
-                }, null, null, null);
+                })
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach

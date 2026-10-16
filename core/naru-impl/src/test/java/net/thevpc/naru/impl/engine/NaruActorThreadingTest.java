@@ -3,6 +3,7 @@ package net.thevpc.naru.impl.engine;
 import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.access.NaruPrincipal;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
@@ -30,18 +31,25 @@ public class NaruActorThreadingTest {
         Nuts.require();
     }
 
-    private static NaruSessionImpl session() {
+    private static NaruSession session() {
         NPath dir = NPath.ofTempFolder("naru-actor-" + System.nanoTime());
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
-        return new NaruSessionImpl(agent, dir,
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        return agent.newSession()
+                .directory(dir)
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @Test
     public void defaultUserIsTheOsUser() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         assertEquals(System.getProperty("user.name", "user"), s.user().id());
         assertEquals(s.user(), s.userActor().principal(),
                 "the acting user is the owner principal, no more");
@@ -49,7 +57,7 @@ public class NaruActorThreadingTest {
 
     @Test
     public void taskInheritsTheSessionUserUnlessTheSpecNamesAnActor() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask plain = s.newTask(NaruTaskSpec.of());
         assertEquals(s.userActor(), plain.currentActor());
 
@@ -60,7 +68,7 @@ public class NaruActorThreadingTest {
 
     @Test
     public void childTaskInheritsTheParentsActor() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruActor agent = NaruActor.agent("planner", s.user());
         NaruTask parent = s.newTask(NaruTaskSpec.of().actor(agent));
         NaruTask child = s.newTask(NaruTaskSpec.of().parentId(parent.id()));
@@ -69,7 +77,7 @@ public class NaruActorThreadingTest {
 
     @Test
     public void declaredStatementsAreStampedWithTheTaskActor() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruActor agent = NaruActor.agent("reviewer", s.user());
         NaruTask task = s.newTask(NaruTaskSpec.of().actor(agent).statements(" "));
         NaruStatement first = task.peekStatement().get();
@@ -79,7 +87,7 @@ public class NaruActorThreadingTest {
 
     @Test
     public void addingAStatementWithAnActorStampsTheCreator() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
         NaruActor bob = NaruActor.user(NaruPrincipal.user("bob"));
         NaruStatement nop = NaruStatementHelper.of(NElement.ofObjectBuilder("NOP").build());
@@ -90,7 +98,7 @@ public class NaruActorThreadingTest {
 
     @Test
     public void effectiveActorPrefersTheStatementCreator() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
         NaruActor agent = NaruActor.agent("reviewer", s.user());
         NaruStatement withActor = NaruStatementHelper.of(NElement.ofObjectBuilder("NOP").build())
@@ -104,7 +112,7 @@ public class NaruActorThreadingTest {
 
     @Test
     public void taskActorSurvivesAPersistenceRoundTrip() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruActor agent = NaruActor.agent("reviewer", s.user()).withTaskId(7);
         NaruTaskImpl task = (NaruTaskImpl) s.newTask(NaruTaskSpec.of().actor(agent));
         NElement element = task.toElement();
@@ -124,7 +132,7 @@ public class NaruActorThreadingTest {
     public void builderUserActorReachesTheSession() {
         NaruActor owner = NaruActor.user(NaruPrincipal.user("carol").withGroup("devs"));
         NPath dir = NPath.ofTempFolder("naru-actor-builder-" + System.nanoTime());
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
         NaruSession s = agent.newSession().directory(dir).userActor(owner).build();
         assertEquals(owner, s.userActor());

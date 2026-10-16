@@ -169,7 +169,7 @@ public class NoToolWrapHelper {
         NaruMessage msg = naruResponse.getMessage();
         ParsedEmulatedResponse parsed = parseEmulatedToolCalls(msg.getContent(), openClose, task);
         if (!parsed.calls.isEmpty()) {
-            return new NaruResponse(
+            NaruResponse rebuilt = new NaruResponse(
                     new NaruMessage(msg.getSourceName(),
                             msg.getSource(),
                             msg.getRole(),
@@ -184,6 +184,12 @@ public class NoToolWrapHelper {
                     naruResponse.getPromptTokens(),
                     naruResponse.getEvalTokens()
             );
+            // The delegating constructor has no cache parameters, so carry the
+            // provider's cache breakdown across explicitly. Dropping it here made
+            // every emulated-tool-call turn look uncached and mispriced.
+            rebuilt.setCacheReadTokens(naruResponse.getCacheReadTokens());
+            rebuilt.setCacheWriteTokens(naruResponse.getCacheWriteTokens());
+            return rebuilt;
         }
         return naruResponse;
     }

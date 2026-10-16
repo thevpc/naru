@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruInvalidHistoryException;
 import net.thevpc.naru.api.model.NaruMessage;
@@ -15,7 +16,6 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
@@ -48,16 +48,23 @@ public class NaruRequestTailValidationTest {
     }
 
     private RecordingProtocol protocol;
-    private NaruSessionImpl session;
+    private NaruSession session;
 
     @BeforeEach
     public void setUp() {
         protocol = new RecordingProtocol();
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-tail-" + System.nanoTime()));
-        session = new NaruSessionImpl(agent, agent.projectDirectory(),
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        session = agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         session.registry().registerModelProvider(new FakeProvider(protocol));
     }
 
@@ -171,11 +178,18 @@ public class NaruRequestTailValidationTest {
     @Test
     public void aProtocolCanRefuseATailTheDefaultAccepts() {
         StrictProtocol strict = new StrictProtocol();
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-tail-strict-" + System.nanoTime()));
-        NaruSessionImpl strictSession = new NaruSessionImpl(agent, agent.projectDirectory(),
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        NaruSession strictSession = agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         strictSession.registry().registerModelProvider(new FakeProvider(strict));
         NaruTask task = strictSession.newTask(NaruTaskSpec.of());
 

@@ -2,9 +2,8 @@ package net.thevpc.naru.ext.tools.perm;
 
 import net.thevpc.naru.api.access.NaruAccessPolicy;
 import net.thevpc.naru.api.access.NaruPermissionRule;
-import net.thevpc.naru.api.agent.NaruAgent;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.BeforeAll;
@@ -28,15 +27,22 @@ public class NaruPermissionsExtensionTest {
         Nuts.require();
     }
 
-    private static NaruSessionImpl newSession(String name) {
-        NaruAgent agent = new NaruAgentImpl();
+    private static NaruSession newSession(String name) {
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-perm-ext-" + name));
         // configureDefaults=true: this is how a user session is built, and it is the
         // only path that proves SPI discovery and open() ordering together
-        return new NaruSessionImpl(agent, agent.projectDirectory(), null, true, null, null, null, null);
+        return agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(null)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
-    private static List<String> coreRuleIds(NaruSessionImpl session) {
+    private static List<String> coreRuleIds(NaruSession session) {
         return session.accessPolicy().rules().stream()
                 .filter(r -> NaruAccessPolicy.SOURCE_CORE.equals(r.source()))
                 .map(NaruPermissionRule::id)
@@ -45,7 +51,7 @@ public class NaruPermissionsExtensionTest {
 
     @Test
     public void theExtensionIsDiscoverableThroughTheRegistry() {
-        NaruSessionImpl session = newSession("registry");
+        NaruSession session = newSession("registry");
         assertTrue(session.registry().extension(
                         NaruPermissionsExtension.NAME, NaruPermissionsExtension.class).isPresent(),
                 "the extension must be registered under its SPI name");
@@ -53,7 +59,7 @@ public class NaruPermissionsExtensionTest {
 
     @Test
     public void builtinsAreInstalledWithoutBeingAsked() {
-        NaruSessionImpl session = newSession("builtins");
+        NaruSession session = newSession("builtins");
         List<String> core = coreRuleIds(session);
 
         assertTrue(core.contains(NaruPermissionsBuiltins.NO_AGENT_POLICY_DIRECTIVE));
@@ -62,7 +68,7 @@ public class NaruPermissionsExtensionTest {
 
     @Test
     public void firedEventsReachTheExtensionWithoutManualWiring() {
-        NaruSessionImpl session = newSession("events");
+        NaruSession session = newSession("events");
 
         session.fireEvent(NaruPermissionsEvents.GRANT, Map.of(
                 "id", "evt-allow", "type", "tool", "pattern", "echo_tool",

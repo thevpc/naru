@@ -1,10 +1,11 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.NaruResourceInfo;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionStoreManager;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -36,13 +37,19 @@ public class NaruSessionStoreManagerTest {
         projectDir = NPath.ofTempFolder("naru-store-" + System.nanoTime());
     }
 
-    private NaruSessionImpl newSession() {
-        NaruAgentImpl agent = new NaruAgentImpl();
+    private NaruSession newSession() {
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
-        return new NaruSessionImpl(agent, projectDir,
-                new net.thevpc.naru.impl.interaction.NaruStreamInteraction(o -> {
-                }),
-                false, null, null, null, null);
+        return agent.newSession()
+                .directory(projectDir)
+                .interaction(new net.thevpc.naru.impl.interaction.NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @Test
@@ -54,7 +61,7 @@ public class NaruSessionStoreManagerTest {
 
     @Test
     public void aSavedSessionIsListed() {
-        NaruSessionImpl session = newSession();
+        NaruSession session = newSession();
         session.newTask(NaruTaskSpec.of().statements("noop"));
         session.save();
 
@@ -76,7 +83,7 @@ public class NaruSessionStoreManagerTest {
      */
     @Test
     public void aRunningSessionsPersistedStateIsNotMistakenForASavedSession() {
-        NaruSessionImpl session = newSession();
+        NaruSession session = newSession();
         session.newTask(NaruTaskSpec.of().statements("noop"));
         session.persist();
         session.start();
@@ -88,10 +95,10 @@ public class NaruSessionStoreManagerTest {
 
     @Test
     public void twoSessionsInOneProjectDoNotCollide() {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
-        NaruSessionImpl a = newSession();
-        NaruSessionImpl b = newSession();
+        NaruSession a = newSession();
+        NaruSession b = newSession();
 
         a.newTask(NaruTaskSpec.of().statements("noop"));
         b.newTask(NaruTaskSpec.of().statements("noop"));
@@ -107,7 +114,7 @@ public class NaruSessionStoreManagerTest {
 
     @Test
     public void aSavedSessionCanBeFoundByUuid() {
-        NaruSessionImpl session = newSession();
+        NaruSession session = newSession();
         session.newTask(NaruTaskSpec.of().statements("noop"));
         session.save();
         Assertions.assertEquals(session.uuid(), session.sessionStoreManager().findByUuidOrName(session.uuid()));
@@ -121,7 +128,7 @@ public class NaruSessionStoreManagerTest {
 
     @Test
     public void deletingRemovesTheSessionFromDisk() {
-        NaruSessionImpl session = newSession();
+        NaruSession session = newSession();
         session.newTask(NaruTaskSpec.of().statements("noop"));
         session.save();
         String uuid = session.uuid();

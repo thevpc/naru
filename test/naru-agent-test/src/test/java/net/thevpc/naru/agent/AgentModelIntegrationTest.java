@@ -1,12 +1,11 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.tools.ollama.OllamaProcessManager;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.engine.stmt.NaruNopStmt;
 import net.thevpc.naru.impl.engine.stmt.NaruPromptStmt;
@@ -85,7 +84,7 @@ public class AgentModelIntegrationTest {
 
     private static final Duration TEST_TIMEOUT = Duration.ofMinutes(10);
 
-    private NaruAgent agent;
+    private NaruWorkspace agent;
     private NPath folder;
     private NaruSession session;
 
@@ -94,7 +93,7 @@ public class AgentModelIntegrationTest {
         NWorkspace ws = Nuts.require();
         // Initialize Naru system
         folder = NPath.ofTempFolder("naru");
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(folder);
         NOut.println(NMsg.ofC("create agent at %s", agent));
     }

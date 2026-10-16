@@ -1,6 +1,6 @@
 package bench;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.model.NaruToolDefinition;
@@ -12,8 +12,6 @@ import net.thevpc.naru.api.registry.NaruToolCallContextImpl;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
@@ -38,11 +36,13 @@ public class NaruProbeRunner {
         Nuts.require();
 
         Path tempDir = Files.createTempDirectory("naru-probe");
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.of(tempDir.toString()));
 
-        NaruSession session = new NaruSessionImpl(agent, agent.projectDirectory(), null, true,
-                NOOP, null, null, null);
+        NaruSession session = agent.newSession()
+                .directory(agent.projectDirectory())
+                .sessionListener(NOOP)
+                .build();
 
         // 1. INVENTORY: All tools registered
         System.out.println("\n--- 1. ALL REGISTERED TOOLS ---");

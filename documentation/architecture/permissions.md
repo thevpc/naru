@@ -562,9 +562,11 @@ public class NaruAccessPolicyImpl implements NaruAccessPolicy {
   `NaruAccessPolicy.addBuiltin(rule)`, which force-tags it `core`, installs it at
   the front of the list (a baseline guarantee must not be shadowed by a broad
   rule added later) and remembers it so `clearRules()` re-seeds it. The
-  permissions extension declares two: an agent may not edit policy through
-  `/permission`, and an agent may not read or write personal secrets. See
-  `NaruPermissionsBuiltins`.
+  permissions extension declares three: an agent may not edit policy through
+  `/permission`, an agent may not read or write personal secrets, and an agent
+  may not mutate budget prices or labels (`update` on the `budget` resource). See
+  `NaruPermissionsBuiltins`. The budget rule is what stops an agent from
+  rewriting its own bill: it may still read the `/budget` report.
 - **Default effect.** Starts at `ALLOW` so enabling the feature changes nothing.
   A host flips it to `DENY` for a fail-closed posture; rules then grant.
 

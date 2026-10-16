@@ -144,7 +144,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void promptAndCompletionTokensAccumulateAcrossCalls() {
         NaruSession session = stubSession();
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
 
         svc.trackTransaction(tx(100, 10));
         svc.trackTransaction(tx(200, 20));
@@ -169,7 +169,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void contextUsageIsPerCallWhileTotalTokensAccumulates() {
         NaruSession session = stubSession();
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
 
         svc.trackTransaction(tx(100, 10));
         svc.trackTransaction(tx(200, 20));
@@ -192,7 +192,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void peakContextUsageKeepsTheLargestCall() {
         NaruSession session = stubSession();
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
 
         svc.trackTransaction(tx(300, 100));
         svc.trackTransaction(tx(100, 50));
@@ -215,7 +215,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void perUserRowInheritsTheContextSizeOfItsModel() {
         NaruSession session = stubSession(8192);
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
 
         svc.trackTransaction(userTx("alice", 100, 10));
 
@@ -245,7 +245,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void blankUserIdIsStoredStrippedSoTheModelRowOwnsTheCall() {
         NaruSession session = stubSession(4096);
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
         NaruModelConfig model = session.findModel(CONFIG.name()).get();
 
         svc.trackTransaction(userTx("  ", 200, 20));
@@ -271,7 +271,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void parallelTransactionsDoNotLoseUpdates() throws Exception {
         NaruSession session = stubSession();
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
 
         int threads = 8;
         int perThread = 1000;
@@ -314,7 +314,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void aZeroMillisecondCallIsARealMinimum() {
         NaruSession session = stubSession();
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
 
         svc.trackTransaction(tx(10, 1, 0));
         svc.trackTransaction(tx(10, 1, 250));
@@ -336,7 +336,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void noCallsMeansNoDurationsAtAll() {
         NaruSession session = stubSession();
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
 
         NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
         Assertions.assertEquals(0, stats.calls());
@@ -348,7 +348,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void totalTokensGrowsWithEveryCall() {
         NaruSession session = stubSession();
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
 
         svc.trackTransaction(tx(100, 10));
         long afterFirst = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL)).totalTokens();
@@ -362,7 +362,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void cacheTokensAccumulateAndDoNotGoBackwards() {
         NaruSession session = stubSession();
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
 
         // a cold turn: everything is a cache write
         svc.trackTransaction(cacheTx(1000, 20, 1000, 0));
@@ -383,7 +383,7 @@ public class NaruBudgetAccumulationTest {
     @Test
     public void unreportedCacheTokensAreTreatedAsZero() {
         NaruSession session = stubSession();
-        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
 
         svc.trackTransaction(cacheTx(1000, 20, 1000, 0));
         svc.trackTransaction(tx(50, 5));

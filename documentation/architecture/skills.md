@@ -260,7 +260,7 @@ Both kinds of message carry `NaruSource.SKILL` (so they live in the stable
 - loaded bodies → the file path.
 
 That is how `/context skills` tells an advertisement apart from an injected
-body. `/stats` attributes the AGENT bucket by that same `source` (WP5):
+body. `/budget --explain` attributes the AGENT bucket by that same `source`:
 advertised catalog rows (`catalog:*`), loaded bodies, and the "other agent"
 remainder are reported separately so a context that grows with skill count can
 be read at a glance.

@@ -1,6 +1,6 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.agent.NaruVisibility;
@@ -8,11 +8,9 @@ import net.thevpc.naru.api.model.NaruThinkingConfig;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -44,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class NaruThinkingSettingsTest {
 
-    private NaruAgent agent;
+    private NaruWorkspace agent;
     private NPath folder;
     private NaruSession session;
 
@@ -55,7 +53,7 @@ public class NaruThinkingSettingsTest {
     @BeforeEach
     public void setUp() {
         folder = NPath.ofTempFolder("naru-thinking");
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(folder);
     }
 

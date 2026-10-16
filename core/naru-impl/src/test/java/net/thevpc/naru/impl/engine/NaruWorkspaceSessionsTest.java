@@ -1,12 +1,11 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionBuilder;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.Assertions;
@@ -30,20 +29,20 @@ import java.util.concurrent.TimeUnit;
  * the agent's live-session view is safe to read and write from the concurrent places a
  * server would do so from: it used to be a plain {@code ArrayList}.
  */
-public class NaruAgentSessionsTest {
+public class NaruWorkspaceSessionsTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
         Nuts.require();    }
 
-    private static NaruAgentImpl newAgent() {
-        NaruAgentImpl agent = new NaruAgentImpl();
+    private static NaruWorkspace newAgent() {
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-agent-sessions"));
         return agent;
     }
 
     /** A started session whose task cannot finish on its own. */
-    private static NaruSession blocked(NaruAgent agent, String name) {
+    private static NaruSession blocked(NaruWorkspace agent, String name) {
         NaruSession s = agent.newSession().interaction(silent()).build();
         s.newTask(NaruTaskSpec.of().statements("noop")).requestInput(NMsg.ofC("still there?"));
         return s.start();
@@ -61,7 +60,7 @@ public class NaruAgentSessionsTest {
      */
     @Test
     public void anAgentCanRunManySessionsAtOnceAndSeeThemAll() {
-        NaruAgent agent = newAgent();
+        NaruWorkspace agent = newAgent();
         List<NaruSession> made = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
             NaruSession s = agent.newSession().interaction(silent()).build();
@@ -80,7 +79,7 @@ public class NaruAgentSessionsTest {
 
     @Test
     public void aSessionIsFoundByItsId() {
-        NaruAgent agent = newAgent();
+        NaruWorkspace agent = newAgent();
         NaruSession session = blocked(agent, "lookup");
 
         Assertions.assertSame(session, agent.session(session.uuid()).orNull());
@@ -88,14 +87,14 @@ public class NaruAgentSessionsTest {
 
     @Test
     public void anUnknownOrNullIdFindsNothing() {
-        NaruAgent agent = newAgent();
+        NaruWorkspace agent = newAgent();
         Assertions.assertFalse(agent.session("no-such-id").isPresent());
         Assertions.assertFalse(agent.session(null).isPresent(), "a null id must not blow up on a live server");
     }
 
     @Test
     public void aStoppedSessionLeavesTheAgentsView() {
-        NaruAgent agent = newAgent();
+        NaruWorkspace agent = newAgent();
         NaruSession session = blocked(agent, "stopping");
         String id = session.uuid();
         Assertions.assertSame(session, agent.session(id).orNull());
@@ -108,7 +107,7 @@ public class NaruAgentSessionsTest {
 
     @Test
     public void theReturnedListIsASnapshotTheCallerCannotCorrupt() {
-        NaruAgent agent = newAgent();
+        NaruWorkspace agent = newAgent();
         agent.newSession().interaction(silent()).task(NaruTaskSpec.of().statements("noop")).build().start();
 
         List<NaruSession> snapshot = agent.sessions();
@@ -127,7 +126,7 @@ public class NaruAgentSessionsTest {
      */
     @Test
     public void concurrentSessionChurnIsSafe() throws Exception {
-        NaruAgent agent = newAgent();
+        NaruWorkspace agent = newAgent();
         int threads = 8;
         int perThread = 6;
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -168,7 +167,7 @@ public class NaruAgentSessionsTest {
      */
     @Test
     public void buildDoesNotStartTheSession() {
-        NaruAgent agent = newAgent();
+        NaruWorkspace agent = newAgent();
         NaruSession session = agent.newSession().interaction(silent())
                 .task(NaruTaskSpec.of().statements("noop")).build();
         Assertions.assertTrue(agent.sessions().isEmpty(), "build must not start a session");
@@ -178,7 +177,7 @@ public class NaruAgentSessionsTest {
 
     @Test
     public void theSessionDirectoryDefaultsToTheProjectDirectory() {
-        NaruAgentImpl agent = newAgent();
+        NaruWorkspace agent = newAgent();
         NaruSessionBuilder builder = agent.newSession().interaction(silent());
         NaruSession session = builder.task(NaruTaskSpec.of().statements("noop")).build();
         Assertions.assertNotNull(session.uuid());

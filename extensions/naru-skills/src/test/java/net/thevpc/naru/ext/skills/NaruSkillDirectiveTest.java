@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.skills;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
@@ -10,13 +10,10 @@ import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
 import net.thevpc.nuts.cmdline.NArgCompletePosition;
 import net.thevpc.nuts.cmdline.NArgCompleteResult;
@@ -65,7 +62,7 @@ public class NaruSkillDirectiveTest {
 
     private NPath projectDir;
     private NPath userHome;
-    private NaruSessionImpl session;
+    private NaruSession session;
     private NaruSkillsExtension ext;
     private final List<NaruOutput> outputs = new ArrayList<>();
 
@@ -80,12 +77,17 @@ public class NaruSkillDirectiveTest {
         // the machine's ~/.naru/skills-trust.tson nor read skills an actual user has there
         userHome = NPath.ofTempFolder("naru-skill-directive-home-" + System.nanoTime());
         System.setProperty("naru.skills.userHome", userHome.toString());
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         outputs.clear();
-        session = new NaruSessionImpl(agent, projectDir,
-                new NaruStreamInteraction(o -> outputs.add(o)), true,
-                NOOP_LISTENER, null, null, null);
+        session = agent.newSession()
+                .directory(projectDir)
+                .interaction(new NaruStreamInteraction(o -> outputs.add(o)))
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         ext = NaruSkillsExtension.skills(session);
     }
 

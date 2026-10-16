@@ -307,7 +307,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
 
         Map<String, SessionTarget> all = new LinkedHashMap<>();
         addTarget(all, new SessionTarget(current.uuid(), safeName(current), current, findSaved(saved, current.uuid())));
-        NaruAgent agent = current.agent();
+        NaruWorkspace agent = current.agent();
         if (agent != null) {
             for (NaruSession s : agent.sessions()) {
                 if (s == null || s.uuid() == null) {
@@ -499,7 +499,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         Set<String> seenNames = new LinkedHashSet<>();
         Set<String> seenUuids = new LinkedHashSet<>();
         addSessionId(session, names, uuids, seenNames, seenUuids);
-        NaruAgent agent = session.agent();
+        NaruWorkspace agent = session.agent();
         if (agent != null) {
             for (NaruSession s : agent.sessions()) {
                 addSessionId(s, names, uuids, seenNames, seenUuids);
@@ -555,7 +555,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         // uuid is listed once: a session that is both live and saved shows its live state.
         List<NaruSession> running = new ArrayList<>();
         Set<String> runningUuids = new LinkedHashSet<>();
-        NaruAgent agent = current.agent();
+        NaruWorkspace agent = current.agent();
         if (agent != null) {
             for (NaruSession s : agent.sessions()) {
                 if (s != null && s.uuid() != null && runningUuids.add(s.uuid())) {

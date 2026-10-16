@@ -1,6 +1,6 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.mode.NaruPromptMode;
@@ -8,11 +8,9 @@ import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -45,7 +43,7 @@ public class NaruEffectTagAndTest {
 
     private static final String FLAG = "naru.tags.effectAnd";
 
-    private NaruAgent agent;
+    private NaruWorkspace agent;
     private NaruSessionImpl session;
     private final List<String> outputs = new ArrayList<>();
 
@@ -57,7 +55,7 @@ public class NaruEffectTagAndTest {
     @BeforeEach
     public void setUp() {
         System.clearProperty(FLAG);
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-effect-tag-and"));
     }
 
@@ -80,9 +78,15 @@ public class NaruEffectTagAndTest {
             System.setProperty(FLAG, flagMode);
         }
         outputs.clear();
-        session = new NaruSessionImpl(agent, agent.projectDirectory(),
-                new NaruStreamInteraction(o -> outputs.add(String.valueOf(o.message()))), true,
-                NOOP_LISTENER, null, null, null);
+        session = (NaruSessionImpl) agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(new NaruStreamInteraction(o -> outputs.add(String.valueOf(o.message()))))
+                .configureDefaults(true)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     private NaruPromptMode mode(String name) {

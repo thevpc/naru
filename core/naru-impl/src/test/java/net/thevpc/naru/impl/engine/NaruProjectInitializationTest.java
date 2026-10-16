@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruLogMode;
@@ -15,7 +15,6 @@ import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.naru.impl.registry.builtindirectives.NaruProjectDirective;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.AfterEach;
@@ -43,7 +42,7 @@ public class NaruProjectInitializationTest {
 
     private NPath projectDir;
     private RecordingInteraction interaction;
-    private NaruSessionImpl session;
+    private NaruSession session;
 
     @BeforeAll
     public static void setUpWorkspace() {
@@ -53,9 +52,17 @@ public class NaruProjectInitializationTest {
     public void setUp() {
         projectDir = NPath.ofTempFolder("naru-init-hooks-" + System.nanoTime());
         interaction = new RecordingInteraction();
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
-        session = new NaruSessionImpl(agent, projectDir, interaction, false, null, null, null, null);
+        session = agent.newSession()
+                .directory(projectDir)
+                .interaction(interaction)
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach

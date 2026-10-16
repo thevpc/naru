@@ -195,7 +195,8 @@ public class NaruGeminiNativeTest {
                 "}");
         Assertions.assertEquals(1000, r.getPromptTokens());
         Assertions.assertEquals(800, r.getCacheReadTokens());
-        Assertions.assertEquals(200, r.getCacheWriteTokens());
+        Assertions.assertEquals(0, r.getCacheWriteTokens(),
+                "Gemini has no cache-write class");
     }
 
     @Test
@@ -206,6 +207,19 @@ public class NaruGeminiNativeTest {
                 "  \"usageMetadata\": {\"promptTokenCount\": 100, \"candidatesTokenCount\": 5, \"totalTokenCount\": 105}\n" +
                 "}");
         Assertions.assertFalse(r.hasCacheAccounting());
+    }
+
+    @Test
+    public void thoughtsTokensAreBilledAsOutput() {
+        // Gemini reports reasoning ("thoughts") outside candidatesTokenCount but
+        // bills it as output, so evalTokens must include it.
+        NaruResponse r = parseWith("{\n" +
+                "  \"candidates\": [{\"content\": {\"role\": \"model\", \"parts\": [{\"text\": \"x\"}]},\n" +
+                "    \"finishReason\": \"STOP\"}],\n" +
+                "  \"usageMetadata\": {\"promptTokenCount\": 100, \"candidatesTokenCount\": 5,\n" +
+                "    \"thoughtsTokenCount\": 40, \"totalTokenCount\": 145}\n" +
+                "}");
+        Assertions.assertEquals(5 + 40, r.getEvalTokens());
     }
 
     @Test

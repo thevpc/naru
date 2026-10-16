@@ -1,9 +1,17 @@
 package net.thevpc.naru.ext.budget;
 
+import net.thevpc.naru.api.access.NaruAccessEffect;
+import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.access.NaruActor;
+import net.thevpc.naru.api.access.NaruActorKind;
+import net.thevpc.naru.api.access.NaruPermissionRule;
+import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.agent.NaruSource;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.DefaultNaruProviderRateLimitInfo;
 import net.thevpc.naru.api.model.DefaultNaruRateLimitBucket;
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruRateLimitWindow;
@@ -14,11 +22,9 @@ import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.time.NDuration;
@@ -28,6 +34,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,10 +63,17 @@ public class NaruBudgetDirectiveTest {
 
     @BeforeEach
     public void setUp() {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         NPath dir = NPath.ofTempFolder("naru-budget-directive-" + System.nanoTime());
         agent.projectDirectory(dir);
-        session = new NaruSessionImpl(agent, dir, null, true, null, null, null, null);
+        session = (NaruSessionImpl) agent.newSession()
+                .directory(dir)
+                .interaction(null)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     /**
@@ -84,6 +98,9 @@ public class NaruBudgetDirectiveTest {
                     case "toString" -> "stub-task";
                     case "hashCode" -> 0;
                     case "equals" -> proxy == args[0];
+                    // the accounting-write gate resolves the actor; a stub has none, which
+                    // the policy reads as "no AGENT match" and therefore allows
+                    case "currentActor" -> null;
                     default -> throw new AssertionError(
                             "the /budget directive asked the task for something it should not need: "
                                     + method.getName());
@@ -230,13 +247,357 @@ public class NaruBudgetDirectiveTest {
         return new NaruBudgetDirective().execute(ctx);
     }
 
+    /** The report with an explicit argument list (e.g. {@code --explain} or {@code --group-by=model}). */
+    private NaruStmtResult reportWith(String argument, NaruMessage... messages) {
+        NaruDirectiveCallContext ctx = new NaruDirectiveCallContextImpl("budget", argument, task(messages));
+        return new NaruBudgetDirective().execute(ctx);
+    }
+
+    private NaruBudgetService service() {
+        return NaruBudgetExtension.budget(session);
+    }
+
+    // ── Phase 4: scoping, grouping, prices, labels ──────────────────────────
+
+    @Test
+    public void reportGroupsByProviderByDefault() {
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("beta", "m2"), 200, 20, -1, -1, NDuration.ofMillis(5));
+
+        String out = String.valueOf(report().successValue());
+        Assertions.assertTrue(out.contains("provider: alpha"), out);
+        Assertions.assertTrue(out.contains("provider: beta"), out);
+        Assertions.assertTrue(out.contains("priced total"), out);
+    }
+
+    /**
+     * The grouping key is a flat tuple of label keys, not an enum of preset levels, so
+     * {@code --group-by=provider,model} names both dimensions in one row label.
+     */
+    @Test
+    public void groupByTakesAFlatLabelTuple() {
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+
+        String out = String.valueOf(reportWith("--group-by=provider,model").successValue());
+        Assertions.assertTrue(out.contains("provider,model: alpha, m1"), out);
+    }
+
+    @Test
+    public void providerFilterNarrowsTheReport() {
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("beta", "m2"), 200, 20, -1, -1, NDuration.ofMillis(5));
+
+        String out = String.valueOf(reportWith("--provider=alpha").successValue());
+        Assertions.assertTrue(out.contains("provider: alpha"), out);
+        Assertions.assertFalse(out.contains("provider: beta"), out);
+    }
+
+    /**
+     * A level is a filter on the one shared store. Another session's spend is invisible
+     * at the default (session) level and appears once the filter is dropped.
+     */
+    @Test
+    public void sessionLevelHidesAnotherSessionsSpendButProjectLevelSeesIt() {
+        Labels other = Labels.builder().add("session", "other-session").build();
+        service().trackTransaction(new NaruTokenTransaction(other, "other-session", "u",
+                new NaruModelConfig(new NaruModelKey("alpha", "m1")),
+                500, 50, -1, -1, Instant.now(), NDuration.ofMillis(5)));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+
+        String scoped = String.valueOf(report().successValue());
+        Assertions.assertTrue(scoped.contains("calls 1"),
+                "the default level is the current session:\n" + scoped);
+        String project = String.valueOf(reportWith("--level=project").successValue());
+        Assertions.assertTrue(project.contains("calls 2"),
+                "--level=project drops the session filter:\n" + project);
+    }
+
+    @Test
+    public void priceSetListUnsetRoundTrips() {
+        Assertions.assertEquals(0, reportWith("price set alpha input=1.5 output=6").exitCode());
+        Assertions.assertEquals(new BigDecimal("1.5"), service().priceTable().get("alpha").input());
+
+        String list = String.valueOf(reportWith("price list").successValue());
+        Assertions.assertTrue(list.contains("alpha"), list);
+
+        Assertions.assertEquals(0, reportWith("price unset alpha").exitCode());
+        Assertions.assertNull(service().priceTable().get("alpha"));
+    }
+
+    @Test
+    public void priceSetTakesACacheReadPrice() {
+        Assertions.assertEquals(0,
+                reportWith("price set anthropic/claude-x input=3 output=15 cache-read=0.3").exitCode());
+        NaruUnitPrice p = service().priceTable().get("anthropic/claude-x");
+        Assertions.assertNotNull(p);
+        Assertions.assertEquals(new BigDecimal("0.3"), p.cacheReadPrice());
+        Assertions.assertTrue(p.hasExplicitCacheRead());
+    }
+
+    @Test
+    public void priceSetRejectsAMissingOutputAndLeavesNothingBehind() {
+        Assertions.assertNotEquals(0, reportWith("price set alpha input=1.5").exitCode());
+        Assertions.assertNull(service().priceTable().get("alpha"));
+    }
+
+    @Test
+    public void priceSetRejectsAnImplausibleValue() {
+        Assertions.assertNotEquals(0, reportWith("price set alpha input=1.5 output=2000000").exitCode());
+        Assertions.assertNull(service().priceTable().get("alpha"));
+    }
+
+    /**
+     * The cost is the price <em>snapshotted at track time</em>: a price set before the
+     * call applies to it, and (the other half, in the store test) a later change does not
+     * rewrite it.
+     */
+    @Test
+    public void aPricedCallCarriesItsCostIntoTheReport() {
+        reportWith("price set alpha input=1 output=2");
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"),
+                1_000_000, 1_000_000, -1, -1, NDuration.ofMillis(5));
+
+        String out = String.valueOf(report().successValue());
+        // 1M input at 1.0/1M plus 1M output at 2.0/1M is exactly 3.0
+        Assertions.assertTrue(out.contains("cost 3.0000"), out);
+    }
+
+    @Test
+    public void anUnpricedCallIsAnnouncedNotSilentlyZero() {
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+
+        String out = String.valueOf(report().successValue());
+        Assertions.assertTrue(out.contains("unpriced"), out);
+        Assertions.assertTrue(out.contains("alpha/m1"), out);
+    }
+
+    /**
+     * A key a transaction does not carry groups under {@code (none)} rather than
+     * vanishing; a null-task call has no {@code task-name}.
+     */
+    @Test
+    public void anAbsentGroupingKeyBecomesTheNoneBucket() {
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+
+        String out = String.valueOf(reportWith("--group-by=task-name").successValue());
+        Assertions.assertTrue(out.contains("task-name: (none)"), out);
+    }
+
+    @Test
+    public void aPeriodExcludesCallsOutsideIt() {
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+
+        String future = String.valueOf(reportWith("--from=2999-01-01T00:00:00Z").successValue());
+        Assertions.assertTrue(future.contains("no model calls in scope"), future);
+
+        String past = String.valueOf(reportWith("--from=2000-01-01T00:00:00Z").successValue());
+        Assertions.assertTrue(past.contains("provider: alpha"), past);
+    }
+
+    @Test
+    public void cacheHitIsNaWhenNoCallReportedCache() {
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+
+        String out = String.valueOf(report().successValue());
+        Assertions.assertTrue(out.contains("cache-hit n/a"), out);
+    }
+
+    @Test
+    public void cacheHitIsMarkedPartialWhenOnlySomeCallsReportedCache() {
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, 0, 0, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+
+        String out = String.valueOf(report().successValue());
+        Assertions.assertTrue(out.contains("partial"),
+                "a mixed group must say the ratio covers only some calls:\n" + out);
+    }
+
+    /**
+     * The subtree match is on path <em>components</em>: {@code 4} selects {@code 1/4/9}
+     * while {@code 44} and the raw prefix {@code 1/4} do not, so a rollup cannot be
+     * fooled by an id that merely shares a prefix.
+     */
+    @Test
+    public void subtreeMatchIsOnPathComponentsNotPrefix() {
+        NaruTokenTransaction t = new NaruTokenTransaction(
+                Labels.builder().add("task-path", "1/4/9").build(),
+                "s", "u", new NaruModelConfig(new NaruModelKey("alpha", "m1")),
+                1, 1, -1, -1, Instant.now(), NDuration.ofMillis(1));
+
+        Assertions.assertTrue(NaruBudgetDirective.inSubtree(t, "4"));
+        Assertions.assertTrue(NaruBudgetDirective.inSubtree(t, "9"));
+        Assertions.assertFalse(NaruBudgetDirective.inSubtree(t, "44"),
+                "a component match must not be fooled by a shared prefix");
+        Assertions.assertFalse(NaruBudgetDirective.inSubtree(t, "1/4"));
+    }
+
+    @Test
+    public void aLaterPriceChangeDoesNotRewritePastCost() {
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"),
+                1_000_000, 0, -1, -1, NDuration.ofMillis(5));
+
+        reportWith("price set alpha input=5 output=5");
+
+        String out = String.valueOf(report().successValue());
+        Assertions.assertTrue(out.contains("cost 0.0000"),
+                "the price snapshot keeps a past call priced as it was made:\n" + out);
+        Assertions.assertTrue(out.contains("unpriced"), out);
+    }
+
+    @Test
+    public void anUnknownOptionFailsWithAMessage() {
+        NaruStmtResult r = reportWith("--nope");
+        Assertions.assertNotEquals(0, r.exitCode());
+        Assertions.assertTrue(String.valueOf(r.errorValue()).contains("unknown option"),
+                String.valueOf(r.errorValue()));
+    }
+
+    @Test
+    public void aBadLevelValueFailsWithAMessage() {
+        NaruStmtResult r = reportWith("--level=galaxy");
+        Assertions.assertNotEquals(0, r.exitCode());
+        Assertions.assertTrue(String.valueOf(r.errorValue()).contains("--level"),
+                String.valueOf(r.errorValue()));
+    }
+
+    /**
+     * The gating path in the directive: an AGENT actor is denied a price write, so the
+     * table is untouched and the command fails. This pins the directive end of the
+     * built-in rule that lives in the permissions extension.
+     */
+    @Test
+    public void anAgentActorMayNotSetAPrice() {
+        session.accessPolicy().putRule(new NaruPermissionRule()
+                .id("test:no-agent-budget")
+                .resourceType(NaruResourceType.of("budget"))
+                .patterns("**")
+                .actions(NaruAction.of("update"))
+                .actorKind(NaruActorKind.AGENT)
+                .effect(NaruAccessEffect.DENY));
+
+        NaruStmtResult r = reportAs(NaruActor.agent("a1", null), "price set alpha input=1 output=2");
+        Assertions.assertNotEquals(0, r.exitCode(), "an agent must not set its own prices");
+        Assertions.assertNull(service().priceTable().get("alpha"));
+    }
+
+    @Test
+    public void aUserActorMaySetAPrice() {
+        session.accessPolicy().putRule(new NaruPermissionRule()
+                .id("test:no-agent-budget")
+                .resourceType(NaruResourceType.of("budget"))
+                .patterns("**")
+                .actions(NaruAction.of("update"))
+                .actorKind(NaruActorKind.AGENT)
+                .effect(NaruAccessEffect.DENY));
+
+        NaruStmtResult r = reportAs(NaruActor.user("alice"), "price set alpha input=1 output=2");
+        Assertions.assertEquals(0, r.exitCode(), String.valueOf(r.errorValue()));
+        Assertions.assertNotNull(service().priceTable().get("alpha"));
+    }
+
+    /** A stub task that reports {@code actor} from {@code currentActor()}. */
+    private NaruStmtResult reportAs(NaruActor actor, String argument) {
+        NaruModelRequest request = request(List.of(), List.of());
+        NaruTask t = (NaruTask) Proxy.newProxyInstance(
+                NaruTask.class.getClassLoader(),
+                new Class<?>[]{NaruTask.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "session" -> session;
+                    case "currentActor" -> actor;
+                    case "log" -> null;
+                    case "toString" -> "stub-task";
+                    case "hashCode" -> 0;
+                    case "equals" -> proxy == args[0];
+                    default -> throw new AssertionError(
+                            "the /budget directive asked the task for something it should not need: "
+                                    + method.getName());
+                });
+        NaruDirectiveCallContext ctx = new NaruDirectiveCallContextImpl("budget", argument, t);
+        return new NaruBudgetDirective().execute(ctx);
+    }
+
+    /**
+     * A task whose labels are a real mutable map, so a test can see {@code /budget label}
+     * mutate them in place.
+     */
+    private static NaruTask labelTask(Map<String, String> labels) {
+        return (NaruTask) Proxy.newProxyInstance(
+                NaruTask.class.getClassLoader(),
+                new Class<?>[]{NaruTask.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "setLabel" -> {
+                        labels.put((String) args[0], (String) args[1]);
+                        yield proxy;
+                    }
+                    case "removeLabel" -> {
+                        labels.remove((String) args[0]);
+                        yield proxy;
+                    }
+                    case "clearLabels" -> {
+                        labels.clear();
+                        yield proxy;
+                    }
+                    case "labels" -> java.util.Collections.unmodifiableMap(labels);
+                    case "session" -> null;
+                    case "log" -> null;
+                    case "toString" -> "label-task";
+                    case "hashCode" -> 0;
+                    case "equals" -> proxy == args[0];
+                    default -> throw new AssertionError(
+                            "/budget label asked the task for something it should not need: "
+                                    + method.getName());
+                });
+    }
+
+    private static NaruStmtResult label(NaruTask task, String argument) {
+        NaruDirectiveCallContext ctx = new NaruDirectiveCallContextImpl("budget", argument, task);
+        return new NaruBudgetDirective().execute(ctx);
+    }
+
+    @Test
+    public void labelSubcommandSetsListsAndUnsetsLabels() {
+        Map<String, String> labels = new LinkedHashMap<>();
+        NaruTask task = labelTask(labels);
+
+        NaruStmtResult set = label(task, "label set module=foo tier=pro");
+        Assertions.assertEquals(0, set.exitCode(), String.valueOf(set.errorValue()));
+        Assertions.assertEquals("foo", labels.get("module"));
+        Assertions.assertEquals("pro", labels.get("tier"));
+        Assertions.assertTrue(String.valueOf(set.successValue()).contains("module=foo"),
+                "the command should echo the resulting labels:\n" + set.successValue());
+
+        NaruStmtResult unset = label(task, "label unset module");
+        Assertions.assertEquals(0, unset.exitCode(), String.valueOf(unset.errorValue()));
+        Assertions.assertFalse(labels.containsKey("module"));
+        Assertions.assertEquals("pro", labels.get("tier"), "unset must remove only the named key");
+
+        NaruStmtResult list = label(task, "label list");
+        Assertions.assertEquals(0, list.exitCode(), String.valueOf(list.errorValue()));
+        Assertions.assertTrue(String.valueOf(list.successValue()).contains("tier=pro"));
+
+        NaruStmtResult clear = label(task, "label clear");
+        Assertions.assertEquals(0, clear.exitCode(), String.valueOf(clear.errorValue()));
+        Assertions.assertTrue(labels.isEmpty());
+    }
+
+    @Test
+    public void labelSetWithoutAKeyValuePairIsRejected() {
+        Map<String, String> labels = new LinkedHashMap<>();
+        NaruTask task = labelTask(labels);
+
+        NaruStmtResult bad = label(task, "label set noequals");
+        Assertions.assertNotEquals(0, bad.exitCode(),
+                "a bare word is not a key=value and must be reported, not silently dropped");
+        Assertions.assertTrue(labels.isEmpty());
+    }
+
     /**
      * A model whose context size nobody reported divides by zero in the report, which
      * used to print {@code Infinity%}.
      */
     @Test
     public void reportSurvivesAModelWithNoContextSize() {
-        session.fireModelCallUsage(new NaruModelKey("test", "sizeless"),
+        session.fireModelCallUsage(null, new NaruModelKey("test", "sizeless"),
                 100, 10, -1, -1, NDuration.ofMillis(5));
 
         NaruStmtResult result = report(NaruMessage.system("hello"));
@@ -267,22 +628,36 @@ public class NaruBudgetDirectiveTest {
     }
 
     /**
-     * The report must state what the estimate is measured against, or it is a number
-     * with nothing to calibrate it against.
+     * The estimate is opt-in: {@code --explain} must still state what it is measured
+     * against, or it is a number with nothing to calibrate it against.
      */
     @Test
-    public void reportShowsTheEstimateAgainstWhatWasActuallyReported() {
-        session.fireModelCallUsage(new NaruModelKey("test", "calibrated"),
+    public void explainShowsTheEstimateAgainstWhatWasActuallyReported() {
+        session.fireModelCallUsage(null, new NaruModelKey("test", "calibrated"),
                 400, 40, -1, -1, NDuration.ofMillis(5));
 
-        String out = String.valueOf(report().successValue());
+        String out = String.valueOf(reportWith("--explain").successValue());
         Assertions.assertTrue(out.contains("estimated tokens"),
                 "the headline has to say it is an estimate:\n" + out);
         Assertions.assertTrue(out.contains("reported last call"),
                 "an estimate with nothing to compare against cannot be trusted:\n" + out);
     }
 
-    // ── /stats: catalog vs loaded skill attribution (WP5) ────────────────
+    /**
+     * The estimate is guesswork, so it must not appear unless asked for: the default
+     * report is numbers the provider actually reported.
+     */
+    @Test
+    public void theDefaultReportDoesNotGuess() {
+        session.fireModelCallUsage(null, new NaruModelKey("test", "calibrated"),
+                400, 40, -1, -1, NDuration.ofMillis(5));
+
+        String out = String.valueOf(report().successValue());
+        Assertions.assertFalse(out.contains("estimated tokens"),
+                "the estimate is opt-in, not part of the default report:\n" + out);
+    }
+
+    // ── /budget --explain: catalog vs loaded skill attribution ───────────
 
     /**
      * The AGENT bucket lumps every non-user source together, which hides the thing that
@@ -321,25 +696,25 @@ public class NaruBudgetDirectiveTest {
     }
 
     @Test
-    public void statsDirectiveReportsTheSplitAndRunsClean() {
-        NaruDirectiveCallContext ctx = new NaruDirectiveCallContextImpl("stats", null, task(
+    public void explainReportsTheSplitAndRunsClean() {
+        NaruDirectiveCallContext ctx = new NaruDirectiveCallContextImpl("budget", "--explain", task(
                 NaruMessage.user("catalog row")
                         .setSource(NaruSource.SKILL).setSourceName("catalog:readme"),
                 NaruMessage.user("loaded body text")
                         .setSource(NaruSource.SKILL).setSourceName("/x/.naru/skills/readme/SKILL.md"),
                 NaruMessage.system("brief")));
-        NaruStmtResult result = new NaruStatsDirective().execute(ctx);
+        NaruStmtResult result = new NaruBudgetDirective().execute(ctx);
 
         Assertions.assertEquals(0, result.exitCode(),
-                "/stats must not fail on a request with skill messages: " + result.errorValue());
+                "/budget --explain must not fail on a request with skill messages: " + result.errorValue());
         String out = String.valueOf(result.successValue());
         Assertions.assertTrue(out.contains("skill contribution"),
-                "the split is the point of /stats:\n" + out);
+                "the split is the point of --explain:\n" + out);
         Assertions.assertTrue(out.contains("catalog"),
                 "advertised skills must be a named row:\n" + out);
         Assertions.assertTrue(out.contains("loaded bodies"),
                 "spliced skill bodies must be a named row:\n" + out);
         Assertions.assertTrue(out.contains("per model"),
-                "the per-model spend is part of /stats:\n" + out);
+                "the per-model spend is part of --explain:\n" + out);
     }
 }

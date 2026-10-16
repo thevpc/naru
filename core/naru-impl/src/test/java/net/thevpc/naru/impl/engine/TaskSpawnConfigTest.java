@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.mode.NaruPromptMode;
@@ -11,12 +11,13 @@ import net.thevpc.naru.api.registry.NaruToolTags;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.scheduler.NaruTaskSchedulerView;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
+import net.thevpc.naru.api.spawn.NaruSpawnInherit;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.ia.mode.NaruStandardPromptModeImpl;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
+import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -60,11 +62,14 @@ public class TaskSpawnConfigTest {
 
     @BeforeEach
     public void setUp() {
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-task-spawn"));
         // configureDefaults=false: no SPI provider discovery, no network, no real models
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), null, false,
-                new NaruSessionListener() {
+        session = agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(null)
+                .configureDefaults(false)
+                .sessionListener(new NaruSessionListener() {
                     @Override
                     public void onEventAppended(NaruEvent newEvent) {
                     }
@@ -80,7 +85,11 @@ public class TaskSpawnConfigTest {
                     @Override
                     public void onSessionReloaded(NaruSession naruSession) {
                     }
-                }, null, null, null);
+                })
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         // tool tags are contributed by per-extension providers; register the builtin set
         // directly instead of going through registerDefaults() (which would pull in
         // model providers and toolsets)
@@ -206,8 +215,76 @@ public class TaskSpawnConfigTest {
         Assertions.assertEquals(List.of("exec"), List.copyOf(spec.toolTags()));
     }
 
-    // ── cooperative cancellation ─────────────────────────────────────────────
+    // ── budget labels ────────────────────────────────────────────────────────
 
+    @Test
+    public void specLabelsAreAppliedToTheTask() {
+        NaruTask task = session.newTask(NaruTaskSpec.of()
+                .addLabel("module", "billing")
+                .addLabel("tier", "pro"));
+        Assertions.assertEquals(Map.of("module", "billing", "tier", "pro"), task.labels());
+    }
+
+    /**
+     * Unlike tags and env, labels are inherited by default: a child almost always shares
+     * its spawner's descriptive dimensions, and a caller who says nothing must not lose them.
+     */
+    @Test
+    public void labelsInheritFromParentByDefault() {
+        NaruTask parent = session.newTask(NaruTaskSpec.of().addLabel("module", "billing"));
+        NaruTask child = session.newTask(NaruTaskSpec.of().parentId(parent.id()));
+        Assertions.assertEquals(Map.of("module", "billing"), child.labels());
+    }
+
+    @Test
+    public void childLabelsOverrideInheritedOnes() {
+        NaruTask parent = session.newTask(NaruTaskSpec.of().addLabel("module", "billing"));
+        NaruTask child = session.newTask(NaruTaskSpec.of()
+                .parentId(parent.id())
+                .addLabel("module", "search"));
+        Assertions.assertEquals(Map.of("module", "search"), child.labels());
+    }
+
+    @Test
+    public void revokingALabelRemovesTheInheritedOne() {
+        NaruTask parent = session.newTask(NaruTaskSpec.of()
+                .addLabel("module", "billing")
+                .addLabel("tier", "pro"));
+        NaruTask child = session.newTask(NaruTaskSpec.of()
+                .parentId(parent.id())
+                .revokeLabels("tier"));
+        Assertions.assertEquals(Map.of("module", "billing"), child.labels());
+    }
+
+    /**
+     * A caller who enumerates an inherit set without {@code labels} has opted out of the
+     * default. This is the one way to stop inheriting, since the inherit set only adds.
+     */
+    @Test
+    public void enumeratingAnInheritSetWithoutLabelsOptsOut() {
+        NaruTask parent = session.newTask(NaruTaskSpec.of().addLabel("module", "billing"));
+        NaruTask child = session.newTask(NaruTaskSpec.of()
+                .parentId(parent.id())
+                .inherit(NaruSpawnInherit.TAGS));
+        Assertions.assertEquals(Map.of(), child.labels());
+    }
+
+    @Test
+    public void nameAndLabelsRoundTripThroughSerialization() {
+        NaruTaskImpl task = (NaruTaskImpl) session.newTask(NaruTaskSpec.of()
+                .name("my-routine")
+                .addLabel("module", "billing")
+                .addLabel("tier", "pro"));
+
+        NaruTaskImpl reloaded = new NaruTaskImpl(task.toElement(), (NaruSessionImpl) session);
+
+        Assertions.assertEquals("my-routine", reloaded.name(),
+                "the task name was not serialized before, so a reloaded task lost it");
+        Assertions.assertEquals(Map.of("module", "billing", "tier", "pro"), reloaded.labels(),
+                "labels are persisted with the task and must survive a reload");
+    }
+
+    // ── cooperative cancellation ─────────────────────────────────────────────
     @Test
     public void killSetsKillRequestedAndStatus() {
         NaruTask task = session.newTask(NaruTaskSpec.of());

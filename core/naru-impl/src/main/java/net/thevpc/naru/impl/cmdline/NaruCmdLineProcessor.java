@@ -7,21 +7,18 @@ import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.artifact.NId;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.command.NExecutionException;
-import net.thevpc.nuts.io.NErr;
 import net.thevpc.nuts.io.NOut;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NCancelException;
 import net.thevpc.nuts.util.NIllegalArgumentException;
-import net.thevpc.nuts.util.NOptional;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -57,6 +54,8 @@ public class NaruCmdLineProcessor {
     private boolean helpCommands = false;
     private String[] helpCommandsArgs = new String[0];
     private final List<String> precommands = new ArrayList<>();
+    private final List<String> profiles = new ArrayList<>();
+    private final List<String> extensions = new ArrayList<>();
     private Boolean forceInteractive;
 
     public NaruCmdLineProcessor(NCmdLine args) {
@@ -72,6 +71,8 @@ public class NaruCmdLineProcessor {
                 .when("--file", "-f").asEntry(a -> precommands.add("/source " + a.value()))
                 .when("--interactive", "-i").asFlag(a -> forceInteractive = a.booleanValue())
                 .when("--project", "-d").asEntry(a -> projectDir = a.value())
+                .when("--profile", "-p").asEntry(a -> profiles.add(a.value()))
+                .when("--extension", "-e").asEntry(a -> extensions.add(a.value()))
                 .when("--help", "-h").asFlag(a -> {
                     help = a.booleanValue();
                     while (args.hasNext()) {
@@ -99,8 +100,7 @@ public class NaruCmdLineProcessor {
             }
             return;
         }
-        NaruAgent runner = new NaruAgentImpl();
-        runner.projectDirectory(NPath.of(projectDir));
+        NaruWorkspace runner = createWorkspace(NPath.of(projectDir));
         boolean interactive = (forceInteractive == null ? precommands.isEmpty() : forceInteractive);
         if (interactive) {
             runner.newSession()
@@ -129,6 +129,24 @@ public class NaruCmdLineProcessor {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * Assembles the workspace for this run: every {@code --profile} is expanded to the
+     * extensions it bundles and every {@code --extension} is loaded on top. When neither
+     * is declared the builder itself falls back to the dev profile (if installed) and
+     * otherwise to a bare core, so the same invocation yields a full harness or a minimal
+     * agent depending on what is present.
+     */
+    private NaruWorkspace createWorkspace(NPath projectDirectory) {
+        NaruWorkspaceBuilder builder = NaruWorkspaceBuilder.of();
+        for (String profile : profiles) {
+            builder.profile(NaruWorkspaceBuilder.profileId(profile));
+        }
+        for (String extension : extensions) {
+            builder.importExtension(NId.of(extension));
+        }
+        return builder.projectDirectory(projectDirectory).build();
+    }
+
     private void printHelp() {
         NOut.println(
                 NMsg.ofC("%s — Nuts AI Reasoning Unit",
@@ -143,12 +161,19 @@ public class NaruCmdLineProcessor {
                         "  -f|--file <text>          task file to run\n" +
                         "  -i|--interactive          force interactive mode\n" +
                         "  -d|--project <directory>  select project folder\n" +
+                        "  -p|--profile <name|id>    load a profile (a bundle of extensions);\n" +
+                        "                            repeatable. bare names resolve under\n" +
+                        "                            net.thevpc.naru.profiles:naru-profile-<name>\n" +
+                        "  -e|--extension <id>       load a single extension (group:artifact[#version]);\n" +
+                        "                            repeatable\n" +
                         "  --help, -h             Show this help\n\n" +
                         "Examples:\n" +
                         "  naru --task \"What files are in the project?\"\n" +
                         "  naru -t \"/model use qwen2.5-coder:7b\"  -t \"Fix the bug in MyApp.java\" --project ./my-app" +
                         "  naru -t \"/model use qwen2.5-coder:7b\"  -f \"myscript.naru\" --project ./my-app" +
-                        "  naru --task \"Verify the output.png matches input.tson\" --project ./my-app\n"
+                        "  naru --task \"Verify the output.png matches input.tson\" --project ./my-app\n" +
+                        "  naru --profile dev --task \"Explore the repo with the full dev harness\"\n" +
+                        "  naru --extension net.thevpc.naru:naru-budget --task \"Show my spend\"\n"
         );
     }
 
@@ -177,14 +202,16 @@ public class NaruCmdLineProcessor {
     public void printHelpCommands(String[] helpCommandsArgs) {
         openStandaloneWorkspace();
         NPath projectDir = NPath.ofTempFolder("naru-helpgen-" + System.nanoTime());
-        NaruAgent agent = new NaruAgentImpl();
-        agent.projectDirectory(projectDir);
-        NaruSessionImpl session = new NaruSessionImpl(
-                agent, projectDir,
-                new NaruStreamInteraction(o -> {
+        // built through the same profile/extension path as a real run, so the generated
+        // manual lists whatever a configured naru would actually offer
+        NaruWorkspace agent = createWorkspace(projectDir);
+        NaruSession session = agent.newSession()
+                .directory(projectDir)
+                .interaction(new NaruStreamInteraction(o -> {
                     // help renders through the directive result; session output is discarded
-                }),
-                true, NOOP_LISTENER, null, null, null);
+                }))
+                .sessionListener(NOOP_LISTENER)
+                .build();
         try {
             NaruTask task = session.newTask(NaruTaskSpec.of());
             NaruDirective help = session.registry().findDirective("help")

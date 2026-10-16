@@ -2,6 +2,7 @@ package net.thevpc.naru.api.agent;
 
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.time.NDuration;
 
 /**
@@ -24,9 +25,33 @@ public interface NaruSessionUsageListener {
      * provider that does not do cache accounting is -1 rather than 0; consumers decide how
      * to treat an unreported count.
      *
+     * <h2>Normalization contract</h2>
+     * Adapters must normalize before announcing, so that consumers never special-case a
+     * provider:
+     * <ul>
+     *   <li>{@code promptTokens} <b>includes</b> {@code cacheWriteTokens} and
+     *       {@code cacheReadTokens}. They are a breakdown of the input total, not an
+     *       addition to it. (Anthropic's {@code input_tokens} excludes them, so its adapter
+     *       adds them back; OpenAI and Gemini already include them.)</li>
+     *   <li>{@code completionTokens} <b>includes</b> reasoning/thinking tokens, which
+     *       providers bill as output. (Gemini reports {@code thoughtsTokenCount} outside
+     *       {@code candidatesTokenCount}, so its adapter adds it in.)</li>
+     *   <li>{@code cacheWriteTokens} is the count billed at a cache-write rate
+     *       (Anthropic's cache creation). It is {@code 0} when the provider reports cache
+     *       accounting but has no cache-write class (OpenAI, Gemini), and {@code -1} when
+     *       the provider reports no cache accounting at all.</li>
+     *   <li>{@code cacheReadTokens} is the count billed at the discounted cache-read rate,
+     *       or {@code -1} when unreported.</li>
+     * </ul>
+     * With this contract the full-rate input remainder is always
+     * {@code max(0, promptTokens - cacheReadTokens - cacheWriteTokens)}.
+     *
+     * @param task the task that made the call, so a consumer can stamp task identity and
+     *             user-defined labels; never null on the production path
      * @param duration wall-clock time of the call, for latency reporting
      */
-    void onModelCall(NaruModelKey model,
+    void onModelCall(NaruTask task,
+                     NaruModelKey model,
                      long promptTokens,
                      long completionTokens,
                      long cacheWriteTokens,

@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
@@ -14,7 +15,6 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
@@ -84,11 +84,18 @@ public class NaruModelResourceResolutionTest {
     }
 
     private NaruTask taskFor(NPath projectDir) {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
-        NaruSessionImpl session = new NaruSessionImpl(agent, projectDir,
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        NaruSession session = agent.newSession()
+                .directory(projectDir)
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         session.registry().registerModelProvider(new FakeProvider());
         NaruTask task = session.newTask(NaruTaskSpec.of());
         task.setModel(new NaruModelConfig("fake", MODEL));

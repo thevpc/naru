@@ -1,9 +1,9 @@
 package net.thevpc.naru.ext.tools.perm;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.io.NPath;
@@ -23,13 +23,20 @@ final class NaruPermissionsTestSupport {
 
     static NaruSessionImpl session() {
         NPath dir = NPath.ofTempFolder("naru-perm-" + System.nanoTime());
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         // the store config resolves through the agent's project env, so the project
         // directory must be set before the session is constructed
         agent.projectDirectory(dir);
-        return new NaruSessionImpl(agent, dir,
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        return (NaruSessionImpl) agent.newSession()
+                .directory(dir)
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     static NaruTask task(NaruSession session) {

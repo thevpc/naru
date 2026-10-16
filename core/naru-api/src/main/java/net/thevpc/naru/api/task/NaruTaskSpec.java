@@ -34,6 +34,8 @@ public class NaruTaskSpec {
     private final Set<String> revokeTags = new LinkedHashSet<>();
     private final Set<String> excludeTools = new LinkedHashSet<>();
     private final Set<String> addSkills = new LinkedHashSet<>();
+    private final Map<String, String> addLabels = new LinkedHashMap<>();
+    private final Set<String> revokeLabels = new LinkedHashSet<>();
     private String policy;
     private String spawnKind;
     private NaruSpawnContract contract;
@@ -347,6 +349,51 @@ public class NaruTaskSpec {
             for (String s : skills) {
                 if (!NBlankable.isBlank(s)) {
                     addSkills.add(s.trim());
+                }
+            }
+        }
+        return this;
+    }
+
+    /** User-defined budget labels to add for the spawned task ({@code --add-labels=k=v}). */
+    public Map<String, String> addLabels() {
+        return Collections.unmodifiableMap(addLabels);
+    }
+
+    public NaruTaskSpec addLabels(Map<String, String> labels) {
+        addLabels.clear();
+        if (labels != null) {
+            for (Map.Entry<String, String> e : labels.entrySet()) {
+                if (e.getKey() != null && !NBlankable.isBlank(e.getKey()) && e.getValue() != null) {
+                    addLabels.put(e.getKey().trim(), e.getValue());
+                }
+            }
+        }
+        return this;
+    }
+
+    public NaruTaskSpec addLabel(String key, String value) {
+        if (key != null && !NBlankable.isBlank(key) && value != null) {
+            addLabels.put(key.trim(), value);
+        }
+        return this;
+    }
+
+    /** User-defined budget label keys to revoke ({@code --revoke-labels=...}). */
+    public Set<String> revokeLabels() {
+        return Collections.unmodifiableSet(revokeLabels);
+    }
+
+    public NaruTaskSpec revokeLabels(String... keys) {
+        return revokeLabels(keys == null ? new ArrayList<>() : Arrays.asList(keys));
+    }
+
+    public NaruTaskSpec revokeLabels(List<String> keys) {
+        revokeLabels.clear();
+        if (keys != null) {
+            for (String k : keys) {
+                if (!NBlankable.isBlank(k)) {
+                    revokeLabels.add(k.trim());
                 }
             }
         }

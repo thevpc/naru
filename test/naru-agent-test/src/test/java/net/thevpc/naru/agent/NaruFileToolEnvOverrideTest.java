@@ -1,15 +1,13 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.ext.tools.fs.FileToolHelper;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
@@ -31,7 +29,7 @@ public class NaruFileToolEnvOverrideTest {
     private static final String MAX_LINES_KEY = "naru.fs.read.maxLines";
     private static final String PREVIEW_CHARS_KEY = "naru.fs.read.previewChars";
 
-    private NaruAgent agent;
+    private NaruWorkspace agent;
     private NPath folder;
     private NaruSession session;
 
@@ -42,7 +40,7 @@ public class NaruFileToolEnvOverrideTest {
     @BeforeEach
     public void setUp() {
         folder = NPath.ofTempFolder("naru-fsenv");
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(folder);
     }
 

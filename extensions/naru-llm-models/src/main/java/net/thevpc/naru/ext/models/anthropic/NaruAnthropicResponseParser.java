@@ -38,20 +38,25 @@ public class NaruAnthropicResponseParser implements NElementDeserializer<NaruRes
             if (usageObj != null) {
                 int inputTokens = usageObj.getIntValue("input_tokens").orElse(0);
                 int outputTokens = usageObj.getIntValue("output_tokens").orElse(0);
-                response.setPromptTokens(inputTokens);
-                response.setEvalTokens(outputTokens);
-                response.setTotalTokens(inputTokens + outputTokens);
 
                 // Anthropic reports the cache breakdown separately, and
-                // input_tokens EXCLUDES both cache reads and cache writes. So the
-                // billed input total is the sum of all three, and a cost model
-                // that only looks at input_tokens would under-report spending by
-                // exactly the cached portion.
+                // input_tokens EXCLUDES both cache reads and cache writes. Every
+                // other provider folds the cached tokens into the prompt total, so
+                // normalize here: promptTokens is the billed input total, the sum
+                // of the three. A cost model then subtracts the cache classes to
+                // get the full-rate remainder, uniformly, for every provider.
                 int cacheCreation = usageObj.getIntValue("cache_creation_input_tokens").orElse(-1);
                 int cacheRead = usageObj.getIntValue("cache_read_input_tokens").orElse(-1);
-                if (cacheCreation >= 0 || cacheRead >= 0) {
-                    response.setCacheWriteTokens(Math.max(0, cacheCreation));
-                    response.setCacheReadTokens(Math.max(0, cacheRead));
+                boolean cacheReported = cacheCreation >= 0 || cacheRead >= 0;
+                int cacheWrite = Math.max(0, cacheCreation);
+                int cacheReadTokens = Math.max(0, cacheRead);
+                int promptTokens = inputTokens + cacheWrite + cacheReadTokens;
+                response.setPromptTokens(promptTokens);
+                response.setEvalTokens(outputTokens);
+                response.setTotalTokens(promptTokens + outputTokens);
+                if (cacheReported) {
+                    response.setCacheWriteTokens(cacheWrite);
+                    response.setCacheReadTokens(cacheReadTokens);
                 }
             }
 

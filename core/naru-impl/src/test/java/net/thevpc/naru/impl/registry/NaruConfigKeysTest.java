@@ -1,11 +1,10 @@
 package net.thevpc.naru.impl.registry;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.registry.NaruConfigKey;
 import net.thevpc.naru.api.registry.NaruConfigKeyProvider;
 import net.thevpc.naru.api.registry.NaruRegistry;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
@@ -29,11 +28,18 @@ public class NaruConfigKeysTest {
     }
 
     private NaruSession newSession() {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         NPath dir = NPath.ofTempFolder("naru-configkeys-" + System.nanoTime());
         agent.projectDirectory(dir);
-        return new NaruSessionImpl(agent, dir, new NaruStreamInteraction(o -> {
-        }), true, null, null, null, null);
+        return agent.newSession()
+                .directory(dir)
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @Test

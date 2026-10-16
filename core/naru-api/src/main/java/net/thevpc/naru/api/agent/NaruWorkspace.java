@@ -1,8 +1,10 @@
 package net.thevpc.naru.api.agent;
 
+import net.thevpc.naru.api.registry.NaruAgentExtension;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NOptional;
@@ -10,22 +12,54 @@ import net.thevpc.nuts.util.NOptional;
 import java.util.List;
 import java.util.function.Predicate;
 
-public interface NaruAgent {
+public interface NaruWorkspace {
+
+    /**
+     * The agent implementation on the classpath.
+     * <p>
+     * Resolved through the nuts extension registry when a workspace is available, and
+     * by name otherwise, so a plain {@code main()} that never bootstrapped a workspace
+     * can still start an agent. Fails loudly when {@code naru-impl} is absent: there is
+     * no meaningful agent without an implementation.
+     */
+    static NaruWorkspace of() {
+        NOptional<NaruWorkspace> bySpi = NExtensions.get()
+                .flatMap(x -> x.createComponent(NaruWorkspace.class));
+        if (bySpi.isPresent()) {
+            return bySpi.get();
+        }
+        try {
+            Class<?> impl = Class.forName("net.thevpc.naru.impl.engine.NaruWorkspaceImpl");
+            return (NaruWorkspace) impl.getConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(
+                    "no naru workspace implementation found on the classpath (naru-impl is missing?)", e);
+        }
+    }
+
+    /**
+     * A feature that belongs to the agent rather than to a session, looked up by name.
+     * <p>
+     * Created lazily on first lookup and retained for the agent's lifetime, exactly
+     * like session extensions. Empty when no extension with that name is installed.
+     */
+    <T extends NaruAgentExtension> NOptional<T> extension(String name, Class<T> as);
+
     Predicate<NaruDirective> directiveFilter();
 
-    NaruAgent directiveFilter(Predicate<NaruDirective> directiveFilter);
+    NaruWorkspace directiveFilter(Predicate<NaruDirective> directiveFilter);
 
     Predicate<NaruTool> toolFilter();
 
-    NaruAgent toolFilter(Predicate<NaruTool> toolFilter);
+    NaruWorkspace toolFilter(Predicate<NaruTool> toolFilter);
 
     Predicate<NaruToolTag> tagFilter();
 
-    NaruAgent tagFilter(Predicate<NaruToolTag> tagFilter);
+    NaruWorkspace tagFilter(Predicate<NaruToolTag> tagFilter);
 
     NPath projectDirectory();
 
-    NaruAgent projectDirectory(NPath projectDirectory);
+    NaruWorkspace projectDirectory(NPath projectDirectory);
 
     /**
      * Begins configuring a new session. Nothing is created or started until

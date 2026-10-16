@@ -15,8 +15,8 @@ import java.util.List;
  * or not a project file or a user ever wrote one.
  *
  * <p>A built-in is a <em>guarantee</em>, not a preference — it is installed at the
- * front of the policy and re-seeded by {@code clearRules()} — so the two here are
- * deliberately narrow and agent-scoped, and neither can surprise a human acting
+ * front of the policy and re-seeded by {@code clearRules()} — so the three here are
+ * deliberately narrow and agent-scoped, and none can surprise a human acting
  * directly:
  *
  * <ul>
@@ -28,6 +28,11 @@ import java.util.List;
  *       private keys. The check answers {@code DENY} today; the file/url/shell
  *       guards that make it bite at the resource itself land with the per-domain
  *       enforcement work.</li>
+ *   <li>{@link #NO_AGENT_BUDGET_WRITE} keeps an agent from setting prices or
+ *       labels through {@code /budget}. It may still <em>read</em> the report — a
+ *       model needs to know what it has spent — but an agent that can price its
+ *       own calls can rewrite its own bill, so the mutation path answers
+ *       {@code DENY}.</li>
  * </ul>
  *
  * <p>Installation is idempotent, so an extension may call {@link #install} on
@@ -39,6 +44,13 @@ public final class NaruPermissionsBuiltins {
     public static final String NO_AGENT_POLICY_DIRECTIVE = "core:no-agent-policy-directive";
     /** Deny id: an agent may not read or write personal secrets or private keys. */
     public static final String NO_AGENT_SECRET_FILES = "core:no-agent-secret-files";
+    /** Deny id: an agent may read {@code /budget} but may not rewrite its own bill. */
+    public static final String NO_AGENT_BUDGET_WRITE = "core:no-agent-budget-write";
+
+    /** The resource {@code /budget} writes to; it matches the budget extension's own type by id. */
+    public static final NaruResourceType BUDGET_RESOURCE = NaruResourceType.of("budget");
+    /** Changing a price or a label is an update of the accounting config. */
+    public static final NaruAction BUDGET_UPDATE = NaruAction.of("update");
 
     private NaruPermissionsBuiltins() {
     }
@@ -65,7 +77,17 @@ public final class NaruPermissionsBuiltins {
                         .actorKind(NaruActorKind.AGENT)
                         .effect(NaruAccessEffect.DENY)
                         .source(NaruAccessPolicy.SOURCE_CORE)
-                        .description("an agent may not read or write personal secrets or private keys")
+                        .description("an agent may not read or write personal secrets or private keys"),
+                new NaruPermissionRule()
+                        .id(NO_AGENT_BUDGET_WRITE)
+                        .resourceType(BUDGET_RESOURCE)
+                        .patterns("*", "**")
+                        .actions(BUDGET_UPDATE)
+                        .actorKind(NaruActorKind.AGENT)
+                        .effect(NaruAccessEffect.DENY)
+                        .source(NaruAccessPolicy.SOURCE_CORE)
+                        .description("an agent may read /budget but may not set prices or labels: "
+                                + "an agent that can price its own calls can rewrite its own bill")
         );
     }
 

@@ -1,17 +1,15 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
+import net.thevpc.naru.api.agent.NaruWorkspaceBuilder;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -48,7 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class NaruTagGateTest {
 
-    private NaruAgent agent;
+    private NaruWorkspace agent;
     private NaruSession session;
 
     @BeforeAll
@@ -57,10 +55,19 @@ public class NaruTagGateTest {
 
     @BeforeEach
     public void setUp() {
-        agent = new NaruAgentImpl();
-        agent.projectDirectory(NPath.ofTempFolder("naru-tag-gate"));
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), null, true,
-                NOOP_LISTENER, null, null, null);
+        agent = NaruWorkspaceBuilder.of()
+                .projectDirectory(NPath.ofTempFolder("naru-tag-gate"))
+                .build()
+        ;
+        session = agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(null)
+                .configureDefaults(true)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach

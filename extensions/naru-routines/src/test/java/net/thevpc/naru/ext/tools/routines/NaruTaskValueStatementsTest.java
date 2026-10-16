@@ -1,11 +1,10 @@
 package net.thevpc.naru.ext.tools.routines;
 
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -30,7 +29,7 @@ public class NaruTaskValueStatementsTest {
         Nuts.require();    }
 
     private static NaruTask run(String name, String... statements) {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-result-" + name));
         NaruTask task = agent.newSession()
                 .interaction(new NaruStreamInteraction(o -> {
@@ -71,7 +70,7 @@ public class NaruTaskValueStatementsTest {
     @Test
     @Timeout(60)
     public void returnReadsVariablesSeededOnTheSpec() {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-result-seeded"));
         NaruTask result = agent.newSession()
                 .interaction(new NaruStreamInteraction(o -> {

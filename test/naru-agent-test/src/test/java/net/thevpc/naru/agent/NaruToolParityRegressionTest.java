@@ -1,6 +1,6 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
@@ -10,10 +10,8 @@ import net.thevpc.naru.api.registry.NaruToolCallContextImpl;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.*;
 
@@ -26,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class NaruToolParityRegressionTest {
 
     private static NPath tempProjectDir;
-    private static NaruAgent agent;
+    private static NaruWorkspace agent;
     private static NaruSession session;
     private static NaruTask task;
 
@@ -37,7 +35,7 @@ public class NaruToolParityRegressionTest {
         Path p = Files.createTempDirectory("naru-parity-test");
         tempProjectDir = NPath.of(p.toString());
 
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(tempProjectDir);
 
         session = agent.newSession()

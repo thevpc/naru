@@ -1,10 +1,9 @@
 package net.thevpc.naru.api.model;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.util.NIllegalArgumentException;
@@ -257,8 +256,8 @@ public class NaruModelRegistrationTest {
                     }
                     return defaultValue(method.getReturnType());
                 });
-        NaruAgent agent = (NaruAgent) Proxy.newProxyInstance(
-                NaruSession.class.getClassLoader(), new Class<?>[]{NaruAgent.class},
+        NaruWorkspace agent = (NaruWorkspace) Proxy.newProxyInstance(
+                NaruSession.class.getClassLoader(), new Class<?>[]{NaruWorkspace.class},
                 (proxy, method, args) -> {
                     if (method.getDeclaringClass() == Object.class) {
                         return objectMethod(proxy, method, args);

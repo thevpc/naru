@@ -2,8 +2,7 @@ package net.thevpc.naru.ext.tools.routines;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
@@ -39,11 +38,18 @@ public class NaruSetAutocompleteTest {
 
     @BeforeEach
     public void newSession() {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         NPath dir = NPath.ofTempFolder("naru-set-complete-" + System.nanoTime());
         agent.projectDirectory(dir);
-        session = new NaruSessionImpl(agent, dir, new NaruStreamInteraction(o -> {
-        }), true, null, null, null, null);
+        session = agent.newSession()
+                .directory(dir)
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     private List<NArgCompleteCandidate> complete(String... words) {

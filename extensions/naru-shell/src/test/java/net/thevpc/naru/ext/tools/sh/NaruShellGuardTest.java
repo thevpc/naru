@@ -4,14 +4,14 @@ import net.thevpc.naru.api.access.NaruAccessEffect;
 import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.access.NaruResourceType;
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolCallContextImpl;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
@@ -36,13 +36,20 @@ public class NaruShellGuardTest {
         Nuts.require();
     }
 
-    private static NaruSessionImpl session() {
+    private static NaruSession session() {
         NPath dir = NPath.ofTempFolder("naru-shell-guard-" + System.nanoTime());
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
-        return new NaruSessionImpl(agent, dir,
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        return agent.newSession()
+                .directory(dir)
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     private static NaruPermissionRule denyExecute(String id, String pattern) {
@@ -56,7 +63,7 @@ public class NaruShellGuardTest {
 
     @Test
     public void executeRuleBlocksTheShellTool() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
         s.accessPolicy().putRule(denyExecute("deny-rm", "rm **"));
 
@@ -69,7 +76,7 @@ public class NaruShellGuardTest {
 
     @Test
     public void executeRuleBlocksTheShDirective() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
         s.accessPolicy().putRule(denyExecute("deny-rm", "rm **"));
 
@@ -83,7 +90,7 @@ public class NaruShellGuardTest {
 
     @Test
     public void emptyPolicyRunsTheCommand() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
 
         NaruToolCallContext ctx = new NaruToolCallContextImpl(Map.of("command", "echo naru-guard-ok"), task);

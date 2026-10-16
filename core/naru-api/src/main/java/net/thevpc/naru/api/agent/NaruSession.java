@@ -30,7 +30,7 @@ public interface NaruSession {
 
     NaruSession setVisibility(NaruVisibility visibility);
 
-    NaruAgent agent();
+    NaruWorkspace agent();
 
     /**
      * The principal that owns this session — the user (or service identity) on
@@ -143,7 +143,7 @@ public interface NaruSession {
     /**
      * The catalog of sessions <b>saved to disk</b> in this project.
      * <p>
-     * Distinct from {@link NaruAgent#sessions()}, which is the set of sessions currently
+     * Distinct from {@link NaruWorkspace#sessions()}, which is the set of sessions currently
      * <i>running in this JVM</i>. Nothing here is live: these are directories under
      * {@code .naru/sessions/} that can be listed, restored, purged or deleted, and they
      * are not required to have ever been started in this process.
@@ -231,7 +231,7 @@ public interface NaruSession {
             return sessionValue;
         }
         if (inherited) {
-            NaruAgent a = agent();
+            NaruWorkspace a = agent();
             if (a != null) {
                 NaruEnv agentStore = a.agentEnv();
                 if (agentStore != null) {

@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.tools.llm;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
@@ -11,7 +11,6 @@ import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
 import net.thevpc.nuts.cmdline.NArgCompletePosition;
-import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NOptional;
@@ -80,8 +79,8 @@ public class NaruSettingsAutocompleteTest {
             }
         };
 
-        NaruAgent agent = (NaruAgent) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{NaruAgent.class},
+        NaruWorkspace agent = (NaruWorkspace) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{NaruWorkspace.class},
                 (proxy, method, args) -> "env".equals(method.getName()) ? env : null);
 
         final NaruSession[] holder = new NaruSession[1];

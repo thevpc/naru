@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
@@ -176,9 +176,9 @@ public class NaruCustomProviderTest {
             }
         };
 
-        NaruAgent agent = (NaruAgent) Proxy.newProxyInstance(
+        NaruWorkspace agent = (NaruWorkspace) Proxy.newProxyInstance(
                 getClass().getClassLoader(),
-                new Class<?>[]{NaruAgent.class},
+                new Class<?>[]{NaruWorkspace.class},
                 (proxy, method, args) -> "env".equals(method.getName()) ? env : null
         );
 

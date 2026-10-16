@@ -4,10 +4,10 @@ import net.thevpc.naru.api.access.NaruAccessEffect;
 import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.access.NaruResourceType;
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
@@ -29,13 +29,20 @@ public class NaruMcpGuardTest {
         Nuts.require();
     }
 
-    private static NaruSessionImpl session() {
+    private static NaruSession session() {
         NPath dir = NPath.ofTempFolder("naru-mcp-guard-" + System.nanoTime());
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
-        return new NaruSessionImpl(agent, dir,
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        return agent.newSession()
+                .directory(dir)
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     private static NaruPermissionRule denyCall(String id, String pattern) {
@@ -49,7 +56,7 @@ public class NaruMcpGuardTest {
 
     @Test
     public void callRuleBlocksTheBridgedTool() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
         s.accessPolicy().putRule(denyExecute("deny-mcp"));
 
@@ -62,7 +69,7 @@ public class NaruMcpGuardTest {
 
     @Test
     public void otherBridgedToolIsNotDenied() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
         s.accessPolicy().putRule(denyExecute("deny-mcp"));
 

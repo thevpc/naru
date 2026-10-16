@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.skills;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
@@ -10,12 +10,9 @@ import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -60,7 +57,7 @@ public class NaruSkillsRootsTest {
 
     private NPath projectDir;
     private NPath userHome;
-    private NaruSessionImpl session;
+    private NaruSession session;
     private NaruSkillsExtension ext;
     private final List<NaruOutput> outputs = new ArrayList<>();
 
@@ -73,12 +70,17 @@ public class NaruSkillsRootsTest {
         projectDir = NPath.ofTempFolder("naru-skills-roots-" + System.nanoTime());
         userHome = NPath.ofTempFolder("naru-skills-roots-home-" + System.nanoTime());
         System.setProperty("naru.skills.userHome", userHome.toString());
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         outputs.clear();
-        session = new NaruSessionImpl(agent, projectDir,
-                new NaruStreamInteraction(o -> outputs.add(o)), true,
-                NOOP_LISTENER, null, null, null);
+        session = agent.newSession()
+                .directory(projectDir)
+                .interaction(new NaruStreamInteraction(o -> outputs.add(o)))
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         ext = NaruSkillsExtension.skills(session);
     }
 
@@ -285,10 +287,16 @@ public class NaruSkillsRootsTest {
         // the foreign root exists before the session opens, so the extension can see it
         foreignSkill("claude", "legacy", "legacy body");
         List<NaruOutput> freshOutputs = new ArrayList<>();
-        NaruAgent a = new NaruAgentImpl();
+        NaruWorkspace a = NaruWorkspace.of();
         a.projectDirectory(projectDir);
-        NaruSessionImpl fresh = new NaruSessionImpl(a, projectDir,
-                new NaruStreamInteraction(freshOutputs::add), true, NOOP_LISTENER, null, null, null);
+        NaruSession fresh = a.newSession()
+                .directory(projectDir)
+                .interaction(new NaruStreamInteraction(freshOutputs::add))
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         try {
             assertTrue(freshOutputs.stream()
                             .anyMatch(o -> o.message().toString().contains("untrusted foreign skills root")),
@@ -310,10 +318,16 @@ public class NaruSkillsRootsTest {
                 "precondition: the root must be trusted and persisted");
 
         List<NaruOutput> freshOutputs = new ArrayList<>();
-        NaruAgent a = new NaruAgentImpl();
+        NaruWorkspace a = NaruWorkspace.of();
         a.projectDirectory(projectDir);
-        NaruSessionImpl fresh = new NaruSessionImpl(a, projectDir,
-                new NaruStreamInteraction(freshOutputs::add), true, NOOP_LISTENER, null, null, null);
+        NaruSession fresh = a.newSession()
+                .directory(projectDir)
+                .interaction(new NaruStreamInteraction(freshOutputs::add))
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         try {
             assertTrue(freshOutputs.stream()
                             .noneMatch(o -> o.message().toString().contains("untrusted foreign skills root")),

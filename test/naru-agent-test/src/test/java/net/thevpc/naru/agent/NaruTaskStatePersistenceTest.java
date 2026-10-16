@@ -1,6 +1,6 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
@@ -9,12 +9,9 @@ import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
@@ -44,7 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class NaruTaskStatePersistenceTest {
 
-    private NaruAgent agent;
+    private NaruWorkspace agent;
     private NaruSession session;
     private final List<String> warnings = new ArrayList<>();
 
@@ -54,15 +51,22 @@ public class NaruTaskStatePersistenceTest {
 
     @BeforeEach
     public void setUp() {
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-task-state"));
         NaruStreamInteraction interaction = new NaruStreamInteraction(output -> {
             if (output.mode() == NaruLogMode.SCRIPT) {
                 warnings.add(output.message().toString());
             }
         });
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), interaction, true,
-                NOOP_LISTENER, null, null, null);
+        session = agent.newSession()
+                .directory(agent.projectDirectory())
+                .interaction(interaction)
+                .configureDefaults(true)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach

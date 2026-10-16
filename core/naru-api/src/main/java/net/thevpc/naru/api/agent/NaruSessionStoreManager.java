@@ -7,7 +7,7 @@ import java.util.List;
  * <p>
  * This is a <i>store</i>, not a registry of live sessions. Every entry is a directory that
  * already exists on disk under {@code .naru/sessions/}; listing it says nothing about what
- * is running right now. For the live set, ask {@link NaruAgent#sessions()}.
+ * is running right now. For the live set, ask {@link NaruWorkspace#sessions()}.
  * <p>
  * The two are kept apart on purpose. A server hosting many concurrent sessions needs a
  * live view that is cheap to read and changes as sessions start and stop; the saved

@@ -81,6 +81,12 @@ public interface NaruSpawnContext {
     /** Seeds one environment variable for the spawned task, with provenance. */
     NaruSpawnContext seedEnv(String key, Object value, NaruSpawnSource source);
 
+    /** Seeds one user-defined budget label for the spawned task, with provenance. */
+    NaruSpawnContext seedLabel(String key, String value, NaruSpawnSource source);
+
+    /** Asks to revoke a user-defined budget label, recorded with the given provenance. */
+    NaruSpawnContext seedRevokeLabel(String key, NaruSpawnSource source);
+
     /** Marks a kind of parent state to inherit as a spawn-time snapshot, with provenance. */
     NaruSpawnContext seedInherit(NaruSpawnInherit kind, NaruSpawnSource source);
 

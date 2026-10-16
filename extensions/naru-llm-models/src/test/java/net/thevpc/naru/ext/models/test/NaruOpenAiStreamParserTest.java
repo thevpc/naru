@@ -307,7 +307,8 @@ public class NaruOpenAiStreamParserTest {
                 "[DONE]");
         Assertions.assertEquals(100, r.getPromptTokens());
         Assertions.assertEquals(60, r.getCacheReadTokens());
-        Assertions.assertEquals(40, r.getCacheWriteTokens());
+        Assertions.assertEquals(0, r.getCacheWriteTokens(),
+                "OpenAI has no cache-write class");
     }
 
     @Test

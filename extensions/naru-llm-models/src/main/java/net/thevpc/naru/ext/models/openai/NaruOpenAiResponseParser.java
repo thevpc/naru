@@ -66,9 +66,13 @@ public class NaruOpenAiResponseParser implements NElementDeserializer<NaruRespon
                     int cached = details.getIntValue("cached_tokens").orElse(-1);
                     if (cached >= 0) {
                         response.setCacheReadTokens(cached);
-                        // there is no cache-write concept; anything not served
-                        // from cache was processed at full rate this turn
-                        response.setCacheWriteTokens(Math.max(0, promptTokens - cached));
+                        // OpenAI has no cache-write price class: the cached portion
+                        // is billed at the read rate and everything else at the
+                        // input rate. Writing 0 here (rather than marking the
+                        // uncached remainder as a cache write) keeps the cost
+                        // model's fresh = prompt - read - write equal to exactly
+                        // the uncached remainder, whatever cache price the user sets.
+                        response.setCacheWriteTokens(0);
                     }
                 }
             }

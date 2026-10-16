@@ -1,6 +1,6 @@
 package net.thevpc.naru.api.model;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
@@ -232,7 +232,7 @@ public class NaruModelTimeoutsTest {
     }
 
     private static NaruSession session(Scopes s) {
-        NaruAgent agent = agent(s.agent);
+        NaruWorkspace agent = agent(s.agent);
         return (NaruSession) Proxy.newProxyInstance(
                 NaruModelTimeoutsTest.class.getClassLoader(),
                 new Class<?>[]{NaruSession.class},
@@ -259,7 +259,7 @@ public class NaruModelTimeoutsTest {
                 });
     }
 
-    private static NaruAgent agent(Map<String, NElement> agentEnv) {
+    private static NaruWorkspace agent(Map<String, NElement> agentEnv) {
         NaruEnv env = (NaruEnv) Proxy.newProxyInstance(
                 NaruModelTimeoutsTest.class.getClassLoader(),
                 new Class<?>[]{NaruEnv.class},
@@ -273,9 +273,9 @@ public class NaruModelTimeoutsTest {
                             return defaultValue(method.getReturnType());
                     }
                 });
-        return (NaruAgent) Proxy.newProxyInstance(
+        return (NaruWorkspace) Proxy.newProxyInstance(
                 NaruModelTimeoutsTest.class.getClassLoader(),
-                new Class<?>[]{NaruAgent.class},
+                new Class<?>[]{NaruWorkspace.class},
                 (proxy, method, args) -> "agentEnv".equals(method.getName())
                         ? env : defaultValue(method.getReturnType()));
     }

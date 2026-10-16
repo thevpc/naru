@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
@@ -9,7 +9,6 @@ import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.ext.models.openrouter.NaruOpenRouterProvider;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.Assertions;
@@ -107,9 +106,9 @@ public class NaruOpenRouterProviderTest {
             }
         };
 
-        NaruAgent agent = (NaruAgent) Proxy.newProxyInstance(
+        NaruWorkspace agent = (NaruWorkspace) Proxy.newProxyInstance(
                 getClass().getClassLoader(),
-                new Class<?>[]{NaruAgent.class},
+                new Class<?>[]{NaruWorkspace.class},
                 (proxy, method, args) -> {
                     if ("env".equals(method.getName())) {
                         return env;

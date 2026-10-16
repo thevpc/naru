@@ -518,6 +518,29 @@ public interface NaruTask extends NToElement {
 
     NaruTask name(String newName);
 
+    /**
+     * The task's user-defined labels: free-form key/value dimensions stamped on every
+     * model call this task makes. The built-in labels ({@code provider}, {@code model},
+     * {@code session}, {@code user}, {@code task-id}, {@code task-name}, {@code task-path})
+     * are <em>not</em> in this map — they are derived at report time, and a user label
+     * never overrides one.
+     *
+     * @return an unmodifiable snapshot; mutate through {@link #setLabel}/{@link #removeLabel}
+     */
+    Map<String, String> labels();
+
+    /** Replaces the whole label set. Null clears it. */
+    NaruTask labels(Map<String, String> labels);
+
+    /** Adds or replaces one label. A blank key is ignored. */
+    NaruTask setLabel(String key, String value);
+
+    /** Removes one label; a key that is not present is ignored. */
+    NaruTask removeLabel(String key);
+
+    /** Removes every user-defined label. */
+    NaruTask clearLabels();
+
     NOptional<NaruTask> parent();
 
     NaruTask defaultAdvance(NaruStatement stmt);

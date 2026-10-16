@@ -7,6 +7,7 @@ import net.thevpc.naru.api.access.NaruActorKind;
 import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -49,13 +50,20 @@ public class NaruAccessEnforcementTest {
         Nuts.require();
     }
 
-    private static NaruSessionImpl session() {
+    private static NaruSession session() {
         NPath dir = NPath.ofTempFolder("naru-enforce-" + System.nanoTime());
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
-        return new NaruSessionImpl(agent, dir,
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        return agent.newSession()
+                .directory(dir)
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     private static NaruPermissionRule deny(String id, NaruResourceType type, String pattern) {
@@ -73,7 +81,7 @@ public class NaruAccessEnforcementTest {
 
     @Test
     public void deniedToolCallIsReportedAndNeverExecutes() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         FlagTool tool = new FlagTool("echo_tool");
         registry(s).registerToolset(new SingleToolToolset("t1", tool));
         s.accessPolicy().putRule(deny("deny-echo", NaruResourceType.TOOL, "echo_tool"));
@@ -90,7 +98,7 @@ public class NaruAccessEnforcementTest {
 
     @Test
     public void emptyPolicyAllowsTheTool() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         FlagTool tool = new FlagTool("echo_tool");
         registry(s).registerToolset(new SingleToolToolset("t1", tool));
 
@@ -103,7 +111,7 @@ public class NaruAccessEnforcementTest {
 
     @Test
     public void deniedToolIsHiddenFromTheModel() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         FlagTool tool = new FlagTool("echo_tool");
         registry(s).registerToolset(new SingleToolToolset("t1", tool));
 
@@ -118,7 +126,7 @@ public class NaruAccessEnforcementTest {
 
     @Test
     public void deniedDirectiveDoesNotExecute() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         FlagDirective dir = new FlagDirective("secret_dir");
         s.registry().registerDirectiveProvider(new NaruDirectiveProviderBase("test") {{
             registerDirective(dir);
@@ -136,7 +144,7 @@ public class NaruAccessEnforcementTest {
 
     @Test
     public void allowedDirectiveRuns() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         FlagDirective dir = new FlagDirective("open_dir");
         s.registry().registerDirectiveProvider(new NaruDirectiveProviderBase("test") {{
             registerDirective(dir);
@@ -152,7 +160,7 @@ public class NaruAccessEnforcementTest {
 
     @Test
     public void theGateSpeaksForTheStatementAuthor() {
-        NaruSessionImpl s = session();
+        NaruSession s = session();
         FlagTool tool = new FlagTool("echo_tool");
         registry(s).registerToolset(new SingleToolToolset("t1", tool));
         // Only agents are denied; the user the session belongs to may still call it.

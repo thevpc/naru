@@ -12,7 +12,6 @@ import net.thevpc.naru.api.routine.NaruStmtResultType;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.Assertions;
@@ -113,9 +112,9 @@ public class NaruModelDirectiveSelectionTest {
         NaruModelConfig[] selected = {null};
         List<net.thevpc.nuts.text.NMsg> logs = new ArrayList<>();
 
-        NaruAgent agent = (NaruAgent) Proxy.newProxyInstance(
+        NaruWorkspace agent = (NaruWorkspace) Proxy.newProxyInstance(
                 NaruModelDirectiveSelectionTest.class.getClassLoader(),
-                new Class<?>[]{NaruAgent.class},
+                new Class<?>[]{NaruWorkspace.class},
                 (proxy, method, args) -> "env".equals(method.getName())
                         ? new NaruEnv() {
                             @Override

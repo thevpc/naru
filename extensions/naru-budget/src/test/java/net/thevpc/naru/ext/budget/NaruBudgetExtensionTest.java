@@ -1,15 +1,13 @@
 package net.thevpc.naru.ext.budget;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.DefaultNaruProviderRateLimitInfo;
 import net.thevpc.naru.api.model.DefaultNaruRateLimitBucket;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruRateLimitWindow;
 import net.thevpc.naru.ext.budget.store.DefaultNaruBudgetStoreQuery;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.time.NDuration;
@@ -34,15 +32,28 @@ public class NaruBudgetExtensionTest {
         Nuts.require();    }
 
     private static NaruSessionImpl newSession(String name) {
-        NaruAgent agent = new NaruAgentImpl();
-        agent.projectDirectory(NPath.ofTempFolder("naru-budget-" + name));
+        // unique per call: spend is now durable, so a fixed name would accumulate
+        // transactions across repeated runs and make every total grow
+        return newSessionAt(NPath.ofTempFolder("naru-budget-" + name + "-" + System.nanoTime()));
+    }
+
+    private static NaruSessionImpl newSessionAt(NPath projectDir) {
+        NaruWorkspace agent = NaruWorkspace.of();
+        agent.projectDirectory(projectDir);
         // configureDefaults=true: the extension is found through the same SPI lookup the
-        // /stats directive uses, so this also covers registration
-        return new NaruSessionImpl(agent, agent.projectDirectory(), null, true, null, null, null, null);
+        // /budget directive uses, so this also covers registration
+        return (NaruSessionImpl) agent.newSession()
+                .directory(projectDir)
+                .interaction(null)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     private static void call(NaruSessionImpl session, NaruModelKey model, long prompt, long completion) {
-        session.fireModelCallUsage(model, prompt, completion, -1, -1, NDuration.ofMillis(10));
+        session.fireModelCallUsage(null, model, prompt, completion, -1, -1, NDuration.ofMillis(10));
     }
 
     @Test
@@ -80,8 +91,8 @@ public class NaruBudgetExtensionTest {
         NaruSessionImpl session = newSession("cache");
         NaruBudgetService svc = NaruBudgetExtension.budget(session);
 
-        session.fireModelCallUsage(MODEL_A, 1000, 20, 1000, 0, NDuration.ofMillis(10));
-        session.fireModelCallUsage(MODEL_A, 1000, 20, 100, 900, NDuration.ofMillis(10));
+        session.fireModelCallUsage(null, MODEL_A, 1000, 20, 1000, 0, NDuration.ofMillis(10));
+        session.fireModelCallUsage(null, MODEL_A, 1000, 20, 100, 900, NDuration.ofMillis(10));
 
         NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_A));
         Assertions.assertEquals(1100, stats.cacheWriteTokens());
@@ -146,25 +157,27 @@ public class NaruBudgetExtensionTest {
     }
 
     /**
-     * Spend is intentionally not durable. Restoring yesterday's totals into today's report
-     * would overstate current cost, so a reloaded session starts clean and no state file is
-     * written.
+     * Spend is durable, at the project level. A reloaded session sees what the project has
+     * cost rather than starting from zero: {@code /budget} answers "what has this project
+     * cost", not "what has this JVM run cost". The session still saves no state of its own —
+     * transactions live in the agent's store, and a session persists only labels.
      */
     @Test
-    public void stateIsNotPersistedAndAReloadedSessionStartsClean() {
-        NaruSessionImpl first = newSession("persist");
+    public void spendPersistsAtTheProjectLevelAcrossSessions() {
+        NPath projectDir = NPath.ofTempFolder("naru-budget-persist-" + System.nanoTime());
+        NaruSessionImpl first = newSessionAt(projectDir);
         call(first, MODEL_A, 800, 80);
 
         NaruBudgetExtension ext = first.registry().extension(NaruBudgetExtension.NAME, NaruBudgetExtension.class)
                 .orElseThrow(() -> new AssertionError("budget extension should be installed"));
         Assertions.assertNull(ext.save(first),
-                "returning null must keep the budget extension out of the persistence path");
+                "the session has no state of its own to save; the agent owns the transactions");
 
         // a second session over the same project dir is what a reload amounts to
-        NaruSessionImpl reloaded = newSession("persist");
-        Assertions.assertEquals(0,
+        NaruSessionImpl reloaded = newSessionAt(projectDir);
+        Assertions.assertEquals(800,
                 NaruBudgetExtension.budget(reloaded).findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_A)).promptTokens(),
-                "a reloaded session must not inherit the previous session's spend");
+                "a reloaded session must see the project's persisted spend");
     }
 
     @Test

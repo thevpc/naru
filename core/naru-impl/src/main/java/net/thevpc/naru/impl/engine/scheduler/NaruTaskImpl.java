@@ -62,12 +62,22 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
      * 2 writes {@code toolTags} and {@code excludedTools} as name arrays. The
      * loader reads both unconditionally and treats their absence as empty, so an
      * element written by an older version simply loads as version 1 did.
+     * 3 adds {@code name} and {@code labels} (the user-defined budget labels).
+     * Both are read unconditionally and default to absent/empty, so a version-2
+     * element still loads.
      */
-    public static final int TASK_SCHEMA_VERSION = 2;
+    public static final int TASK_SCHEMA_VERSION = 3;
 
     private long id;
     private String name;
     private long parentId;
+    /**
+     * User-defined budget labels. Descriptive key/value dimensions stamped on every model
+     * call this task makes, distinct from the built-in labels the budget extension derives
+     * (provider/model/session/user/task-*) and from tool tags ({@code taskToolTags}).
+     * Persisted with the task so a reloaded task keeps its labels.
+     */
+    private final Map<String, String> userLabels = new LinkedHashMap<>();
     private final List<Function<NaruTask, NaruMessage>> systemHistory = new ArrayList<>();
     private final List<NaruMessage> history = new ArrayList<>();
     private java.util.function.Supplier<List<NaruMessage>> lazyHistoryLoader;
@@ -232,6 +242,44 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public NaruTask name(String newName) {
         this.name = newName;
+        return this;
+    }
+
+    @Override
+    public Map<String, String> labels() {
+        return Collections.unmodifiableMap(userLabels);
+    }
+
+    @Override
+    public NaruTask labels(Map<String, String> labels) {
+        userLabels.clear();
+        if (labels != null) {
+            for (Map.Entry<String, String> e : labels.entrySet()) {
+                setLabel(e.getKey(), e.getValue());
+            }
+        }
+        return this;
+    }
+
+    @Override
+    public NaruTask setLabel(String key, String value) {
+        if (key != null && !key.isBlank() && value != null) {
+            userLabels.put(key.trim(), value);
+        }
+        return this;
+    }
+
+    @Override
+    public NaruTask removeLabel(String key) {
+        if (key != null) {
+            userLabels.remove(key.trim());
+        }
+        return this;
+    }
+
+    @Override
+    public NaruTask clearLabels() {
+        userLabels.clear();
         return this;
     }
 
@@ -880,6 +928,12 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         o.set("deliveredInputKeys", _inputKeys.build());
         o.set("id", id());
         o.set("parentId", parentId());
+        o.set("name", name);
+        NObjectElementBuilder _labels = NObjectElementBuilder.of();
+        for (Map.Entry<String, String> e : userLabels.entrySet()) {
+            _labels.add(e.getKey(), NElement.ofString(e.getValue()));
+        }
+        o.set("labels", _labels.build());
         o.set("creationDate", NElement.ofInstant(creationDate));
         o.set("modificationDate", NElement.ofInstant(modificationDate));
         o.set("model", model == null ? null : model.toElement());
@@ -952,6 +1006,18 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (inputKeys != null) for (NElement key : inputKeys) key.asStringValue().ifPresent(this.deliveredInputKeys::add);
         this.id = o.getLongValue("id").orElse(1L);
         this.parentId = o.getLongValue("parentId").orElse(-1L);
+        this.name = o.getStringValue("name").orNull();
+        this.userLabels.clear();
+        NObjectElement labels1 = o.get("labels").flatMap(x -> x.isNull() ? null : x.asObject()).orNull();
+        if (labels1 != null) {
+            for (NPairElement nElement : labels1.namedPairs()) {
+                String k = nElement.key().asStringValue().orNull();
+                String v = nElement.value().asStringValue().orNull();
+                if (k != null && !k.isBlank() && v != null) {
+                    userLabels.put(k.trim(), v);
+                }
+            }
+        }
         this.creationDate = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
         this.modificationDate = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationDate);
         NElement mv = o.get("model").orElse(null);
@@ -2809,6 +2875,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         // not report cache accounting at all, and is passed through unchanged so a
         // consumer can tell "no cache" from "not measured".
         ((NaruSessionImpl) session()).fireModelCallUsage(
+                this,
                 model().key(),
                 r.getPromptTokens(),
                 r.getEvalTokens(),

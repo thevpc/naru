@@ -126,8 +126,8 @@ public class NaruOpenAiResponseParserTest {
                 "}");
         Assertions.assertEquals(1000, r.getPromptTokens());
         Assertions.assertEquals(750, r.getCacheReadTokens());
-        Assertions.assertEquals(250, r.getCacheWriteTokens(),
-                "whatever was not served from cache was processed at full rate");
+        Assertions.assertEquals(0, r.getCacheWriteTokens(),
+                "OpenAI has no cache-write class, so the uncached remainder is not a write");
         Assertions.assertEquals(1020, r.getTotalTokens(), "total must not double-count cached tokens");
     }
 

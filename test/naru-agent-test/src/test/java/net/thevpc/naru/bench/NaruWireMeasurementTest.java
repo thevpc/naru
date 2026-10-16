@@ -1,9 +1,7 @@
 package net.thevpc.naru.bench;
 
-import net.thevpc.naru.api.agent.NaruAgent;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 
 import java.nio.file.Files;
@@ -16,7 +14,7 @@ public class NaruWireMeasurementTest {
     public void testWireMeasurementMin() throws Exception {
         Nuts.require();
         Path tempDir = Files.createTempDirectory("naru-wire-measure-min");
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.of(tempDir.toString()));
 
         // naru-min: fs, write, exec, network minus unwanted tools
@@ -40,7 +38,7 @@ public class NaruWireMeasurementTest {
         Nuts.require();
 
         Path tempDir = Files.createTempDirectory("naru-wire-measure-granted");
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.of(tempDir.toString()));
 
         // naru-granted: standard benchmark tags
