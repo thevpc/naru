@@ -229,10 +229,10 @@ public class NaruTerminalInteraction implements NaruInteraction {
     private static NMsg streamPrefix(NaruLogMode mode) {
         switch (mode) {
             case MODEL_THINKING: {
-                return NMsg.ofC("%s", NText.ofStyled("  \u258C", NTextStyle.primary9()));
+                return NMsg.ofC("%s", NText.ofStyled("  \u258C\uD83E\uDD14", NTextStyle.primary9()));
             }
             case MODEL_RESPONSE: {
-                return NMsg.ofC("%s", NText.ofStyled("  \u258C", NTextStyle.primary3()));
+                return NMsg.ofC("%s", NText.ofStyled("  \u258C\uD83E\uDD16", NTextStyle.primary3()));
             }
             default: {
                 return NMsg.ofC("%s", NText.ofStyled("  \u258C", NTextStyle.primary8()));
