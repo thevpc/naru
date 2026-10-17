@@ -1,17 +1,22 @@
 package net.thevpc.naru.ext.tools.llm;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
+import net.thevpc.nuts.cmdline.NArgCompletePosition;
+import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.expr.NGlob;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NStringBuilder;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +49,8 @@ public class NaruTagsDirective extends NaruDirectiveBase {
         this.noCommand("list");
 
         register(new AbstractSubCommand("enable", NText.ofPlain("enable tools tagged with the given tags"),
-                new SubCommandHelp("<tag-name>... [<tag-name>...]", "add the given tags to the task's enabled tag set")
+                new SubCommandHelp("<tag-name>... [<tag-name>...]", "add the given tags to the task's enabled tag set. "
+                        + "Use 'all' (or a glob such as 'fs*') to grant several tags at once")
         ) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
@@ -79,6 +85,11 @@ public class NaruTagsDirective extends NaruDirectiveBase {
                     count++;
                 }
                 return NaruStmtResult.ofSuccess(count);
+            }
+
+            @Override
+            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+                return tagCandidates(cmdLine, pos, session);
             }
         });
 
@@ -120,6 +131,11 @@ public class NaruTagsDirective extends NaruDirectiveBase {
                     count++;
                 }
                 return NaruStmtResult.ofSuccess(count);
+            }
+
+            @Override
+            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+                return tagCandidates(cmdLine, pos, session);
             }
         });
         register(new AbstractSubCommand("list", NText.ofPlain("list enabled tags and excluded tools")) {
@@ -167,5 +183,32 @@ public class NaruTagsDirective extends NaruDirectiveBase {
                 return NaruStmtResult.ofSuccess(sb.toString());
             }
         });
+    }
+
+    /**
+     * Completion shared by {@code enable} and {@code disable}: the {@code all}
+     * keyword both accept — it expands to every tag known to the registry, the
+     * same way {@code *} and globs do — followed by the tag names themselves,
+     * each shown with its description. Word 0 is the directive itself and word 1
+     * the sub-command, so tag words start at index 2.
+     */
+    private static NArgCompleteResult tagCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+        int wordIndex = pos.wordIndex();
+        if (wordIndex < 2) {
+            return NArgCompleteResult.ofBlank();
+        }
+        String[] words = cmdLine.toStringArray();
+        String currentArg = wordIndex < words.length ? words[wordIndex] : "";
+        List<NArgCompleteCandidate> candidates = new ArrayList<>();
+        if ("all".startsWith(currentArg.toLowerCase())) {
+            candidates.add(NArgCompleteCandidate.of("all", "all — every tag known to the registry"));
+        }
+        for (Map.Entry<String, NaruToolTag> e : session.registry().availableTags().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey()).collect(Collectors.toList())) {
+            if (e.getKey().startsWith(currentArg)) {
+                candidates.add(NArgCompleteCandidate.of(e.getKey(), e.getKey() + " - " + e.getValue().description()));
+            }
+        }
+        return NArgCompleteResult.ofCandidates(candidates);
     }
 }
