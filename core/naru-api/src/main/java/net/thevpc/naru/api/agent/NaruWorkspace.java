@@ -5,6 +5,7 @@ import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.model.NaruModelFilter;
+import net.thevpc.nuts.artifact.NVersion;
 import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.reflect.NClassLoader;
@@ -15,6 +16,9 @@ import java.util.List;
 import java.util.function.Predicate;
 
 public interface NaruWorkspace {
+    NVersion apiVersion();
+
+    NVersion implVersion();
 
     /**
      * The agent implementation on the classpath.
