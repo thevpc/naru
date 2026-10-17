@@ -56,22 +56,6 @@ public interface NaruWorkspaceBuilder extends NComponent {
     }
 
     /**
-     * Declares a profile to load: a Maven artifact whose transitive dependencies are the
-     * naru extensions it bundles. The profile artifact itself contributes no components;
-     * only its member extensions are loaded.
-     */
-    NaruWorkspaceBuilder profile(NId profile);
-
-    /**
-     * Same as {@link #profile(NId)}, accepting a Maven coordinate such as
-     * {@code group:artifact} or {@code group:artifact#version}. A bare profile name is
-     * resolved under {@code net.thevpc.naru.profiles:naru-profile-<name>}.
-     */
-    default NaruWorkspaceBuilder profile(String nameOrId) {
-        return profile(profileId(nameOrId));
-    }
-
-    /**
      * Declares one extension to load, in addition to any profile (or instead of one).
      * An explicitly named extension is loaded whether or not a declared profile also
      * bundles it.

@@ -89,7 +89,7 @@ public class NaruGitHubModelsProvider extends AbstractOpenAICompatProvider {
                 NLog.of(getClass()).log(NMsg.ofC(
                         "Failed to fetch live models from %s: HTTP %s %s",
                         name(), response.statusCode(), response.statusMessage()
-                ).asWarning());
+                ).asFineAlert());
                 return new ArrayList<>(FALLBACK_MODELS);
             }
 

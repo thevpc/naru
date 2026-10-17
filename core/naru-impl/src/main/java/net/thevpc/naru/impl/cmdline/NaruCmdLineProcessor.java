@@ -54,7 +54,6 @@ public class NaruCmdLineProcessor {
     private boolean helpCommands = false;
     private String[] helpCommandsArgs = new String[0];
     private final List<String> precommands = new ArrayList<>();
-    private final List<String> profiles = new ArrayList<>();
     private final List<String> extensions = new ArrayList<>();
     private Boolean forceInteractive;
 
@@ -71,7 +70,6 @@ public class NaruCmdLineProcessor {
                 .when("--file", "-f").asEntry(a -> precommands.add("/source " + a.value()))
                 .when("--interactive", "-i").asFlag(a -> forceInteractive = a.booleanValue())
                 .when("--project", "-d").asEntry(a -> projectDir = a.value())
-                .when("--profile", "-p").asEntry(a -> profiles.add(a.value()))
                 .when("--extension", "-e").asEntry(a -> extensions.add(a.value()))
                 .when("--help", "-h").asFlag(a -> {
                     help = a.booleanValue();
@@ -138,9 +136,6 @@ public class NaruCmdLineProcessor {
      */
     private NaruWorkspace createWorkspace(NPath projectDirectory) {
         NaruWorkspaceBuilder builder = NaruWorkspaceBuilder.of();
-        for (String profile : profiles) {
-            builder.profile(NaruWorkspaceBuilder.profileId(profile));
-        }
         for (String extension : extensions) {
             builder.importExtension(NId.of(extension));
         }

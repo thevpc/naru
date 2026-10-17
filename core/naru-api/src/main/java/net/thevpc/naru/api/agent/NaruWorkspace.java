@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.model.NaruModelFilter;
 import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.reflect.NClassLoader;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NOptional;
 
@@ -89,6 +90,8 @@ public interface NaruWorkspace {
      * stops. A server hosting many sessions uses this to find one by id.
      */
     List<NaruSession> sessions();
+
+    NClassLoader classLoader();
 
     /**
      * Looks up a running session by its id.

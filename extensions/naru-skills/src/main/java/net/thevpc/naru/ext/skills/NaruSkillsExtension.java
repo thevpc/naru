@@ -238,7 +238,7 @@ public class NaruSkillsExtension implements NaruSessionExtension {
             return;
         }
         try {
-            boundSession.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+            boundSession.log(NaruLogMode.TRACE, NMsg.ofC(
                     "⚠ %s untrusted foreign skills root(s): %s. NARU does not read them until "
                             + "trusted; run /skills trust <label> [--read|--write|--exec] once per root "
                             + "(the decision is persisted per root).",

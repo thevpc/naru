@@ -281,6 +281,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
         if (banner) {
             printBanner();
         }
+        agent.classLoader();
         NPath dir = directory != null ? directory : agent.defaultSessionDirectory();
         NaruInteraction useInteraction = interaction != null
                 ? interaction

@@ -12,7 +12,8 @@ import net.thevpc.naru.impl.config.NaruCoreConfigKeyProvider;
 import net.thevpc.naru.impl.ia.mode.NaruModeRegistry;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NPairElement;
-import net.thevpc.nuts.ext.NExtensions;
+import net.thevpc.nuts.ext.NServiceLoader;
+import net.thevpc.nuts.reflect.NClassLoader;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
 
@@ -47,26 +48,29 @@ public class NaruRegistryImpl implements NaruRegistry {
     private final Predicate<NaruTool> toolFilter;
     private final Predicate<NaruToolTag> tagFilter;
     private final NaruModelFilter modelFilter;
+    private final NClassLoader classLoader;
+
+//    public NaruRegistryImpl(NaruSession session
+//            , Predicate<NaruDirective> directiveFilter
+//            , Predicate<NaruTool> toolFilter
+//            , Predicate<NaruToolTag> tagFilter
+//    ) {
+//        this(session, directiveFilter, toolFilter, tagFilter, null);
+//    }
 
     public NaruRegistryImpl(NaruSession session
             , Predicate<NaruDirective> directiveFilter
             , Predicate<NaruTool> toolFilter
             , Predicate<NaruToolTag> tagFilter
-    ) {
-        this(session, directiveFilter, toolFilter, tagFilter, null);
-    }
-
-    public NaruRegistryImpl(NaruSession session
-            , Predicate<NaruDirective> directiveFilter
-            , Predicate<NaruTool> toolFilter
-            , Predicate<NaruToolTag> tagFilter
-            , NaruModelFilter modelFilter
+            , NaruModelFilter modelFilter,
+                            NClassLoader classLoader
     ) {
         this.session = session;
         this.directiveFilter = directiveFilter;
         this.toolFilter = toolFilter;
         this.tagFilter = tagFilter;
         this.modelFilter = modelFilter;
+        this.classLoader = classLoader;
     }
 
     @Override
@@ -559,28 +563,28 @@ public class NaruRegistryImpl implements NaruRegistry {
         this.registerDirectiveProvider(new NaruBuiltinDirectiveProvider());
         this.registerToolTagProvider(new NaruBuiltinToolTagProvider());
         this.registerConfigKeyProvider(new NaruCoreConfigKeyProvider());
-        for (NaruToolTagProvider provider : NExtensions.of().createAllSupported(NaruToolTagProvider.class, null)) {
+        for (NaruToolTagProvider provider : loadServices(NaruToolTagProvider.class)) {
             this.registerToolTagProvider(provider);
         }
-        for (NaruToolsetProvider provider : NExtensions.of().createAllSupported(NaruToolsetProvider.class, null)) {
+        for (NaruToolsetProvider provider : loadServices(NaruToolsetProvider.class)) {
             this.registerToolsetProvider(provider);
         }
-        for (NaruDirectiveProvider provider : NExtensions.of().createAllSupported(NaruDirectiveProvider.class, null)) {
+        for (NaruDirectiveProvider provider : loadServices(NaruDirectiveProvider.class)) {
             this.registerDirectiveProvider(provider);
         }
-        for (NaruModelProvider provider : NExtensions.of().createAllSupported(NaruModelProvider.class, null)) {
+        for (NaruModelProvider provider : loadServices(NaruModelProvider.class)) {
             this.registerModelProvider(provider);
         }
-        for (NaruConfigKeyProvider provider : NExtensions.of().createAllSupported(NaruConfigKeyProvider.class, null)) {
+        for (NaruConfigKeyProvider provider : loadServices(NaruConfigKeyProvider.class)) {
             this.registerConfigKeyProvider(provider);
         }
-        for (NaruPromptMode mode : NExtensions.of().createAllSupported(NaruPromptMode.class, null)) {
+        for (NaruPromptMode mode : loadServices(NaruPromptMode.class)) {
             this.declareMode(mode);
         }
         // Unlike the loops above, these instances are retained: a session extension owns
         // mutable per-session state, so the very same object has to answer the prompt,
         // load and save hooks. Creating them per-lookup would silently split the state.
-        for (NaruSessionExtension extension : NExtensions.of().createAllSupported(NaruSessionExtension.class, null)) {
+        for (NaruSessionExtension extension : loadServices(NaruSessionExtension.class)) {
             if (sessionExtensions.stream().anyMatch(x -> x.name().equals(extension.name()))) {
                 continue;
             }
@@ -591,7 +595,7 @@ public class NaruRegistryImpl implements NaruRegistry {
         // extensions they are resolved per lookup rather than retained. That keeps a
         // compactor free of session state it would otherwise be tempted to cache, which is
         // what lets one instance serve sibling tasks concurrently.
-        for (NaruContextCompactor compactor : NExtensions.of().createAllSupported(NaruContextCompactor.class, null)) {
+        for (NaruContextCompactor compactor : loadServices(NaruContextCompactor.class)) {
             if (!compactors.isEmpty()) {
                 // first discovered wins, matching the registration order of every other SPI
                 // here: a second compactor on the classpath would otherwise silently
@@ -601,6 +605,10 @@ public class NaruRegistryImpl implements NaruRegistry {
             compactors.add(compactor);
         }
         return this;
+    }
+
+    private <T> List<T> loadServices(Class<T> zz) {
+        return NServiceLoader.of(zz, null, classLoader.asClassLoader()).loadAll(null);
     }
 
     @Override

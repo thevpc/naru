@@ -8,10 +8,15 @@ import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.model.NaruModelFilter;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.registry.NaruRegistry;
+import net.thevpc.nuts.app.NApplication;
+import net.thevpc.nuts.artifact.*;
+import net.thevpc.nuts.command.NSearch;
 import net.thevpc.nuts.concurrent.NCallable;
-import net.thevpc.nuts.ext.NExtensions;
+import net.thevpc.nuts.ext.NServiceLoader;
 import net.thevpc.nuts.io.*;
 import net.thevpc.nuts.log.NLogger;
+import net.thevpc.nuts.reflect.NClassLoader;
+import net.thevpc.nuts.reflect.NMutableClassLoader;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
 
@@ -37,6 +42,8 @@ import java.util.function.Predicate;
  * into a standalone library later.
  */
 public class NaruWorkspaceImpl implements NaruWorkspace {
+    private static final String DEFAULT_PROFILE = "net.thevpc.naru.extensions:naru-profile-dev";
+    public static final String NET_THEVPC_NARU_EXTENSIONS = "net.thevpc.naru.extensions";
 
     /**
      * Optional step listener for CLI progress printing.
@@ -45,6 +52,9 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     private NPath projectDirectory;
     private NaruRegistrationStore registrations;
     private NaruProjectEnv projectEnv;
+    private volatile NClassLoader classLoader;
+    private List<NId> requestedExtensions = new ArrayList<>();
+    private List<NId> effectiveExtensions = new ArrayList<>();
     /**
      * The in-memory agent env. Unlike {@link #projectEnv}, it is not rebuilt when the
      * project directory changes: it belongs to the process, not to a project.
@@ -122,7 +132,14 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
         }
     };
 
-    public NaruWorkspaceImpl() {
+    public NaruWorkspaceImpl(NId[] extensions) {
+        if (extensions != null) {
+            for (NId e : extensions) {
+                if (e != null) {
+                    requestedExtensions.add(e);
+                }
+            }
+        }
         this.logger = a -> {
             NOut.resetLine().println(a);
         };
@@ -134,8 +151,8 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
             synchronized (this) {
                 if (!agentExtensionsLoaded) {
                     try {
-                        for (NaruAgentExtension e : NExtensions.of()
-                                .createAllSupported(NaruAgentExtension.class, null)) {
+                        NServiceLoader<NaruAgentExtension> cl = NServiceLoader.of(NaruAgentExtension.class, null, classLoader().asClassLoader());
+                        for (NaruAgentExtension e : cl.loadAll(null)) {
                             if (agentExtensions.containsKey(e.name())) {
                                 continue;
                             }
@@ -348,6 +365,96 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     @Override
     public List<NaruSession> sessions() {
         return List.copyOf(sessions);
+    }
+
+    @Override
+    public NClassLoader classLoader() {
+        if (classLoader == null) {
+            synchronized (this) {
+                if (classLoader == null) {
+                    // a set: a profile and an explicit --extension may name the same artifact, and it
+                    // must be loaded once
+                    NVersion currentVersion = NApplication.of().id().get().version();
+                    NMutableClassLoader nopsClassLoader = NMutableClassLoader.of("nops", Thread.currentThread().getContextClassLoader());
+                    List<NId> loaded = new ArrayList<>();
+                    Set<String> visited = new LinkedHashSet<>();
+                    for (NId id : requestedExtensions) {
+                        NIdBuilder bb = id.builder();
+                        if (NBlankable.isBlank(bb.groupId())) {
+                            bb.groupId(NET_THEVPC_NARU_EXTENSIONS);
+                        }
+                        if (NBlankable.isBlank(bb.artifactId())) {
+                            NErr.println(NMsg.ofC("extension not found %s", id));
+                            continue;
+                        }
+                        if (NET_THEVPC_NARU_EXTENSIONS.equals(bb.groupId())) {
+                            if (!bb.artifactId().startsWith("naru-")) {
+                                bb.artifactId("naru-" + bb.artifactId());
+                            }
+                        }
+                        if (
+                                !NBlankable.isBlank(bb.artifactId())
+                                        && !NBlankable.isBlank(bb.groupId())
+                        ) {
+                            if (visited.contains(bb.shortName())) {
+                                continue;
+                            }
+                        }
+                        NId found = NSearch.of(bb.build())
+                                .addDefinitionFilter(NDefinitionFilter.ofVersion(NVersionFilter.ofPredicate(
+                                        x ->
+                                                x.value().equals(currentVersion.value())
+                                                        || x.value().startsWith(currentVersion.value() + ".")
+                                )))
+                                .latest(true)
+                                .getResultIds().findFirst().orNull();
+                        if (found == null) {
+                            if (bb.version().isBlank()) {
+                                found = NSearch.of(bb.build())
+                                        .addDefinitionFilter(NDefinitionFilter.ofVersion(NVersionFilter.ofPredicate(
+                                                x ->
+                                                        x.value().equals(currentVersion.value())
+                                                                || x.value().startsWith(currentVersion.value() + ".")
+                                        )))
+                                        .latest(true)
+                                        .getResultIds().findFirst().orNull();
+                            }
+                            if (found == null) {
+                                NErr.println(NMsg.ofC("extension not found %s", id));
+                            } else {
+                                if (visited.add(found.shortName())) {
+                                    nopsClassLoader.add(found);
+                                    loaded.add(found);
+                                    NOut.println(NMsg.ofC("loaded extension %s", found));
+                                }
+                            }
+                        } else {
+                            if (visited.add(found.shortName())) {
+                                nopsClassLoader.add(found);
+                                loaded.add(found);
+                                NOut.println(NMsg.ofC("loaded extension %s", found));
+                            }
+                        }
+                    }
+                    if (loaded.isEmpty()) {
+                        NId found = NSearch.of(NId.of(DEFAULT_PROFILE))
+                                .addDefinitionFilter(NDefinitionFilter.ofVersion(NVersionFilter.ofPredicate(
+                                        x ->
+                                                x.value().equals(currentVersion.value())
+                                                        || x.value().startsWith(currentVersion.value() + ".")
+                                )))
+                                .latest(true)
+                                .getResultIds().findFirst().get();
+                        nopsClassLoader.add(found);
+                        loaded.add(found);
+                        log(NaruLogMode.TRACE, NMsg.ofC("loaded extension %s", found));
+                    }
+                    effectiveExtensions.addAll(loaded);
+                    classLoader = nopsClassLoader;
+                }
+            }
+        }
+        return classLoader;
     }
 
     @Override
