@@ -386,7 +386,7 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
             storeError(session, "Error fetching live models: " + e.getMessage());
             NLog.of(getClass()).log(NMsg.ofC(
                     "Error fetching live models from %s: %s", name(), e.getMessage()
-            ).asWarning());
+            ).asFineAlert());
             return Collections.emptyList();
         }
     }
