@@ -152,4 +152,11 @@ public class NaruWorkspaceBuilderImpl implements NaruWorkspaceBuilder {
                 && id.artifactId().startsWith("naru-")
                 && !NON_EXTENSION_ARTIFACTS.contains(id.artifactId());
     }
+
+    @Override
+    public String toString() {
+        return "NaruWorkspaceBuilder(" +
+                (projectDirectory == null ? System.getProperty("user.dir") : projectDirectory.toString()) +
+                ')';
+    }
 }

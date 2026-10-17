@@ -3,6 +3,7 @@ package net.thevpc.naru.api.agent;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.model.NaruModelFilter;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.access.NaruPrincipal;
@@ -188,6 +189,15 @@ public interface NaruSessionBuilder {
     NaruSessionBuilder toolFilter(Predicate<NaruTool> value);
 
     NaruSessionBuilder tagFilter(Predicate<NaruToolTag> value);
+
+    /**
+     * Narrows the models this session may use, on top of the workspace's own filter (the
+     * two are AND-combined). A denied model disappears from listings and resolution and a
+     * call to it is refused before the transport is built.
+     */
+    default NaruSessionBuilder modelFilter(NaruModelFilter value) {
+        throw new UnsupportedOperationException();
+    }
 
     /**
      * Creates the session without starting it.

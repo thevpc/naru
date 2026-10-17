@@ -1,6 +1,7 @@
 package net.thevpc.naru.bench;
 
 import net.thevpc.naru.api.agent.NaruWorkspace;
+import net.thevpc.naru.agent.NaruTestModels;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
 
@@ -16,6 +17,7 @@ public class NaruWireMeasurementTest {
         Path tempDir = Files.createTempDirectory("naru-wire-measure-min");
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.of(tempDir.toString()));
+        agent.modelFilter(NaruTestModels.defaultFilter());
 
         // naru-min: fs, write, exec, network minus unwanted tools
         agent.newSession()
@@ -40,6 +42,7 @@ public class NaruWireMeasurementTest {
         Path tempDir = Files.createTempDirectory("naru-wire-measure-granted");
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.of(tempDir.toString()));
+        agent.modelFilter(NaruTestModels.defaultFilter());
 
         // naru-granted: standard benchmark tags
         agent.newSession()

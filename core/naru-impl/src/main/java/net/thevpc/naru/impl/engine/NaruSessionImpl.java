@@ -185,7 +185,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             , Predicate<NaruToolTag> tagFilter
     ) {
         this(agent, projectDir, interaction, configureDefaults, sessionListener,
-                directiveFilter, toolFilter, tagFilter, null);
+                directiveFilter, toolFilter, tagFilter, null, null);
     }
 
     public NaruSessionImpl(NaruWorkspace agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
@@ -193,6 +193,18 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             , Predicate<NaruDirective> directiveFilter
             , Predicate<NaruTool> toolFilter
             , Predicate<NaruToolTag> tagFilter
+            , NaruModelFilter modelFilter
+    ) {
+        this(agent, projectDir, interaction, configureDefaults, sessionListener,
+                directiveFilter, toolFilter, tagFilter, modelFilter, null);
+    }
+
+    public NaruSessionImpl(NaruWorkspace agent, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
+            , NaruSessionListener sessionListener
+            , Predicate<NaruDirective> directiveFilter
+            , Predicate<NaruTool> toolFilter
+            , Predicate<NaruToolTag> tagFilter
+            , NaruModelFilter modelFilter
             , NaruSessionStore storeOverride
     ) {
         this.agent = agent;
@@ -203,7 +215,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.workingDir = projectDir.normalize();
         this.sessionStoreManager = new NaruSessionStoreManagerImpl(this);
         this.store = storeOverride == null ? NaruStoreFactory.open(storeConfig(), storeName()) : storeOverride;
-        this.registry = new NaruRegistryImpl(this,directiveFilter, toolFilter, tagFilter);
+        this.registry = new NaruRegistryImpl(this,directiveFilter, toolFilter, tagFilter, modelFilter);
         this.sessionListener = sessionListener;
         this.scheduler = new NaruSchedulerImpl(this);
         this.eventLog = new NaruSessionEventLogImpl(new NaruEventLogListener() {

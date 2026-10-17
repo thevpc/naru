@@ -2803,6 +2803,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NaruResponse chat(NaruModelConfig modelKey, NaruModelRequest request) {
+        // Fail closed before the transport exists: a filter (an offline test pinned to
+        // local ollama, a host restricted to approved providers) must be able to stop a
+        // paid call even when the model was set directly and therefore never went through
+        // the filtered catalog. Unlike the catalog decision, here the task is in context.
+        if (modelKey != null && !session().registry().isModelAllowed(modelKey.key(), this)) {
+            throw new NaruModelDeniedException(modelKey.key());
+        }
         NChronometer chronometer = NChronometer.of();
         NaruModelProtocol protocol = session().registry().protocol(modelKey, session()).get();
         // Refuse a tail no model can continue from before the transport is touched: a

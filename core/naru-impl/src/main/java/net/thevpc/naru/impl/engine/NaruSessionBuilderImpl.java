@@ -8,6 +8,7 @@ import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.model.NaruModelFilter;
 import net.thevpc.naru.api.store.NaruSessionScope;
 import net.thevpc.naru.api.store.NaruSessionStore;
 import net.thevpc.naru.api.scheduler.NaruTaskMode;
@@ -77,6 +78,8 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
 
     private Predicate<NaruToolTag> tagFilter;
 
+    private NaruModelFilter modelFilter;
+
     NaruSessionBuilderImpl(NaruWorkspaceImpl agent) {
         this.agent = agent;
     }
@@ -108,6 +111,12 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     @Override
     public NaruSessionBuilder tagFilter(Predicate<NaruToolTag> value) {
         this.tagFilter = value;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder modelFilter(NaruModelFilter value) {
+        this.modelFilter = value;
         return this;
     }
 
@@ -282,6 +291,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
                 combineAnd(agent.directiveFilter(), directiveFilter),
                 combineAnd(agent.toolFilter(), toolFilter),
                 combineAnd(agent.tagFilter(), tagFilter),
+                combineModelFilters(agent.modelFilter(), modelFilter),
                 store
         );
         if (userActor != null) {
@@ -322,7 +332,8 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
                 directory != null ? directory : agent.defaultSessionDirectory(),
                 interaction, task, id, store, scope, inputBlockPolicy, hibernateAfter,
                 streaming, busyPolicy, turnListener, maxLiveSessions,
-                checkpointEachMessage, capacityTimeout, agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter());
+                checkpointEachMessage, capacityTimeout, agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter(),
+                combineModelFilters(agent.modelFilter(), modelFilter));
     }
 
     /**
@@ -372,6 +383,21 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
         if (a == null && b == null) {
             return x -> true;
         }
+        if (a == null) {
+            return b;
+        }
+        if (b == null) {
+            return a;
+        }
+        return a.and(b);
+    }
+
+    /**
+     * Unlike {@link #combineAnd}, "both null" stays null rather than becoming an
+     * allow-everything filter: null is the registry's own "no filter" sentinel, and the
+     * common case (no filter anywhere) must keep behaving exactly as before.
+     */
+    private NaruModelFilter combineModelFilters(NaruModelFilter a, NaruModelFilter b) {
         if (a == null) {
             return b;
         }

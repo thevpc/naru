@@ -58,6 +58,26 @@ public interface NaruRegistry {
 
     Map<String, NaruModelProvider> modelProviders();
 
+    /**
+     * The model filter in effect, or null when every registered model is allowed.
+     *
+     * <p>It narrows what {@link #modelsKeys(NaruSession)} enumerates (so listings,
+     * positional indexes and best-fit selection see only allowed models) and what a
+     * transport call may use.
+     */
+    default NaruModelFilter modelFilter() {
+        return null;
+    }
+
+    /**
+     * Whether {@code model} may be used, per {@link #modelFilter()}. A null filter allows
+     * everything. {@code task} may be null when the decision is made outside any task.
+     */
+    default boolean isModelAllowed(NaruModelKey model, NaruTask task) {
+        NaruModelFilter filter = modelFilter();
+        return filter == null || filter.accept(model, task);
+    }
+
     List<NaruModelInfo> modelsInfos(NaruSession session);
 
     List<NaruModelKey> modelsKeys(NaruSession session);

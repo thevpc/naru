@@ -46,16 +46,32 @@ public class NaruRegistryImpl implements NaruRegistry {
     private final Predicate<NaruDirective> directiveFilter;
     private final Predicate<NaruTool> toolFilter;
     private final Predicate<NaruToolTag> tagFilter;
+    private final NaruModelFilter modelFilter;
 
     public NaruRegistryImpl(NaruSession session
-            ,Predicate<NaruDirective> directiveFilter
-            ,Predicate<NaruTool> toolFilter
-            ,Predicate<NaruToolTag> tagFilter
+            , Predicate<NaruDirective> directiveFilter
+            , Predicate<NaruTool> toolFilter
+            , Predicate<NaruToolTag> tagFilter
+    ) {
+        this(session, directiveFilter, toolFilter, tagFilter, null);
+    }
+
+    public NaruRegistryImpl(NaruSession session
+            , Predicate<NaruDirective> directiveFilter
+            , Predicate<NaruTool> toolFilter
+            , Predicate<NaruToolTag> tagFilter
+            , NaruModelFilter modelFilter
     ) {
         this.session = session;
         this.directiveFilter = directiveFilter;
         this.toolFilter = toolFilter;
         this.tagFilter = tagFilter;
+        this.modelFilter = modelFilter;
+    }
+
+    @Override
+    public NaruModelFilter modelFilter() {
+        return modelFilter;
     }
 
     @Override
@@ -157,8 +173,10 @@ public class NaruRegistryImpl implements NaruRegistry {
     public NOptional<NaruTool> findTool(String name) {
         for (NaruToolset a : activeToolsets) {
             for (NaruTool tool : a.tools()) {
-                if (tool.name().equals(name)) {
-                    return NOptional.of(tool);
+                if (toolFilter == null || toolFilter.test(tool)) {
+                    if (tool.name().equals(name)) {
+                        return NOptional.of(tool);
+                    }
                 }
             }
         }
@@ -169,7 +187,9 @@ public class NaruRegistryImpl implements NaruRegistry {
         Map<String, NaruTool> all = new LinkedHashMap<>();
         for (NaruToolset a : activeToolsets) {
             for (NaruTool tool : a.tools()) {
-                all.put(tool.name(), tool);
+                if (toolFilter == null || toolFilter.test(tool)) {
+                    all.put(tool.name(), tool);
+                }
             }
         }
         return all;
@@ -190,7 +210,10 @@ public class NaruRegistryImpl implements NaruRegistry {
     @Override
     public void closeToolsets() {
         for (NaruToolset toolset : activeToolsets) {
-            try { toolset.close(); } catch (Exception ignored) { }
+            try {
+                toolset.close();
+            } catch (Exception ignored) {
+            }
         }
         openedToolsets.clear();
     }
@@ -201,11 +224,11 @@ public class NaruRegistryImpl implements NaruRegistry {
 
 
     private NaruRegistry registerDirective(NaruDirective directive) {
-        if(directive==null){
+        if (directive == null) {
             return this;
         }
         if (directiveFilter != null) {
-            if(!directiveFilter.test(directive)) {
+            if (!directiveFilter.test(directive)) {
                 return this;
             }
         }
@@ -222,7 +245,7 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     private NaruRegistry registerToolTag(NaruToolTag tool) {
         if (tagFilter != null) {
-            if(!tagFilter.test(tool)) {
+            if (!tagFilter.test(tool)) {
                 return this;
             }
         }
@@ -336,7 +359,13 @@ public class NaruRegistryImpl implements NaruRegistry {
             }
             for (String m : ids) {
                 if (!NBlankable.isBlank(m)) {
-                    set.add(new NaruModelKey(p.name(), m));
+                    NaruModelKey k = new NaruModelKey(p.name(), m);
+                    // the catalog is enumerated outside any task, so the filter sees a
+                    // null task here: a denied model never reaches a listing, a
+                    // positional index, a '/model use' resolution or best-fit selection
+                    if (isModelAllowed(k, null)) {
+                        set.add(k);
+                    }
                 }
             }
         }
@@ -445,7 +474,7 @@ public class NaruRegistryImpl implements NaruRegistry {
             task.log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + availableDirectives.keySet()).asError());
             return;
         }
-        task.invokeDirective(dir,new NaruDirectiveCallContextImpl(name, argument, task));
+        task.invokeDirective(dir, new NaruDirectiveCallContextImpl(name, argument, task));
     }
 
     /**
@@ -485,7 +514,7 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public NOptional<NaruToolTag> findAvailableTag(String name) {
-                return NOptional.ofNamed(availableToolTags.get(NNameFormat.LOWER_KEBAB_CASE.format(name)), name);
+        return NOptional.ofNamed(availableToolTags.get(NNameFormat.LOWER_KEBAB_CASE.format(name)), name);
     }
 
     @Override

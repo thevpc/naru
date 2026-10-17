@@ -95,6 +95,7 @@ public class AgentModelIntegrationTest {
         folder = NPath.ofTempFolder("naru");
         agent = NaruWorkspace.of();
         agent.projectDirectory(folder);
+        agent.modelFilter(NaruTestModels.defaultFilter());
         NOut.println(NMsg.ofC("create agent at %s", agent));
     }
 

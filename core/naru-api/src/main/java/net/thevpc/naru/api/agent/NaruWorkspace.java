@@ -4,6 +4,7 @@ import net.thevpc.naru.api.registry.NaruAgentExtension;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.model.NaruModelFilter;
 import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
@@ -56,6 +57,15 @@ public interface NaruWorkspace {
     Predicate<NaruToolTag> tagFilter();
 
     NaruWorkspace tagFilter(Predicate<NaruToolTag> tagFilter);
+
+    /**
+     * The model filter every session of this workspace inherits, or null for "allow every
+     * model". A session may narrow it further with
+     * {@link NaruSessionBuilder#modelFilter(NaruModelFilter)}; the two are AND-combined.
+     */
+    NaruModelFilter modelFilter();
+
+    NaruWorkspace modelFilter(NaruModelFilter modelFilter);
 
     NPath projectDirectory();
 

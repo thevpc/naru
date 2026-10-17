@@ -9,6 +9,7 @@ import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.store.*;
 import net.thevpc.naru.api.model.NaruChunkKind;
 import net.thevpc.naru.api.model.NaruStreamChunkData;
+import net.thevpc.naru.api.model.NaruModelFilter;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruTerminalInteraction;
@@ -49,6 +50,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     private final Predicate<NaruDirective> directiveFilter;
     private final Predicate<NaruTool> toolFilter;
     private final Predicate<NaruToolTag> tagFilter;
+    private final NaruModelFilter modelFilter;
 
     NaruSessionHandleImpl(NaruWorkspaceImpl agent, NPath directory, NaruInteraction interaction,
                           NaruTaskSpec task, String id, NaruSessionStore store, NaruSessionScope scope,
@@ -57,7 +59,8 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                           boolean checkpointEachMessage,
                           Duration capacityTimeout,
                           NaruSessionListener sessionListener, Predicate<NaruDirective> directiveFilter,
-                          Predicate<NaruTool> toolFilter, Predicate<NaruToolTag> tagFilter) {
+                          Predicate<NaruTool> toolFilter, Predicate<NaruToolTag> tagFilter,
+                          NaruModelFilter modelFilter) {
         this.agent = agent; this.directory = directory; this.customInteraction = interaction;
         this.task = task; this.id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id;
         this.requestedStore = store; this.newScope = scope == null ? NaruSessionScope.PRIVATE : scope;
@@ -68,6 +71,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         this.checkpointEachMessage = checkpointEachMessage;
         this.capacityTimeout = capacityTimeout == null ? Duration.ofSeconds(30) : capacityTimeout;
         this.directiveFilter = directiveFilter; this.toolFilter = toolFilter; this.tagFilter = tagFilter;
+        this.modelFilter = modelFilter;
     }
 
     @Override public String id() { return id; }
@@ -152,7 +156,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     private Live activate() {
         TurnInteraction interaction = new TurnInteraction(customInteraction, listener, streaming, this::onInputRequested);
         NaruSessionImpl session = new NaruSessionImpl(agent, directory, interaction, true,
-                sessionListener, directiveFilter, toolFilter, tagFilter, requestedStore);
+                sessionListener, directiveFilter, toolFilter, tagFilter, modelFilter, requestedStore);
         session.configureTurnPersistence(true, checkpointEachMessage);
         NaruSessionStore store = requestedStore == null ? session.rawSessionStore() : requestedStore;
         NaruSessionScope scope = store.scopeOf(id).orElse(newScope);

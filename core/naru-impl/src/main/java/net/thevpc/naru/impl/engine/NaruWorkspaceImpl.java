@@ -5,6 +5,7 @@ import net.thevpc.naru.api.registry.NaruAgentExtension;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.model.NaruModelFilter;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.nuts.concurrent.NCallable;
@@ -81,6 +82,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     private Predicate<NaruDirective> directiveFilter;
     private Predicate<NaruTool> toolFilter;
     private Predicate<NaruToolTag> tagFilter;
+    private NaruModelFilter modelFilter;
 
     /**
      * Agent-level extensions, retained for the agent's lifetime. Created lazily on
@@ -184,6 +186,17 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     @Override
     public NaruWorkspaceImpl tagFilter(Predicate<NaruToolTag> tagFilter) {
         this.tagFilter = tagFilter;
+        return this;
+    }
+
+    @Override
+    public NaruModelFilter modelFilter() {
+        return modelFilter;
+    }
+
+    @Override
+    public NaruWorkspaceImpl modelFilter(NaruModelFilter modelFilter) {
+        this.modelFilter = modelFilter;
         return this;
     }
 
@@ -359,4 +372,10 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
         }
     }
 
+    @Override
+    public String toString() {
+        return "NaruWorkspace(" +
+                (projectDirectory == null ? System.getProperty("user.dir") : projectDirectory.toString()) +
+                ')';
+    }
 }
