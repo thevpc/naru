@@ -42,6 +42,8 @@ import java.util.function.Predicate;
  * into a standalone library later.
  */
 public class NaruWorkspaceImpl implements NaruWorkspace {
+    private static final NVersion API_VERSION = NVersion.of("1.1");
+    private static final NVersion IMPL_VERSION = NVersion.of("1.1.0");
     private static final String DEFAULT_PROFILE = "net.thevpc.naru.extensions:naru-profile-dev";
     public static final String NET_THEVPC_NARU_EXTENSIONS = "net.thevpc.naru.extensions";
 
@@ -74,6 +76,17 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                 t.setDaemon(true);
                 return t;
             });
+
+    @Override
+    public NVersion apiVersion() {
+        return API_VERSION;
+    }
+
+    @Override
+    public NVersion implVersion() {
+        return IMPL_VERSION;
+    }
+
     /**
      * Runs user-supplied {@code NaruTask.onComplete} callbacks.
      * <p>
@@ -374,7 +387,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                 if (classLoader == null) {
                     // a set: a profile and an explicit --extension may name the same artifact, and it
                     // must be loaded once
-                    NVersion currentVersion = NApplication.of().id().get().version();
+                    NVersion currentVersion = apiVersion();
                     NMutableClassLoader nopsClassLoader = NMutableClassLoader.of("nops", Thread.currentThread().getContextClassLoader());
                     List<NId> loaded = new ArrayList<>();
                     Set<String> visited = new LinkedHashSet<>();
