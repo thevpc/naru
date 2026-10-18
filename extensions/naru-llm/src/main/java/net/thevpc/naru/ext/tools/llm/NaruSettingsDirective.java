@@ -131,15 +131,27 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
 
     private NaruStmtResult list(NaruTask task) {
         List<NaruConfigKey> keys = task.session().registry().configKeys();
+        List<NaruConfigKey> configured = new ArrayList<>();
+        for (NaruConfigKey key : keys) {
+            NOptional<NaruTaskConfig.Resolved> found = NaruTaskConfig.resolve(task, key.key());
+            if (found != null && found.isPresent()) {
+                configured.add(key);
+            }
+        }
         NStringBuilder sb = NStringBuilder.of();
-        NMsg header = NMsg.ofC("%s settings:", keys.size());
+        NMsg header = NMsg.ofC("%s settings:", configured.size());
         task.log(NaruLogMode.AGENT_RESPONSE, header);
         sb.println(header.toString());
-        for (NaruConfigKey key : keys) {
+        for (NaruConfigKey key : configured) {
             NMsg row = NMsg.ofC("  %s%s", describe(task, key.key()),
                     key.description().isEmpty() ? "" : " — " + key.description());
             task.log(NaruLogMode.AGENT_RESPONSE, row);
             sb.println(row.toString());
+        }
+        if (configured.isEmpty()) {
+            NMsg empty = NMsg.ofC("  no settings are currently set");
+            task.log(NaruLogMode.AGENT_RESPONSE, empty);
+            sb.println(empty.toString());
         }
         NMsg hint = NMsg.ofC("  any other key is readable too: /%s <key>", name());
         task.log(NaruLogMode.AGENT_RESPONSE, hint);

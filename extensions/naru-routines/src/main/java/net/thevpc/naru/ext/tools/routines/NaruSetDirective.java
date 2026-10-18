@@ -240,14 +240,15 @@ public class NaruSetDirective extends NaruDirectiveBase {
                 varMap = task.getTaskEnv();
                 break;
         }
-        varMap.entrySet().stream()
-                .sorted(Comparator.comparing(Map.Entry::getKey))
-                .forEach(e -> task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
-                        "%s : %s"
-                        , NMsg.ofStyledPrimary1(e.getKey())
-                        , e.getValue()
-                )));
-        return NaruStmtResult.ofSuccess(varMap);
+        Map<String, Object> setVars = new TreeMap<>();
+        varMap.forEach((key, value) -> {
+            if (value != null) {
+                setVars.put(key, value);
+            }
+        });
+        setVars.forEach((key, value) -> task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+                "%s : %s", NMsg.ofStyledPrimary1(key), value)));
+        return NaruStmtResult.ofSuccess(setVars);
     }
 
     // ── autocomplete ─────────────────────────────────────────────────────────

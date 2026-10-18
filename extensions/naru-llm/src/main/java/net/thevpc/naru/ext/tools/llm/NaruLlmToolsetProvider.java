@@ -44,7 +44,7 @@ public class NaruLlmToolsetProvider implements NaruToolsetProvider {
 
 
     private List<NaruTool> aiTools() {
-        return List.of(new ModelDelegateTool(), new ModelListTool());
+        return List.of(new ModelDelegateTool(), new ModelListTool(), new AskUserTool());
     }
 
 }

@@ -5,6 +5,8 @@ import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolCall;
+import net.thevpc.naru.api.registry.NaruInteractiveTool;
+import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.util.ImplNaruUtils;
 import net.thevpc.nuts.elem.*;
@@ -17,6 +19,7 @@ import java.util.stream.Collectors;
 
 public class NaruToolCallStmt extends NaruStatement implements Cloneable {
     public NaruToolCall call;
+    private boolean awaitingInput;
 
     public NaruToolCallStmt(NaruToolCall call) {
         super(Type.TOOL_CALL);
@@ -27,6 +30,7 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
         super(Type.TOOL_CALL);
         NListContainerElement lc = element.asListContainer().get();
         this.call = new NaruToolCall(lc.get("call").get());
+        this.awaitingInput = lc.getBooleanValue("awaitingInput").orElse(false);
     }
 
     @Override
@@ -34,6 +38,9 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
         NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
         if (call != null) {
             a.set("call", call.toElement());
+        }
+        if (awaitingInput) {
+            a.set("awaitingInput", true);
         }
         return a.build();
     }
@@ -63,6 +70,21 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
             task.frame().lastResult(NaruStmtResult.ofSuccess(err));
             return;
         }
+        NaruTool registeredTool = task.session().registry().findTool(call.getName()).orNull();
+        if (registeredTool instanceof NaruInteractiveTool) {
+            NaruInteractiveTool interactiveTool = (NaruInteractiveTool) registeredTool;
+            if (awaitingInput) {
+                String answer = task.consumeInput();
+                if (answer == null) {
+                    task.prependStatement(copy());
+                    task.requestInput(NMsg.ofC("Please answer the pending question to continue."));
+                    return;
+                }
+                finishToolCall(task, interactiveTool.complete(call, answer));
+                return;
+            }
+        }
+
         NObjectElementBuilder t = NElement.ofObjectBuilder(call.getName());
         for (Map.Entry<String, Object> e : call.getArguments().entrySet()) {
             t.set(e.getKey(), NElement.of(e.getValue()));
@@ -74,6 +96,17 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
                 )
         );
         String result = task.session().registry().dispatch(call, task);
+        if (registeredTool instanceof NaruInteractiveTool
+                && NaruInteractiveTool.WAITING_FOR_INPUT.equals(result)) {
+            NaruToolCallStmt resumed = (NaruToolCallStmt) copy();
+            resumed.awaitingInput = true;
+            task.prependStatement(resumed);
+            return;
+        }
+        finishToolCall(task, result);
+    }
+
+    private void finishToolCall(NaruTask task, String result) {
         task.log(NaruLogMode.PROGRESS, NMsg.ofC("  %s Result: %s",
                 NMsg.ofStyledPrimary6("📤"),
                 ImplNaruUtils.abbreviate(result, 300)));
