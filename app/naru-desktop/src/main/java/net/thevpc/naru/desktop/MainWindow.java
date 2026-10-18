@@ -317,25 +317,52 @@ public final class MainWindow extends JFrame {
      * outside the class.
      */
     public boolean selectSideTab(String title) {
-        JTabbedPane tabs = sideTabs;
-        if (tabs != null) {
-            int i = tabs.indexOfTab(title);
-            if (i >= 0) { tabs.setSelectedIndex(i); return true; }
+        JTabbedPane tabs = tabsHolding(title);
+        if (tabs == null) {
+            return false;
         }
-        tabs = conversationTabs;
-        if (tabs != null) {
-            int i = tabs.indexOfTab(title);
-            if (i >= 0) { tabs.setSelectedIndex(i); return true; }
-        }
-        return false;
+        tabs.setSelectedIndex(tabs.indexOfTab(title));
+        lastTabbedPane = tabs;
+        return true;
     }
 
-    /** The side tab now showing, or null before a session exists. Harness-facing, like the setter. */
-    public String selectedSideTab() {
+    /**
+     * Which tabbed pane owns a title. The window has two — the rail's tool tabs and the conversation
+     * tabs beside the transcript — and a caller that asks for {@code "Conversation"} must be told the
+     * truth about it, not about whichever side tab happened to be selected. Before this, selecting a
+     * conversation tab worked while {@code selectedSideComponent()} still returned the Workspace pane,
+     * so a gate run's screenshot of "Conversation" was a screenshot of the wrong thing.
+     */
+    private JTabbedPane tabsHolding(String title) {
         JTabbedPane tabs = sideTabs;
-        if (tabs != null && tabs.getSelectedIndex() >= 0) return tabs.getTitleAt(tabs.getSelectedIndex());
+        if (tabs != null && tabs.indexOfTab(title) >= 0) {
+            return tabs;
+        }
         tabs = conversationTabs;
+        return tabs != null && tabs.indexOfTab(title) >= 0 ? tabs : null;
+    }
+
+    /** The tabbed pane the last successful selection went through, so the getters agree with it. */
+    private JTabbedPane lastTabbedPane;
+
+    private JTabbedPane tabsHoldingAny() {
+        return sideTabs != null ? sideTabs : conversationTabs;
+    }
+
+    /** The tab now showing, in whichever tabbed pane the harness is driving. */
+    public String selectedSideTab() {
+        JTabbedPane tabs = lastTabbedPane != null ? lastTabbedPane : tabsHoldingAny();
         return tabs == null || tabs.getSelectedIndex() < 0 ? null : tabs.getTitleAt(tabs.getSelectedIndex());
+    }
+
+    /**
+     * What the selected tab shows, in whichever tabbed pane was last driven. A gate run photographs
+     * the panel it just opened, and the side panel is the part of a 1400-pixel window a full-screen
+     * capture tends to cut off.
+     */
+    public java.awt.Component selectedSideComponent() {
+        JTabbedPane tabs = lastTabbedPane != null ? lastTabbedPane : tabsHoldingAny();
+        return tabs == null ? null : tabs.getSelectedComponent();
     }
 
     /**
@@ -344,17 +371,6 @@ public final class MainWindow extends JFrame {
      */
     public String selectedPermissionRule() {
         return null;
-    }
-
-    /**
-     * What the selected side tab shows. A gate run photographs the panel it just opened, and the
-     * side panel is the part of a 1400-pixel window a full-screen capture tends to cut off.
-     */
-    public java.awt.Component selectedSideComponent() {
-        JTabbedPane tabs = sideTabs;
-        if (tabs != null && tabs.getSelectedComponent() != null) return tabs.getSelectedComponent();
-        tabs = conversationTabs;
-        return tabs == null ? null : tabs.getSelectedComponent();
     }
 
     /**

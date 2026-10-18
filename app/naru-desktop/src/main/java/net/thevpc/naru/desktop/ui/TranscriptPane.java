@@ -349,4 +349,41 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             }
         });
     }
+
+    // ── harness-facing reads, the same handful TaskPane offers ────────────────
+    // A scroll run cannot prove anything from outside about "the transcript scrolled": the claims
+    // are the visible row range and the scrollbar value, and both only exist inside this widget.
+
+    /** Rows on screen — the load a scroll run is actually scrolling. */
+    public int rowCount() {
+        return rows.size();
+    }
+
+    /**
+     * The cell the renderer builds for one row. This is where "the answer is markdown" is visible:
+     * a plain-text row is the text itself, a settled markdown row is an {@code <html>} label.
+     */
+    public String cellTextAt(int i) {
+        TranscriptBlock b = rows.get(i);
+        java.awt.Component c = list.getCellRenderer()
+                .getListCellRendererComponent(list, b, i, false, false);
+        return c instanceof JLabel l ? String.valueOf(l.getText()) : "";
+    }
+
+    /** The rows in the viewport, as {@code first-last}; {@code none} before the pane is laid out. */
+    public String visibleRange() {
+        int first = list.getFirstVisibleIndex();
+        return first < 0 ? "none" : first + "-" + list.getLastVisibleIndex();
+    }
+
+    /** The vertical scrollbar as {@code value/maximum}, which is what a wheel step moves. */
+    public String scrollState() {
+        javax.swing.JScrollBar bar = scroll.getVerticalScrollBar();
+        return bar.getValue() + "/" + bar.getMaximum();
+    }
+
+    /** Whether the pane considers itself stuck to the tail, which is what makes new output follow. */
+    public boolean isStuckToTail() {
+        return isNearBottom();
+    }
 }

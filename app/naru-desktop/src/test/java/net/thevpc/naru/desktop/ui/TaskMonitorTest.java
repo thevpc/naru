@@ -20,6 +20,7 @@ import org.junit.jupiter.api.TestMethodOrder;
 
 import javax.swing.SwingUtilities;
 import java.awt.GraphicsEnvironment;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -166,14 +167,71 @@ class TaskMonitorTest {
         assertTrue(missing.contains("999999"), missing);
     }
 
+    /**
+     * The monitor's two views, and the tree the second one draws.
+     * <p>
+     * The rail is deliberately narrow, so the owner's default is the interactive filter: a session
+     * that spawned six routine tasks would otherwise bury the task the user is talking to. The cost
+     * is that the spawn tree is now a second click away, which makes the filter itself part of §6's
+     * claim — a monitor that could not reach the tree would not "show live parallel tasks". Both
+     * ways into it are exercised here: the toggle, and the jump-from-another-pane path
+     * ({@code selectTask}), which opens the tree by itself rather than reporting no such row.
+     */
     @Test
     @Order(4)
-    void thePaneDrawsTheTreeAndSelectsATask() throws Exception {
+    void thePaneFiltersToInteractiveTasksAndOpensTheTree() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(),
                 "the monitor's renderer needs a graphics environment");
+        // what the selection listener is for: the window wires the transcript, the tools and the
+        // input area to it, so a row that never reports its id leaves those panes on another task
+        List<Long> selections = new ArrayList<>();
         onEdt(() -> {
             pane = new TaskPane(model);
+            pane.setTaskSelectionListener(selections::add);
             model.refreshNow();
+        });
+
+        int interactiveRows = onEdtReturn(pane::taskCount);
+        List<String> interactiveLabels = onEdtReturn(() -> {
+            List<String> out = new ArrayList<>();
+            for (int i = 0; i < pane.taskCount(); i++) {
+                out.add(pane.rowLabelAt(i));
+            }
+            return out;
+        });
+        // the filter's own contract, stated against the engine rather than against an assumption
+        // about which probes are conversations: the rail shows exactly the rows the model marks
+        // conversation. Measured on this session, a probe spawned under a conversation is one and
+        // the root that spawned it is not, which is precisely the kind of detail a hard-coded id
+        // check would get wrong the next time the engine changes its promotion rule.
+        List<String> expected = new ArrayList<>();
+        List<String> hidden = new ArrayList<>();
+        for (TaskRow r : model.tasks()) {
+            String head = "#" + r.id() + " ";
+            if (r.conversation()) {
+                expected.add(head);
+            } else {
+                hidden.add(head);
+            }
+        }
+        assertFalse(hidden.isEmpty(), "premise: the session has a non-interactive task to filter"
+                + " out, or this test proves nothing: " + model.tasks().size() + " rows");
+        for (String head : expected) {
+            assertTrue(containsHead(interactiveLabels, head),
+                    "an interactive task belongs in the default view, " + head + " was missing from "
+                            + interactiveLabels);
+        }
+        for (String head : hidden) {
+            assertFalse(containsHead(interactiveLabels, head),
+                    "a spawned job is not an interactive task, so the default view has to leave out"
+                            + " " + head + ": " + interactiveRows + " rows, they were "
+                            + interactiveLabels);
+        }
+
+        // the user's way back to the tree: press the toggle, and wait for the poll to redraw
+        onEdt(TaskMonitorTest::pressAllTasks);
+        awaitTrue(() -> onEdtReturnCount() >= 3, "the full tree appeared after All tasks");
+        onEdt(() -> {
             assertTrue(pane.taskCount() >= 3,
                     "the parent and both children must be on screen: " + pane.taskCount());
             int parentAt = indexOf(pane, parent.id());
@@ -185,14 +243,28 @@ class TaskMonitorTest {
                             + pane.rowLabelAt(parentAt + 1));
             assertTrue(pane.rowLabelAt(parentAt + 1).contains("probe-child-1"),
                     pane.rowLabelAt(parentAt + 1));
+        });
 
+        // selecting by id is the path another pane takes, and the tree has to open for it
+        onEdt(() -> {
             assertTrue(pane.selectTask(firstChild.id()), "a live id is selectable");
             assertTrue(pane.detailText().contains("Task #" + firstChild.id()), pane.detailText());
             assertFalse(pane.selectTask(999_999L), "a stale id must not fake a selection");
             assertEquals(pane.detailText(), pane.detailText(), "and it leaves the detail alone");
-
             assertTrue(pane.monitorNote().contains("task"), pane.monitorNote());
         });
+
+        assertTrue(selections.contains(firstChild.id()),
+                "the window's panes were told which task is on screen: " + selections);
+    }
+
+    /** Read the row count on the EDT, from the polling thread. */
+    private static int onEdtReturnCount() {
+        try {
+            return onEdtReturn(pane::taskCount);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -278,6 +350,43 @@ class TaskMonitorTest {
                 "the detail line settled on something the user can read: " + label);
     }
 
+    /**
+     * Closing a session must not throw on the EDT through the panes it wired together.
+     * <p>
+     * The §6 gate run ended this way — not with a failed claim, but with an
+     * {@code IllegalStateException: session is stopped} on the EDT after its own verdict line. The
+     * path is the window's: {@code shutdown()} fires one last poll refresh so the monitor shows the
+     * state at close, clearing its rows, which fires a selection change, which the window forwards to
+     * the inspector, which then asked a stopped session for its project directory. The fix is in the
+     * model — {@code session()} answers null once closed, and every pane already draws a "no session"
+     * text — so this test reproduces the wiring rather than the exception type.
+     */
+    @Test
+    @Order(7)
+    void closingTheSessionLeaksNoEngineCallIntoThePanes() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(),
+                "the panes under test need a graphics environment");
+        onEdt(() -> {
+            TaskPane closing = new TaskPane(model);
+            net.thevpc.naru.desktop.ui.InspectorPane insp =
+                    new net.thevpc.naru.desktop.ui.InspectorPane(model);
+            net.thevpc.naru.desktop.ui.WorkbenchPane wb =
+                    new net.thevpc.naru.desktop.ui.WorkbenchPane(model);
+            // the same three-way wiring MainWindow.activateSession installs
+            closing.setTaskSelectionListener(id -> {
+                insp.setSelectedTaskId(id);
+                wb.setSelectedTaskId(id);
+            });
+            closing.selectTask(parent.id());
+            // no try/catch: an engine call that survives the close throws out of this EDT step and
+            // fails the test, which is exactly what the gate run saw
+            model.shutdown();
+            assertNull(model.session(), "a closed session has no engine left to inspect");
+            insp.dispose();
+            closing.dispose();
+        });
+    }
+
     /** Select a row and read the hold button as the user sees it, in one EDT step. */
     private static String selectAndRead(long id) throws Exception {
         return onEdtReturn(() -> pane.selectTask(id)
@@ -314,6 +423,28 @@ class TaskMonitorTest {
         b.doClick();
     }
 
+    /** Click the view toggle, in its own EDT step like every other press in this file. */
+    private static void pressAllTasks() {
+        javax.swing.JToggleButton b = allTasksButton(pane);
+        assertNotNull(b, "the monitor has an All tasks toggle");
+        b.doClick();
+    }
+
+    private static javax.swing.JToggleButton allTasksButton(java.awt.Container c) {
+        for (java.awt.Component x : c.getComponents()) {
+            if (x instanceof javax.swing.JToggleButton b && "All tasks".equals(b.getText())) {
+                return b;
+            }
+            if (x instanceof java.awt.Container inner) {
+                javax.swing.JToggleButton found = allTasksButton(inner);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
     private static javax.swing.JButton holdButton(java.awt.Container c) {
         for (java.awt.Component x : c.getComponents()) {
             if (x instanceof javax.swing.JButton b
@@ -330,9 +461,23 @@ class TaskMonitorTest {
         return null;
     }
 
+    /** Does any row label carry this {@code #id } head, once the tree gutter is trimmed? */
+    private static boolean containsHead(List<String> labels, String head) {
+        for (String l : labels) {
+            if (l.replaceFirst("^[│ └]*", "").startsWith(head)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static int indexOf(TaskPane pane, long id) {
+        String want = "#" + id + " ";
         for (int i = 0; i < pane.taskCount(); i++) {
-            if (pane.rowLabelAt(i).contains("#" + id + " ")) {
+            // anchored on the head, with the tree gutter trimmed first: a child label carries its
+            // parent as "←#2 ", and a substring match would find the parent's id on the child's row
+            String head = pane.rowLabelAt(i).replaceFirst("^[│ └]*", "");
+            if (head.startsWith(want)) {
                 return i;
             }
         }

@@ -421,13 +421,124 @@ geometry `x=1008 width=364 height=643` on a 1600-px screen, `detail: frames=1 st
 `task-poll cost worst=2ms`, `edt-pings=117 max-ping-ms=108 stalls-over-16ms=5 stalls-over-250ms=0`.
 Evidence: `/tmp/naru-task-tree.png`, `/tmp/naru-task-parallel.png`, `/tmp/naru-task-final.png`.
 
+## §6/§7 re-landed: the owner's session-centric shell, then D1 and G1
+
+The shell changed under the gate: `MainWindow` is now an undecorated session-centric window with the
+task rail on the left (`JSplitPane.VERTICAL_SPLIT`, preferred 210x100), four side tabs ("Task tools",
+"Task permissions", "Inspect" → `InspectorPane`, "Workspace" → `WorkbenchPane`) and two conversation
+tabs ("Conversation", "Session log"), and `TaskPane` defaults to **interactive tasks only** with an
+"All tasks" toggle that opens the whole tree. The work below is verification and fixes on top of that
+design, not a redesign of it: nothing in `core/` and nothing in the owner's panes was edited.
+
+Re-running `TaskSmoke` against the new layout is what made it worth doing, because the harness reads
+claims off widgets and two of them were lying.
+
+1. *Selecting a conversation tab reported the Workspace pane.* The window has two `JTabbedPane`s but
+   one getter pair, so `selectSideTab("Conversation")` switched one pane while `selectedSideComponent()`
+   read the other. `MainWindow` now resolves the pane that actually holds the title (`tabsHolding`) and
+   remembers it (`lastTabbedPane`) so the reads follow the selection. The sweep that found it — every
+   side tab selected, its component class and on-screen bounds asserted, one PNG each — is now part of
+   `TaskSmoke` and feeds hop 1's gate (`side-tabs-laid-out=6` problems `=0`).
+2. *Closing a session threw from a pane.* `NaruSessionModel.shutdown()` ends with one more
+   `fireChanged()`, and `InspectorPane.sessionModelChanged()` answered that paint by reading
+   `s.projectDir()` off a session the engine had already stopped: `IllegalStateException: session is
+   stopped`. The fix is one line in the model — `session()` returns null once closed, documented as
+   "no engine left to inspect" — and `TaskMonitorTest` order 7 pins it by closing a session while a
+   `TaskPane`, `InspectorPane` and `WorkbenchPane` are all listening, with no try/catch to swallow the
+   throw. A unit test of the panes alone could not have seen this: only the model knows it is closed.
+
+**The interactive-only default is a real behaviour change, measured rather than argued.** §6 says the
+monitor shows live parallel tasks; in a live session only the foreground task is a conversation
+(`NaruTask.isConversation()` is true only for `INTERACTIVE` tasks — every `session.newTask(spec)` probe,
+root or child, with or without statements, came back false), so the rail's default view is **one row**
+and every spawned job is hidden until "All tasks". `TaskMonitorTest` order 4 was rewritten to that
+reality instead of asserting past it: it derives the expected visible set from `TaskRow.conversation()`,
+asserts the filtered view equals it, asserts a non-interactive row really was hidden, then clicks the
+toggle and asserts the tree, the indent and the selection callback. A premise check caught my own first
+attempt at that test: promoting a probe with `taskMode(INTERACTIVE)` made the children conversations
+too ("3 interactive tasks: [4,5,6,7]"), so the test reads the model's flags instead of inventing them.
+Whether one-row-by-default is the v1 answer is the owner's call and is listed below.
+
+**D1 — markdown for agent answers.** One flag: `BlockStyle` gives `AGENT_RESPONSE` `markdown = true`.
+`MODEL_RESPONSE` deliberately stays plain — the raw model turn is the transcript's verbatim record, and
+rendering it would put the desktop's own interpretation between the user and what the model said. The
+§4.3 assumption still does not hold: neither `thevpc-common-md` nor `nmarkdown` exposes an HTML writer,
+so the in-house `render/MarkdownHtml` subset remains the v1 answer, and that is recorded in the
+`BlockStyle` comment rather than only here. New `render/MarkdownRendererTest` (4 tests) pins the
+pipeline rather than the flag: the mode that renders is the mode that answers, a closed agent block
+comes back as `<b>start</b>` / `<li>first</li>` with no `## Plan` left in it and `htmlIsCurrent()`, a
+streaming block is never rendered and its text is never cached early, and a second request for the same
+block is dropped.
+
+**G1 — scrolling under load.** `smoke/TranscriptSmoke` boots the real window, writes a deterministic
+corpus (a heading/bold/inline-code/list/fenced-code answer plus a 21-line script block) 120 times
+through `host().write(...)` — the engine's own seam, so the load arrives exactly as a live turn would
+arrive — then drives the wheel with `java.awt.Robot` to the top and back to the tail, sampling the
+scrollbar value and the visible row range at every step, with a 5 ms-sleeping pinger counting EDT
+stalls per phase. Reproducible run (`-Dnaru.smoke.model=false`, project `/tmp/naru-transcript-smoke`):
+
+- `load: wrote 120 turns (240 blocks, 4200 lines) in 14ms; pane shows 240 rows`, and the host lost
+  nothing: `published=479 flushedBatches=96 flushedEvents=480 dropped=0 droppedChars=0 maxFlushMs=0
+  maxPublishUs=369 queueDepth=0`.
+- `scroll up: 5701/6304 -> 0/6304 rows 213-239 -> 0-2 in 25 steps / 1315ms (52ms/step)`;
+  `scroll down: 0/6304 -> 5701/6304 rows 213-239 in 24 steps / 1437ms (59ms/step)` — the wheel moves
+  the whole 240-row transcript, both directions, and reaches both ends.
+- `markdown: rendered agent row=0 cell-chars=627 tags=[b,tt,pre,ul,li] literal-asterisks=false
+  heading-marker-left-in-text=false` — the proof reads the cell the renderer produced, and only within
+  the visible range, so an off-screen cached string cannot make the claim.
+- Frames: run total `edt-pings=60 max-ping-ms=138 stalls-over-16ms=20 stalls-over-250ms=0`; during the
+  two scrolls specifically `pings=20 stalls-over-16ms=16 stalls-over-250ms=0`. **That is the honest
+  caveat of this gate: 16 of 20 pings missed one 16 ms frame while scrolling, none came close to a
+  perceptible freeze.** The cause is visible in `/tmp/naru-scroll-top.png`: cells do not wrap, so each
+  row is taller than the viewport's floor and a scroll repaints a wide `<pre>`. That is the transcript
+  wrapping item below, not a markdown-renderer cost — the renderer only ever parses a closed block once.
+- `VERDICT=PASS — markdown reaches the cell, the wheel moves a loaded transcript, the EDT kept its
+  frame budget`. Screenshots: `/tmp/naru-scroll-top.png`, `/tmp/naru-scroll-bottom.png`,
+  `/tmp/naru-markdown-row-0.png`, `/tmp/naru-transcript-smoke.png`.
+
+**Numbers, re-measured on the new shell.** Desktop suite **99 tests, 0 failures, 0 errors** (new since
+the §6 section: `MarkdownRendererTest` 4, `TaskMonitorTest` 6 → 7). Model-free `TaskSmoke` on the
+owner's layout: `edt-pings=66 max-ping-ms=97 stalls-over-16ms=5 stalls-over-250ms=0`, tree 5 rows,
+`findTaskIdsByParent=2`, hold/resume `Hold/enabled → Resume/enabled → Hold/enabled`, the killed row
+left the monitor, all six side tabs laid out with the widget each one claims, rail
+`x=3 width=333 height=465`. Model-driven gate against local Ollama `qwen2.5-coder:14b`, 120 s:
+`VERDICT=PASS`, `edt-pings=152 max-ping-ms=92 stalls-over-16ms=7 stalls-over-250ms=0`, spawn tree 5
+rows, two parallel turns `max-live-at-once=2` / `max-RUNNING-at-once=1` (serialised ticks, as recorded
+above), kill `engine-status=KILLED reason=stopped from the desktop task monitor row-gone=true in-3s`,
+interrupt `engine-flag=true rendered-in-detail=true status-after=RUNNING`, `task-poll cost worst=81ms`
+(the 2 Hz poll now also feeds `InspectorPane`, so this is a different cost from the §6 run's 2 ms).
+No §7 engine PR is owed by this piece: nothing under `core/` changed, and the terminal REPL path is
+untouched. The engine suite still reports **238 tests, 1 failure** — `NaruTaskCompletionTest.
+cancelSettlesTheRunAsKilled:574` ("session stopped") — and that failure is **now at HEAD, not in
+somebody's uncommitted edits**: `git diff HEAD -- core` is empty, so the earlier note that pinned it to
+"the uncommitted scheduler edits in `NaruTaskImpl` / `NaruPoisonTask`" is superseded, and it arrived
+with the committed scheduler work (`77da0ca` / `a4d7f6f`). Proof it is not the desktop's: a clean
+worktree at `a4d7f6f` with **no** desktop changes runs the same class **34 / 1**, same assertion, same
+line. Reading the scheduler to make it green would be changing agent behaviour, so it is reported as a
+decision rather than fixed here.
+
 ## Open in Phase 2
 
+- **`core/naru-impl` is red at HEAD again**: `NaruTaskCompletionTest.cancelSettlesTheRunAsKilled:574`
+  ("session stopped"), 238 tests / 1 failure, reproduced in a clean worktree at `a4d7f6f` with no
+  desktop changes. It is the committed scheduler work, it is the owner's area, and a fix that reads the
+  scheduler is an agent-behaviour change. Needs a ruling: adapt the test, or land the behaviour it
+  asserts.
+- **Task rail: is interactive-only the v1 default?** Measured: in a live session only the foreground
+  task is a conversation, so the rail opens with **one row** and every spawned job is hidden until
+  "All tasks". §6's "live parallel tasks" is currently satisfied only in the unfiltered view.
+- **The "Conversation" tab is empty until a task row is clicked.** `MainWindow` sets its
+  `TranscriptPane` filter to `-1` at activation, which matches nothing; the rail's selection callback is
+  what fills it. A first-run user who never clicks the rail sees no answer pane.
+- `MainWindow.openPermissions` / `selectedPermissionRule` are still stubs, so the denial card's §6 jump
+  lands on the tab but cannot highlight the rule yet.
 - **E1** typed tool-call lifecycle from `NaruToolCallStmt` — engine half and desktop half both
   landed above. Nothing outstanding.
-- **D1** flip `BlockStyle.markdown` for `AGENT_RESPONSE`, as its own commit, against the existing
-  `render/MarkdownHtml` + `MarkdownRenderer`.
-- **G1** a robot-driven scroll on a loaded transcript, next to this test.
+- ~~**D1** flip `BlockStyle.markdown` for `AGENT_RESPONSE`~~ — closed: landed in `## §6/§7 re-landed`
+  below, with a renderer pipeline test and a live proof read off the cell.
+- ~~**G1** a robot-driven scroll on a loaded transcript~~ — closed: `smoke/TranscriptSmoke` above;
+  it reports the frame budget honestly, and 16 of 20 pings during scrolling still exceed one 16 ms
+  frame. The wrap fix below is why.
 - ~~Task monitor: interrupt / kill / hold, which the task pane says it does not have yet.~~ — closed:
   landed above with its gate run. Two things it leaves open by design: the monitor keeps **no history**
   (a terminal task's row is gone, measured both ways), and a task's model line can lag one tick because

@@ -963,8 +963,17 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         return historyCursor >= inputHistory.size() ? "" : inputHistory.get(historyCursor);
     }
 
+    /**
+     * The live engine session, or null once {@link #shutdown()} has stopped it.
+     * <p>
+     * The null is the point: shutdown's last act is one more {@code fireChanged()}, and a pane that
+     * answers that paint by reaching into the engine — the inspector shows the project directory, the
+     * workbench lists routines — would otherwise throw {@code IllegalStateException: session is
+     * stopped} on the EDT. Found by the §6 gate run, which shuts the model down without disposing the
+     * views first; every pane already has a "no session" branch, so honouring it is the whole fix.
+     */
     public NaruSession session() {
-        return session;
+        return closed ? null : session;
     }
 
     public boolean isRunning() {

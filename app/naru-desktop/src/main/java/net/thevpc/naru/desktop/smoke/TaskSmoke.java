@@ -252,7 +252,7 @@ public final class TaskSmoke {
         TaskPane pane = taskPane(win[0]);
         livePane = pane;
         if (pane == null) {
-            report(false, "the Tasks tab did not hand out a TaskPane", project, model, log,
+            report(false, "the session rail did not hold a TaskPane", project, model, log,
                     pings.get(), maxPing.get(), stallsOver16.get(), stallsOver250.get());
             System.exit(1);
         }
@@ -280,24 +280,22 @@ public final class TaskSmoke {
         String[] geometry = new String[1];
         boolean[] reachable = new boolean[1];
         SwingUtilities.invokeAndWait(() -> {
-            Component c = win[0].selectedSideComponent();
-            if (c == null) {
-                geometry[0] = "no side component";
-                return;
-            }
-            java.awt.Point onScreen = c.getLocationOnScreen();
+            java.awt.Point onScreen = pane.isShowing() ? pane.getLocationOnScreen()
+                    : new java.awt.Point(-1, -1);
             java.awt.Dimension screen = java.awt.Toolkit.getDefaultToolkit().getScreenSize();
-            reachable[0] = c.isShowing() && c.getWidth() >= 240 && onScreen.x >= 0
-                    && onScreen.x + c.getWidth() <= screen.width;
-            geometry[0] = "tab=" + win[0].selectedSideTab() + " x=" + onScreen.x + " width="
-                    + c.getWidth() + " height=" + c.getHeight() + " screen=" + screen.width;
+            reachable[0] = pane.isShowing() && pane.getWidth() >= 240 && onScreen.x >= 0
+                    && onScreen.x + pane.getWidth() <= screen.width;
+            geometry[0] = "rail x=" + onScreen.x + " width=" + pane.getWidth() + " height="
+                    + pane.getHeight() + " screen=" + screen.width;
         });
         log.add("pane: on-screen=" + reachable[0] + " geometry=" + geometry[0]);
+        int tabProblems = sweepSideTabs(win[0], log);
         File treeShot = capturePane(pane, "naru-task-tree");
         log.add("tree screenshot=" + (treeShot == null ? "none" : treeShot.getAbsolutePath()));
-        if (!treeOk || !spawnTree || !reachable[0]) {
+        if (!treeOk || !spawnTree || !reachable[0] || tabProblems > 0) {
             fail(project, model, log, pings, maxPing, stallsOver16, stallsOver250,
-                    "hop 1 (spawn tree in the real Tasks tab)");
+                    "hop 1 (spawn tree in the real session rail; tabs that are not laid out="
+                            + tabProblems + ")");
             return;
         }
 
@@ -546,7 +544,6 @@ public final class TaskSmoke {
                 + " drawn-KILLED=" + parentKilledRow + " row-left-the-monitor=" + parentKillShown);
 
         dump(session, project.resolve("task-report.txt"));
-        SwingUtilities.invokeAndWait(() -> win[0].selectSideTab("Tasks"));
         File shot = capture(win[0]);
         File paneShot = capturePane(pane, "naru-task-final");
         log.add("screenshot=" + (shot == null ? "none" : shot.getAbsolutePath())
@@ -564,6 +561,7 @@ public final class TaskSmoke {
                 && killParent == null && parentKillShown && edtOk
                 && (!useModel || (bothLive && killed && killShown && killReasonKept && interrupted));
         System.out.println("  claims: spawn-tree=" + treeOk + " pane-on-screen=" + reachable[0]
+                + " side-tabs-laid-out=" + (tabProblems == 0) + "(" + tabProblems + ")"
                 + " hold/resume=" + holdResumeOk + " foreground=" + fgOnRow
                 + " parallel-live=" + bothLive + " (samples=" + samples
                 + " max-live-at-once=" + maxLiveAtOnce + " max-RUNNING-at-once=" + maxRunning + ")");
@@ -583,17 +581,97 @@ public final class TaskSmoke {
     // ── helpers ──────────────────────────────────────────────────────────────
 
     /**
-     * The Tasks tab's pane, reached the way a user reaches it: by selecting the tab and asking the
-     * window what that tab shows. No accessor was added for the harness.
+     * The task monitor inside the real window.
+     * <p>
+     * It is reached through the layout, not an accessor: the owner moved the monitor out of the side
+     * tabs and into the session rail, so {@code selectSideTab("Tasks")} no longer describes what a
+     * user does. The component search is the honest substitute — the same widget, found where the
+     * window actually keeps it.
+     * <p>
+     * The rail's default view is the interactive filter, which by design does not show a spawned job
+     * at all. The tree is then opened with the window's own control, a press on the "All tasks"
+     * toggle, rather than a setter: a run that measured the rail without pressing it would be
+     * reporting on an empty list.
      */
     private static TaskPane taskPane(MainWindow w) throws Exception {
         TaskPane[] out = new TaskPane[1];
+        SwingUtilities.invokeAndWait(() -> out[0] = find(w, TaskPane.class));
+        TaskPane pane = out[0];
+        if (pane == null) {
+            return null;
+        }
         SwingUtilities.invokeAndWait(() -> {
-            if (w.selectSideTab("Tasks") && w.selectedSideComponent() instanceof TaskPane p) {
-                out[0] = p;
+            javax.swing.JToggleButton b = find(pane, javax.swing.JToggleButton.class);
+            if (b != null && !b.isSelected()) {
+                b.doClick();
             }
         });
-        return out[0];
+        return pane;
+    }
+
+    /** The first widget of a class in a component tree, depth first. */
+    private static <T> T find(java.awt.Container c, Class<T> kind) {
+        for (java.awt.Component x : c.getComponents()) {
+            if (kind.isInstance(x)) {
+                return kind.cast(x);
+            }
+            if (x instanceof java.awt.Container inner) {
+                T found = find(inner, kind);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Open every tab the window offers and report what it actually occupies on screen.
+     * <p>
+     * The owner's Inspect and Workspace panes are new since the last gate run, and a tab that is
+     * present but never laid out — zero size, or pushed off a 1400-pixel display — is not a pane a
+     * user can read, so each one is measured and photographed rather than assumed. Each is also
+     * checked against the widget its title promises: the first sweep of this run reported the
+     * Workspace pane for the tab named "Conversation", because the window had two tabbed panes and
+     * only one getter.
+     */
+    private static int sweepSideTabs(MainWindow w, List<String> log) throws Exception {
+        Map<String, String> expected = Map.of("Task tools", "ToolsPane", "Inspect", "InspectorPane",
+                "Workspace", "WorkbenchPane", "Conversation", "TranscriptPane",
+                "Session log", "TranscriptPane");
+        int[] problems = new int[1];
+        for (String title : List.of("Task tools", "Task permissions", "Inspect", "Workspace",
+                "Conversation", "Session log")) {
+            String[] line = new String[1];
+            File[] shot = new File[1];
+            SwingUtilities.invokeAndWait(() -> {
+                if (!w.selectSideTab(title)) {
+                    line[0] = title + "=missing";
+                    problems[0]++;
+                    return;
+                }
+                Component c = w.selectedSideComponent();
+                if (c == null) {
+                    line[0] = title + "=no component";
+                    problems[0]++;
+                    return;
+                }
+                String size = c.getWidth() + "x" + c.getHeight();
+                boolean shown = c.isShowing() && c.getWidth() >= 200 && c.getHeight() >= 120;
+                String want = expected.get(title);
+                boolean right = want == null || want.equals(c.getClass().getSimpleName());
+                line[0] = title + "=" + c.getClass().getSimpleName() + ' ' + size
+                        + (shown && right ? " shown" : " " + (shown ? "WRONG WIDGET" : "NOT SHOWN"));
+                if (!shown || !right) {
+                    problems[0]++;
+                }
+                shot[0] = capturePane(c, "naru-tab-" + title.replaceAll("[^A-Za-z]", "")
+                        .toLowerCase());
+            });
+            log.add("  tab " + line[0] + " png="
+                    + (shot[0] == null ? "none" : shot[0].getAbsolutePath()));
+        }
+        return problems[0];
     }
 
     /**
@@ -1087,7 +1165,6 @@ public final class TaskSmoke {
             MainWindow w = liveWin;
             TaskPane p = livePane;
             if (w != null && p != null) {
-                SwingUtilities.invokeAndWait(() -> w.selectSideTab("Tasks"));
                 System.out.println("  post-mortem task-pane=" + capturePane(p, "naru-task-failure"));
             }
         } catch (Exception e) {

@@ -25,13 +25,20 @@ public record BlockStyle(String label,
     private static final Map<NaruLogMode, BlockStyle> STYLES = new EnumMap<>(NaruLogMode.class);
 
     static {
-        // the two things the user came for.
-        // markdown=false is the documented §4.3 deviation: neither thevpc-common-md nor
-        // nmarkdown can emit HTML (only AsciiDoctor/Docusaurus/plain writers), so enabling the
-        // flag here would render literal <p> tags through the Swing HTML reader. MarkdownHtml
-        // is in place and fliping this boolean is the whole remaining step, which Phase 2 does
-        // behind a comparison rather than as a silent default change.
-        STYLES.put(NaruLogMode.AGENT_RESPONSE, style("Agent", new Color(0x2E7D32), false, false, false, false));
+        // The two things the user came for, and §6's "markdown for agent answers" lands here: the
+        // flag is what {@code MarkdownRenderer} reads, so flipping it is the whole change — the
+        // parser ({@code MarkdownHtml}) and the cache were built and measured in Phase 1, and the
+        // plain-text streaming tail is untouched.
+        //
+        // The library question from §4.3 is still answered the same way: neither
+        // {@code thevpc-common-md} nor {@code nmarkdown} can emit HTML ({@code DefaultMdWriter}
+        // writes markdown back out; the others emit AsciiDoc and Docusaurus) and adding a
+        // third-party parser to a Nuts application is a packaging decision, so the subset that
+        // actually appears in agent answers — fenced code, headings, lists, quotes, hr, inline
+        // code/bold/italic/links — is converted here and everything else passes through escaped.
+        STYLES.put(NaruLogMode.AGENT_RESPONSE, style("Agent", new Color(0x2E7D32), true, false, false, false));
+        // the raw model turn stays verbatim: it is the noisy, verbose-only view of the same text,
+        // and a second rendering of it would be a second place for the parser to disagree with itself
         STYLES.put(NaruLogMode.MODEL_RESPONSE, style("Model", new Color(0x455A64), false, false, true, true));
         // thinking is long, noisy and rarely the point: collapse it, keep the elapsed summary
         STYLES.put(NaruLogMode.MODEL_THINKING, style("Thinking", new Color(0x7B1FA2), false, false, true, false));
