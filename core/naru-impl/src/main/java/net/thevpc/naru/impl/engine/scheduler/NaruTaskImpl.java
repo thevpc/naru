@@ -3247,21 +3247,26 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public void call(String cmdline) {
         NCmdLine cmd = NCmdLine.of(cmdline);
         if (cmd.isEmpty()) {
-            this.throwError(NMsg.ofC("Error statement: routine not found '%s'", ""));
+            this.throwError(NMsg.ofC("Error statement: routine name is required"));
+            return;
         }
         String cc = cmd.next().get().image();
+        Map<String, Object> params = new LinkedHashMap<>();
+        while (!cmd.isEmpty()) {
+            NArg aa = cmd.next().get();
+            if (aa.value() == null || NBlankable.isBlank(aa.key())) {
+                this.throwError(NMsg.ofC("routine inputs must be named as name=value; got '%s'", aa.image()));
+                return;
+            }
+            params.put(aa.key(), aa.stringValue());
+        }
         NaruTaskFrame ff = this.pushFrame(cc, false);
         if (ff == null) {
             return;
         }
-        // at least one stmt!
-        while (!cmd.isEmpty()) {
-            NArg aa = cmd.next().get();
-            if (aa.value() != null) {
-                ff.setParam(aa.key(), aa.stringValue());
-            }
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            ff.setParam(entry.getKey(), entry.getValue());
         }
-//        this.prependStatement(this.parseStatement(this.session().routine(cc, this, false).get().lineCommandAt(ff.pc())).get());
     }
 
     @Override

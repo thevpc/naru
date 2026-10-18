@@ -8,11 +8,15 @@ import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.spawn.NaruSpawnContract;
 import net.thevpc.naru.api.spawn.NaruSpawnInherit;
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.spawn.NaruSpawnResolution;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 import net.thevpc.naru.api.spawn.NaruSpawnTargets;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
+import net.thevpc.nuts.cmdline.NArgCompletePosition;
+import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NRef;
@@ -44,9 +48,13 @@ import java.util.stream.Collectors;
  */
 public class NaruStartDirective extends NaruDirectiveBase {
 
+    private static final List<String> COMPLETION_FLAGS = List.of(
+            "--fork", "--summary", "--window=", "--inherit=", "--add-tags=",
+            "--revoke-tags=", "--exclude-tools=", "--add-skills=", "--policy=", "--explain");
+
     public NaruStartDirective() {
         super("start", "task", "start new task");
-        register(new AbstractSubCommand(new SubCommandHelp("<routine>...", "start one or more routines as a single consecutive new task\n<routine> can be routine name or routine path; an agent .md name is also accepted\n\nflags:\n  --fork | --summary | --window=<n>turns\n  --inherit=tags[,env]\n  --add-tags=<tags> --revoke-tags=<tags>\n  --exclude-tools=<tools> --add-skills=<skills>\n  --policy=<name> (a /spawn-policy defined policy)\n  --explain (resolve and print the policy, spawn nothing)")) {
+        register(new AbstractSubCommand(new SubCommandHelp("<routine>... [name=value...]", "start one or more routines as a single consecutive new task\n<routine> can be routine name or routine path; an agent .md name is also accepted\nNamed inputs (for example, topic=cache) are available as task variables.\n\nflags:\n  --fork | --summary | --window=<n>turns\n  --inherit=tags[,env]\n  --add-tags=<tags> --revoke-tags=<tags>\n  --exclude-tools=<tools> --add-skills=<skills>\n  --policy=<name> (a /spawn-policy defined policy)\n  --explain (resolve and print the policy, spawn nothing)")) {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
@@ -98,6 +106,10 @@ public class NaruStartDirective extends NaruDirectiveBase {
                         .when("--policy").asEntry(a -> spec.policy(a.stringValue()))
                         .when("--explain").asFlag(a -> explain[0] = a.booleanValue())
                         .whenNonOption().asArg(a -> {
+                            if (a.value() != null) {
+                                spec.param(a.key(), a.stringValue());
+                                return;
+                            }
                             String s = a.image();
                             NOptional<NaruSpawnTargets.Resolved> target = NaruSpawnTargets.resolve(task.session(), task, s);
                             if (target.isNotPresent()) {
@@ -139,6 +151,25 @@ public class NaruStartDirective extends NaruDirectiveBase {
                 return NaruStmtResult.ofSuccess(tt.id());
             }
         });
+    }
+
+    @Override
+    public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+        String[] words = cmdLine.toStringArray();
+        int wordIndex = pos.wordIndex();
+        String prefix = wordIndex < words.length ? words[wordIndex] : "";
+        List<NArgCompleteCandidate> candidates = new ArrayList<>();
+        if (prefix.startsWith("-")) {
+            for (String flag : COMPLETION_FLAGS) {
+                if (flag.startsWith(prefix)) candidates.add(NArgCompleteCandidate.of(flag));
+            }
+        } else {
+            for (net.thevpc.naru.api.agent.NaruResourceInfo routine : session.routines()) {
+                String name = routine.getName();
+                if (name != null && name.startsWith(prefix)) candidates.add(NArgCompleteCandidate.of(name));
+            }
+        }
+        return NArgCompleteResult.ofCandidates(candidates);
     }
 
     private static void recordContract(NaruSpawnContract[] holder, boolean[] warned, NaruTask task, NaruSpawnContract c) {

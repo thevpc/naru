@@ -61,6 +61,15 @@ public class NaruNArgCompleteResolver implements NArgCompleteResolver {
                 NArgCompleteResult a = directive.resolveCandidates(cmdLine, pos, session);
                 candidates.addAll(a.candidates());
                 flags.addAll(a.flags());
+            } else if ("call".equals(commandName) && wordIndex == 1) {
+                // /call is a statement keyword rather than a registered directive.
+                // Complete its first argument from the routines available in this session.
+                String prefix = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
+                session.routines().stream()
+                        .map(r -> r.getName())
+                        .filter(name -> name != null && name.startsWith(prefix))
+                        .sorted()
+                        .forEach(name -> candidates.add(NArgCompleteCandidate.of(name)));
             }
         }
 

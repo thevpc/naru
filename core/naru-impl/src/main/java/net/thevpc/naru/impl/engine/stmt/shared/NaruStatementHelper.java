@@ -13,7 +13,7 @@ import net.thevpc.nuts.util.NOptional;
 import java.util.Set;
 
 public class NaruStatementHelper {
-    public static final Set<String> STATEMENT_KEYWORDS = Set.of("for", "while", "if", "else", "elseif", "end", "goto", "return");
+    public static final Set<String> STATEMENT_KEYWORDS = Set.of("for", "while", "if", "else", "elseif", "end", "goto", "return", "call");
     public static NOptional<NaruStatement> of(String cmd,String args) {
         if(cmd.startsWith(":") || cmd.endsWith(":")) {
             return NOptional.of(new NaruLabelStmt(cmd.replace(":"," ").trim()));

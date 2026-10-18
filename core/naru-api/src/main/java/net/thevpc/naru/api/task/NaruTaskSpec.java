@@ -26,6 +26,7 @@ public class NaruTaskSpec {
     private NaruPromptMode promptMode;
     private final Set<String> toolTags = new LinkedHashSet<>();
     private final Map<String, Object> vars = new LinkedHashMap<>();
+    private final Map<String, Object> params = new LinkedHashMap<>();
     // ── spawn inputs (WP3: strategy, seeds with provenance, named policy, contract) ──
     private NaruSpawnStrategy strategy;
     private int windowTurns;
@@ -198,6 +199,33 @@ public class NaruTaskSpec {
      */
     public Map<String, Object> vars() {
         return Collections.unmodifiableMap(vars);
+    }
+
+    /**
+     * Replace named input parameters for this task. Parameters are seeded into the task
+     * environment before any statement or prompt runs, and override same-named entries
+     * supplied through {@link #vars(Map)}. Positional parameters are intentionally not
+     * supported so callers can add or reorder inputs without breaking existing calls.
+     */
+    public NaruTaskSpec params(Map<String, Object> params) {
+        this.params.clear();
+        if (params != null) {
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                if (entry.getKey() != null) this.params.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return this;
+    }
+
+    /** Add or replace one named task input parameter. */
+    public NaruTaskSpec param(String name, Object value) {
+        if (name != null) params.put(name, value);
+        return this;
+    }
+
+    /** Named input parameters, unmodifiable. */
+    public Map<String, Object> params() {
+        return Collections.unmodifiableMap(params);
     }
 
     public NaruTaskSpec resolveName() {

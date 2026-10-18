@@ -442,6 +442,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         for (Map.Entry<String, Object> entry : taskBuilder.vars().entrySet()) {
             natuTask.setTaskEnv(entry.getKey(), entry.getValue());
         }
+        for (Map.Entry<String, Object> entry : taskBuilder.params().entrySet()) {
+            natuTask.setTaskEnv(entry.getKey(), entry.getValue());
+        }
         // the resolved spawn seeds, snapshotted here: a child keeps what it was granted at
         // spawn time, so later parent changes never reach it
         for (NaruSpawnSeed<String> tag : plan.resolution.tags()) {
