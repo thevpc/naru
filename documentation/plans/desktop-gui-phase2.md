@@ -317,7 +317,41 @@ fixed prompt")**. That commit removed the best-fit tools-capable fallback from `
 ("resolve only a model the user or caller explicitly selected"), and those tests register a
 `FakeProvider` without a `/model use`, so they now fail with `No model is selected` or
 `NaruTask.model() == null`. One further red, `NaruTaskCompletionTest.cancelSettlesTheRunAsKilled`,
-appears only with the uncommitted scheduler edits. See *Decisions needed* below.
+appears only with the uncommitted scheduler edits. Resolved below: the owner ruled the fallback gone,
+the nine tests were adapted, and the module is green again.
+
+## Explicit-model-only: the engine tests choose a model, they do not wait for one
+
+Answer to that decision, from the owner: *"yes user must define a model to use either at session
+creation time or when calling '/model use...'"*. The best-fit fallback stays deleted, so the tests
+moved to the new rule rather than the other way round — `0319e8c`, five files under
+`core/naru-impl/src/test`, **no main source touched**, which is what keeps §7 (never change agent
+behaviour, never break the terminal REPL) true by construction for this commit.
+
+Three harnesses (`NaruToolCallLifecycleTest`, `NaruRequestTailValidationTest`,
+`NaruGoDirectiveTest`) now call `task.setModel(new NaruModelConfig("fake","fake-model"))` before
+letting a scripted protocol or a tail rule be reached — the same door `/model use` opens.
+`NaruLazyModelResolutionTest.theBestFitPicksTheOnlyToolsCapableModel` became
+`nothingIsGuessedWhenTheUserHasNotChosenAModel` and asserts `assertNull(task.model())`: one
+tools-capable model in the registry is not the user's choice.
+`NaruSessionInteractionTest` had to change shape: with nothing selected, resolution reports nothing
+at all, so asking a task for its model can no longer produce a warning. The test now runs a turn and
+asserts the "No model is selected" complaint reaches the session's own interaction instead of the
+process console — the channel it was always written to prove.
+
+Measured in a clean worktree at `3af2095` with **only** these five files changed: the five classes
+are **35/35**, and the whole module run (`mvn -o -pl core/naru-api,core/naru-impl test`) is
+**238 tests, 0 failures, 0 errors** — `core/naru-impl` is green at HEAD for the first time since
+`3720c87`. In the shared working tree the same suite reports **238 / 1**, the single red being
+`NaruTaskCompletionTest.cancelSettlesTheRunAsKilled:574` ("session stopped"), which is **34/34 green**
+in that same clean worktree; it belongs to the uncommitted scheduler edits in `NaruTaskImpl` /
+`NaruPoisonTask`, and guessing at that behaviour was deliberately not done here.
+
+Consequence for the desktop, worth a decision: no product code selects a model — only the smoke
+harnesses, by typing `/model use <key>` into the input field like a user would. A project opened with
+no chosen model therefore reads the engine's honest "No model is selected. Choose one yourself with
+/model list and /model use <key>…" turn, which is correct but is the first thing a new user hits. The
+model picker is planned for Phase 4.
 
 ## Open in Phase 2
 
@@ -332,6 +366,9 @@ appears only with the uncommitted scheduler edits. See *Decisions needed* below.
   horizontal bar is the symptom of cells that do not wrap — the same work as D1's renderer pass.
 - Permissions rule rows are cut at the pane's 380-pixel floor; a two-line row (id + patterns) would
   read better than a horizontal scroll.
-- `core/naru-impl` is red at HEAD (16 failures + 3 errors of 238) since `3720c87` dropped the
-  best-fit model fallback. Blocked on the owner's answer: adapt those tests to explicit-model-only,
-  or restore the fallback.
+- ~~`core/naru-impl` is red at HEAD~~ — closed: the owner ruled explicit-model-only permanent, the
+  nine tests were adapted (`0319e8c`), and the module runs **238 / 0 failures / 0 errors** in a clean
+  worktree at `3af2095`. See the section above.
+- **Model picker: pull from Phase 4 into Phase 2?** With the fallback gone, a fresh desktop project
+  with no selected model opens on the engine's "No model is selected" turn. The path exists today
+  (type `/model use <key>`), but there is no button.
