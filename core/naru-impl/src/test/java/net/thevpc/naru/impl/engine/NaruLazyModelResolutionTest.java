@@ -108,10 +108,13 @@ public class NaruLazyModelResolutionTest {
     }
 
     @Test
-    public void theBestFitPicksTheOnlyToolsCapableModel() {
+    public void nothingIsGuessedWhenTheUserHasNotChosenAModel() {
         NaruTask task = taskFor(tempProject());
-        Assertions.assertEquals(MODEL, task.model().model(),
-                "with no hint and no project env, the first tools-capable model is the best fit");
+        // 3720c87 removed the best-fit fallback deliberately: a model is defined by the user, at
+        // session creation or with /model use. One tools-capable model in the registry is not the
+        // user's choice, so the honest answer here is null and the turn says so out loud.
+        Assertions.assertNull(task.model(),
+                "a registered tools-capable model must never be picked by itself");
     }
 
     // ── harness (provider registration optional) ─────────────────────────────

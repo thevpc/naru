@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -178,19 +179,27 @@ public class NaruSessionInteractionTest {
     }
 
     /**
-     * The warning a session emits while resolving its model used to be written straight to
-     * the process stdout, where with several sessions running nobody could tell which one
-     * was complaining.
+     * The warning a session emits when it cannot run used to be written straight to the process
+     * stdout, where with several sessions running nobody could tell which one was complaining.
      */
     @Test
     public void modelResolutionProblemsAreReportedThroughTheInteraction() {
         CapturingInteraction interaction = new CapturingInteraction();
         NaruSessionImpl session = newSession(interaction, "warn");
-        // Model resolution is lazy now, so the warning fires when a task first asks for
-        // its model rather than during session construction; nothing is registered in
-        // this session, so that first ask is the "no usable model" case.
-        session.newTask(NaruTaskSpec.of()).model();
-        Assertions.assertFalse(interaction.output.isEmpty(),
-                "a session that cannot find a usable model must say so on its own channel");
+        // Resolution is lazy, and since 3720c87 it is explicit: nothing is guessed, so asking a task
+        // for its model reports nothing at all — the honest answer is "none selected yet". The
+        // complaint belongs to the turn that cannot run, and that is where it has to reach the
+        // interaction rather than the process console.
+        NaruTask task = session.newTask(NaruTaskSpec.of().statements("hello"));
+        Assertions.assertNull(task.model(), "no model has been chosen, so nothing resolves");
+        session.start();
+        task.unhold();
+        Assertions.assertTrue(task.await(Duration.ofSeconds(30)),
+                "the turn did not settle without a model");
+        Assertions.assertTrue(
+                interaction.output.stream().anyMatch(m -> String.valueOf(m)
+                        .contains("No model is selected")),
+                "a session that cannot find a usable model must say so on its own channel: "
+                        + interaction.output);
     }
 }

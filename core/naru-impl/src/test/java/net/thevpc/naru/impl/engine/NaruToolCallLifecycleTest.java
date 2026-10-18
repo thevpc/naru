@@ -145,8 +145,18 @@ public class NaruToolCallLifecycleTest {
         return s;
     }
 
+    /**
+     * The model is chosen, never guessed: since 3720c87 the engine resolves only a model the user
+     * selected — at session creation or with {@code /model use} — so a test whose script is meant to
+     * be reached has to select one, exactly as a user does.
+     */
+    private static void pickModel(NaruTask task) {
+        task.setModel(new NaruModelConfig("fake", "fake-model"));
+    }
+
     private static NaruTask run(NaruSession s, String prompt) {
         NaruTask task = s.newTask(NaruTaskSpec.of().statements(prompt));
+        pickModel(task);
         s.start();
         task.unhold();
         assertTrue(task.await(PATIENCE), "the turn did not finish within " + PATIENCE);
@@ -385,6 +395,7 @@ public class NaruToolCallLifecycleTest {
         ((NaruRegistryImpl) s.registry()).registerToolset(new OneToolToolset("e1-echo", new EchoTool("echo_tool", "OK", 0)));
 
         NaruTask task = s.newTask(NaruTaskSpec.of().statements("echo"));
+        pickModel(task);
         s.start();
         task.unhold();
         assertTrue(task.await(PATIENCE), "the turn did not finish");

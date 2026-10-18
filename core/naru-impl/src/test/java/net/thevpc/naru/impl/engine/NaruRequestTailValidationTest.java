@@ -69,7 +69,12 @@ public class NaruRequestTailValidationTest {
     }
 
     private NaruTask task() {
-        return session.newTask(NaruTaskSpec.of());
+        NaruTask task = session.newTask(NaruTaskSpec.of());
+        // Since 3720c87 the engine resolves only a model the user picked: no best-fit guess, no
+        // tools-capable fallback. A test that wants the protocol reached therefore has to pick one,
+        // exactly the way /model use does.
+        task.setModel(new NaruModelConfig("fake", "fake-model"));
+        return task;
     }
 
     private static NaruModelRequest request(NaruMessage... messages) {
@@ -192,6 +197,7 @@ public class NaruRequestTailValidationTest {
                 .build();
         strictSession.registry().registerModelProvider(new FakeProvider(strict));
         NaruTask task = strictSession.newTask(NaruTaskSpec.of());
+        task.setModel(new NaruModelConfig("fake", "fake-model"));
 
         NaruInvalidHistoryException e = Assertions.assertThrows(NaruInvalidHistoryException.class,
                 () -> task.chat(task.model(), request(

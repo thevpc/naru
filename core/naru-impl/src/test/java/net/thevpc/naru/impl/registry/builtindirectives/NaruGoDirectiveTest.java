@@ -83,6 +83,10 @@ public class NaruGoDirectiveTest {
      */
     private NaruTask task(NaruMessage... history) {
         NaruTask task = session.newTask(NaruTaskSpec.of());
+        // the engine no longer guesses a model (3720c87): with none selected the directive has no
+        // protocol to ask, and the tail rules it is meant to enforce never run. Pick one, as /model
+        // use does.
+        task.setModel(new NaruModelConfig("fake", "fake-model"));
         task.setHistory(List.of(history));
         return task;
     }
