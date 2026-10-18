@@ -11,12 +11,23 @@ import java.nio.file.Path;
 
 /** Shared JDBC backend. H2 is embedded by default; any JDBC-compliant URL, including PostgreSQL, is supported. */
 public final class NaruJdbcDataStoreProvider implements NaruDataStoreProvider {
+    private final DataSource suppliedDataSource;
+
+    public NaruJdbcDataStoreProvider() {
+        this(null);
+    }
+
+    /** Creates a provider bound to an application-managed DataSource. */
+    public NaruJdbcDataStoreProvider(DataSource suppliedDataSource) {
+        this.suppliedDataSource = suppliedDataSource;
+    }
+
     @Override public String name() { return "jdbc"; }
 
     @Override
     public NOptional<NaruDataStore> open(NaruDataStoreConfig config) {
         if (config == null) return NOptional.ofEmpty();
-        DataSource ds = config.dataSource();
+        DataSource ds = suppliedDataSource;
         if (ds == null) {
             String url = config.property("naru.jdbc.url");
             if (url == null || url.isBlank()) {

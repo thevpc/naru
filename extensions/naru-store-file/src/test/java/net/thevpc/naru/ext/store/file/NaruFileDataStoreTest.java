@@ -19,7 +19,7 @@ class NaruFileDataStoreTest {
         NPath location = NPath.of(System.getProperty("java.io.tmpdir") + "/naru-data-store-file-" + System.nanoTime());
         NaruFileDataStoreProvider provider = new NaruFileDataStoreProvider();
         NaruDataStore store = provider.open(new NaruDataStoreConfig("test", location, location,
-                location.resolve("store"), null, Map.of())).get();
+                location.resolve("store"), Map.of())).get();
         store.transaction(s -> {
             s.put("a", NElement.ofString("one"));
             s.put("b", NElement.ofString("two"));
@@ -33,7 +33,7 @@ class NaruFileDataStoreTest {
         assertEquals(java.util.List.of("a", "b"), store.keys(""));
 
         NaruDataStore reopened = provider.open(new NaruDataStoreConfig("test", location, location,
-                location.resolve("store"), null, Map.of())).get();
+                location.resolve("store"), Map.of())).get();
         assertEquals("two", reopened.get("b").get().asStringValue().get());
     }
 }

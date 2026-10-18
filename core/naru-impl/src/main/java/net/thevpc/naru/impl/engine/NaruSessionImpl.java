@@ -1923,7 +1923,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             if (value != null) jdbcProperties.put(key, value);
         }
         return new NaruStoreConfig(projectDir.normalize(),
-                projectDir.normalize().resolve(".naru"), defaultScope, null, jdbcProperties);
+                projectDir.normalize().resolve(".naru"), defaultScope, jdbcProperties);
     }
 
     /**

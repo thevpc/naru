@@ -2,7 +2,6 @@ package net.thevpc.naru.api.store;
 
 import net.thevpc.nuts.io.NPath;
 
-import javax.sql.DataSource;
 import java.util.Map;
 
 /**
@@ -17,7 +16,6 @@ public class NaruStoreConfig {
     private final NPath projectDir;
     private final NPath storeDir;
     private final NaruSessionScope defaultScope;
-    private final DataSource dataSource;
     private final Map<String, String> properties;
 
     /**
@@ -29,15 +27,14 @@ public class NaruStoreConfig {
      * @param defaultScope  where a session lands when nothing says otherwise
      */
     public NaruStoreConfig(NPath projectDir, NPath storeDir, NaruSessionScope defaultScope) {
-        this(projectDir, storeDir, defaultScope, null, Map.of());
+        this(projectDir, storeDir, defaultScope, Map.of());
     }
 
     public NaruStoreConfig(NPath projectDir, NPath storeDir, NaruSessionScope defaultScope,
-                           DataSource dataSource, Map<String, String> properties) {
+                           Map<String, String> properties) {
         this.projectDir = projectDir;
         this.storeDir = storeDir;
         this.defaultScope = defaultScope == null ? NaruSessionScope.PRIVATE : defaultScope;
-        this.dataSource = dataSource;
         this.properties = Map.copyOf(properties == null ? Map.of() : properties);
     }
 
@@ -56,8 +53,6 @@ public class NaruStoreConfig {
     public NaruSessionScope defaultScope() {
         return defaultScope;
     }
-
-    public DataSource dataSource() { return dataSource; }
 
     public Map<String, String> properties() { return properties; }
 

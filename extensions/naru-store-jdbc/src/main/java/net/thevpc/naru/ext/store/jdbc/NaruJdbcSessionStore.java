@@ -84,7 +84,7 @@ final class NaruJdbcSessionStore implements NaruSessionStore {
         if (!createIfAbsent(data, scope)) throw new IllegalStateException("session already exists: " + data.uuid());
     }
     @Override public boolean createIfAbsent(NaruSessionData data, NaruSessionScope scope) {
-        return records.transaction(s -> { if (get(meta(scope, data.uuid())).isPresent()) return false; put(meta(scope, data.uuid()), data.toElement()); return true; });
+        return records.transaction(s -> { if (actualScope(data.uuid()) != null) return false; put(meta(scope, data.uuid()), data.toElement()); return true; });
     }
     @Override public NOptional<NaruSessionData> loadData(String uuid, NaruSessionScope scope) { return get(meta(scope, uuid)).map(NaruSessionData::of); }
     @Override public void saveData(NaruSessionData data, NaruSessionScope scope) { require(data.uuid(), scope); records.transaction(s -> { put(meta(scope, data.uuid()), data.toElement()); return null; }); }
@@ -123,7 +123,7 @@ final class NaruJdbcSessionStore implements NaruSessionStore {
         return List.copyOf(out);
     }
     @Override public void deleteTask(String uuid, NaruSessionScope scope, long taskId) {
-        records.transaction(s -> { String p = taskKey(scope, uuid, taskId); for (String k : records.keys(p)) delete(k); return null; });
+        records.transaction(s -> { String p = taskKey(scope, uuid, taskId); delete(p); for (String k : records.keys(p + "/")) delete(k); return null; });
     }
     @Override public NaruHistorySave saveHistory(String uuid, NaruSessionScope scope, long taskId, List<NaruMessage> messages) {
         require(uuid, scope); return records.transaction(s -> {
@@ -213,8 +213,10 @@ final class NaruJdbcSessionStore implements NaruSessionStore {
         }
         @Override public NaruVersionRef label(String q, String label) {
             NaruVersionRef target = find(q).orElseThrow(() -> new IllegalArgumentException("no such version: " + q)); if (label == null || label.isBlank()) throw new IllegalArgumentException("label is required");
-            for (NaruVersionRef v : list()) if (v.seq() != target.seq() && label.equals(v.label())) throw new IllegalArgumentException("version label already exists: " + label);
-            String k = p + "ref/" + target.seq(); NObjectElement old = get(k).get().asObject().get(); NObjectElementBuilder b = NObjectElementBuilder.of(); for (NElement c : old.children()) if (c.isNamedPair() && !"label".equals(c.asPair().get().key().asStringValue().orNull())) b.add(c.asPair().get()); b.set("label", label); put(k, b.build()); return target.withLabel(label);
+            return records.transaction(s -> {
+                for (NaruVersionRef v : list()) if (v.seq() != target.seq() && label.equals(v.label())) throw new IllegalArgumentException("version label already exists: " + label);
+                String k = p + "ref/" + target.seq(); NObjectElement old = get(k).get().asObject().get(); NObjectElementBuilder b = NObjectElementBuilder.of(); for (NElement c : old.children()) if (c.isNamedPair() && !"label".equals(c.asPair().get().key().asStringValue().orNull())) b.add(c.asPair().get()); b.set("label", label); put(k, b.build()); return target.withLabel(label);
+            });
         }
         @Override public boolean restore(String q, NaruRestoreResult.Sink sink) { NaruVersionRef r = find(q).orNull(); if (r == null) return false; sink.accept(stateOf(get(p + "object/" + r.hash()).get())); return true; }
         @Override public NaruRestoreResult.Diff diff(String from, String to) {
@@ -225,7 +227,7 @@ final class NaruJdbcSessionStore implements NaruSessionStore {
         }
         @Override public NaruGcResult gc(NaruVersionPolicy policy) {
             List<NaruVersionRef> all = list(); long head = headSeq(); Instant now = Instant.now(); int removed = 0; for (NaruVersionRef v : all) if (!v.isHead() && !policy.protects(v, head, now)) { delete(p + "ref/" + v.seq()); removed++; }
-            Set<String> used = new HashSet<>(); for (NaruVersionRef v : list()) used.add(v.hash()); long bytes = 0; for (String k : records.keys(p + "object/")) { if (!used.contains(k.substring((p + "object/").length()))) { bytes += format(get(k).get()).length(); delete(k); } }
+            Set<String> used = new HashSet<>(); for (NaruVersionRef v : list()) used.add(v.hash()); long bytes = 0; for (String k : records.keys(p + "object/")) { if (!used.contains(k.substring((p + "object/").length()))) { bytes += format(get(k).get()).getBytes(StandardCharsets.UTF_8).length; delete(k); } }
             return new NaruSessionVersionStore.NaruGcResult(removed, list().size(), bytes);
         }
     }

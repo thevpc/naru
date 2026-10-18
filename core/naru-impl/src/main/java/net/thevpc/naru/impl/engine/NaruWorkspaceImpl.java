@@ -28,7 +28,6 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.*;
 import java.util.function.Predicate;
-import javax.sql.DataSource;
 
 /**
  * The core agent loop.
@@ -169,19 +168,14 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
 
     @Override
     public NaruDataStore dataStore(String namespace) {
-        return dataStore(namespace, projectDirectory, null);
+        return dataStore(namespace, projectDirectory);
     }
 
     @Override
     public NaruDataStore dataStore(String namespace, NPath scopeDir) {
-        return dataStore(namespace, scopeDir, null);
-    }
-
-    @Override
-    public NaruDataStore dataStore(String namespace, NPath scopeDir, DataSource dataSource) {
         if (namespace == null || namespace.isBlank()) throw new IllegalArgumentException("namespace is required");
         NPath scope = (scopeDir == null ? projectDirectory : scopeDir).normalize();
-        String cacheKey = namespace + "|" + scope + "|" + System.identityHashCode(dataSource);
+        String cacheKey = namespace + "|" + scope;
         return dataStores.computeIfAbsent(cacheKey, k -> {
             String providerName = System.getProperty("naru.store." + namespace + ".provider", "file").trim();
             NPath location = scope.resolve(".naru/stores/" + namespace);
@@ -191,7 +185,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                 if (v != null) props.put(p, v);
             }
             NaruDataStoreConfig config = new NaruDataStoreConfig(namespace, projectDirectory, scope,
-                    location, dataSource, props);
+                    location, props);
             List<NaruDataStoreProvider> providers = NServiceLoader.of(NaruDataStoreProvider.class, null,
                     classLoader().asClassLoader()).loadAll(null);
             for (NaruDataStoreProvider provider : providers) {

@@ -15,7 +15,6 @@ import net.thevpc.nuts.util.NOptional;
 
 import java.util.List;
 import java.util.function.Predicate;
-import javax.sql.DataSource;
 
 public interface NaruWorkspace {
     NVersion apiVersion();
@@ -132,6 +131,4 @@ public interface NaruWorkspace {
     /** Opens a shared feature store scoped to the given project or user directory. */
     NaruDataStore dataStore(String namespace, NPath scopeDir);
 
-    /** Opens a shared store with an application-supplied JDBC DataSource when selected. */
-    NaruDataStore dataStore(String namespace, NPath scopeDir, DataSource dataSource);
 }
