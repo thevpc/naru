@@ -25,7 +25,7 @@ so far, not a limit on what the runtime can host.
   can update routines while work is active.
 - **LLM provider and protocol extensions** — Local and cloud providers include Ollama,
   llama.cpp, OpenAI-compatible services, and provider integrations for OpenAI, Anthropic,
-  Gemini, Groq, OpenRouter, Mistral, DeepSeek, Kimi, Qwen, and others. Models can be
+  Gemini, Groq, NVIDIA NIM, OpenRouter, Mistral, DeepSeek, Kimi, Qwen, and others. Models can be
   selected per task and streamed output is supported.
 - **Tool extensions** — The repository includes filesystem, shell, web, Git, Java
   development, MCP, skills, planning, task, session, routine, budget, indexing, and
