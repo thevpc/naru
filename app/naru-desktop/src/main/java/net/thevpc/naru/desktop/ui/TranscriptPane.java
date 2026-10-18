@@ -149,6 +149,10 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
                 Rectangle r = list.getCellBounds(last, last);
                 list.repaint(r == null ? list.getBounds() : r);
             }
+            // a long stream grows one block without ever changing the row set, so the counter
+            // has to be refreshed here too; it read 171 842 chars while the model held 338 482
+            // at the end of the Phase 1 gate run for exactly this reason
+            updateCounter();
         }
         // the tail just moved; ask for its HTML if it closed
         requestVisibleRows();
@@ -169,13 +173,19 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         for (int i = common; i < visible.size(); i++) {
             rows.addElement(visible.get(i));
         }
-        counter.setText(visible.size() + " block" + (visible.size() == 1 ? "" : "s")
-                + (model.trimmedBlocks() > 0 ? " · " + model.trimmedBlocks() + " trimmed" : "")
-                + " · " + model.retainedChars() + " chars");
+        updateCounter();
         list.revalidate();
         if (stick && !rows.isEmpty()) {
             list.ensureIndexIsVisible(rows.size() - 1);
         }
+    }
+
+    /** The header line: how much of the transcript is there, and how much of it was dropped. */
+    private void updateCounter() {
+        int n = model.visibleSize();
+        counter.setText(n + " block" + (n == 1 ? "" : "s")
+                + (model.trimmedBlocks() > 0 ? " · " + model.trimmedBlocks() + " trimmed" : "")
+                + " · " + model.retainedChars() + " chars");
     }
 
     private boolean isNearBottom() {
