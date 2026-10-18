@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.desktop.util.MsgText;
 import net.thevpc.nuts.text.NMsg;
 
 import javax.swing.Timer;
@@ -116,7 +117,7 @@ public class InteractionHost implements NaruInteraction {
     @Override
     public void write(NaruLogMode mode, NMsg message) {
         long t0 = System.nanoTime();
-        String text = message == null ? "" : message.toString();
+        String text = MsgText.plain(message == null ? "" : message.toString());
         synchronized (publishLock) {
             // a whole message closes any half-drawn streamed block first
             String closing = blocks.close();
@@ -130,7 +131,7 @@ public class InteractionHost implements NaruInteraction {
     @Override
     public void writeStream(NaruLogMode mode, NMsg fragment, boolean end) {
         long t0 = System.nanoTime();
-        String text = fragment == null ? "" : fragment.toString();
+        String text = MsgText.plain(fragment == null ? "" : fragment.toString());
         synchronized (publishLock) {
             String id = blocks.openForStream(mode);
             publish(new TranscriptEvent.Chunk(id, mode, text, end));
@@ -262,7 +263,11 @@ public class InteractionHost implements NaruInteraction {
                 continue;
             }
             if (e instanceof TranscriptEvent.Chunk c) {
-                // start a new merge run; a final fragment needs no run at all
+                // a run never spans two blocks, and text never overtakes a later event
+                flushMerge(batch, mergeId, mergeMode, mergeText);
+                mergeId = null;
+                mergeText = null;
+                mergeMode = null;
                 if (c.finalFragment()) {
                     batch.add(c);
                 } else {
@@ -272,11 +277,13 @@ public class InteractionHost implements NaruInteraction {
                 }
                 continue;
             }
+            flushMerge(batch, mergeId, mergeMode, mergeText);
+            mergeId = null;
+            mergeText = null;
+            mergeMode = null;
             batch.add(e);
         }
-        if (mergeText != null && mergeText.length() > 0) {
-            batch.add(new TranscriptEvent.Chunk(mergeId, mergeMode, mergeText.toString(), false));
-        }
+        flushMerge(batch, mergeId, mergeMode, mergeText);
         TranscriptEvent in;
         while ((in = inputEvents.poll()) != null) {
             batch.add(in);
@@ -293,6 +300,14 @@ public class InteractionHost implements NaruInteraction {
             }
         }
         return batch.size();
+    }
+
+    /** Publish a half-merged run as a non-final chunk so a later event cannot overtake it. */
+    private static void flushMerge(List<TranscriptEvent> batch, String mergeId, NaruLogMode mergeMode,
+                                   StringBuilder mergeText) {
+        if (mergeText != null && mergeText.length() > 0) {
+            batch.add(new TranscriptEvent.Chunk(mergeId, mergeMode, mergeText.toString(), false));
+        }
     }
 
     /** Drain everything, synchronously. For tests and for shutdown. */
