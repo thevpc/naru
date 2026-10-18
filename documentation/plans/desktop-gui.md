@@ -37,8 +37,11 @@ House patterns to copy: ndb (reflective dispatch via `NSearch`), kifkif (`-c/--c
 
 ## 3. Resolve these before Phase 1 (defaults given; override if the owner disagrees)
 
-1. **Project per window.** Default: one project per window, one workspace per window. Many projects means many windows in one JVM. Check this against `setSharedWorkspaceInstance()` in Phase 0.
-   **Phase 0 finding, still needs your decision:** `NScopedWorkspace.setSharedWorkspaceInstance(...)` is process-global (`AbstractNWorkspace` installs itself on creation; pangaea-note/nops/ntexup call it once before the first frame), so several windows in one JVM share one workspace and "one project per window" only holds if every widget resolves through its own session rather than the shared instance. Option (a) one window per JVM (safe, slow switching) or (b) one window with a project switcher (recommended for v1, sidesteps the global). See `desktop-gui-phase0.md`.
+1. **Project per window.** **DECIDED (owner): v1 is one window with a project switcher**, so
+   `setSharedWorkspaceInstance()` stays single-valued per process and no widget may resolve
+   through the shared instance — every action takes an explicit `NaruSession`/`NaruWorkspace`.
+   Phase 5 (packaging/lifecycle) owns adding true multi-window, and the only forward-compatible
+   requirement now is that widgets never read global workspace state.
 2. **Session restore.** Default: rebind-in-place if `NaruSessionStore` supports it; otherwise create-new with history copied. Report which the store allows.
 3. **Permission prompt.** **RESOLVED (owner, after §0).** Approval prompts are **out of v1**.
    §0 check 7 found there is no ask-the-user path in the engine at all: `NaruAccessEffect` has
