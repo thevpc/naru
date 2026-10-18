@@ -1722,6 +1722,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
     }
 
+    @Override
     public List<NaruPendingInput> pendingInputs() {
         List<NaruPendingInput> out = new ArrayList<>();
         for (NaruInputRequest request : pendingInputRequests.values()) {
@@ -1732,6 +1733,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return out;
     }
 
+    @Override
     public boolean deliverPendingInput(String requestId, String text) {
         return deliverPendingInput(requestId, text, null);
     }
@@ -1755,6 +1757,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return false;
     }
 
+    @Override
     public boolean deliverPendingInput(String requestId, String text, String idempotencyKey) {
         NaruInputRequest request = pendingInputRequests.get(requestId);
         if (request == null) return false;
@@ -1762,6 +1765,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return true;
     }
 
+    @Override
     public boolean isHibernateEligible() {
         if (tasks.isEmpty()) return false;
         for (NaruTask task : tasks.values()) {
@@ -1777,6 +1781,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return true;
     }
 
+    @Override
     public boolean hasLiveTasks() {
         return !tasks.isEmpty();
     }
@@ -1796,9 +1801,47 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         interaction.close();
     }
 
+    /**
+     * A line arrived with no foreground task to take it.
+     *
+     * <p>The terminal never comes here: its readline thread parks a task on input before a human
+     * can type, so there is always a foreground. A headless host has no reader thread, which means
+     * "no foreground" is the ordinary state at the start of a session rather than an error — and
+     * until now the line was dropped on the floor, silently, which is the one thing §1 lists as a
+     * reason the REPL needs a better front end at all.
+     *
+     * <p>So the line is treated as the line a readline would have returned: the same parser, the
+     * same task mode, the same task. A {@code /directive} runs as a directive, prose becomes a model
+     * call, and because the task is INTERACTIVE it parks on its own readline when the turn ends —
+     * which is what gives the <em>next</em> line a foreground to land on. Making that task the
+     * foreground is deliberate: {@link #run(NaruTaskSpec)} refuses to hijack it because a spawned
+     * run has a host already talking to something, and here nothing is.
+     *
+     * <p>A line that does not parse leaves the task behind and running, not killed. The engine has
+     * already logged why, an interactive task with nothing to do parks on input rather than
+     * terminating, and terminating it would be the worse bug: a task reaching a terminal state is
+     * deregistered, and the last task leaving the session stops it. Dropping a typo would take the
+     * session down with it.
+     */
     private void handleSessionCommand(String line) {
         ensureNotStopped();
-        //
+        if (line == null || line.isBlank()) {
+            return;
+        }
+        NaruTask task = newTask(NaruTaskSpec.of().name("session"));
+        try {
+            task.taskMode(NaruTaskMode.INTERACTIVE);
+            // parseStatement logs its own failure — an unknown directive says so and returns empty
+            // — so there is no second error message to write here.
+            NaruStatement statement = task.parseStatement(line).orNull();
+            if (statement != null) {
+                task.addStatement(statement);
+            }
+        } finally {
+            // released even when the parser throws, so the task parks on readline instead of
+            // sitting held forever, which would make the session unhibernable
+            task.fg().unhold();
+        }
     }
 
     @Override
@@ -2224,6 +2267,117 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     NaruSessionStore rawSessionStore() {
         return store;
     }
+
+    /**
+     * This session's versions, with the scope resolved on every call rather than captured once.
+     *
+     * <p>A session moves — {@code setVisibility(PUBLIC)} writes it into the other scope — and a
+     * handle built at open time would keep reading the folder it left behind, quietly, returning a
+     * version list for a session that is no longer there. Resolving per call costs one directory
+     * lookup and makes that impossible.
+     *
+     * <p>A session that has never been saved has no folder at all, and the store answers that with
+     * {@code IllegalArgumentException: no session <uuid>}. A versions panel asks before the first
+     * save is a normal thing to do, so reads report "no versions" and only a write — a commit, a
+     * label — says why it cannot happen.
+     */
+    @Override
+    public NaruSessionVersionStore versionStore() {
+        return new NaruSessionVersionStore() {
+            private NaruSessionVersionStore bound() {
+                NaruSessionScope scope = store.scopeOf(uuid()).orElseGet(NaruSessionImpl.this::scopeForNewState);
+                return store.exists(uuid(), scope) ? store.versions(uuid(), scope) : UNSAVED_VERSIONS;
+            }
+
+            @Override
+            public NOptional<NaruVersionRef> head() {
+                return bound().head();
+            }
+
+            @Override
+            public java.util.List<NaruVersionRef> list() {
+                return bound().list();
+            }
+
+            @Override
+            public NOptional<NaruVersionRef> find(String seqOrLabel) {
+                return bound().find(seqOrLabel);
+            }
+
+            @Override
+            public NaruVersionRef commit(String reason, String label, NaruRestoreResult.Snapshot snapshot) {
+                return bound().commit(reason, label, snapshot);
+            }
+
+            @Override
+            public NaruVersionRef label(String seqOrLabel, String label) {
+                return bound().label(seqOrLabel, label);
+            }
+
+            @Override
+            public boolean restore(String seqOrLabel, NaruRestoreResult.Sink sink) {
+                return bound().restore(seqOrLabel, sink);
+            }
+
+            @Override
+            public NaruRestoreResult.Diff diff(String from, String to) {
+                return bound().diff(from, to);
+            }
+
+            @Override
+            public NaruGcResult gc(NaruVersionPolicy policy) {
+                return bound().gc(policy);
+            }
+        };
+    }
+
+    /** What a never-saved session reports: nothing to read, and a reason for anything that writes. */
+    private static final NaruSessionVersionStore UNSAVED_VERSIONS = new NaruSessionVersionStore() {
+        private IllegalStateException unsaved() {
+            return new IllegalStateException(
+                    "this session has never been saved, so there is no state to version; call save() first");
+        }
+
+        @Override
+        public NOptional<NaruVersionRef> head() {
+            return NOptional.ofNamedEmpty(NMsg.ofC("session has never been saved"));
+        }
+
+        @Override
+        public java.util.List<NaruVersionRef> list() {
+            return java.util.Collections.emptyList();
+        }
+
+        @Override
+        public NOptional<NaruVersionRef> find(String seqOrLabel) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("session has never been saved"));
+        }
+
+        @Override
+        public NaruVersionRef commit(String reason, String label, NaruRestoreResult.Snapshot snapshot) {
+            throw unsaved();
+        }
+
+        @Override
+        public NaruVersionRef label(String seqOrLabel, String label) {
+            throw unsaved();
+        }
+
+        @Override
+        public boolean restore(String seqOrLabel, NaruRestoreResult.Sink sink) {
+            throw unsaved();
+        }
+
+        @Override
+        public NaruRestoreResult.Diff diff(String from, String to) {
+            throw unsaved();
+        }
+
+        @Override
+        public NaruGcResult gc(NaruVersionPolicy policy) {
+            throw unsaved();
+        }
+    };
 
     @Override
     public NaruRegistry registry() {

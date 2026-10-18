@@ -18,7 +18,7 @@ This plan was written from a reading of the codebase that has not been checked. 
 
 ## 1. Goal and non-goals
 
-Goal: a desktop client that is better than the REPL at the things the REPL does badly: nine log modes shown as ANSI gutters, tool results truncated to 300 chars, no status surface, no view of parallel tasks, no approval prompt, input silently dropped when no task is in the foreground.
+Goal: a desktop client that is better than the REPL at the things the REPL does badly: nine log modes shown as ANSI gutters, tool results truncated to 300 chars, no status surface, no view of parallel tasks, a permission denial visible only as an `ERROR` line the model reads, and input silently dropped when no task is in the foreground. (An approval *prompt* is out of v1 — see §3.3.)
 
 Non-goals: replacing the terminal UI (it stays, feature-comparable), changing agent behaviour, a web front-end.
 
@@ -55,7 +55,7 @@ House patterns to copy: ndb (reflective dispatch via `NSearch`), kifkif (`-c/--c
    change to agent behaviour and therefore a §1 non-goal. v1 instead shows denials as full
    read-only cards (from E1, untruncated) and pulls the permissions editor forward from Phase 4
    — it needs no engine work. E9 is split off as its own proposal, outside this plan.
-4. **Input with no foreground task (E8).** Default for v1: input field visibly disabled with the reason shown. Implementing `handleSessionCommand` is out of v1.
+4. **Input with no foreground task (E8).** **SUPERSEDED (owner, Phase 2).** The default was "input field visibly disabled with the reason shown, `handleSessionCommand` out of v1"; the stub has since been implemented, so a line with no foreground now becomes a turn. The desktop's disabled-field rule is the next thing to revisit — see `desktop-gui-phase2.md`.
 5. **Session restore.** **RESOLVED (by §0):** rebind-in-place is supported — `NaruSession.load(uuid)` (`NaruSessionImpl.java:1515-1527`) stops the world, reloads state, and fires `onSessionReloaded`; the builder also takes `.store(...)`/`.id(...)`. Phase 3 binds in place, no create-new compromise.
 
 ## 4. Architecture
@@ -131,7 +131,7 @@ Host + vocabulary + `NaruSessionModel`, block transcript, input area (multi-line
 
 **E2 lands here** (raw-line `complete(session, rawLine, caret)`; also fixes the `/path` vs `/directive` ambiguity). Until E2 lands, ship no completion rather than a hacked copy of the console's logic.
 
-Gate: a real task (multi-step, tool calls, an approval, a 3-10 minute CPU prefill) runs end-to-end without freezing; terminal REPL regression pass clean.
+Gate: a real task (multi-step, tool calls, a permission denial rendered as a card rather than a prompt, a 3-10 minute CPU prefill) runs end-to-end without freezing; terminal REPL regression pass clean.
 
 **Phase 1 is done.** Measurements, the six failure→fix items and the plan deviations are in
 [`desktop-gui-phase1.md`](desktop-gui-phase1.md): the chat core ran a real multi-step task — a
@@ -163,7 +163,7 @@ tick with nothing dropped. Details and the re-run gate numbers:
 
 ### Phase 3: sessions and observability
 
-**E3** (promote `rawSessionStore()`, `pendingInputs()`, `isHibernateEligible()`, `hasLiveTasks()`, `deliverPendingInput()` to the API) → sessions browser (`NaruSessionStore.list()`, `NaruSessionVersionStore` versions/diff) and pending-input panel. **E4** (`addEventLogListener` + replay-from-cursor) → event-log panel and resync.
+**E3 landed with one substitution** (promote `pendingInputs()`, `isHibernateEligible()`, `hasLiveTasks()`, `deliverPendingInput()` to the API; `rawSessionStore()` stays package-private because every method on it takes a `(uuid, scope)` pair and would hand a host write access to other saved sessions — the API gained `versionStore()`, bound to this session, instead) → sessions browser (`sessionStoreManager().list()`, `versionStore()` versions/diff) and pending-input panel. **E4** (`addEventLogListener` + replay-from-cursor) → event-log panel and resync.
 
 ### Phase 4: management panels
 
@@ -192,7 +192,7 @@ v1 acceptance:
 
 ## 7. Engine additions: rules
 
-One small PR each, testable without a GUI, with unit tests in `core/naru-impl` and `test/naru-agent-test`, green under `mvn -pl core/naru-api,core/naru-impl test`. Each PR includes a terminal-REPL regression check, since `NaruTerminalInteraction` shares the emitter. Order: E2 (Ph1), E1 (Ph2), E3, E4 (Ph3), E6/E7 (Ph4), E5 (Ph6). E8 is resolved by the v1 default in §3.4. **E9 (approval prompts) is removed from this plan** — it needs engine policy semantics, is a §1 non-goal, and is proposed separately per §3.3. E2 scope grew after §0 check 8: only ~7 of 38 directives override `resolveCandidates` and it is a default returning blank, so E2 must own raw-line parsing *and* a fallback for the rest. E1 should also stamp output with `taskId` (§0 check 2: `NaruOutput` carries none, so block/task attribution is host-guessed until it does).
+One small PR each, testable without a GUI, with unit tests in `core/naru-impl` and `test/naru-agent-test`, green under `mvn -pl core/naru-api,core/naru-impl test`. Each PR includes a terminal-REPL regression check, since `NaruTerminalInteraction` shares the emitter. Order: E2 (Ph1), E1 (Ph2), E3, E4 (Ph3), E6/E7 (Ph4), E5 (Ph6). E8 is resolved by the v1 default in §3.4. **E9 (approval prompts) is removed from this plan** — it needs engine policy semantics, is a §1 non-goal, and is proposed separately per §3.3. E2 scope grew after §0 check 8 (only ~7 of 38 directives overrode `resolveCandidates`, a default returning blank), and landed that way: `NaruLineCompletion` owns raw-line parsing plus a path fallback. The coverage half has since dissolved — `NaruDirectiveBase` completes registered subcommands generically, 46 directives extend it and 45 of them register some. What is left is narrower: a directive with no subcommands and no override completes paths only, so a keyword-valued argument gets filenames. E1 should also stamp output with `taskId` (§0 check 2: `NaruOutput` carries none, so block/task attribution is host-guessed until it does).
 
 ## 8. Verification
 

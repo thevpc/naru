@@ -141,4 +141,21 @@ public class NaruLineCompletionTest {
                 "a quoted argument is one token even with a space inside");
         Assertions.assertEquals(List.of("/help"), NaruLineCompletion.tokenize("/help ").words);
     }
+
+    /**
+     * The session method is the shape a host wants to call on every keystroke; the static is the
+     * shape a caller with no session-as-receiver wants. They must not drift.
+     */
+    @Test
+    public void theSessionMethodAndTheStaticAgree() {
+        NaruSession s = sessionAt(NPath.ofTempFolder("naru-complete-session-method"));
+        // called through the interface, which is how a GUI sees it
+        NaruSession asInterface = s;
+        Assertions.assertEquals(NaruLineCompletion.complete(s, "/he", 3), asInterface.complete("/he", 3),
+                "session.complete must be the static with the session as an argument, nothing more");
+        Assertions.assertFalse(asInterface.complete("", 0).isEmpty(),
+                "the delegation has to reach the command listing, not come back blank");
+        Assertions.assertTrue(asInterface.complete("hello there", 11).isEmpty(),
+                "prose stays prose through either door");
+    }
 }

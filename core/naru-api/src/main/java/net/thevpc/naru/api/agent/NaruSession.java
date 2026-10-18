@@ -9,8 +9,10 @@ import net.thevpc.naru.api.scheduler.NaruScheduler;
 import net.thevpc.naru.api.scheduler.NaruSessionEventLog;
 import net.thevpc.naru.api.spawn.NaruSpawnPolicy;
 import net.thevpc.naru.api.spawn.NaruSpawnResolution;
+import net.thevpc.naru.api.store.NaruSessionVersionStore;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.registry.NaruLineCompletion;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
@@ -178,6 +180,17 @@ public interface NaruSession {
      * are not required to have ever been started in this process.
      */
     NaruSessionStoreManager sessionStoreManager();
+
+    /**
+     * This session's committed versions: list, label, diff, restore.
+     * <p>
+     * Scoped to this session on purpose. The underlying {@code NaruSessionStore} takes a
+     * {@code (uuid, scope)} pair on every call, which makes it a handle on <em>every</em> saved
+     * session in the project — including writes to ones that are not this one. A host that wants
+     * the whole catalog asks {@link #sessionStoreManager()}; a host that wants this session's
+     * history asks here, and cannot reach a neighbour by accident.
+     */
+    NaruSessionVersionStore versionStore();
 
     NaruRegistry registry();
 
@@ -390,6 +403,65 @@ public interface NaruSession {
      * command otherwise.
      */
     void deliverInput(String line);
+
+    /**
+     * Complete {@code rawLine} with the caret at {@code caret}, from plain text, with no terminal
+     * and no parsed command line.
+     * <p>
+     * Delegates to {@link NaruLineCompletion#complete(NaruSession, String, int)}, which stays the
+     * entry point for a caller that has a session object but not this one — a completion preview for
+     * a project that is not open yet, or a unit test that wants the pure function. Both shapes exist
+     * so neither has to reach into the other.
+     * <p>
+     * It never mutates the session, never touches terminal state, and never blocks longer than one
+     * directory listing, which is what lets a Swing host call it on every keystroke.
+     */
+    default NaruLineCompletion.Result complete(String rawLine, int caret) {
+        return NaruLineCompletion.complete(this, rawLine, caret);
+    }
+
+    // ── who is asking, and what is still owed ────────────────────────────────
+    // A terminal has one foreground and cannot be wrong about it. A host with many tasks on screen
+    // needs the engine's answer, not its own guess.
+
+    /**
+     * Every input the session is currently waiting on, oldest task first.
+     * <p>
+     * A terminal can only ever have one — its own foreground. A desktop or web host can have
+     * several tasks parked at once, and needs to know which is which before it answers any of
+     * them; {@link #deliverInput(String)} cannot express "this one".
+     */
+    List<NaruPendingInput> pendingInputs();
+
+    /**
+     * Answer one parked request by id.
+     *
+     * @return false when nothing is parked under that id — it was already answered, or the task
+     *         moved on, or it belongs to a session the caller is not looking at
+     */
+    boolean deliverPendingInput(String requestId, String text);
+
+    /**
+     * Answer one parked request, recording {@code idempotencyKey} so a retry of the same delivery
+     * is recognised rather than applied twice. A browser that posts an answer and loses the
+     * response has no way to tell a failed request from a slow one; this is it.
+     */
+    boolean deliverPendingInput(String requestId, String text, String idempotencyKey);
+
+    /**
+     * True when the session can be hibernated: it has tasks, every one of them is parked on input,
+     * and nothing pinned by a toolset or a tool is still open.
+     * <p>
+     * A host must ask this rather than try {@code hibernate()} and catch, because the check is not
+     * about this session's own state — it is about live resources other owners hold.
+     */
+    boolean isHibernateEligible();
+
+    /**
+     * True when the session still has tasks, whether or not any of them can make progress. This is
+     * not "is anything running": a session with three parked tasks has live tasks and no work.
+     */
+    boolean hasLiveTasks();
 
     // ── usage reporting ──────────────────────────────────────────────────────
     // The core announces provider-reported numbers; what they mean is up to a listener.

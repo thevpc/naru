@@ -126,6 +126,58 @@ now fails a run when cards are empty while panel rows exist, when anything is un
 `ToolCallModel` also drops whole rows under memory pressure rather than truncating one, and the
 eviction never takes the newest row (`anOversizedResultEvictsHistoryButNeverTheCurrentCall`).
 
+## E2 follow-up, E3, and the line nobody caught: three session-level engine changes
+
+Owner decision after the E1 gate: do the E2 API shape, do E3 in full, and fix
+`NaruSessionImpl.handleSessionCommand` — which plan §3.4 had left out of v1.
+
+**`NaruSession.complete(rawLine, caret)`** is a default method that delegates to
+`NaruLineCompletion.complete(this, rawLine, caret)`. Both shapes stay: the instance method is what a
+GUI calls on every keystroke, the static is what a caller with no session-as-receiver calls (a
+completion preview for a project that is not open, a parser test). A test pins that the two cannot
+drift: `theSessionMethodAndTheStaticAgree`.
+
+**E3, with one substitution.** `pendingInputs()`, `deliverPendingInput(id, text)`,
+`deliverPendingInput(id, text, idempotencyKey)`, `isHibernateEligible()` and `hasLiveTasks()` are now
+on `NaruSession` — they were already public on the impl, and `NaruSessionHandleImpl` has been calling
+them through the concrete class. `rawSessionStore()` is **not** promoted, and that is a deliberate
+deviation from plan §Phase 3: its javadoc says package-visible *on purpose*, because every method on
+`NaruSessionStore` takes a `(uuid, scope)` pair, so handing it out gives a host write access to every
+saved session in the project, not just its own. What Phase 3's versions/diff panel actually needs is
+its own history, so the API gained `versionStore()` — the same `NaruSessionVersionStore` (list, head,
+find, label, restore, diff, gc) bound to this session's uuid, with the scope resolved on every call so
+a `setVisibility` move cannot leave the handle reading the folder it left. A session that has never
+been saved reports no versions rather than throwing `IllegalArgumentException: no session <uuid>`; a
+write against it says why.
+
+**`handleSessionCommand` was an empty method, and `deliverInput` called it.** That is §0 check 5, and
+the mechanism behind §1's "input silently dropped when no task is in the foreground": a headless host
+that pushed a line with no foreground task got nothing back — no error, no log, no task. A terminal
+cannot reach that path because its readline thread parks a task before a human can type, which is why
+it survived this long. A line now goes through the same parser and the same task mode a readline line
+would: `task.parseStatement(line)`, so a `/directive` runs as a directive and prose becomes a model
+call, on an `INTERACTIVE` task that parks on its own readline when the turn ends — which is what gives
+the *next* line a foreground. That task becomes the foreground, deliberately; `run(spec)` refuses to
+hijack it because a spawned run has a host already talking to something, and here nothing is.
+
+A line that does not parse leaves the task running rather than killing it. A task reaching a terminal
+state is deregistered, and the last task leaving a session stops the session — so cleaning up a typo
+by killing the task would turn a typo into a shutdown. `anUnparseableLineLeavesTheSessionRunning`
+pins that.
+
+**Terminal-REPL regression, §7.** By construction rather than inspection: the only production caller
+of `NaruSession.deliverInput` in the repository is the engine's own dispatch inside
+`NaruSessionImpl`, plus one test. `NaruTerminalInteraction` reads lines on its own thread and feeds
+the task through `NaruTaskSchedulerView`, never through the session door, so none of the three changes
+is on the console's path. `NaruLineCompletion` was already new-code-only, and the E3 methods were
+already public.
+
+**Measured.** `core/naru-api,core/naru-impl`: 238 tests (+10 new), and the failure set is identical
+to the baseline taken before this work — 16 failures + 3 errors in five classes
+(`NaruToolCallLifecycleTest`, `NaruRequestTailValidationTest`, `NaruGoDirectiveTest`,
+`NaruLazyModelResolutionTest`, `NaruSessionInteractionTest`), all of them from the owner's in-flight
+model-resolution edits, none from these. The 10 new tests pass.
+
 ## Open in Phase 2
 
 - **E1** typed tool-call lifecycle from `NaruToolCallStmt` — engine half and desktop half both
