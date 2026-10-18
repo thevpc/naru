@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.util.NaruTerminalFormatter;
 import net.thevpc.nuts.io.NTerminal;
 import net.thevpc.nuts.log.NLogger;
@@ -57,6 +58,7 @@ public class NaruTerminalInteraction implements NaruInteraction {
     private final NaruBufferedStreamWriter bufferedStream = new NaruBufferedStreamWriter();
 
     private Thread reader;
+    private volatile NaruSession session;
 
     /**
      * Uses the process terminal, writing through the terminal's own out.
@@ -85,6 +87,7 @@ public class NaruTerminalInteraction implements NaruInteraction {
 
     @Override
     public void open(NaruSession session) {
+        this.session = session;
         if (!running.compareAndSet(false, true)) {
             return;
         }
@@ -114,6 +117,14 @@ public class NaruTerminalInteraction implements NaruInteraction {
             try {
                 terminal.out().resetLine();
                 line = terminal.readLine(request.prompt());
+            } catch (java.io.IOError ex) {
+                // JLine reports Ctrl+C from some terminals as an IOError while restoring
+                // raw mode (not as an Exception/UserInterruptException). Treat it as a
+                // soft interrupt and an empty line: the task remains alive and the
+                // readline statement queues a fresh prompt instead of failing the session.
+                interruptForegroundTask(request);
+                request.deliver("");
+                continue;
             } catch (Exception ex) {
                 request.cancel("terminal read failed: " + ex.getMessage());
                 continue;
@@ -124,6 +135,22 @@ public class NaruTerminalInteraction implements NaruInteraction {
                 continue;
             }
             request.deliver(line);
+        }
+    }
+
+    private void interruptForegroundTask(NaruInputRequest request) {
+        NaruSession current = session;
+        if (current != null) {
+            NaruTask foreground = current.findTask(current.foregroundTaskId()).orNull();
+            if (foreground != null) {
+                foreground.interrupt();
+            }
+        }
+        // The input request identifies the task that owns this readline. Also signal it
+        // in case the host has not yet assigned a foreground task ID.
+        if (request != null && (current == null || current.foregroundTaskId() < 0
+                || current.foregroundTaskId() == request.task().id())) {
+            request.task().interrupt();
         }
     }
 

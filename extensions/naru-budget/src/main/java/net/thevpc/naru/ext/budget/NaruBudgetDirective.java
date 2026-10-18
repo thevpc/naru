@@ -431,6 +431,10 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
             }
         }
 
+        if (!opts.explain) {
+            printTokenContributions(task, sb);
+        }
+
         // rate limits (the same section the report always had)
         for (NaruProviderRateLimitInfo s : svc.findProviderRateLimitInfos()) {
             NMsg msg = NMsg.ofC("%s (%s)%s%s",
@@ -770,14 +774,9 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         log(task, sb, NMsg.ofC("  %s",
                 NMsg.ofC("tool defs : %s | messages : %s | tool calls : %s",
                         s.toolDefs, s.messages, s.toolCalls)));
-        log(task, sb, NMsg.ofC("  estimated tokens : %s | system : %s, user : %s, agent : %s, assistant : %s, tool defs : %s, tool results : %s",
-                s.tokens,
-                share(s.tokens(Bucket.SYSTEM), s.tokens),
-                share(s.tokens(Bucket.USER), s.tokens),
-                share(s.tokens(Bucket.AGENT), s.tokens),
-                share(s.tokens(Bucket.ASSISTANT), s.tokens),
-                share(s.tokens(Bucket.TOOL_DEFS), s.tokens),
-                share(s.tokens(Bucket.TOOL_RESULTS), s.tokens)));
+        log(task, sb, NMsg.ofC("  estimated tokens : ~%s (rough text estimate)", s.tokens));
+        log(task, sb, contributionLine("  messages", s, Bucket.SYSTEM, Bucket.USER, Bucket.AGENT, Bucket.ASSISTANT, Bucket.THINKING));
+        log(task, sb, contributionLine("  tools", s, Bucket.TOOL_CALLS, Bucket.TOOL_DEFS, Bucket.TOOL_RESULTS));
         if (s.skillCatalogMessages + s.skillLoadedMessages + s.agentOtherChars > 0) {
             log(task, sb, NMsg.ofC("%s", "  skill contribution (agent source) :"));
             log(task, sb, NMsg.ofC("    %s : %s / ~%s", "catalog",
@@ -806,6 +805,36 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                     reported,
                     lastCall.fullModelKey(),
                     new DecimalFormat("#.##").format((double) s.tokens / reported)));
+        }
+    }
+
+    /** Shows a rough token split of the current request context in the normal report. */
+    private void printTokenContributions(NaruTask task, NStringBuilder sb) {
+        PromptStats s = estimateTokens(task);
+        log(task, sb, NMsg.ofC("%s", "approximate current prompt context (character-based token estimate):"));
+        log(task, sb, NMsg.ofC("  estimated ~%s tokens; contributions:", s.tokens));
+        log(task, sb, contributionLine("    messages", s, Bucket.SYSTEM, Bucket.USER, Bucket.AGENT, Bucket.ASSISTANT, Bucket.THINKING));
+        log(task, sb, contributionLine("    tools", s, Bucket.TOOL_CALLS, Bucket.TOOL_DEFS, Bucket.TOOL_RESULTS));
+    }
+
+    private NMsg contributionLine(String label, PromptStats s, Bucket... buckets) {
+        StringBuilder line = new StringBuilder(label).append(": ");
+        for (int i = 0; i < buckets.length; i++) {
+            if (i > 0) line.append(", ");
+            Bucket bucket = buckets[i];
+            String share = s.tokens <= 0 ? "n/a" : percent(s.tokens(bucket), s.tokens) + "%";
+            line.append(bucketLabel(bucket)).append(" ~").append(s.tokens(bucket))
+                    .append(" (").append(share).append(")");
+        }
+        return NMsg.ofC("%s", line.toString());
+    }
+
+    private String bucketLabel(Bucket bucket) {
+        switch (bucket) {
+            case TOOL_CALLS: return "tool calls";
+            case TOOL_DEFS: return "tool schemas";
+            case TOOL_RESULTS: return "tool results";
+            default: return bucket.name().toLowerCase().replace("_", " ");
         }
     }
 
@@ -897,6 +926,8 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         USER,
         AGENT,
         ASSISTANT,
+        THINKING,
+        TOOL_CALLS,
         TOOL_RESULTS,
         TOOL_DEFS
     }
@@ -1008,16 +1039,18 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                 if (msg.getContent() != null) {
                     msgChars += msg.getContent().length();
                 }
-                // a tool call is assistant text the provider still tokenizes: the name
-                // plus the serialized arguments, and it stays in the history on every
-                // later call
                 if (msg.getToolCalls() != null) {
+                    long toolCallChars = 0;
                     for (NaruToolCall call : msg.getToolCalls()) {
                         s.toolCalls++;
-                        msgChars += chars(call.getName()) + chars(call.getArguments());
+                        toolCallChars += chars(call.getName()) + chars(call.getArguments());
                     }
+                    s.add(Bucket.TOOL_CALLS, toolCallChars);
                 }
                 s.add(b, msgChars);
+                if (msg.getThinking() != null) {
+                    s.add(Bucket.THINKING, msg.getThinking().length());
+                }
                 if (b == Bucket.AGENT) {
                     s.attributeAgent(msg, msgChars);
                 }

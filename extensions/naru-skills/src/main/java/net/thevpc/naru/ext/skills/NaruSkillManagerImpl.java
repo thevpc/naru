@@ -100,7 +100,11 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     List<NaruSkillRoot> rootsFor(NPath workingDir) {
         List<NaruSkillRoot> out = new ArrayList<>();
         NPath project = session.projectDir();
-        out.add(root(NaruSkillRootKind.PROJECT_PRIVATE, project.resolve(".naru/local/skills"), "naru", 10));
+        boolean privateSession = session.getVisibility() != net.thevpc.naru.api.agent.NaruVisibility.PUBLIC;
+        // Public sessions are shareable: keep project-local and user-home skill sources private.
+        if (privateSession) {
+            out.add(root(NaruSkillRootKind.PROJECT_PRIVATE, project.resolve(".naru/local/skills"), "naru", 10));
+        }
 
         // the .naru/skills walk: projectDir first (weakest) to workingDir last (strongest
         // within the walk). Closedness is expressed by the precedence: distance 0 is the
@@ -113,15 +117,19 @@ class NaruSkillManagerImpl implements NaruSkillManager {
                     "naru", 100 + distance));
         }
 
-        out.add(root(NaruSkillRootKind.USER, userHome.resolve(".naru/skills"), "naru", 5000));
+        if (privateSession) {
+            out.add(root(NaruSkillRootKind.USER, userHome.resolve(".naru/skills"), "naru", 5000));
+        }
 
         int i = 0;
         for (String[] f : FOREIGN) {
             out.add(root(NaruSkillRootKind.FOREIGN_PROJECT, project.resolve(f[1]), f[0], 6000 + i++));
         }
-        i = 0;
-        for (String[] f : FOREIGN_USER) {
-            out.add(root(NaruSkillRootKind.FOREIGN_USER, userHome.resolve(f[1]), f[0], 7000 + i++));
+        if (privateSession) {
+            i = 0;
+            for (String[] f : FOREIGN_USER) {
+                out.add(root(NaruSkillRootKind.FOREIGN_USER, userHome.resolve(f[1]), f[0], 7000 + i++));
+            }
         }
         return out;
     }

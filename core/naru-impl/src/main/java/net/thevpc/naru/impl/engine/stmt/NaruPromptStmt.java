@@ -13,7 +13,6 @@ import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
-import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NLiteral;
 
 import java.util.List;
@@ -71,9 +70,11 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
     @Override
     public void exec(NaruTask task) {
         if (task.model() == null) {
-            throw new NIllegalArgumentException(NMsg.ofC("no model selected. use '%s' to select one."
-                    , NMsg.ofCode("bash", "/model")
-            ));
+            NMsg message = NMsg.ofC("No model is selected. Choose one yourself with /model list and /model use <key>, then submit your request again.");
+            task.log(NaruLogMode.AGENT_RESPONSE, message.asError());
+            task.frame().lastResult(NaruStmtResult.ofError(message.toString()));
+            task.defaultAdvance(this);
+            return;
         }
         task.log(NaruLogMode.PROGRESS, NMsg.ofC("%s Model: %s…",
                 NMsg.ofStyledPrimary8("\uD83E\uDDE0"),

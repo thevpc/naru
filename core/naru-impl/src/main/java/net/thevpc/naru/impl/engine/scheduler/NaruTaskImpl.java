@@ -135,8 +135,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     /** Spawn-time string hint ({@code spec.model()} or the policy model); resolved lazily. */
     private String modelHint;
     /** One-shot result and flag for the tools-capable best fit, so its warnings fire once. */
-    private NaruModelConfig modelFallback;
-    private boolean modelFallbackAttempted;
+    private NaruModelConfig resolvedConfiguredModel;
+    private boolean modelResolutionAttempted;
     private String extraContext;
 
     /**
@@ -1856,20 +1856,19 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     /**
-     * One-shot tools-capable best fit: the session's persisted model definition, then
-     * the project env {@code model} ({@code /model use-global}), then the first model
-     * whose capabilities allow tools. The result is cached so the warnings about what
-     * was requested vs. what got selected fire once, not on every prompt.
+     * Resolve only a model the user or caller explicitly selected. A catalog entry
+     * being available is not a selection: silently choosing one can send prompts to
+     * an unintended provider or incur an unexpected cost.
      */
     private NaruModelConfig fallbackModel() {
-        if (!modelFallbackAttempted) {
-            modelFallbackAttempted = true;
-            modelFallback = resolveBestFitModel();
+        if (!modelResolutionAttempted) {
+            modelResolutionAttempted = true;
+            resolvedConfiguredModel = resolveConfiguredModel();
         }
-        return modelFallback;
+        return resolvedConfiguredModel;
     }
 
-    private NaruModelConfig resolveBestFitModel() {
+    private NaruModelConfig resolveConfiguredModel() {
         NaruSession session = session();
         NaruModelConfig requestedModel = null;
         if (session instanceof NaruSessionImpl) {
@@ -1880,56 +1879,23 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                     .map(NaruModelConfig::new)
                     .orNull();
         }
+        if (requestedModel == null) {
+            return null;
+        }
+
         NaruModelConfig model = null;
-        if (requestedModel != null) {
-            if (!NBlankable.isBlank(requestedModel.name())) {
-                model = session.findModel(requestedModel.name()).orNull();
-            }
-            if (model == null && !NBlankable.isBlank(requestedModel.model())) {
-                String requestedKey = NBlankable.isBlank(requestedModel.provider())
-                        ? requestedModel.model()
-                        : requestedModel.key().toString();
-                model = session.findModel(requestedKey).orNull();
-            }
+        if (!NBlankable.isBlank(requestedModel.name())) {
+            model = session.findModel(requestedModel.name()).orNull();
         }
-
+        if (model == null && !NBlankable.isBlank(requestedModel.model())) {
+            String requestedKey = NBlankable.isBlank(requestedModel.provider())
+                    ? requestedModel.model()
+                    : requestedModel.key().toString();
+            model = session.findModel(requestedKey).orNull();
+        }
         if (model == null) {
-            List<NaruModelInfo> toolModels = session.registry().modelsInfos(session)
-                    .stream()
-                    .filter(x -> x.capabilities().isTools())
-                    .collect(Collectors.toList());
-
-            if (toolModels.isEmpty()) {
-                if (requestedModel == null) {
-                    log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ no model with tools capability is available"));
-                } else {
-                    log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ requested model %s was not found; no model with tools capability is available",
-                            requestedModel));
-                }
-            } else {
-                for (NaruModelInfo fallbackInfo : toolModels) {
-                    model = session.findModel(fallbackInfo.key().toString()).orNull();
-                    if (model != null) {
-                        break;
-                    }
-                }
-
-                if (model == null) {
-                    if (requestedModel == null) {
-                        log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ no available model with tools capability could be resolved"));
-                    } else {
-                        log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ requested model %s was not found; no available model with tools capability could be resolved",
-                                requestedModel));
-                    }
-                } else if (requestedModel == null) {
-                    log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ no model was requested; auto-selected %s", model.toText()));
-                } else {
-                    log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ requested model %s was not found; selected %s instead",
-                            requestedModel, model.toText()));
-                }
-            }
+            log(NaruLogMode.SCRIPT, NMsg.ofC("Selected model %s was not found. Choose an available model with /model list, then select it with /model use <key>.", requestedModel));
         }
-
         return model;
     }
 
