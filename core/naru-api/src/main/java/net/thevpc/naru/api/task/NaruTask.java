@@ -351,6 +351,33 @@ public interface NaruTask extends NToElement {
      */
     boolean isKillRequested();
 
+    /**
+     * Soft counterpart of {@link #kill()}: end what the task is running right now
+     * -- a streaming model call in particular -- and let the task carry on with
+     * its next statement, which for an interactive task is the prompt again.
+     * <p>
+     * Unlike {@link #kill()} nothing here is terminal: no status change, no
+     * scheduler removal, only a flag that the running statement polls, so the
+     * task is never left half-dead. Safe to call from any thread, including a
+     * terminal signal handler.
+     *
+     * @return {@code this} instance
+     */
+    default NaruTask interrupt() {
+        return this;
+    }
+
+    /**
+     * Whether {@link #interrupt()} has been requested. The model call consumes
+     * it: it is cleared when the next one starts, so a press that lands between
+     * two calls cannot cancel a call that has not begun yet.
+     *
+     * @return true when an interrupt was requested
+     */
+    default boolean isInterruptRequested() {
+        return false;
+    }
+
     boolean hasMoreStatements();
 
     /**

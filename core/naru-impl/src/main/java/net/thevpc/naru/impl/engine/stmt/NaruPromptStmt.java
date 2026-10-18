@@ -106,6 +106,32 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             NaruStmtResult.ofSuccess("");
             return;
         }
+        // Interrupted (Ctrl+C) while this call was running: the stream stopped at
+        // its next event, so this is the answer cut where the user cut it. The
+        // turn ends here rather than starting a tool round from a call the user
+        // stopped -- and ending the turn normally, not by killing the task, is
+        // what brings the prompt back with the task still alive.
+        if (task.isInterruptRequested()) {
+            if (assistantMsg.hasToolCalls()) {
+                // A tool_calls entry with no results after it cannot be sent to
+                // the provider on the next request: the history would be rejected
+                // for every later turn of this task. The half-started round is
+                // dropped for the same reason a partial answer is kept -- neither
+                // is a thing the model ever finished saying.
+                task.log(NaruLogMode.PROGRESS, NMsg.ofC(
+                        "%s Interrupted before the tool call completed; discarding it.",
+                        NMsg.ofStyledPrimary8("⏹")));
+            } else {
+                task.log(NaruLogMode.PROGRESS, NMsg.ofC(
+                        "%s Interrupted.", NMsg.ofStyledPrimary8("⏹")));
+                task.addHistory(assistantMsg);
+                reportAnswer(task, assistantMsg);
+                task.setLastResult(assistantMsg);
+            }
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
+            task.defaultAdvance(this);
+            return;
+        }
         task.addHistory(assistantMsg);
         // ── Case 1: model wants to call tools ─────────────────────────────
         if (assistantMsg.hasToolCalls()) {

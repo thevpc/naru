@@ -92,6 +92,14 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
      * running tool or model call has no way to know it is being cancelled.
      */
     private volatile boolean killRequested;
+    /**
+     * Set by {@link #interrupt()} -- a Ctrl+C while a response is streaming -- so
+     * the stream stops at its next poll. The one thing it must not do is what
+     * {@link #kill()} does: change the status. The statement ends the turn
+     * normally afterwards and the task falls back to the prompt, so it stays
+     * alive and stays tickable.
+     */
+    private volatile boolean interruptRequested;
     private NaruInputMode inputMode = NaruInputMode.LINE;
     /**
      * Raw lines being accumulated by a script-level "/buffer on ... /buffer off"
@@ -347,6 +355,17 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public boolean isKillRequested() {
         return killRequested;
+    }
+
+    @Override
+    public NaruTask interrupt() {
+        interruptRequested = true;
+        return this;
+    }
+
+    @Override
+    public boolean isInterruptRequested() {
+        return interruptRequested;
     }
 
 
@@ -900,6 +919,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         held = false;
         status = NaruTaskStatus.READY;
         killRequested = false;
+        interruptRequested = false;
         userQueriesCount = 0;
         inputBuffer = "";
         lastResult = null;
@@ -2803,6 +2823,10 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NaruResponse chat(NaruModelConfig modelKey, NaruModelRequest request) {
+        // An interrupt raised before this call is spent: it belonged to whatever
+        // was running when the user pressed it, not to a request that has not
+        // gone out yet. From here on, the flag means "stop THIS call".
+        interruptRequested = false;
         // Fail closed before the transport exists: a filter (an offline test pinned to
         // local ollama, a host restricted to approved providers) must be able to stop a
         // paid call even when the model was set directly and therefore never went through
@@ -2832,7 +2856,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             // Fragments are marked as already shown, so the statement that made this
             // call does not log the same answer a second time when it is complete.
             AtomicBoolean sawAnswer = new AtomicBoolean();
-            NaruStreamCollector collector = new NaruStreamCollector(this::isKillRequested);
+            NaruStreamCollector collector = new NaruStreamCollector(
+                    () -> isKillRequested() || interruptRequested);
             java.util.EnumSet<NaruLogMode> open = java.util.EnumSet.noneOf(NaruLogMode.class);
             NaruLogMode[] current = {null};
             collector.addDelegate(chunk -> {

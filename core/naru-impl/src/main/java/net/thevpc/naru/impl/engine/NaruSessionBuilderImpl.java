@@ -359,7 +359,18 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
                     // console: without it the REPL reads plain lines and tab does
                     // nothing, even though the resolver itself is still available
                     .commandAutoCompleteResolver(new NaruNArgCompleteResolver(session))
-                    .commandHighlighter(new NaruTerminalFormatter(session));
+                    .commandHighlighter(new NaruTerminalFormatter(session))
+                    // Ctrl+C while a response is streaming. The reader owns the key
+                    // only while it is reading a line (prompt Ctrl+C keeps its usual
+                    // meaning), so this reaches us exactly when something else is
+                    // running. Interrupting -- rather than killing -- the task stops
+                    // the stream and drops back to the prompt with the task alive.
+                    // Like the two setters above it is process-global: the last
+                    // interactive session in the JVM is the one it serves.
+                    .interruptHandler(() -> {
+                        session.findTask(session.foregroundTaskId())
+                                .ifPresent(NaruTask::interrupt);
+                    });
         }
     }
 
