@@ -1273,10 +1273,12 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public void log(NaruLogMode mode, NMsg s) {
         if (mode == NaruLogMode.SCHEDULER) {
             if (isTrace()) {
-                session().log(mode, s);
+                session().log(mode, s, id());
             }
         } else {
-            session().log(mode, s);
+            // stamped with this task's id: a host that shows several tasks at once must not
+            // have to guess which one produced a line (plan §0 check 2)
+            session().log(mode, s, id());
         }
     }
 
@@ -2924,7 +2926,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     private void logStream(NaruLogMode mode, NMsg fragment, boolean end) {
-        session().logStream(mode, fragment, end);
+        session().logStream(mode, fragment, end, id());
     }
 
     /**

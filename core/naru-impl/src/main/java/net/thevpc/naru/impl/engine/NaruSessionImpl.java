@@ -1817,6 +1817,22 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         interaction.writeStream(mode, fragment, end);
     }
 
+    @Override
+    public void log(NaruLogMode mode, NMsg s, long taskId) {
+        if (mode == NaruLogMode.SCHEDULER && !isTrace()) {
+            return;
+        }
+        interaction.write(mode, s, taskId);
+    }
+
+    @Override
+    public void logStream(NaruLogMode mode, NMsg fragment, boolean end, long taskId) {
+        if (mode == NaruLogMode.SCHEDULER && !isTrace()) {
+            return;
+        }
+        interaction.writeStream(mode, fragment, end, taskId);
+    }
+
     /**
      * A problem the user needs to know about but that is not a statement to execute.
      * <p>
@@ -1826,6 +1842,23 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      */
     void warn(NMsg message) {
         interaction.write(NaruLogMode.SCRIPT, message);
+    }
+
+    /**
+     * Forwards a tool-call lifecycle report to the interaction being watched.
+     * <p>
+     * Guarded, unlike {@link #log}: the tool has already run and its result is already in the
+     * model's history by the time this fires, so a host that cannot draw a card must not be
+     * able to fail the turn that was reporting to it.
+     */
+    @Override
+    public void reportToolCall(net.thevpc.naru.api.agent.NaruToolCallEvent event) {
+        try {
+            interaction.reportToolCall(event);
+        } catch (Throwable error) {
+            log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] tool-call listener failed on %s: %s",
+                    error, event, event.toolName()));
+        }
     }
 
     private boolean isTrace() {

@@ -401,6 +401,25 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         }
         public void close() { closed = true; if (delegate != null) delegate.close(); }
         public void onHibernate() { if (delegate != null) delegate.onHibernate(); }
+        /**
+         * Tool-call reports pass straight through to whatever is underneath, and are also
+         * published as turn events so a backend host gets the same lifecycle the desktop host
+         * reads off its interaction.
+         */
+        public void reportToolCall(net.thevpc.naru.api.agent.NaruToolCallEvent event) {
+            events.emit(NaruTurnEvent.Kind.TOOL_CALL, event);
+            if (delegate != null) delegate.reportToolCall(event);
+        }
+        @Override
+        public void write(NaruLogMode mode, NMsg message, long taskId) {
+            if (delegate != null) delegate.write(mode, message, taskId);
+            else write(mode, message);
+        }
+        @Override
+        public void writeStream(NaruLogMode mode, NMsg fragment, boolean end, long taskId) {
+            if (delegate != null) delegate.writeStream(mode, fragment, end, taskId);
+            else writeStream(mode, fragment, end);
+        }
         private final AtomicInteger chunkIndex = new AtomicInteger();
         private static NaruChunkKind chunkKind(NaruLogMode mode) {
             return mode == NaruLogMode.MODEL_THINKING ? NaruChunkKind.THINKING : NaruChunkKind.ANSWER;

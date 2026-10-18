@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.engine.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
@@ -65,6 +66,7 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
             task.log(NaruLogMode.PROGRESS, NMsg.ofC("  %s Result: %s",
                     NMsg.ofStyledPrimary6("📤"),
                     ImplNaruUtils.abbreviate(err, 300)));
+            task.reportToolCall(NaruToolCallEvent.failed(task.id(), call, err, NaruToolCallEvent.UNKNOWN_DURATION));
             task.addHistory(NaruMessage.tool(call.getName(), call.getId(), err));
             task.defaultAdvance(this);
             task.frame().lastResult(NaruStmtResult.ofSuccess(err));
@@ -80,7 +82,9 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
                     task.requestInput(NMsg.ofC("Please answer the pending question to continue."));
                     return;
                 }
-                finishToolCall(task, interactiveTool.complete(call, answer));
+                long t0 = System.nanoTime();
+                String result = interactiveTool.complete(call, answer);
+                finishToolCall(task, result, millisSince(t0));
                 return;
             }
         }
@@ -95,23 +99,39 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
                         NText.ofCode("tson", t.build().toString())
                 )
         );
+        task.reportToolCall(NaruToolCallEvent.started(task.id(), call));
+        long t0 = System.nanoTime();
         String result = task.session().registry().dispatch(call, task);
         if (registeredTool instanceof NaruInteractiveTool
                 && NaruInteractiveTool.WAITING_FOR_INPUT.equals(result)) {
             NaruToolCallStmt resumed = (NaruToolCallStmt) copy();
             resumed.awaitingInput = true;
+            // the call has not settled: a host drawing a card must show it waiting, not done,
+            // and the matching RESULT arrives when the answer comes back through complete()
+            task.reportToolCall(NaruToolCallEvent.parked(task.id(), call));
             task.prependStatement(resumed);
             return;
         }
-        finishToolCall(task, result);
+        finishToolCall(task, result, millisSince(t0));
     }
 
-    private void finishToolCall(NaruTask task, String result) {
+    private void finishToolCall(NaruTask task, String result, long durationMillis) {
         task.log(NaruLogMode.PROGRESS, NMsg.ofC("  %s Result: %s",
                 NMsg.ofStyledPrimary6("📤"),
                 ImplNaruUtils.abbreviate(result, 300)));
+        // The engine's failure convention is a result string that starts with ERROR (unknown
+        // tool, permission denial, a tool that threw). Tools have no other way to report it,
+        // so this is the same classification the log line and the model's history already get.
+        boolean failed = result != null && result.startsWith("ERROR");
+        task.reportToolCall(failed
+                ? NaruToolCallEvent.failed(task.id(), call, result, durationMillis)
+                : NaruToolCallEvent.result(task.id(), call, result, durationMillis));
         task.addHistory(NaruMessage.tool(call.getName(), call.getId(), result));
         task.defaultAdvance(this);
         task.frame().lastResult(NaruStmtResult.ofSuccess(result));
+    }
+
+    private static long millisSince(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000L;
     }
 }

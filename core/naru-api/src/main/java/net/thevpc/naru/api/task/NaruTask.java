@@ -253,6 +253,17 @@ public interface NaruTask extends NToElement {
 
     void log(NaruLogMode mode, NMsg s);
 
+    /**
+     * Reports a tool-call lifecycle event produced while this task was running, so the host
+     * learns which task made the call without having to guess.
+     *
+     * <p>Statements call this instead of reaching for the session, the same way they call
+     * {@link #log}. A task whose session does not carry the events simply loses them.
+     */
+    default void reportToolCall(net.thevpc.naru.api.agent.NaruToolCallEvent event) {
+        session().reportToolCall(event);
+    }
+
     NaruTask addToolExclusion(String toolName);
 
     NaruTask removeToolExclusion(String toolName);

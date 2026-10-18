@@ -82,6 +82,40 @@ public interface NaruInteraction {
      */
     void writeStream(NaruLogMode mode, NMsg fragment, boolean end);
 
+    /**
+     * Reports that a model tool call started, parked, returned or failed.
+     *
+     * <p>The default does nothing, which is what keeps a terminal unchanged: the same call
+     * already prints its {@code PROGRESS} line through {@link #write}, and a host that draws
+     * structured tool cards overrides this. A host that overrides it must not block — this
+     * arrives on the worker thread that dispatched the tool — and a consumer that throws is
+     * ignored, because a tool's result must never depend on who was watching it.
+     */
+    default void reportToolCall(NaruToolCallEvent event) {
+    }
+
+    /**
+     * Reports a piece of output together with the task that produced it.
+     *
+     * <p>The default ignores the task and calls {@link #write(NaruLogMode, NMsg)}, so an
+     * interaction that shows one transcript for the whole session stays correct. A host with
+     * per-task surfaces overrides this one and gets the attribution for free; the id is
+     * whatever {@code NaruTask.id()} was when the line was logged, and {@code 0} means the
+     * session itself produced it.
+     */
+    default void write(NaruLogMode mode, NMsg message, long taskId) {
+        write(mode, message);
+    }
+
+    /**
+     * Streaming counterpart of {@link #write(NaruLogMode, NMsg, long)}: every fragment of one
+     * open stream is stamped with the task that is producing it. The default drops the id and
+     * calls {@link #writeStream(NaruLogMode, NMsg, boolean)}.
+     */
+    default void writeStream(NaruLogMode mode, NMsg fragment, boolean end, long taskId) {
+        writeStream(mode, fragment, end);
+    }
+
     /** Called once per activation when it closes. Must not block. */
     void close();
 }

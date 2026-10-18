@@ -82,6 +82,15 @@ public interface NaruSession {
     void log(NaruLogMode mode, NMsg s);
 
     /**
+     * Reports output together with the task that produced it. The default drops the id and
+     * calls {@link #log(NaruLogMode, NMsg)}, so a session that has no per-task attribution is
+     * still correct; {@code taskId} of {@code 0} means the session itself is the source.
+     */
+    default void log(NaruLogMode mode, NMsg s, long taskId) {
+        log(mode, s);
+    }
+
+    /**
      * Reports a fragment of output that is still being produced, for a user who is
      * meant to watch it arrive. Fragments of one mode join in order; the last call
      * for a mode passes {@code end=true}.
@@ -93,6 +102,26 @@ public interface NaruSession {
      */
     default void logStream(NaruLogMode mode, NMsg fragment, boolean end) {
         log(mode, fragment);
+    }
+
+    /**
+     * Streaming counterpart of {@link #log(NaruLogMode, NMsg, long)}: the fragment is attributed
+     * to the task producing it. The default drops the id, so a session that streams without
+     * attribution keeps behaving exactly as before.
+     */
+    default void logStream(NaruLogMode mode, NMsg fragment, boolean end, long taskId) {
+        logStream(mode, fragment, end);
+    }
+
+    /**
+     * Routes a typed tool-call lifecycle report to whoever is watching the session.
+     *
+     * <p>The default does nothing, so a session with no host for these events simply loses
+     * them — the {@code PROGRESS} line the statement logs is unaffected. Implementations that
+     * have an interaction forward it there. Nothing about the tool call itself depends on this:
+     * it is a report of what already happened, and a consumer that throws is ignored.
+     */
+    default void reportToolCall(NaruToolCallEvent event) {
     }
 
     NPath workingDir();
