@@ -21,11 +21,17 @@
 
     <dependencies>
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.1.0.0</version></dependency>
-        <!-- real ollama provider, for the Phase 0 long-prefill run against a local model -->
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-llm-models</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-llm</artifactId><version>1.1.0.0</version></dependency>
+        <!--
+            No extension here on purpose. The console launcher does not declare them either:
+            Nuts resolves the profile and its extensions at runtime, in its own classloaders.
+            Pinning naru-llm-models on the application classpath made the desktop load a
+            provider jar compiled against an older naru-api, and a model call died with
+            NoSuchMethodError: NaruSession.agent() — a failure the terminal never sees.
+            The long gate run needs a working ollama provider, which the profile supplies.
+        -->
         <dependency><groupId>net.thevpc.common</groupId><artifactId>thevpc-common-swing</artifactId><version>2.5.0</version></dependency>
         <dependency><groupId>net.thevpc.common</groupId><artifactId>thevpc-common-plaf</artifactId><version>1.1.0</version></dependency>
+        <dependency><groupId>net.thevpc.nuts</groupId><artifactId>nuts-swing</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>com.formdev</groupId><artifactId>flatlaf</artifactId><version>3.7.1</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.0</version><scope>test</scope></dependency>
     </dependencies>
