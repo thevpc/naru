@@ -22,6 +22,7 @@
         <module>test</module>
 
         <module>app/naru</module>
+        <module>app/naru-desktop</module>
     </modules>
     <build>
     </build>

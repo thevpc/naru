@@ -156,15 +156,6 @@ public class FakeModel {
         }
     }
 
-    private static String payload(String label, int i) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(label).append('#').append(i).append(' ');
-        while (sb.length() < 24) {
-            sb.append('x');
-        }
-        return sb.toString();
-    }
-
     private static String payload(String label, int i, int chars) {
         StringBuilder sb = new StringBuilder();
         sb.append(label).append('#').append(i).append(' ');

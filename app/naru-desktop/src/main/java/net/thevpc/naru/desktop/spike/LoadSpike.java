@@ -75,6 +75,9 @@ public class LoadSpike {
         long t0 = System.currentTimeMillis();
         int perThread = lines / threads;
         int blocksPerThread = blocks / threads;
+        // pace the publishers so the load lasts long enough for the pinger and the lag probe to
+        // say something about a real streaming session; 0 = as fast as possible
+        long paceNanos = (args.length > 4 ? Long.parseLong(args[4]) : 0L) * 1_000L;
         for (int t = 0; t < threads; t++) {
             final int tid = t;
             Thread w = new Thread(() -> {
@@ -85,6 +88,9 @@ public class LoadSpike {
                     for (int l = 0; l < linesPerBlock; l++) {
                         host.write(mode, net.thevpc.nuts.text.NMsg.ofC(
                                 "line %d/%d thread %d :: the quick brown fox jumps over the lazy dog", b, l, tid));
+                        if (paceNanos > 0) {
+                            java.util.concurrent.locks.LockSupport.parkNanos(paceNanos);
+                        }
                     }
                 }
                 done.countDown();
@@ -144,17 +150,6 @@ public class LoadSpike {
         long[] out = new long[1];
         SwingUtilities.invokeAndWait(() -> out[0] = work.getAsLong());
         return out[0];
-    }
-
-    private static java.awt.Graphics getGraphics(JFrame f) {
-        try {
-            java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
-                    f.getWidth(), f.getHeight(), java.awt.image.BufferedImage.TYPE_INT_RGB);
-            f.paint(img.getGraphics());
-            return img.getGraphics();
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     private static final class volatileBox {
