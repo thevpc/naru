@@ -130,6 +130,18 @@ Host + vocabulary + `NaruSessionModel`, block transcript, input area (multi-line
 
 Gate: a real task (multi-step, tool calls, an approval, a 3-10 minute CPU prefill) runs end-to-end without freezing; terminal REPL regression pass clean.
 
+**Phase 1 is done.** Measurements, the six failure→fix items and the plan deviations are in
+[`desktop-gui-phase1.md`](desktop-gui-phase1.md): the chat core ran a real multi-step task — a
+directive, tool-using turns, an `ask_user` question answered through the choice buttons, every
+parked task resumed — and a 302 s streamed turn (16 666 fragments, 333 KB) produced **zero** EDT
+pings over the 16 ms frame budget, with `maxFlushMs=0`, `dropped=0` and worst worker-side publish
+132 µs. Two plan assumptions turned out false: `thevpc-common-md`/`nmarkdown` have no HTML writer
+(D1, so `AGENT_RESPONSE` is still plain text and `render/MarkdownHtml` waits for Phase 2), and the
+input "dialog" is an inline panel rather than a modal (D2). The long-prefill criterion is proven
+with a deterministic provider because the local 14B coder refuses to generate for minutes (G4).
+Terminal REPL regression: clean, 220 engine tests and 28 desktop tests green.
+**Phase 2 waits on the three decisions at the end of that file.**
+
 ### Phase 2: tools + tasks (completes v1)
 
 **E1 first** (typed tool-call lifecycle fired from `NaruToolCallStmt`; removes the 300-char truncation). Then: tools panel, task monitor (`tasks()`, `NaruTaskStatus`, `stackFrames()` call tree, `findTaskIdsByParent()` spawn tree, interrupt/kill/hold).
