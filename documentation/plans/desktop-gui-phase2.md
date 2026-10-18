@@ -178,6 +178,36 @@ to the baseline taken before this work — 16 failures + 3 errors in five classe
 `NaruLazyModelResolutionTest`, `NaruSessionInteractionTest`), all of them from the owner's in-flight
 model-resolution edits, none from these. The 10 new tests pass.
 
+## §4.4 is now a test: the desktop cannot take the console
+
+The rule "never route any session through `richTerm(true)`" lived in a comment and in one
+`.richTerm(false)` call, so `app/naru-desktop/src/test/java/net/thevpc/naru/desktop/model/RichTermInvariantTest.java`
+replaces it with two tests: one boots through the real `NaruSessionModel` path — real EDT handoff, real
+`InteractionHost`, real `NaruWorkspaceBuilder`, no mocks — and asserts the shared terminal is untouched;
+one asks the engine for a rich terminal and asserts the same assertion *moves*, so the first test cannot
+be passing because it watches something that never changes.
+
+The channel needed choosing, and the obvious one is wrong. `isAutoCompleteSupported()` is the only
+readable flag rich term sets (`DefaultNBootModel.enableRichTerm()` loads `nuts-term` and builds a
+terminal from a spec with `autoComplete(true)`), and measured in this module's JVM it stays `false` even
+after `richTerm(true)` — the answer depends on the terminal Nuts detected, not on the request. There is
+no `isRichTerm()` getter and `commandAutoCompleteResolver` is setter-only. What does move is
+**`NIO.of().systemTerminal().base()`**: the system terminal is an `NSystemTerminalRef` and enabling rich
+term swaps the object behind it (`DefaultNSystemTerminalBase` → `DefaultSystemTerminal`), which is
+precisely the process-global mutation §4.4 forbids. The test asserts on that identity, plus
+`autoCompleteResolver()` and `commandHighlighter()`, which stay null because a desktop interaction is
+not a `NaruTerminalInteraction`.
+
+**The hazard the control found on the first run.** Undoing rich term is `NIO.systemTerminal(base)`, and
+`NIO.systemTerminal()` returns the *ref*, not its base. Passing the ref back makes `base()` delegate to
+itself; the next `isAutoCompleteSupported()` call recursed until the JVM threw `StackOverflowError`. So
+the control snapshots `ref.base()` and restores that, and runs `@Order`-last with a `finally` that
+re-checks the restore took — Nuts has no "disable rich term".
+
+**Measured.** `app/naru-desktop`: 56 tests (+2), 0 failures, 0 errors; the new class costs 3.4 s, almost
+all of it the real workspace boot and the `nuts-term` resolution the control triggers. The engine module
+set was not touched by this commit.
+
 ## Open in Phase 2
 
 - **E1** typed tool-call lifecycle from `NaruToolCallStmt` — engine half and desktop half both

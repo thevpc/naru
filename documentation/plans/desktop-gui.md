@@ -102,7 +102,7 @@ Rule: if a widget needs data the vocabulary lacks, extend the vocabulary first, 
 - Host callbacks never block and never touch widgets. They enqueue into a bounded coalescing buffer; a Swing timer flushes at ≤30 Hz and applies one batched model update per flush on the EDT.
 - Markdown re-render never happens on a streaming block: live rows are plain text (see §4.3, Phase 0 spike 3). Closed blocks render once.
 - Add an EDT-assertion helper that throws in tests and logs in dev if a widget is mutated off-thread.
-- Process-global state: never route any session through `richTerm(true)` in the desktop host.
+- Process-global state: never route any session through `richTerm(true)` in the desktop host. Enforced by `RichTermInvariantTest` (Phase 2), which watches `NIO.of().systemTerminal().base()` identity — `isAutoCompleteSupported()` is not a reliable witness off a TTY.
 
 ## 5. Phases and gates
 
