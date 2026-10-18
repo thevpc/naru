@@ -21,6 +21,8 @@
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-api</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.1.0.0</version><scope>test</scope></dependency>
         <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-fs</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-store-file</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-store-jdbc</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-mcp</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-coder-java</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-shell</artifactId><version>1.1.0.0</version></dependency>

@@ -1917,8 +1917,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (defaultScope == null) {
             defaultScope = NaruSessionScope.PRIVATE;
         }
+        Map<String, String> jdbcProperties = new java.util.LinkedHashMap<>();
+        for (String key : List.of("naru.jdbc.url", "naru.jdbc.user", "naru.jdbc.password", "naru.jdbc.driver")) {
+            String value = System.getProperty(key);
+            if (value != null) jdbcProperties.put(key, value);
+        }
         return new NaruStoreConfig(projectDir.normalize(),
-                projectDir.normalize().resolve(".naru"), defaultScope);
+                projectDir.normalize().resolve(".naru"), defaultScope, null, jdbcProperties);
     }
 
     /**

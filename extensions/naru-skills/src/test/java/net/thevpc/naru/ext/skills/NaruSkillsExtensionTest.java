@@ -411,7 +411,7 @@ public class NaruSkillsExtensionTest {
 
     @Test
     public void loadedSkillWithAnUnregisteredRequirementIsUnsatifiable() {
-        publicFolder("ghost", "name: ghost\ndescription: needs a tag nobody provides\nrequires: \"fs\"", "body");
+        publicFolder("ghost", "name: ghost\ndescription: needs a tag nobody provides\nrequires: \"naru_test_ghost_tag\"", "body");
         discover();
         NaruTask a = task();
         ext.load(a, "ghost");

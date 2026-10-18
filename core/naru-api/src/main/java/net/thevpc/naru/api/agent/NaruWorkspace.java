@@ -5,6 +5,7 @@ import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.model.NaruModelFilter;
+import net.thevpc.naru.api.store.NaruDataStore;
 import net.thevpc.nuts.artifact.NVersion;
 import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.io.NPath;
@@ -14,6 +15,7 @@ import net.thevpc.nuts.util.NOptional;
 
 import java.util.List;
 import java.util.function.Predicate;
+import javax.sql.DataSource;
 
 public interface NaruWorkspace {
     NVersion apiVersion();
@@ -123,4 +125,13 @@ public interface NaruWorkspace {
      * without writing a file. Nothing survives a restart.
      */
     NaruEnv agentEnv();
+
+    /** Opens a shared, backend-neutral feature store scoped to the project. */
+    NaruDataStore dataStore(String namespace);
+
+    /** Opens a shared feature store scoped to the given project or user directory. */
+    NaruDataStore dataStore(String namespace, NPath scopeDir);
+
+    /** Opens a shared store with an application-supplied JDBC DataSource when selected. */
+    NaruDataStore dataStore(String namespace, NPath scopeDir, DataSource dataSource);
 }

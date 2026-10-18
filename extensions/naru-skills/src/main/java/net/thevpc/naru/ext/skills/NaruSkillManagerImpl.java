@@ -2,6 +2,7 @@ package net.thevpc.naru.ext.skills;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
+import net.thevpc.naru.api.store.NaruDataStore;
 import net.thevpc.naru.api.spawn.NaruToolTagExpression;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
@@ -60,7 +61,9 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     NaruSkillManagerImpl(NaruSession session) {
         this.session = session;
         this.userHome = resolveUserHome();
-        this.trust = new NaruSkillTrustStore(session.projectDir(), userHome);
+        NaruDataStore projectTrust = session.agent().dataStore("skills/trust/project", session.projectDir());
+        NaruDataStore userTrust = session.agent().dataStore("skills/trust/user", userHome);
+        this.trust = new NaruSkillTrustStore(session.projectDir(), userHome, projectTrust, userTrust);
     }
 
     private static NPath resolveUserHome() {

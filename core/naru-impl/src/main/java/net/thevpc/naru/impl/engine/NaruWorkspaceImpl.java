@@ -6,6 +6,9 @@ import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.model.NaruModelFilter;
+import net.thevpc.naru.api.store.NaruDataStore;
+import net.thevpc.naru.api.store.NaruDataStoreConfig;
+import net.thevpc.naru.api.store.NaruDataStoreProvider;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.nuts.app.NApplication;
@@ -25,6 +28,7 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.*;
 import java.util.function.Predicate;
+import javax.sql.DataSource;
 
 /**
  * The core agent loop.
@@ -115,6 +119,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
      */
     private final Map<String, NaruAgentExtension> agentExtensions = new ConcurrentHashMap<>();
     private volatile boolean agentExtensionsLoaded;
+    private final Map<String, NaruDataStore> dataStores = new ConcurrentHashMap<>();
 
     private final NaruSessionListener asSessionListener = new NaruSessionListener() {
 
@@ -145,6 +150,10 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
         }
     };
 
+    public NaruWorkspaceImpl() {
+        this(null);
+    }
+
     public NaruWorkspaceImpl(NId[] extensions) {
         if (extensions != null) {
             for (NId e : extensions) {
@@ -156,6 +165,43 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
         this.logger = a -> {
             NOut.resetLine().println(a);
         };
+    }
+
+    @Override
+    public NaruDataStore dataStore(String namespace) {
+        return dataStore(namespace, projectDirectory, null);
+    }
+
+    @Override
+    public NaruDataStore dataStore(String namespace, NPath scopeDir) {
+        return dataStore(namespace, scopeDir, null);
+    }
+
+    @Override
+    public NaruDataStore dataStore(String namespace, NPath scopeDir, DataSource dataSource) {
+        if (namespace == null || namespace.isBlank()) throw new IllegalArgumentException("namespace is required");
+        NPath scope = (scopeDir == null ? projectDirectory : scopeDir).normalize();
+        String cacheKey = namespace + "|" + scope + "|" + System.identityHashCode(dataSource);
+        return dataStores.computeIfAbsent(cacheKey, k -> {
+            String providerName = System.getProperty("naru.store." + namespace + ".provider", "file").trim();
+            NPath location = scope.resolve(".naru/stores/" + namespace);
+            Map<String, String> props = new LinkedHashMap<>();
+            for (String p : List.of("naru.jdbc.url", "naru.jdbc.user", "naru.jdbc.password", "naru.jdbc.driver")) {
+                String v = System.getProperty(p);
+                if (v != null) props.put(p, v);
+            }
+            NaruDataStoreConfig config = new NaruDataStoreConfig(namespace, projectDirectory, scope,
+                    location, dataSource, props);
+            List<NaruDataStoreProvider> providers = NServiceLoader.of(NaruDataStoreProvider.class, null,
+                    classLoader().asClassLoader()).loadAll(null);
+            for (NaruDataStoreProvider provider : providers) {
+                if (!providerName.equals(provider.name())) continue;
+                NOptional<NaruDataStore> opened = provider.open(config);
+                if (opened.isPresent()) return opened.get();
+                throw new IllegalStateException("data-store provider '" + providerName + "' cannot serve " + namespace);
+            }
+            throw new IllegalStateException("no data-store provider named '" + providerName + "' is available for " + namespace);
+        });
     }
 
     @Override

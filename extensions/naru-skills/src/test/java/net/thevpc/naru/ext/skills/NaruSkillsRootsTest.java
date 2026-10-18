@@ -57,6 +57,7 @@ public class NaruSkillsRootsTest {
 
     private NPath projectDir;
     private NPath userHome;
+    private NaruWorkspace workspace;
     private NaruSession session;
     private NaruSkillsExtension ext;
     private final List<NaruOutput> outputs = new ArrayList<>();
@@ -70,10 +71,10 @@ public class NaruSkillsRootsTest {
         projectDir = NPath.ofTempFolder("naru-skills-roots-" + System.nanoTime());
         userHome = NPath.ofTempFolder("naru-skills-roots-home-" + System.nanoTime());
         System.setProperty("naru.skills.userHome", userHome.toString());
-        NaruWorkspace agent = NaruWorkspace.of();
-        agent.projectDirectory(projectDir);
+        workspace = NaruWorkspace.of();
+        workspace.projectDirectory(projectDir);
         outputs.clear();
-        session = agent.newSession()
+        session = workspace.newSession()
                 .directory(projectDir)
                 .interaction(new NaruStreamInteraction(o -> outputs.add(o)))
                 .sessionListener(NOOP_LISTENER)
@@ -261,9 +262,8 @@ public class NaruSkillsRootsTest {
         NaruSkillRoot claude = root(ext.roots(t), "claude");
         ext.trust(claude, true);
 
-        NPath file = projectDir.resolve(".naru/local/skills-trust.tson");
-        assertTrue(file.isRegularFile(), "trust must be persisted: " + file);
-        String tson = file.readString();
+        String tson = projectStore().get("trust").orNull().toString();
+        assertNotNull(tson, "trust must be persisted in the named project store");
         assertTrue(tson.contains("claude"), tson);
         assertTrue(tson.contains(".claude/skills"),
                 () -> "the key must be the root path relative to the project, so the project can move: " + tson);
@@ -271,13 +271,13 @@ public class NaruSkillsRootsTest {
         // a fresh store over the same scope reads the decision back
         NaruSkillRoot concrete = new NaruSkillRoot(NaruSkillRootKind.FOREIGN_PROJECT,
                 projectDir.resolve(".claude/skills"), "claude", 6000, false);
-        NaruSkillTrustStore store = new NaruSkillTrustStore(projectDir, userHome);
+        NaruSkillTrustStore store = trustStore();
         assertTrue(store.isTrusted(concrete), "the persisted decision must be read back");
 
         // and untrusting removes it again
         ext.trust(claude, false);
         assertNull(ext.skills().findSkill("legacy"));
-        assertFalse(file.isRegularFile(), "an empty trust store is removed");
+        assertNull(projectStore().get("trust").orNull(), "an empty trust record is removed");
     }
 
     // ── the one-time untrusted-root notice (WP6) ────────────────────────────
@@ -352,8 +352,7 @@ public class NaruSkillsRootsTest {
 
         ext.trust(claudeUser, true);
 
-        NPath file = userHome.resolve(".naru/skills-trust.tson");
-        assertTrue(file.isRegularFile(), "user-level trust must land under the user home: " + file);
+        assertNotNull(userStore().get("trust").orNull(), "user-level trust must land in the user named store");
         assertNotNull(ext.skills().findSkill("personal"));
     }
 
@@ -381,13 +380,12 @@ public class NaruSkillsRootsTest {
         assertNotNull(ext.skills().findSkill("helper"));
 
         // the level survives a fresh store over the same scope
-        NPath file = projectDir.resolve(".naru/local/skills-trust.tson");
-        assertTrue(file.isRegularFile(), "level trust must be persisted: " + file);
-        String tson = file.readString();
+        String tson = projectStore().get("trust").orNull().toString();
+        assertNotNull(tson, "level trust must be persisted");
         assertTrue(tson.contains("\"exec\""), () -> "the level must be in the payload: " + tson);
         NaruSkillRoot concrete = new NaruSkillRoot(NaruSkillRootKind.FOREIGN_PROJECT,
                 projectDir.resolve(".claude/skills"), "claude", 6000, false);
-        NaruSkillTrustStore store = new NaruSkillTrustStore(projectDir, userHome);
+        NaruSkillTrustStore store = trustStore();
         assertEquals(NaruSkillTrustLevel.EXEC, store.trustLevel(concrete),
                 "the persisted level must be read back");
 
@@ -399,24 +397,19 @@ public class NaruSkillsRootsTest {
 
         ext.trust(claude, false);
         assertNull(ext.skills().findSkill("helper"), "untrusting removes the root again");
-        assertFalse(file.isRegularFile(), "an empty trust store is removed");
+        assertNull(projectStore().get("trust").orNull(), "an empty trust record is removed");
     }
 
-    @Test
-    public void legacyTrustedArrayFormatIsReadAsReadLevel() {
-        write(projectDir.resolve(".naru/local/skills-trust.tson"),
-                "{trusted:[\"claude|.claude/skills\"]}");
-        NaruSkillTrustStore store = new NaruSkillTrustStore(projectDir, userHome);
-        NaruSkillRoot concrete = new NaruSkillRoot(NaruSkillRootKind.FOREIGN_PROJECT,
-                projectDir.resolve(".claude/skills"), "claude", 6000, false);
+    private net.thevpc.naru.api.store.NaruDataStore projectStore() {
+        return workspace.dataStore("skills/trust/project", projectDir);
+    }
 
-        assertEquals(NaruSkillTrustLevel.READ, store.trustLevel(concrete),
-                "a legacy array entry is a read grant");
-        assertTrue(store.isTrusted(concrete),
-                "the legacy array form must still trust the root");
-        assertEquals(NaruSkillTrustLevel.READ,
-                new NaruSkillTrustStore(projectDir, userHome).trustLevel(concrete),
-                "reading the legacy file twice must be stable");
+    private net.thevpc.naru.api.store.NaruDataStore userStore() {
+        return workspace.dataStore("skills/trust/user", userHome);
+    }
+
+    private NaruSkillTrustStore trustStore() {
+        return new NaruSkillTrustStore(projectDir, userHome, projectStore(), userStore());
     }
 
     @Test

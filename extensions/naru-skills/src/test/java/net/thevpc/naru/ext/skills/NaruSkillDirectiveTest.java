@@ -62,6 +62,7 @@ public class NaruSkillDirectiveTest {
 
     private NPath projectDir;
     private NPath userHome;
+    private NaruWorkspace workspace;
     private NaruSession session;
     private NaruSkillsExtension ext;
     private final List<NaruOutput> outputs = new ArrayList<>();
@@ -77,10 +78,10 @@ public class NaruSkillDirectiveTest {
         // the machine's ~/.naru/skills-trust.tson nor read skills an actual user has there
         userHome = NPath.ofTempFolder("naru-skill-directive-home-" + System.nanoTime());
         System.setProperty("naru.skills.userHome", userHome.toString());
-        NaruWorkspace agent = NaruWorkspace.of();
-        agent.projectDirectory(projectDir);
+        workspace = NaruWorkspace.of();
+        workspace.projectDirectory(projectDir);
         outputs.clear();
-        session = agent.newSession()
+        session = workspace.newSession()
                 .directory(projectDir)
                 .interaction(new NaruStreamInteraction(o -> outputs.add(o)))
                 .sessionListener(NOOP_LISTENER)
@@ -409,16 +410,19 @@ public class NaruSkillDirectiveTest {
         assertTrue(String.valueOf(r.successValue()).contains("write level"),
                 () -> "the message must name write: " + r.successValue());
 
-        NPath file = projectDir.resolve(".naru/local/skills-trust.tson");
-        assertTrue(file.isRegularFile(), "the decision must be persisted: " + file);
-        assertTrue(file.readString().contains("\"write\""), () -> "the level must persist");
+        assertTrue(projectStore().get("trust").orNull().toString().contains("write"), "the level must persist");
 
         // a fresh store over the same scope sees the write level
         NaruSkillRoot concrete = new NaruSkillRoot(NaruSkillRootKind.FOREIGN_PROJECT,
                 projectDir.resolve(".claude/skills"), "claude", 6000, false);
-        NaruSkillTrustStore store = new NaruSkillTrustStore(projectDir, NPath.ofUserHome());
+        NaruSkillTrustStore store = new NaruSkillTrustStore(projectDir, userHome,
+                projectStore(), workspace.dataStore("skills/trust/user", userHome));
         assertEquals(NaruSkillTrustLevel.WRITE, store.trustLevel(concrete),
                 "a fresh store must read the persisted write level back");
+    }
+
+    private net.thevpc.naru.api.store.NaruDataStore projectStore() {
+        return workspace.dataStore("skills/trust/project", projectDir);
     }
 
     // ── autocomplete ────────────────────────────────────────────────────────
