@@ -58,3 +58,4 @@ documentation/.naru
 /extensions/naru-llama-cpp/target/
 /extensions/naru-compact/target/
 
+/app/naru-desktop/target/
