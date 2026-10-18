@@ -66,7 +66,7 @@ public final class PermissionsPane extends JPanel implements PermissionsModel.Li
     private final PermissionsModel model;
     private final DefaultListModel<PermissionsModel.Row> rows = new DefaultListModel<>();
     private final JList<PermissionsModel.Row> list = new JList<>(rows);
-    private final JTextArea detail = new JTextArea();
+    private final JTextArea detail = TextAreas.readOnly();
     private final JLabel note = new JLabel(" ");
     private final JComboBox<String> defaultEffect = new JComboBox<>(new String[]{"allow", "deny"});
     private final JButton remove = new JButton("Remove");
@@ -85,8 +85,6 @@ public final class PermissionsPane extends JPanel implements PermissionsModel.Li
         list.setCellRenderer(new RowRenderer());
         list.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         list.addListSelectionListener(e -> showDetail());
-        detail.setEditable(false);
-        detail.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         note.setFont(note.getFont().deriveFont(Font.PLAIN, 11f));
         note.setForeground(Color.GRAY);
         note.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));

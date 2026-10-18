@@ -33,6 +33,15 @@
         <dependency><groupId>net.thevpc.common</groupId><artifactId>thevpc-common-plaf</artifactId><version>1.2.0</version></dependency>
         <dependency><groupId>net.thevpc.nuts</groupId><artifactId>nuts-swing</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>com.formdev</groupId><artifactId>flatlaf</artifactId><version>3.7.1</version></dependency>
+        <!--
+            The shared text widget: multiline editing with undo, and read-only detail areas that
+            wrap and scroll the same way. RSyntaxTextArea extends JTextArea, so it replaces the
+            composer's area without touching the caret/text API the panes already use. Autocomplete
+            deliberately is NOT here: the engine's NaruLineCompletion returns the span to replace,
+            and a word-boundary completion library would have to be argued out of disagreeing with
+            it. The popup is ours and uses that span directly.
+        -->
+        <dependency><groupId>com.fifesoft</groupId><artifactId>rsyntaxtextarea</artifactId><version>3.6.2</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.0</version><scope>test</scope></dependency>
     </dependencies>
 

@@ -40,7 +40,7 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
     private final NaruSessionModel session;
     private final DefaultListModel<NaruSessionModel.TaskRow> rows = new DefaultListModel<>();
     private final JList<NaruSessionModel.TaskRow> list = new JList<>(rows);
-    private final JTextArea detail = new JTextArea();
+    private final JTextArea detail = TextAreas.readOnly();
     private final JLabel note = new JLabel(" ");
     private final JLabel actionNote = new JLabel(" ");
     private final JButton holdButton = new JButton("Hold");
@@ -73,8 +73,6 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
             }
         });
 
-        detail.setEditable(false);
-        detail.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         detail.setText("select a task to see its frames");
         JScrollPane listScroll = new JScrollPane(list);
         // the same lesson as the transcript: a JList is as wide as its widest cell, and a long task
@@ -357,7 +355,20 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
 
     private List<NaruSessionModel.TaskRow> current() {
         List<NaruSessionModel.TaskRow> all = session.tasks();
-        return interactiveOnly ? all.stream().filter(NaruSessionModel.TaskRow::conversation).toList() : all;
+        return interactiveOnly
+                ? all.stream().filter(r -> r.conversation() || waitingOnUser(r)).toList()
+                : all;
+    }
+
+    /**
+     * A parked question is shown even when its task is not a conversation. {@code requestInput} does
+     * not require INTERACTIVE mode and pending-input registration keys off the status, so a BATCH job
+     * can be sitting on a question — and the composer's own rule is that only the *selected* pending
+     * task can be answered, so a hidden row would be an unanswerable question.
+     * {@code BLOCKED_ON_EVENT} deliberately is not included: that waits on the engine, not on the user.
+     */
+    private static boolean waitingOnUser(NaruSessionModel.TaskRow r) {
+        return r.status() == NaruTaskStatus.BLOCKED_ON_INPUT;
     }
 
     private void updateNote(List<NaruSessionModel.TaskRow> current) {

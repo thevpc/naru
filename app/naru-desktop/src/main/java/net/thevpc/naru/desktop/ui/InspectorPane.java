@@ -27,7 +27,7 @@ public final class InspectorPane extends JPanel implements NaruSessionModel.List
         tabs.addTab("Plans · session", scroll(plans));
         add(tabs); model.addListener(this); sessionModelChanged();
     }
-    private static JTextArea area() { JTextArea a = new JTextArea(); a.setEditable(false); a.setLineWrap(true); a.setWrapStyleWord(true); a.setBorder(BorderFactory.createEmptyBorder(10,10,10,10)); return a; }
+    private static JTextArea area() { return TextAreas.readOnly(); }
     private static JScrollPane scroll(JTextArea a) { return new JScrollPane(a); }
     public void setSelectedTaskId(long id) { taskId = id; if (skillsForTask != id) skillsForTask = Long.MIN_VALUE; sessionModelChanged(); }
 

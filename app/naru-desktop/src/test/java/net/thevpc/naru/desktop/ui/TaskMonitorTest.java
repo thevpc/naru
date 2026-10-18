@@ -11,6 +11,7 @@ import net.thevpc.naru.desktop.model.NaruSessionModel.TaskAction;
 import net.thevpc.naru.desktop.model.NaruSessionModel.TaskRow;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
@@ -201,9 +202,10 @@ class TaskMonitorTest {
         });
         // the filter's own contract, stated against the engine rather than against an assumption
         // about which probes are conversations: the rail shows exactly the rows the model marks
-        // conversation. Measured on this session, a probe spawned under a conversation is one and
-        // the root that spawned it is not, which is precisely the kind of detail a hard-coded id
-        // check would get wrong the next time the engine changes its promotion rule.
+        // conversation (plus a parked question, asserted below). {@code isConversation()} is the
+        // monotonic "has ever entered INTERACTIVE mode" flag, so which probes carry it is the
+        // engine's business — deriving the expected set from the rows instead of hard-coding ids is
+        // what keeps this honest if the promotion rule ever changes.
         List<String> expected = new ArrayList<>();
         List<String> hidden = new ArrayList<>();
         for (TaskRow r : model.tasks()) {
@@ -226,6 +228,45 @@ class TaskMonitorTest {
                     "a spawned job is not an interactive task, so the default view has to leave out"
                             + " " + head + ": " + interactiveRows + " rows, they were "
                             + interactiveLabels);
+        }
+
+        // …unless it is sitting on a question. requestInput does not require INTERACTIVE mode and
+        // pending input registers off the status, so a BATCH job can be the one thing waiting for
+        // the user — and the composer only answers the *selected* pending task, so a row hidden by
+        // the filter would be a question with no way to answer it.
+        TaskRow parked = null;
+        for (TaskRow r : model.tasks()) {
+            if (!r.conversation()) {
+                parked = r;
+                break;
+            }
+        }
+        assertNotNull(parked, "premise: one non-conversation job to park");
+        final long parkedId = parked.id();
+        NaruTask parkedTask = model.session().findTask(parkedId).orNull();
+        assertNotNull(parkedTask, "the job the filter hid is still a live task");
+        parkedTask.requestInput(NMsg.ofC("which of the two? (parked from a batch job)"));
+        awaitTrue(() -> {
+            TaskRow now = rowOf(model.tasks(), parkedId);
+            return now != null && now.status() == NaruTaskStatus.BLOCKED_ON_INPUT;
+        }, "the engine settled the job into BLOCKED_ON_INPUT");
+        List<String> afterPark = onEdtReturn(() -> {
+            List<String> out = new ArrayList<>();
+            for (int i = 0; i < pane.taskCount(); i++) {
+                out.add(pane.rowLabelAt(i));
+            }
+            return out;
+        });
+        String parkedHead = "#" + parked.id() + " ";
+        assertTrue(containsHead(afterPark, parkedHead),
+                "a parked question must be reachable in the default view: " + afterPark);
+        for (String head : hidden) {
+            if (head.equals(parkedHead)) {
+                continue;
+            }
+            assertFalse(containsHead(afterPark, head),
+                    "the exception is a parked question, not the whole tree: " + head + " stayed"
+                            + " hidden in " + afterPark);
         }
 
         // the user's way back to the tree: press the toggle, and wait for the poll to redraw

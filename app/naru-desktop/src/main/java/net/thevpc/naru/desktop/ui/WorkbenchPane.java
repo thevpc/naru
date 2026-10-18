@@ -24,10 +24,10 @@ public final class WorkbenchPane extends JPanel {
     private final JTabbedPane tabs = new JTabbedPane();
     private final JTree tree = new JTree(new DefaultMutableTreeNode("Project"));
     private final JTextPane fileView = new JTextPane();
-    private final JTextArea diffView = new JTextArea();
+    private final JTextArea diffView = TextAreas.readOnly();
     private final DefaultListModel<String> routineRows = new DefaultListModel<>();
     private final JList<String> routines = new JList<>(routineRows);
-    private final JTextArea routineEditor = new JTextArea();
+    private final JTextArea routineEditor = TextAreas.monospace(0, 0);
     private long taskId = -1;
 
     public WorkbenchPane(NaruSessionModel model) {
@@ -50,7 +50,7 @@ public final class WorkbenchPane extends JPanel {
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(tree), preview); split.setResizeWeight(.30); return split;
     }
     private JPanel changes() {
-        JPanel p = new JPanel(new BorderLayout()); diffView.setEditable(false); diffView.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        JPanel p = new JPanel(new BorderLayout());
         JButton refresh = new JButton("Refresh diff"); refresh.addActionListener(e -> loadDiff()); p.add(refresh, BorderLayout.NORTH); p.add(new JScrollPane(diffView), BorderLayout.CENTER); return p;
     }
     private JPanel routineEditor() {

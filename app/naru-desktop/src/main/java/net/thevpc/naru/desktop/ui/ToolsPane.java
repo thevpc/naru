@@ -34,7 +34,7 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
     private final ToolCallModel model;
     private final DefaultListModel<ToolCallModel.Row> rows = new DefaultListModel<>();
     private final JList<ToolCallModel.Row> list = new JList<>(rows);
-    private final JTextArea detail = new JTextArea();
+    private final JTextArea detail = TextAreas.readOnly();
     private final JLabel note = new JLabel(" ");
     private final javax.swing.JButton toPermissions = new javax.swing.JButton("Permission rule…");
     /** Opens the Permissions tab on the rule that denied this call, set by the window. */
@@ -50,8 +50,6 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
         list.setCellRenderer(new RowRenderer());
         list.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         list.addListSelectionListener(e -> showDetail());
-        detail.setEditable(false);
-        detail.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         detail.setText("Select a call to see its arguments and its full result.");
         note.setFont(note.getFont().deriveFont(Font.PLAIN, 11f));
         note.setForeground(Color.GRAY);

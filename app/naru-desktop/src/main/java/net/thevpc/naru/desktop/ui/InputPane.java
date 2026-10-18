@@ -7,28 +7,17 @@ import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.util.MsgText;
 
 import javax.swing.BorderFactory;
-import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
-import javax.swing.JMenuItem;
 import javax.swing.JPanel;
-import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
-import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
-import javax.swing.text.BadLocationException;
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.event.ActionEvent;
-import java.awt.event.InputEvent;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
-import java.util.List;
 
 /**
  * Task conversation composer with model/mode selectors, attachments, completion, and input history.
@@ -44,7 +33,12 @@ import java.util.List;
 public final class InputPane extends JPanel implements NaruSessionModel.Listener {
 
     private final NaruSessionModel session;
-    private final JTextArea area = new JTextArea(3, 40);
+    /**
+     * The composer itself: multiline, word-wrapped, undoable, and its Ctrl+Space list is built from
+     * {@code session.complete(text, caret)} — the engine's own {@link NaruLineCompletion}, so the
+     * candidate set and the span to replace are never re-derived here.
+     */
+    private final ComposerArea area;
     private final JLabel reason = new JLabel(" ");
     private final JButton send = new JButton("Send");
     private final JComboBox<String> model = new JComboBox<>(new String[]{"Choose model…", "Default model", "Local model"});
@@ -53,20 +47,15 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private final JPanel promptPanel = new JPanel(new BorderLayout());
     private final JLabel promptQuestion = new JLabel(" ");
     private final JPanel promptChoices = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-    private final JPopupMenu completion = new JPopupMenu();
-    private NaruLineCompletion.Result lastResult = NaruLineCompletion.Result.none("", 0, 0);
     private NaruInputRequest shownFor;
     private long selectedTaskId = -1;
 
     public InputPane(NaruSessionModel session) {
         super(new BorderLayout(6, 4));
         this.session = session;
+        this.area = new ComposerArea(session::complete);
         setBorder(BorderFactory.createEmptyBorder(6, 8, 8, 8));
 
-        area.setLineWrap(true);
-        area.setWrapStyleWord(true);
-        area.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
-        area.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
         JScrollPane scroller = new JScrollPane(area);
         scroller.setBorder(BorderFactory.createLineBorder(getBackground().darker()));
 
@@ -107,173 +96,13 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         sessionModelChanged();
     }
 
+    /**
+     * The widget owns its keys — see {@link ComposerArea} — so what is left here is the two things
+     * only the pane knows: what "send" means, and where history lives.
+     */
     private void installKeys() {
-        area.addKeyListener(new KeyAdapter() {
-            @Override
-            public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_ESCAPE && completion.isVisible()) {
-                    completion.setVisible(false);
-                    e.consume();
-                    return;
-                }
-                if (e.getKeyCode() == KeyEvent.VK_TAB || (e.getKeyCode() == KeyEvent.VK_SPACE
-                        && e.isControlDown())) {
-                    e.consume();
-                    showCompletion();
-                    return;
-                }
-                boolean enter = e.getKeyCode() == KeyEvent.VK_ENTER;
-                if (!enter) {
-                    return;
-                }
-                boolean ctrl = (e.getModifiersEx() & InputEvent.CTRL_DOWN_MASK) != 0;
-                boolean shift = (e.getModifiersEx() & InputEvent.SHIFT_DOWN_MASK) != 0;
-                if (completion.isVisible()) {
-                    e.consume();
-                    acceptFirstCandidate();
-                    return;
-                }
-                // The desktop composer always uses Enter to send and Shift+Enter for a newline.
-                if (!shift) {
-                    e.consume();
-                    doSend(null);
-                }
-            }
-
-            @Override
-            public void keyReleased(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_CONTROL || e.getKeyCode() == KeyEvent.VK_SHIFT) {
-                    return;
-                }
-                updateEnabledState();
-            }
-        });
-        // history on Up/Down, but only when the caret is on the first/last visual line, so
-        // editing a multi-line block still moves the caret normally
-        area.getInputMap(javax.swing.JComponent.WHEN_FOCUSED).put(
-                KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0), "desktop-history-prev");
-        area.getActionMap().put("desktop-history-prev", new HistoryAction(true));
-        area.getInputMap(javax.swing.JComponent.WHEN_FOCUSED).put(
-                KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, 0), "desktop-history-next");
-        area.getActionMap().put("desktop-history-next", new HistoryAction(false));
-    }
-
-    private final class HistoryAction extends AbstractTextAction {
-        private final boolean prev;
-
-        HistoryAction(boolean prev) {
-            super(prev ? "prev" : "next");
-            this.prev = prev;
-        }
-
-        @Override
-        public void actionPerformed(ActionEvent e) {
-            JTextArea t = (JTextArea) e.getSource();
-            if (prev && isOnFirstLine(t)) {
-                String s = session.historyPrev();
-                if (s != null) {
-                    replaceAll(t, s);
-                }
-            } else if (!prev && isOnLastLine(t)) {
-                String s = session.historyNext();
-                if (s != null) {
-                    replaceAll(t, s);
-                }
-            }
-        }
-
-        private boolean isOnFirstLine(JTextArea t) {
-            try {
-                return t.getLineOfOffset(t.getCaretPosition()) == 0;
-            } catch (BadLocationException e) {
-                return false;
-            }
-        }
-
-        private boolean isOnLastLine(JTextArea t) {
-            try {
-                return t.getLineOfOffset(t.getCaretPosition()) == t.getLineCount() - 1;
-            } catch (BadLocationException e) {
-                return false;
-            }
-        }
-
-        private void replaceAll(JTextArea t, String s) {
-            t.setText(s);
-            t.setCaretPosition(s.length());
-        }
-    }
-
-    /** Base so both history actions share undo-ish plumbing without a second key handler. */
-    private abstract static class AbstractTextAction extends javax.swing.AbstractAction {
-        AbstractTextAction(String name) {
-            super(name);
-        }
-    }
-
-    // ── completion ────────────────────────────────────────────────────────────
-
-    private void showCompletion() {
-        String text = area.getText();
-        int caret = area.getCaretPosition();
-        NaruLineCompletion.Result r = session.complete(text, caret);
-        lastResult = r;
-        completion.removeAll();
-        if (r.isEmpty()) {
-            completion.setVisible(false);
-            return;
-        }
-        for (NaruLineCompletion.Candidate c : r.candidates()) {
-            JMenuItem item = new JMenuItem(render(c, r.ambiguous()));
-            item.addActionListener(e -> insert(c));
-            completion.add(item);
-        }
-        int rows = Math.min(r.candidates().size(), 12);
-        java.awt.Rectangle caretRect = caretRect();
-        completion.setPreferredSize(new Dimension(Math.max(240, caretRect.width + 120),
-                rows * 22 + 8));
-        completion.show(area, caretRect.x, caretRect.y + caretRect.height);
-    }
-
-    /** Where to hang the popup; a wrapped area has no model position until it is laid out. */
-    private java.awt.Rectangle caretRect() {
-        try {
-            java.awt.Rectangle r = area.modelToView(area.getCaretPosition());
-            if (r != null) {
-                return r;
-            }
-        } catch (BadLocationException | IllegalArgumentException ignored) {
-            // not laid out yet, or a stale caret: fall back to the top-left of the field
-        }
-        return new java.awt.Rectangle(0, 0, 240, 18);
-    }
-
-    private String render(NaruLineCompletion.Candidate c, boolean ambiguous) {
-        String base = c.insert();
-        if (c.display() == null) {
-            return ambiguous ? base + "  (" + c.kind() + ")" : base;
-        }
-        return base + " — " + c.display() + (ambiguous ? "  (" + c.kind() + ")" : "");
-    }
-
-    private void acceptFirstCandidate() {
-        if (!lastResult.candidates().isEmpty()) {
-            insert(lastResult.candidates().get(0));
-        }
-        completion.setVisible(false);
-    }
-
-    private void insert(NaruLineCompletion.Candidate c) {
-        int start = lastResult.replaceStart();
-        int end = lastResult.replaceEnd();
-        String text = area.getText();
-        if (start < 0 || end > text.length() || start > end) {
-            return;
-        }
-        String next = text.substring(0, start) + c.insert() + text.substring(end);
-        area.setText(next);
-        area.setCaretPosition(start + c.insert().length());
-        completion.setVisible(false);
+        area.setOnSend(() -> doSend(null));
+        area.setHistory(session::historyPrev, session::historyNext);
     }
 
     // ── prompt ────────────────────────────────────────────────────────────────
@@ -350,7 +179,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     // ── sending ───────────────────────────────────────────────────────────────
 
     private void doSend(ActionEvent e) {
-        String line = area.getText().trim();
+        String line = area.composerText();
         NaruInputRequest r = shownFor;
         if (line.isEmpty()) {
             return;
@@ -361,7 +190,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         } else {
             session.submit(line);
         }
-        area.setText("");
+        area.clearForSend();
         updateEnabledState();
     }
 

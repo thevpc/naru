@@ -517,6 +517,92 @@ worktree at `a4d7f6f` with **no** desktop changes runs the same class **34 / 1**
 line. Reading the scheduler to make it green would be changing agent behaviour, so it is reported as a
 decision rather than fixed here.
 
+## The composer: a real editor, the engine's completion, and the defect only a window could show
+
+The owner's instruction was to replace the single-line field with a multiline component capable
+enough to hold Ctrl+Space completion, reusing the engine's implementation rather than a host-side
+guess, and then reuse that editor in the rest of the panes. Route chosen from the two options put
+back to him: **RSyntaxTextArea 3.6.2 plus a popup driven by the engine's own replacement span** —
+deliberately *not* `com.fifesoft:autocomplete`, whose word-boundary model would re-derive the span
+`NaruLineCompletion` already computed and disagree with it.
+
+Four files, and `InputPane` lost its key handling entirely:
+
+- `ui/TextAreas` — the module's one text factory. `readOnly()` for detail blocks, `monospace(r,c)`
+  for the routine editor, `plain(r,c)` under the composer. `apply()` pins the shared behaviour:
+  `SYNTAX_STYLE_NONE` (no invented grammar — the engine's log modes are the only formats here), word
+  wrap, no folding, no current-line highlight, no tab lines, and the PLAF's `TextArea.background` /
+  `foreground` pushed onto the RSTA so FlatLaf does not show a white island.
+- `ui/CompletionPopup` — the candidate list. Shows `insert`, `display`, and the `Kind` only when the
+  engine says the set is `ambiguous()`, so `/help (command)` and `/home/ (directory)` are readable
+  side by side instead of one of them silently winning.
+- `ui/ComposerArea` — `RSyntaxTextArea` + the bindings. Ctrl+Space **and** Tab ask; with the list
+  open Up/Down move and Enter takes the highlighted row, with it closed Up/Down are history at the
+  ends of a draft and Enter sends; Shift+Enter is a newline; Escape dismisses; Ctrl+Backspace undoes.
+  Every one is an `InputMap` binding, not a `KeyListener`, because the text component binds Enter and
+  Tab itself and a listener would run after the widget had eaten them.
+- `ui/InputPane` — the field is now `new ComposerArea(session::complete)`; the old `JPopupMenu`,
+  `KeyListener`, `HistoryAction` and hand-rolled caret arithmetic are gone. §3.4's enable rule and the
+  prompt/choice UI were not touched.
+
+**The reuse, measured in the window the user opens** (`ComposerSmoke`): `TaskPane` 1 monospace area,
+`InspectorPane` 5, `WorkbenchPane` 2 (diff + routine editor), 10 `RSyntaxTextArea` instances in the
+live frame. `ToolsPane` and `PermissionsPane` detail blocks went through the same factory. A probe
+settled the risk in the plain panes before taking it: `JTextArea` and `RSyntaxTextArea` both bind
+`TAB → insert-tab` and `ENTER → insert-break`, so the swap changed no keystroke behaviour outside the
+composer. `WorkbenchPane.fileView` stays a `JTextPane` on purpose — its syntax colouring is
+`StyledDocument`-based and does not port.
+
+**What the real window caught and the component test could not.** The first `ComposerSmoke` run
+passed Ctrl+Space, saw the candidates, and then lost every keystroke: Enter did not accept,
+Shift+Enter did not newline, the send did not fire — four failures. The measurement that named it:
+`focus after ctrl+space: composer=false global=JRootPane in MainWindow`. A `JPopupMenu` is only a
+lightweight child of the window when it fits inside that window's bounds; the composer sits at the
+bottom of the frame and the list is up to ten rows tall, so Swing promoted the popup to its own
+top-level window and on X11 that window took the keyboard. The unit test never saw it because its
+frame was small enough for the list to fit.
+
+The fix is structural, not a geometry tweak: the list is now a non-focusable card in the frame's
+`JLayeredPane` (`POPUP_LAYER`), positioned in layered-pane coordinates, hung above the caret when it
+would not clear the bottom edge, and sized to the widest candidate so it needs no horizontal
+scrollbar. It cannot become a window, cannot outlive the frame's moves, and cannot take focus.
+`ComposerAreaTest` order 9 pins exactly that: a composer at the SOUTH of a 520x400 frame with 12
+candidates, asserting the card is inside the layered pane, that its host window is the frame, and
+that `Window.getWindows().length` is **unchanged** by opening the list.
+
+**Gate numbers.** `DISPLAY=:98 … ComposerSmoke /tmp/naru-composer-smoke`, FlatLaf Dark, real
+`MainWindow`, real engine:
+
+- `ctrl+space: 2 candidates, 82ms from the keystroke to the list being visible, engine work 1852µs`
+  (a repeat run measured 3 ms to visible — the 82 ms is the first paint of the card, not the engine).
+- `candidate[0] = /mode  —  /mode — manage AI modes`, `candidate[1] = /model  —  /model — manage AI
+  models`; `popup: Rectangle[x=50,y=773,width=356,height=44] inside MainWindow`;
+  `focus after ctrl+space: composer=true global=ComposerArea in MainWindow (main)`.
+- `accept: "/mode" (was 4 chars, insert "/mode")` — the engine's span, not a word boundary.
+- `shift+enter: line count 2, text "/mode\nx"`; then
+  `send: "/mode x" answered the request task #1 was waiting on (yes), composer emptied=true`.
+- `0 EDT stalls over 16ms since the first keystroke` (run total 3 of 76 pings, `max-ping-ms=828`, all
+  of it at session boot as before). `VERDICT=PASS`. Screenshots `/tmp/naru-composer-open.png`,
+  `/tmp/naru-composer-accepted.png`.
+
+**The rail's parked-task rule, which the owner ruled on.** His correction — "session can spawn
+multiple tasks, the first one usually is interactive, the result might be not, but don't take that for
+granted" — withdrew my earlier claim that the rail shows one row by default; that was an artefact of a
+harness that never promoted a task. What is actually true, and what the filter now handles:
+`requestInput` does **not** require `INTERACTIVE` (`NaruTaskImpl:319-322`), and a pending input
+register is keyed off the task's status rather than its mode (`NaruSessionImpl:1192-1195`). So a batch
+task can park on a question, and an interactive-only filter would hide a task that is waiting for the
+user — an unanswerable prompt. `TaskPane.current()` therefore shows rows that are conversations **or**
+`BLOCKED_ON_INPUT`; `BLOCKED_ON_EVENT` stays out, since nothing is being asked of the user. Chosen
+over the alternative (a badge on "All tasks") because the failure mode of hiding a parked task is a
+stuck session. `TaskMonitorTest` order 4 now measures it: it picks a non-conversation row from the
+model, parks it with `requestInput`, and asserts it appears in the default view while the other hidden
+rows stay hidden.
+
+**Suite: 109 tests, 0 failures, 0 errors** (was 99: `ComposerAreaTest` 10 new, the parked-task hop in
+`TaskMonitorTest`). No §7 engine PR is owed — nothing under `core/` changed, the terminal REPL path is
+untouched, and the only new dependency is on the desktop module's own classpath.
+
 ## Open in Phase 2
 
 - **`core/naru-impl` is red at HEAD again**: `NaruTaskCompletionTest.cancelSettlesTheRunAsKilled:574`
@@ -524,9 +610,15 @@ decision rather than fixed here.
   desktop changes. It is the committed scheduler work, it is the owner's area, and a fix that reads the
   scheduler is an agent-behaviour change. Needs a ruling: adapt the test, or land the behaviour it
   asserts.
-- **Task rail: is interactive-only the v1 default?** Measured: in a live session only the foreground
-  task is a conversation, so the rail opens with **one row** and every spawned job is hidden until
-  "All tasks". §6's "live parallel tasks" is currently satisfied only in the unfiltered view.
+- ~~**Task rail: is interactive-only the v1 default?**~~ — closed by the owner's ruling: parked tasks
+  always show. See "The composer" above for the measurement and `TaskPane.current()` for the rule.
+- **The completion card is clipped, not scrolled, when the window is shorter than the list.** Ten rows
+  is 204 px; a window dragged below that height cuts the rows instead of offering a scrollbar. The
+  trade was deliberate (a scrollbar inside a layered-pane card competes with the composer for keys), but
+  it is untested at that size.
+- **The routine editor now word-wraps.** It went through the shared factory, so a long routine line
+  folds rather than scrolling sideways. Right for reading, untested for editing; if it annoys anyone
+  writing routines, that pane wants `setLineWrap(false)` rather than a different widget.
 - **The "Conversation" tab is empty until a task row is clicked.** `MainWindow` sets its
   `TranscriptPane` filter to `-1` at activation, which matches nothing; the rail's selection callback is
   what fills it. A first-run user who never clicks the rail sees no answer pane.
