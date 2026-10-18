@@ -55,6 +55,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     private final CellRenderer renderer = new CellRenderer();
     private MarkdownRenderer markdown;
     private int wrapWidth = 900;
+    private long taskFilter = Long.MIN_VALUE;
     /** Set by the window: jump from a denial card to the rule that caused it (plan §6). */
     private java.util.function.Consumer<String> onJumpToPermissions;
     private final javax.swing.JPopupMenu denialMenu = new javax.swing.JPopupMenu();
@@ -209,7 +210,8 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
 
     private void syncRows() {
         boolean stick = isNearBottom();
-        List<TranscriptBlock> visible = model.visible();
+        List<TranscriptBlock> visible = model.visible().stream()
+                .filter(b -> taskFilter == Long.MIN_VALUE || b.taskId() == taskFilter).toList();
         // cheap diff: the transcript only ever grows at the end, or is fully reset
         int common = 0;
         while (common < visible.size() && common < rows.size()
@@ -231,10 +233,12 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
 
     /** The header line: how much of the transcript is there, and how much of it was dropped. */
     private void updateCounter() {
-        int n = model.visibleSize();
+        int n = rows.size();
+        int chars = 0;
+        for (int i = 0; i < rows.size(); i++) chars += rows.get(i).length();
         counter.setText(n + " block" + (n == 1 ? "" : "s")
                 + (model.trimmedBlocks() > 0 ? " · " + model.trimmedBlocks() + " trimmed" : "")
-                + " · " + model.retainedChars() + " chars");
+                + " · " + chars + " chars");
     }
 
     private boolean isNearBottom() {
@@ -256,6 +260,11 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     /** Install the window's jump so a denial card's menu can reach the Permissions tab. */
     public void setJumpToPermissions(java.util.function.Consumer<String> jump) {
         this.onJumpToPermissions = jump;
+    }
+
+    public void setTaskFilter(long taskId) {
+        taskFilter = taskId;
+        syncRows();
     }
 
     /**

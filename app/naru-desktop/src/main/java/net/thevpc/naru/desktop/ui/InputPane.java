@@ -1,6 +1,5 @@
 package net.thevpc.naru.desktop.ui;
 
-import net.thevpc.naru.api.agent.NaruInputMode;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.registry.NaruLineCompletion;
 import net.thevpc.naru.desktop.model.InputPrompt;
@@ -32,8 +31,7 @@ import java.awt.event.KeyEvent;
 import java.util.List;
 
 /**
- * Where the user talks to the agent: a multi-line field, the LINE/BLOC switch that replaces
- * {@code /buffer}, completion from E2, and history on the arrow keys.
+ * Task conversation composer with model/mode selectors, attachments, completion, and input history.
  * <p>
  * The field is disabled with the reason written next to it whenever a submission would be thrown
  * away. That is plan §3.4: the engine drops input silently unless the foreground task is
@@ -49,13 +47,16 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private final JTextArea area = new JTextArea(3, 40);
     private final JLabel reason = new JLabel(" ");
     private final JButton send = new JButton("Send");
-    private final JComboBox<String> mode = new JComboBox<>(new String[]{"LINE", "BLOC"});
+    private final JComboBox<String> model = new JComboBox<>(new String[]{"Choose model…", "Default model", "Local model"});
+    private final JComboBox<String> agentMode = new JComboBox<>(new String[]{"Agent", "Ask", "Plan"});
+    private final JButton attach = new JButton("＋ Attach");
     private final JPanel promptPanel = new JPanel(new BorderLayout());
     private final JLabel promptQuestion = new JLabel(" ");
     private final JPanel promptChoices = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
     private final JPopupMenu completion = new JPopupMenu();
     private NaruLineCompletion.Result lastResult = NaruLineCompletion.Result.none("", 0, 0);
     private NaruInputRequest shownFor;
+    private long selectedTaskId = -1;
 
     public InputPane(NaruSessionModel session) {
         super(new BorderLayout(6, 4));
@@ -64,7 +65,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
 
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
-        area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
+        area.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         area.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
         JScrollPane scroller = new JScrollPane(area);
         scroller.setBorder(BorderFactory.createLineBorder(getBackground().darker()));
@@ -76,14 +77,25 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
 
         JPanel tools = new JPanel(new BorderLayout());
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        mode.setToolTipText("LINE sends Enter as submit; BLOC keeps Enter for newlines and sends on Ctrl+Enter");
-        mode.addActionListener(e -> session.setInputMode(
-                "BLOC".equals(mode.getSelectedItem()) ? NaruInputMode.BLOC : NaruInputMode.LINE));
-        left.add(mode);
-        left.add(reason);
+        model.setToolTipText("Model selection · provider data will be connected here");
+        agentMode.setToolTipText("Conversation mode · mode actions will be connected here");
+        attach.setToolTipText("Attach files to this task conversation");
+        attach.addActionListener(e -> {
+            javax.swing.JFileChooser chooser = new javax.swing.JFileChooser();
+            chooser.setMultiSelectionEnabled(true);
+            if (chooser.showOpenDialog(this) == javax.swing.JFileChooser.APPROVE_OPTION) {
+                attach.setText("＋ " + chooser.getSelectedFiles().length + " attached");
+            }
+        });
+        left.add(model);
+        left.add(agentMode);
+        left.add(attach);
         tools.add(left, BorderLayout.WEST);
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        right.add(reason);
         send.addActionListener(this::doSend);
-        tools.add(send, BorderLayout.EAST);
+        right.add(send);
+        tools.add(right, BorderLayout.EAST);
 
         add(promptPanel, BorderLayout.NORTH);
         add(scroller, BorderLayout.CENTER);
@@ -116,14 +128,13 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                 }
                 boolean ctrl = (e.getModifiersEx() & InputEvent.CTRL_DOWN_MASK) != 0;
                 boolean shift = (e.getModifiersEx() & InputEvent.SHIFT_DOWN_MASK) != 0;
-                boolean bloc = session.inputMode() == NaruInputMode.BLOC;
                 if (completion.isVisible()) {
                     e.consume();
                     acceptFirstCandidate();
                     return;
                 }
-                // LINE: Enter submits, Shift+Enter adds a newline. BLOC: the reverse.
-                if (bloc ? ctrl : !shift) {
+                // The desktop composer always uses Enter to send and Shift+Enter for a newline.
+                if (!shift) {
                     e.consume();
                     doSend(null);
                 }
@@ -356,12 +367,15 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
 
     private void updateEnabledState() {
         String why = session.inputDisabledReason();
-        boolean can = session.canAcceptInput();
+        NaruInputRequest pending = session.pendingRequest();
+        boolean matchesTask = pending != null && selectedTaskId == pending.task().id();
+        boolean can = session.canAcceptInput() && matchesTask;
         area.setEnabled(can);
         send.setEnabled(can);
         if (can) {
             reason.setText(" ");
         } else {
+            if (pending != null && !matchesTask) why = "Select task #" + pending.task().id() + " to answer its question";
             reason.setText("<html><i>" + escape(why) + "</i></html>");
             reason.setForeground(new Color(180, 95, 60));
         }
@@ -369,12 +383,24 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
 
     @Override
     public void sessionModelChanged() {
-        mode.setSelectedItem(session.inputMode() == NaruInputMode.BLOC ? "BLOC" : "LINE");
         updateEnabledState();
     }
 
     /** Prompt the user to look at the transcript when output stops mid-turn. */
     public void focusInput() {
         area.requestFocusInWindow();
+    }
+
+    public void setSelectedTaskId(long taskId) {
+        selectedTaskId = taskId;
+        NaruInputRequest pending = session.pendingRequest();
+        if (pending != null && pending.task().id() == taskId) showPrompt(pending);
+        else if (shownFor != null) clearPrompt();
+        updateEnabledState();
+    }
+
+    public void dispose() {
+        session.removeListener(this);
+        session.setInputListener(null);
     }
 }

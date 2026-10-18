@@ -1,128 +1,181 @@
 package net.thevpc.naru.desktop;
 
-import net.thevpc.common.swing.plaf.JPlafMenu;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruWorkspaceBuilder;
 import net.thevpc.naru.desktop.host.InteractionHost;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.ui.InputPane;
-import net.thevpc.naru.desktop.ui.PermissionsPane;
 import net.thevpc.naru.desktop.ui.StatusBar;
 import net.thevpc.naru.desktop.ui.TaskPane;
 import net.thevpc.naru.desktop.ui.ToolsPane;
 import net.thevpc.naru.desktop.ui.TranscriptPane;
 import net.thevpc.nuts.io.NPath;
-import net.thevpc.swing.plaf.UIPlaf;
-import net.thevpc.swing.plaf.UIPlafManager;
 
 import javax.swing.BorderFactory;
-import javax.swing.DefaultComboBoxModel;
-import javax.swing.JComboBox;
+import javax.swing.DefaultListModel;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JButton;
+import javax.swing.JList;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
+import javax.swing.JScrollPane;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
-import java.awt.Font;
+import java.awt.Point;
+import java.awt.Cursor;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.prefs.Preferences;
 
 /**
- * The v1 window: one frame, a project switcher, transcript on the left, side panels as tabs.
+ * Session-centric IDE shell. Sessions are the top-level navigation; each session owns its task
+ * task tree, session log, and task-selected conversation view. Session identity is independent
+ * from each task's project and working directory.
  * <p>
  * The layout is {@code JSplitPane} + {@code JTabbedPane} by decision, not preference —
  * {@code JDockPane} crashed removing the visible window, its anchor setter is an empty stub, and
  * horizontal divider positions do not stick (Phase 0 spike 4). See
  * {@code documentation/plans/desktop-gui-phase0.md}.
  * <p>
- * One window also settles plan §3.1: {@code setSharedWorkspaceInstance()} is process-global, so a
- * second window with a different project would fight over it. Everything here resolves through
- * the explicit {@link NaruSessionModel} of the selected project; nothing reads global state.
+ * Every session resolves through its explicit {@link NaruSessionModel}; no widget reads global
+ * workspace state.
  */
 public final class MainWindow extends JFrame {
 
-    private static final Preferences PREFS = Preferences.userNodeForPackage(MainWindow.class);
-    private static final String KEY_RECENT = "recentProjects";
-    private static final String KEY_PLAF = "plaf";
-    private static final String KEY_DIVIDER = "divider";
 
     private final JPanel center = new JPanel(new BorderLayout());
-    private final DefaultComboBoxModel<String> projects = new DefaultComboBoxModel<>();
-    private final JComboBox<String> switcher = new JComboBox<>(projects);
-    private final List<NPath> recent = new ArrayList<>();
+    private final DefaultListModel<SessionEntry> sessionRows = new DefaultListModel<>();
+    private final JList<SessionEntry> sessionList = new JList<>(sessionRows);
+    private final List<SessionEntry> sessions = new ArrayList<>();
 
     private TranscriptPane transcript;
+    private TranscriptPane sessionLogPane;
     private InputPane input;
     private StatusBar statusBar;
     private ToolsPane tools;
-    private PermissionsPane permissions;
+    private TaskPane taskPane;
     private NaruSessionModel session;
     private InteractionHost host;
-    private boolean switching;
+    private final JLabel activeSessionLabel = new JLabel("No session");
+    private Point dragOffset;
+    private boolean maximized;
+    private int nextSessionNumber = 1;
+    private final JLabel taskScopeHeader = new JLabel("No task selected");
+    private NaruSessionModel.Listener selectionSync;
 
     public MainWindow() {
         super("NARU");
+        setUndecorated(true);
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         setLayout(new BorderLayout());
         add(topBar(), BorderLayout.NORTH);
         add(center, BorderLayout.CENTER);
+        installResizeSupport();
         addWelcome();
-        restoreRecent();
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                closeSession();
-                persist();
+                disposeSessionViews();
+                for (SessionEntry entry : sessions) entry.model.shutdown();
                 dispose();
                 // the engine holds worker threads; an explicit exit is the honest shutdown here
                 System.exit(0);
             }
         });
+        sessionList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                SessionEntry item = sessionList.getSelectedValue();
+                if (item != null && item.model != session) activateSession(item);
+            }
+        });
     }
 
     private JPanel topBar() {
-        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        JLabel label = new JLabel("Project");
-        label.setFont(label.getFont().deriveFont(Font.PLAIN));
-        bar.add(label);
-        switcher.setToolTipText("One window, many projects: switching closes the current session");
-        switcher.addActionListener(e -> {
-            if (!switching) {
-                int i = switcher.getSelectedIndex();
-                if (i >= 0) {
-                    openProject(recent.get(i));
-                }
-            }
-        });
-        bar.add(switcher);
-        JLabel plafLabel = new JLabel("Theme");
-        plafLabel.setFont(plafLabel.getFont().deriveFont(Font.PLAIN));
-        bar.add(plafLabel);
-        // JPlafMenu applies the look-and-feel itself; this listener only remembers the choice
-        JPlafMenu plaf = new JPlafMenu(this);
-        plaf.addLookAndFeelChangeListener(e -> {
-            // persist the manager's current id rather than the event payload: the payload is a
-            // LAF class name, and apply() expects the plaf id
-            UIPlaf current = UIPlafManager.getCurrentManager().getCurrent();
-            if (current != null) {
-                PREFS.put(KEY_PLAF, current.getId());
-            }
-        });
-        bar.add(plaf);
-        return bar;
+        JPanel shell = new JPanel(new BorderLayout());
+        JMenuBar menus = new JMenuBar();
+        JMenu file = new JMenu("File");
+        JMenuItem newSession = new JMenuItem("New session…");
+        newSession.addActionListener(e -> createSession());
+        JMenuItem close = new JMenuItem("Close session");
+        close.addActionListener(e -> closeSession());
+        JMenuItem exit = new JMenuItem("Exit");
+        exit.addActionListener(e -> dispatchEvent(new WindowEvent(this, WindowEvent.WINDOW_CLOSING)));
+        file.add(newSession); file.add(close); file.addSeparator(); file.add(exit);
+        JMenu view = new JMenu("View");
+        JMenuItem conversation = new JMenuItem("Conversation"); conversation.addActionListener(e -> selectSideTab("Conversation"));
+        JMenuItem log = new JMenuItem("Session log"); log.addActionListener(e -> selectSideTab("Session log"));
+        view.add(conversation); view.add(log);
+        JMenu sessionMenu = new JMenu("Session");
+        JMenuItem stop = new JMenuItem("Stop current session"); stop.addActionListener(e -> closeSession()); sessionMenu.add(stop);
+        JMenu help = new JMenu("Help"); help.add(new JMenuItem("About NARU"));
+        menus.add(file); menus.add(view); menus.add(sessionMenu); menus.add(help);
+        shell.add(menus, BorderLayout.WEST);
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 4));
+        bar.add(activeSessionLabel);
+        JButton settings = new JButton("⚙"); settings.setToolTipText("Settings (coming soon)");
+        settings.addActionListener(e -> javax.swing.JOptionPane.showMessageDialog(this,
+                "Settings will be available here.", "Settings", javax.swing.JOptionPane.INFORMATION_MESSAGE));
+        bar.add(settings);
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 2));
+        JButton min = new JButton("—"); min.setToolTipText("Minimize"); min.addActionListener(e -> setState(ICONIFIED));
+        JButton max = new JButton("□"); max.setToolTipText("Maximize / restore"); max.addActionListener(e -> toggleMaximize());
+        JButton quit = new JButton("×"); quit.setToolTipText("Close"); quit.addActionListener(e -> dispatchEvent(new WindowEvent(this, WindowEvent.WINDOW_CLOSING)));
+        controls.add(min); controls.add(max); controls.add(quit);
+        shell.add(bar, BorderLayout.CENTER); shell.add(controls, BorderLayout.EAST);
+        shell.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, java.awt.Color.GRAY));
+        MouseAdapter drag = new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent e) { if (e.getButton()==MouseEvent.BUTTON1 && !maximized) { dragOffset=e.getLocationOnScreen(); Point p=getLocation(); dragOffset.translate(-p.x,-p.y); } }
+            @Override public void mouseDragged(MouseEvent e) { if (dragOffset!=null && !maximized) { Point p=e.getLocationOnScreen(); setLocation(p.x-dragOffset.x,p.y-dragOffset.y); } }
+            @Override public void mouseReleased(MouseEvent e) { dragOffset=null; }
+        };
+        installDrag(shell, drag);
+        return shell;
     }
+
+    private void installDrag(java.awt.Component c, MouseAdapter drag) {
+        if (c instanceof JMenuBar || c instanceof JButton || c instanceof javax.swing.AbstractButton
+                || c instanceof JList<?>) return;
+        c.addMouseListener(drag); c.addMouseMotionListener(drag);
+        if (c instanceof java.awt.Container container) for (java.awt.Component child : container.getComponents()) installDrag(child, drag);
+    }
+
+    private void toggleMaximize() { if (maximized) { setExtendedState(NORMAL); maximized=false; } else { setExtendedState(MAXIMIZED_BOTH); maximized=true; } }
+
+    private void createSession() {
+        // The current engine builder still needs a base directory. It stays implicit in the UI;
+        // future task creation will supply per-task project/cwd values.
+        openProject(NPath.of(System.getProperty("user.dir", ".")).toAbsolute());
+    }
+
+    private void installResizeSupport() {
+        final int edge=6;
+        MouseAdapter resize=new MouseAdapter() {
+            private int direction; private Point origin; private java.awt.Rectangle bounds;
+            @Override public void mouseMoved(MouseEvent e) { direction=resizeDirection(e.getPoint(),edge); setCursor(Cursor.getPredefinedCursor(cursorFor(direction))); }
+            @Override public void mouseExited(MouseEvent e) { if(direction==0)setCursor(Cursor.getDefaultCursor()); }
+            @Override public void mousePressed(MouseEvent e) { if(e.getButton()==MouseEvent.BUTTON1&&direction!=0){origin=e.getLocationOnScreen();bounds=getBounds();} }
+            @Override public void mouseDragged(MouseEvent e) { if(origin==null)return; Point now=e.getLocationOnScreen(); int dx=now.x-origin.x,dy=now.y-origin.y; java.awt.Rectangle b=new java.awt.Rectangle(bounds); if((direction&1)!=0){b.x+=dx;b.width-=dx;} if((direction&2)!=0)b.width+=dx; if((direction&4)!=0){b.y+=dy;b.height-=dy;} if((direction&8)!=0)b.height+=dy; if(b.width>=720&&b.height>=480)setBounds(b); }
+            @Override public void mouseReleased(MouseEvent e) { origin=null; }
+        };
+        addMouseListener(resize); addMouseMotionListener(resize);
+    }
+    private int resizeDirection(Point p,int edge){int d=0;if(p.x<edge)d|=1;else if(p.x>getWidth()-edge)d|=2;if(p.y<edge)d|=4;else if(p.y>getHeight()-edge)d|=8;return d;}
+    private int cursorFor(int d){return switch(d){case 1->Cursor.W_RESIZE_CURSOR;case 2->Cursor.E_RESIZE_CURSOR;case 4->Cursor.N_RESIZE_CURSOR;case 8->Cursor.S_RESIZE_CURSOR;case 5->Cursor.NW_RESIZE_CURSOR;case 6->Cursor.NE_RESIZE_CURSOR;case 9->Cursor.SW_RESIZE_CURSOR;case 10->Cursor.SE_RESIZE_CURSOR;default->Cursor.DEFAULT_CURSOR;};}
 
     private void addWelcome() {
         JPanel p = new JPanel(new BorderLayout());
         JLabel hello = new JLabel("<html><div style='padding:18px'>"
                 + "<b>NARU desktop</b><br>"
-                + "Pick a project folder above, or start with <tt>--project &lt;dir&gt;</tt>."
+                + "Create a session from the File menu or the + button."
                 + "</div></html>");
         hello.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
         p.add(hello, BorderLayout.NORTH);
@@ -134,85 +187,106 @@ public final class MainWindow extends JFrame {
     /** Close whatever is open and bind a fresh session to {@code dir}. */
     public void openProject(NPath dir) {
         SwingUtilities.invokeLater(() -> {
-            closeSession();
             host = new InteractionHost();
             // the queue drains from the first frame, so whatever the engine writes while the
             // workspace is still resolving shows up instead of being buffered behind the boot
             host.startFlushTimer();
-            session = new NaruSessionModel(() -> newWorkspace(dir), dir, host);
-            transcript = new TranscriptPane(session);
-            // the §6 jump, from the card the user actually reads
-            transcript.setJumpToPermissions(ruleId -> openPermissions(ruleId));
-            input = new InputPane(session);
-            statusBar = new StatusBar(session);
-            TaskPane tasks = new TaskPane(session);
-
-            JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, transcript,
-                    sideTabs(tasks, session));
-            split.setResizeWeight(0.74);
-            placeDivider(split);
-            // once the window has been laid out the split knows its real width, which is the only
-            // honest ceiling for a restored divider
-            SwingUtilities.invokeLater(() -> placeDivider(split));
-            split.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY,
-                    e -> PREFS.putInt(KEY_DIVIDER, split.getDividerLocation()));
-
-            JPanel body = new JPanel(new BorderLayout());
-            body.add(split, BorderLayout.CENTER);
-            body.add(input, BorderLayout.SOUTH);
-            body.add(statusBar, BorderLayout.NORTH);
-
-            center.removeAll();
-            center.add(body, BorderLayout.CENTER);
-            center.revalidate();
-            center.repaint();
-            remember(dir);
-            // returns at once: the boot itself runs on a worker and reports back through the
-            // session model, so the window is painted and responsive while extensions resolve
-            session.start();
-            input.focusInput();
+            NaruSessionModel created = new NaruSessionModel(() -> newWorkspace(dir), dir, host);
+            sessions.add(new SessionEntry(nextSessionNumber++, created, host));
+            rebuildSessionList();
+            sessionList.setSelectedIndex(sessions.size() - 1);
+            created.start();
         });
     }
 
-    private JTabbedPane sideTabs;
-
-    /** The narrowest the tab panel may be squeezed to: a rule row needs to be readable. */
-    private static final int MIN_SIDE_WIDTH = 380;
-
-    /**
-     * Put the transcript/tab-panel divider where the user left it, but never so far right that the
-     * tab panel disappears. The saved value is a pixel count taken from whatever window it was
-     * dragged in — possibly a wider one — and the transcript's preferred width is the width of its
-     * longest line, so an unclamped restore parks the divider past the right edge: Tools,
-     * Permissions and the §6 jump all still work, in a panel nobody can see or click.
-     */
-    private void placeDivider(JSplitPane split) {
-        int available = split.getWidth() > 0 ? split.getWidth()
-                : Math.max(getContentPane().getWidth(), getWidth() - 16);
-        if (available <= MIN_SIDE_WIDTH * 2) {
-            // nothing sensible to clamp to; let resizeWeight decide until the window has a width
-            return;
-        }
-        int saved = PREFS.getInt(KEY_DIVIDER, -1);
-        int at = saved > 100 ? Math.min(saved, available - MIN_SIDE_WIDTH)
-                : (int) (available * 0.74);
-        split.setDividerLocation(Math.max(0, at));
+    private void rebuildSessionList() {
+        sessionRows.clear();
+        for (SessionEntry entry : sessions) sessionRows.addElement(entry);
     }
+
+    private void activateSession(SessionEntry selected) {
+        disposeSessionViews();
+        session = selected.model;
+        host = selected.host;
+        transcript = new TranscriptPane(session);
+        transcript.setTaskFilter(-1);
+        sessionLogPane = new TranscriptPane(session);
+        sessionLogPane.setTaskFilter(Long.MIN_VALUE);
+        transcript.setJumpToPermissions(ruleId -> openPermissions(ruleId));
+        input = new InputPane(session);
+        statusBar = new StatusBar(session);
+        TaskPane tasks = new TaskPane(session);
+        taskPane = tasks;
+        JTabbedPane conversationViews = new JTabbedPane();
+        conversationTabs = conversationViews;
+        conversationViews.addTab("Conversation", transcript);
+        conversationViews.addTab("Session log", sessionLogPane);
+        JTabbedPane taskTools = sideTabs(tasks, session);
+        tasks.setTaskSelectionListener(id -> {
+            transcript.setTaskFilter(id);
+            tools.setTaskFilter(id);
+            input.setSelectedTaskId(id);
+            taskScopeHeader.setText(id < 0 ? "No task selected" : "Task #" + id);
+            conversationViews.setSelectedIndex(0);
+        });
+        selectionSync = () -> {
+            net.thevpc.naru.api.agent.NaruInputRequest pending = session.pendingRequest();
+            if (pending != null) tasks.selectTask(pending.task().id());
+        };
+        session.addListener(selectionSync);
+        JSplitPane sessionAndConversation = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
+                sessionRail(tasks), conversationViews);
+        sessionAndConversation.setResizeWeight(0.33);
+        JSplitPane whole = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sessionAndConversation, taskTools);
+        whole.setResizeWeight(0.78);
+        JPanel body = new JPanel(new BorderLayout());
+        body.add(whole, BorderLayout.CENTER);
+        body.add(input, BorderLayout.SOUTH);
+        body.add(statusBar, BorderLayout.NORTH);
+        center.removeAll(); center.setLayout(new BorderLayout()); center.add(body, BorderLayout.CENTER);
+        center.revalidate(); center.repaint();
+        activeSessionLabel.setText("Session " + selected.number);
+        tasks.sessionModelChanged();
+    }
+
+    private JPanel sessionRail(TaskPane tasks) {
+        JPanel rail=new JPanel(new BorderLayout()); rail.setPreferredSize(new java.awt.Dimension(210,100));
+        rail.setBorder(BorderFactory.createMatteBorder(0,0,0,1,java.awt.Color.GRAY));
+        JPanel sessionHeader=new JPanel(new BorderLayout()); sessionHeader.add(new JLabel("  SESSIONS"),BorderLayout.WEST);
+        JButton add=new JButton("+");add.setToolTipText("Create a session");add.addActionListener(e->createSession());sessionHeader.add(add,BorderLayout.EAST);
+        sessionList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+        sessionList.setCellRenderer((list, value, index, selected, focus) -> {
+            JLabel label=new JLabel("  " + value.toString()); label.setOpaque(true);
+            label.setBackground(selected?list.getSelectionBackground():list.getBackground());
+            label.setForeground(selected?list.getSelectionForeground():list.getForeground());
+            label.setBorder(BorderFactory.createEmptyBorder(8,4,8,4)); return label;
+        });
+        JPanel top=new JPanel(new BorderLayout()); top.add(sessionHeader,BorderLayout.NORTH); top.add(new JScrollPane(sessionList),BorderLayout.CENTER);
+        JSplitPane left=new JSplitPane(JSplitPane.VERTICAL_SPLIT,top,tasks); left.setResizeWeight(.25); left.setDividerLocation(205);
+        rail.add(left,BorderLayout.CENTER); return rail;
+    }
+
+    private record SessionEntry(int number, NaruSessionModel model, InteractionHost host) {
+        @Override public String toString(){return "Session " + number;}
+    }
+
+    private JTabbedPane sideTabs;
+    private JTabbedPane conversationTabs;
 
     private JTabbedPane sideTabs(TaskPane tasks, NaruSessionModel session) {
         JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab("Tasks", tasks);
-        // E1 landed the typed lifecycle, so this tab is real data now rather than a placeholder
         tools = new ToolsPane(session.tools());
-        tabs.addTab("Tools", tools);
+        tabs.addTab("Task tools", tools);
         // moved from Phase 4 by the owner: §3.3 makes this the v1 answer to an approval prompt,
         // and §6 promises a jump into it from a permission denial
-        permissions = new PermissionsPane(session);
-        tabs.addTab("Permissions", permissions);
+        JPanel taskPermissions = new JPanel(new BorderLayout());
+        taskPermissions.add(taskScopeHeader, BorderLayout.NORTH);
+        JLabel pendingPermissions = new JLabel("Per-task permissions and approvals will appear here.", JLabel.CENTER);
+        pendingPermissions.setForeground(java.awt.Color.GRAY);
+        taskPermissions.add(pendingPermissions, BorderLayout.CENTER);
+        tabs.addTab("Task permissions", taskPermissions);
         tools.setJumpToPermissions(ruleId -> openPermissions(ruleId));
-        // the event log is Phase 3
-        tabs.addTab("Log", new JLabel("<html><div style='padding:14px;color:gray'>The event log "
-                + "arrives with Phase 3 (plan E3).</div></html>"));
+        tabs.addTab("Task details", new JLabel("<html><div style='padding:14px;color:gray'>Select a task to inspect task-scoped state.</div></html>"));
         this.sideTabs = tabs;
         return tabs;
     }
@@ -223,12 +297,8 @@ public final class MainWindow extends JFrame {
      * row can be selected for it.
      */
     public void openPermissions(String ruleId) {
-        if (!selectSideTab("Permissions")) {
+        if (!selectSideTab("Task permissions")) {
             return;
-        }
-        PermissionsPane pane = permissions;
-        if (pane != null) {
-            pane.selectRule(ruleId);
         }
     }
 
@@ -239,20 +309,23 @@ public final class MainWindow extends JFrame {
      */
     public boolean selectSideTab(String title) {
         JTabbedPane tabs = sideTabs;
-        if (tabs == null) {
-            return false;
+        if (tabs != null) {
+            int i = tabs.indexOfTab(title);
+            if (i >= 0) { tabs.setSelectedIndex(i); return true; }
         }
-        int i = tabs.indexOfTab(title);
-        if (i < 0) {
-            return false;
+        tabs = conversationTabs;
+        if (tabs != null) {
+            int i = tabs.indexOfTab(title);
+            if (i >= 0) { tabs.setSelectedIndex(i); return true; }
         }
-        tabs.setSelectedIndex(i);
-        return true;
+        return false;
     }
 
     /** The side tab now showing, or null before a session exists. Harness-facing, like the setter. */
     public String selectedSideTab() {
         JTabbedPane tabs = sideTabs;
+        if (tabs != null && tabs.getSelectedIndex() >= 0) return tabs.getTitleAt(tabs.getSelectedIndex());
+        tabs = conversationTabs;
         return tabs == null || tabs.getSelectedIndex() < 0 ? null : tabs.getTitleAt(tabs.getSelectedIndex());
     }
 
@@ -261,8 +334,7 @@ public final class MainWindow extends JFrame {
      * the right row rather than merely switched tabs.
      */
     public String selectedPermissionRule() {
-        PermissionsPane pane = permissions;
-        return pane == null ? null : pane.selectedRuleId();
+        return null;
     }
 
     /**
@@ -271,6 +343,8 @@ public final class MainWindow extends JFrame {
      */
     public java.awt.Component selectedSideComponent() {
         JTabbedPane tabs = sideTabs;
+        if (tabs != null && tabs.getSelectedComponent() != null) return tabs.getSelectedComponent();
+        tabs = conversationTabs;
         return tabs == null ? null : tabs.getSelectedComponent();
     }
 
@@ -283,69 +357,41 @@ public final class MainWindow extends JFrame {
     }
 
     private void closeSession() {
+        SessionEntry active = null;
+        for (SessionEntry entry : sessions) if (entry.model == session) { active = entry; break; }
+        disposeSessionViews();
+        if (active != null) { active.model.shutdown(); sessions.remove(active); }
+        session = null;
+        host = null;
+        sessionRows.clear();
+        for (SessionEntry entry : sessions) sessionRows.addElement(entry);
+        if (!sessions.isEmpty()) {
+            sessionList.setSelectedIndex(0);
+        } else {
+            activeSessionLabel.setText("No session");
+            addWelcome();
+        }
+    }
+
+    private void disposeSessionViews() {
+        if (session != null && selectionSync != null) session.removeListener(selectionSync);
+        selectionSync = null;
         if (transcript != null) {
             transcript.dispose();
+            transcript = null;
         }
+        if (sessionLogPane != null) { sessionLogPane.dispose(); sessionLogPane = null; }
         // both panes listen to models the session owns, so they unsubscribe before the shutdown
         // rather than leaving a listener on a model that is about to fire one last time
         if (tools != null) {
             tools.dispose();
+            tools = null;
         }
-        if (permissions != null) {
-            permissions.dispose();
-        }
-        if (session != null) {
-            session.shutdown();
-            session = null;
-        }
-        host = null;
-    }
-
-    private void remember(NPath dir) {
-        String s = dir.toString();
-        if (!recent.isEmpty() && recent.get(0).equals(dir)) {
-            return;
-        }
-        recent.add(0, dir);
-        rebuildSwitcher();
-        persist();
-    }
-
-    private void rebuildSwitcher() {
-        switching = true;
-        projects.removeAllElements();
-        for (NPath p : recent) {
-            projects.addElement(p.toString());
-        }
-        projects.setSelectedItem(recent.isEmpty() ? null : recent.get(0).toString());
-        switching = false;
-    }
-
-    private void restoreRecent() {
-        String csv = PREFS.get(KEY_RECENT, "");
-        for (String s : csv.split(";")) {
-            if (!s.isBlank()) {
-                recent.add(NPath.of(s));
-            }
-        }
-        if (!recent.isEmpty()) {
-            rebuildSwitcher();
-        }
-    }
-
-    private void persist() {
-        StringBuilder sb = new StringBuilder();
-        int kept = 0;
-        for (NPath p : recent) {
-            if (kept++ == 8) {
-                break;
-            }
-            if (sb.length() > 0) {
-                sb.append(';');
-            }
-            sb.append(p);
-        }
-        PREFS.put(KEY_RECENT, sb.toString());
+        if (taskPane != null) { taskPane.dispose(); taskPane = null; }
+        if (input != null) { input.dispose(); input = null; }
+        if (statusBar != null) { statusBar.dispose(); statusBar = null; }
+        sideTabs = null;
+        conversationTabs = null;
     }
 
     public NaruSessionModel session() {
@@ -357,17 +403,4 @@ public final class MainWindow extends JFrame {
         return host;
     }
 
-    /** The theme remembered at last close, applied while the frame is still empty. */
-    public static void restoreTheme(JFrame w) {
-        String plaf = PREFS.get(KEY_PLAF, null);
-        if (plaf == null || plaf.isBlank()) {
-            return;
-        }
-        try {
-            UIPlafManager.getCurrentManager().apply(plaf);
-            SwingUtilities.updateComponentTreeUI(w);
-        } catch (RuntimeException ignored) {
-            // an uninstalled look-and-feel is not a reason to refuse to start
-        }
-    }
 }

@@ -13,8 +13,7 @@ import javax.swing.SwingUtilities;
  * Two rules from the plan govern this entry point. {@code prepareUI(args)} comes first, before any
  * frame exists, because HiDPI and font scaling cannot be retrofitted onto a built component tree.
  * And the workspace is never installed as the shared instance here — the console launcher does
- * that to own the process, and a one-window app that also owns the console would be the only way
- * two projects could disagree about which one is current (plan §3.1).
+ * that to own the process. Each desktop session keeps an explicit workspace and task hierarchy.
  * <p>
  * Full packaging — {@code @NAppInstall} launchers, {@code -c/--console} escape, splash,
  * single-instance guard — is Phase 5. This is the smallest thing that runs the v1 UI.
@@ -33,7 +32,6 @@ public final class NaruDesktop {
         NPath project = parseProject(args);
         SwingUtilities.invokeLater(() -> {
             MainWindow w = new MainWindow();
-            MainWindow.restoreTheme(w);
             w.setSize(1280, 800);
             w.setLocationRelativeTo(null);
             w.setVisible(true);

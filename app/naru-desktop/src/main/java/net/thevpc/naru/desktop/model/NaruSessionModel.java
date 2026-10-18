@@ -102,11 +102,18 @@ public final class NaruSessionModel implements InteractionHost.Listener {
      * tree treats an unknown parent as a root rather than as a missing row.
      */
     public record TaskRow(long id, String name, NaruTaskStatus status, boolean foreground,
+                          boolean conversation,
                           long parentId, boolean held, int pc, java.time.Instant created,
                           String error, int depth) {
 
+        public TaskRow(long id, String name, NaruTaskStatus status, boolean foreground,
+                       long parentId, boolean held, int pc, java.time.Instant created,
+                       String error, int depth) {
+            this(id, name, status, foreground, false, parentId, held, pc, created, error, depth);
+        }
+
         TaskRow withDepth(int next) {
-            return new TaskRow(id, name, status, foreground, parentId, held, pc, created, error, next);
+            return new TaskRow(id, name, status, foreground, conversation, parentId, held, pc, created, error, next);
         }
     }
 
@@ -641,7 +648,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             } catch (RuntimeException ignored) {
                 // same window: a task deregistered mid-read keeps the fields already taken
             }
-            out.add(new TaskRow(t.id(), t.name(), st, t.id() == fg, parentId, held, pc, created,
+            out.add(new TaskRow(t.id(), t.name(), st, t.id() == fg, safeConversation(t), parentId, held, pc, created,
                     err, 0));
         }
         // engine order is a registry's iteration order; the monitor shows a tree, so the
@@ -660,6 +667,10 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             tasks = List.copyOf(arranged);
             fireChanged();
         }
+    }
+
+    private static boolean safeConversation(NaruTask task) {
+        try { return task.isConversation(); } catch (RuntimeException e) { return false; }
     }
 
     private void onEdt(Runnable body) {

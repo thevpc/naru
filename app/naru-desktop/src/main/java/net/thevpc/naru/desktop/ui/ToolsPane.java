@@ -41,6 +41,7 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
     private java.util.function.Consumer<String> onJumpToPermissions;
     /** So a new call can follow the tail without stealing a selection the user is reading. */
     private int previousRows;
+    private long taskFilter = -1;
 
     public ToolsPane(ToolCallModel model) {
         super(new BorderLayout());
@@ -83,7 +84,8 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
 
     @Override
     public void toolCallsChanged() {
-        java.util.List<ToolCallModel.Row> current = model.rows();
+        java.util.List<ToolCallModel.Row> current = model.rows().stream()
+                .filter(r -> taskFilter >= 0 && r.taskId() == taskFilter).toList();
         // rows are records replaced in place, so the object the user selected is the identity to
         // re-find after a reload — an index would jump to another call when a trim shifts the front
         ToolCallModel.Row wasSelected = list.getSelectedValue();
@@ -168,6 +170,11 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
     public void setJumpToPermissions(java.util.function.Consumer<String> jump) {
         this.onJumpToPermissions = jump;
         showDetail();
+    }
+
+    public void setTaskFilter(long taskId) {
+        taskFilter = taskId;
+        toolCallsChanged();
     }
 
     private static String line(ToolCallModel.Row r) {

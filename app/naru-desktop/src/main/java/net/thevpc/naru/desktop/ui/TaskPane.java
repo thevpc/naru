@@ -7,6 +7,7 @@ import net.thevpc.naru.desktop.util.TaskText;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JToggleButton;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
@@ -47,6 +48,9 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
     private final JButton killButton = new JButton("Kill");
     private final JButton fgButton = new JButton("Foreground");
     private final JLabel empty = new JLabel("no tasks running");
+    private final JToggleButton allTasks = new JToggleButton("All tasks");
+    private boolean interactiveOnly = true;
+    private java.util.function.LongConsumer taskSelection = id -> {};
 
     private long shownId = -1;
 
@@ -78,13 +82,24 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
         listScroll.setMinimumSize(new java.awt.Dimension(240, 120));
         JScrollPane detailScroll = new JScrollPane(detail);
         detailScroll.setMinimumSize(new java.awt.Dimension(240, 80));
-        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, listScroll, detailScroll);
+        empty.setHorizontalAlignment(SwingConstants.CENTER);
+        empty.setForeground(Color.GRAY);
+        JPanel listArea = new JPanel(new BorderLayout());
+        listArea.add(listScroll, BorderLayout.CENTER);
+        listArea.add(empty, BorderLayout.SOUTH);
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, listArea, detailScroll);
         split.setResizeWeight(0.55);
         split.setDividerLocation(220);
 
-        add(empty, BorderLayout.NORTH);
-        empty.setHorizontalAlignment(SwingConstants.CENTER);
-        empty.setForeground(Color.GRAY);
+        JPanel listHeader = new JPanel(new BorderLayout());
+        JLabel sessionTitle = new JLabel("  Interactive tasks");
+        sessionTitle.setHorizontalAlignment(SwingConstants.LEFT);
+        sessionTitle.setForeground(Color.GRAY);
+        allTasks.setToolTipText("Show the full task tree, including routines and spawned work");
+        allTasks.addActionListener(e -> { interactiveOnly = !allTasks.isSelected(); sessionModelChanged(); });
+        listHeader.add(sessionTitle, BorderLayout.CENTER);
+        listHeader.add(allTasks, BorderLayout.EAST);
+        add(listHeader, BorderLayout.NORTH);
         add(split, BorderLayout.CENTER);
         add(buttons(), BorderLayout.SOUTH);
 
@@ -151,11 +166,19 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
             shownId = -1;
             detail.setText("select a task to see its frames");
             updateButtons();
+            taskSelection.accept(-1);
             return;
         }
         shownId = r.id();
         detail.setText(TaskText.detail(session.taskDetail(r.id())));
+        taskSelection.accept(r.id());
         updateButtons();
+    }
+
+    public void setTaskSelectionListener(java.util.function.LongConsumer listener) {
+        taskSelection = listener == null ? id -> {} : listener;
+        NaruSessionModel.TaskRow selected = list.getSelectedValue();
+        taskSelection.accept(selected == null ? -1 : selected.id());
     }
 
     /** Unbind from the session model. A closed window must not stay on the poll's listener list. */
@@ -193,6 +216,11 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
      * click must not leave the monitor showing a detail nobody asked for
      */
     public boolean selectTask(long id) {
+        if (interactiveOnly && session.tasks().stream().anyMatch(r -> r.id() == id)) {
+            interactiveOnly = false;
+            allTasks.setSelected(true);
+            sessionModelChanged();
+        }
         for (int i = 0; i < rows.size(); i++) {
             if (rows.get(i).id() == id) {
                 list.setSelectedIndex(i);
@@ -267,7 +295,8 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
 
     @Override
     public void sessionModelChanged() {
-        List<NaruSessionModel.TaskRow> current = session.tasks();
+        List<NaruSessionModel.TaskRow> current = current();
+        empty.setText(interactiveOnly ? "no interactive tasks" : "no tasks in this session");
         // the poll already de-duplicated and arranged; a wholesale reload keeps row identity simple
         boolean same = current.size() == rows.size();
         if (same) {
@@ -327,7 +356,8 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
     }
 
     private List<NaruSessionModel.TaskRow> current() {
-        return session.tasks();
+        List<NaruSessionModel.TaskRow> all = session.tasks();
+        return interactiveOnly ? all.stream().filter(NaruSessionModel.TaskRow::conversation).toList() : all;
     }
 
     private void updateNote(List<NaruSessionModel.TaskRow> current) {

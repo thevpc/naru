@@ -12,16 +12,13 @@ import java.awt.Color;
 import java.awt.Font;
 
 /**
- * The status bar: what the REPL has no surface for at all. Model, project, task state, token
- * counts and last save, all read straight off the session model so a widget never asks the
- * engine for anything.
+ * The status bar: model, task state, token counts and save state for the selected session.
  */
 public final class StatusBar extends JPanel implements NaruSessionModel.Listener {
 
     private final NaruSessionModel session;
     private final JLabel status = new JLabel("not started");
     private final JLabel model = new JLabel();
-    private final JLabel project = new JLabel();
     private final JLabel tasks = new JLabel();
     private final JLabel tokens = new JLabel();
     private final JLabel save = new JLabel();
@@ -34,7 +31,7 @@ public final class StatusBar extends JPanel implements NaruSessionModel.Listener
                 BorderFactory.createMatteBorder(1, 0, 0, 0, Color.GRAY.darker()),
                 BorderFactory.createEmptyBorder(3, 8, 3, 8)));
         Font small = status.getFont().deriveFont(Font.PLAIN, 11f);
-        for (JLabel l : new JLabel[]{status, model, project, tasks, tokens, save}) {
+        for (JLabel l : new JLabel[]{status, model, tasks, tokens, save}) {
             l.setFont(small);
             l.setForeground(Color.GRAY);
         }
@@ -42,7 +39,6 @@ public final class StatusBar extends JPanel implements NaruSessionModel.Listener
         add(sep());
         add(model);
         add(sep());
-        add(project);
         add(Box.createHorizontalGlue());
         add(tasks);
         add(sep());
@@ -64,11 +60,14 @@ public final class StatusBar extends JPanel implements NaruSessionModel.Listener
         status.setText(text);
     }
 
+    public void dispose() {
+        session.removeListener(this);
+    }
+
     @Override
     public void sessionModelChanged() {
         status.setText(session.statusText());
         model.setText("model " + session.model());
-        project.setText(session.projectPath());
         int blocked = 0;
         int active = 0;
         for (NaruSessionModel.TaskRow t : session.tasks()) {
