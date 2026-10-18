@@ -5,6 +5,7 @@ import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.model.TranscriptBlock;
 import net.thevpc.naru.desktop.model.TranscriptModel;
 import net.thevpc.naru.desktop.render.MarkdownRenderer;
+import net.thevpc.naru.desktop.util.PermissionsText;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -54,6 +55,9 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     private final CellRenderer renderer = new CellRenderer();
     private MarkdownRenderer markdown;
     private int wrapWidth = 900;
+    /** Set by the window: jump from a denial card to the rule that caused it (plan §6). */
+    private java.util.function.Consumer<String> onJumpToPermissions;
+    private final javax.swing.JPopupMenu denialMenu = new javax.swing.JPopupMenu();
 
     public TranscriptPane(NaruSessionModel session) {
         super(new BorderLayout());
@@ -78,6 +82,12 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         bar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
         add(bar, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);
+        // A JList is as wide as its widest cell, and an untruncated tool result is a very wide cell.
+        // That preferred width is also the split pane's floor for this side, so the divider ends up
+        // past the right edge and the tab panel — Tools, Permissions, the §6 jump — is laid out
+        // outside the window. The horizontal bar already handles the overflow, so bound the minimum
+        // rather than the preferred size and the divider can be placed where the user put it.
+        scroll.setMinimumSize(new java.awt.Dimension(240, 120));
 
         // clicking a closed row collapses or expands it
         list.addMouseListener(new MouseAdapter() {
@@ -97,6 +107,45 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
                         markdown.request(b);
                     }
                 }
+            }
+
+            /**
+             * The §6 jump. A denial card is where a user first learns something was refused, so the
+             * way out of it has to be here rather than only in the Tools tab.
+             */
+            @Override
+            public void mousePressed(MouseEvent e) {
+                maybeMenu(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                maybeMenu(e);
+            }
+
+            private void maybeMenu(MouseEvent e) {
+                if (!e.isPopupTrigger()) {
+                    return;
+                }
+                int idx = list.locationToIndex(e.getPoint());
+                TranscriptBlock b = idx < 0 ? null : rows.get(idx);
+                if (b == null || !b.isToolCard() || !PermissionsText.isDenial(b.text())) {
+                    return;
+                }
+                list.setSelectedIndex(idx);
+                String id = PermissionsText.matchedRuleId(b.text());
+                javax.swing.JMenuItem item = new javax.swing.JMenuItem(id == null
+                        ? "Open Permissions (denied by the default effect)"
+                        : "Open rule " + id + " in Permissions");
+                item.setEnabled(onJumpToPermissions != null);
+                item.addActionListener(x -> {
+                    if (onJumpToPermissions != null) {
+                        onJumpToPermissions.accept(id);
+                    }
+                });
+                denialMenu.removeAll();
+                denialMenu.add(item);
+                denialMenu.show(list, e.getX(), e.getY());
             }
         });
         // rendering is viewport-driven: only what can be seen is worth parsing
@@ -202,6 +251,11 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             markdown.shutdown();
             markdown = null;
         }
+    }
+
+    /** Install the window's jump so a denial card's menu can reach the Permissions tab. */
+    public void setJumpToPermissions(java.util.function.Consumer<String> jump) {
+        this.onJumpToPermissions = jump;
     }
 
     /**

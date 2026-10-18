@@ -208,6 +208,117 @@ re-checks the restore took — Nuts has no "disable rich term".
 all of it the real workspace boot and the `nuts-term` resolution the control triggers. The engine module
 set was not touched by this commit.
 
+## §6 landed: the permissions editor, and the store API underneath it
+
+**The correction first.** The first cut of this panel carried its own copy of the project policy file
+in `app/naru-desktop` — a 131-line `PermissionsFile` reader/writer, justified by the note in the
+desktop pom that the desktop must not compile against an extension. The owner rejected that: the
+duplicated format was the bug, not the constraint. This commit deletes `PermissionsFile` and its
+tests and puts the shared surface where the constraint allows it, in `naru-api`.
+
+**`NaruPermissionStore` (`core/naru-api/.../access/`).** `projectFile()`, `readProjectRules()`,
+`readProjectDefaultEffect(fallback)`, `reloadProjectRules()`, `writeProjectRules(rules,
+defaultEffect)` — the last two return `null` or a message, following the module's String-or-null
+convention rather than `NResult` — plus the four `SOURCE_*` tags, the `.naru/permissions.tson` name,
+and a static `of(NaruSession)` that resolves through
+`session.registry().extension("permissions", NaruPermissionStore.class)`. It extends
+`NaruSessionExtension` for exactly that lookup and nothing else: the registry's typed `extension()`
+is the one door a host may use across the classloader boundary, which is why the interface has to
+live in the shared module rather than in `naru-permissions`.
+
+**`naru-permissions` implements it.** `NaruPermissionsRuleStore` becomes the single owner of the
+format — read, write, load — and `NaruPermissionsExtension implements … , NaruPermissionStore`
+delegates to that same store the `/permission` directive and the `permission_*` tools use, so a
+desktop Save and a terminal reload cannot disagree about the bytes. The extension's `SOURCE_*`
+constants now alias the API's, which is what keeps the pane's Source column and
+`/permission list` describing the same thing.
+
+**The desktop binds, and degrades honestly.** `NaruSessionModel` calls
+`permissions.attach(session.accessPolicy(), NaruPermissionStore.of(session))` after boot;
+`PermissionsModel.reloadFromProject()` / `saveToProject()` go through the bound store. A profile
+without `naru-permissions` gets *"the naru-permissions extension is not installed, so there is no
+project policy file to read; the live rules below are still editable"* and no write attempt — the
+panel never falls back to parsing the file alone.
+
+**Tests moved with the format.** The four file-format tests went to
+`NaruPermissionsRuleStoreTest` (what the writer writes is what the loader reads, an id-less rule
+gets a stable id, one malformed rule costs nothing else, an unparseable default falls back), and
+`NaruPermissionsExtensionTest` gained `aHostThatNeverSeesThisClassReachesTheStoreThroughTheApi` —
+resolve by type, write, read back in order, reload, and check the live policy tags the rule
+`perm:project`. The desktop keeps behaviour: `PermissionsModelTest` drives a `FakeStore`, and
+`withoutTheExtensionTheFileIsNamedUnavailableAndNotWritten` covers the missing-extension branch.
+
+**The live gate run (harness `PermissionsSmoke`, §6 end to end).** A denial committed to the project
+file before the session boots, in text, not through NARU:
+
+```
+project=/tmp/naru-perm-smoke8/proj  model=qwen2.5-coder:14b
+edt-pings=292 max-ping-ms=9 stalls-over-16ms=0 stalls-over-250ms=0
+transcript-retained-chars=3709 published=272 dropped=0 droppedChars=0 maxFlushMs=0 queueDepth=0
+session booted in 2 s
+permissions tab: attached=true rows=4 default-effect=ALLOW tab-selectable=true
+rule smoke-deny-one-file: source=perm:project effect=DENY patterns=[data-1.txt] actions=[read]
+project store: name=permissions rules-read=1 first-id=smoke-deny-one-file default-effect=ALLOW
+denial after 12 s: tool=file_read status=FAILED result-chars=161 calls-this-turn=1
+denial cards: chars=246 longest-line=90 result-shown-whole=true matched-rule=smoke-deny-one-file
+              pane-hits=1 pane-blocks=1 policy-decisions=54
+jump: tab=Permissions selected-row=smoke-deny-one-file on-screen=true
+      geometry=x=1012 width=364 showing=true screen-width=1400 landed=true
+save: 1 rule(s) written -> file rules=1 enabled=false
+reload: rule enabled again=true
+control turn (read notes.txt): allowed, status=OK chars=156
+VERDICT=PASS
+```
+
+The pane at that moment is committed as `desktop-gui-phase2-permissions.png`: row 4 selected, `id
+smoke-deny-one-file`, `position 4 of 4 (first match wins)`, `source perm:project`,
+`fired 1 time(s) · allowed 0 · blocked 1`, footer `4 rules · 1 blocked by a rule · 54 decisions`.
+
+Every hop is the real thing: the engine's loader reads the committed file, a real `file_read` is
+refused by the real policy, the untruncated card is the one the desktop paints, and Save and Reload
+travel through `NaruPermissionStore`. The control turn is what proves the rule is narrow.
+
+**Three things this harness caught before it passed.**
+
+*The model, not the desktop.* Runs 2 and 3 timed out at 597 s and 297 s with no denial at all. The
+post-mortem showed the transcript: `I'm sorry, but I can't assist with that request.` The prompt
+asked the agent to read `secret.txt`, and a safety-tuned local model refuses that sentence rather
+than calling a tool. The denied file is now `data-1.txt`, and the turn has a second phrasing and a
+retry. Nothing in the desktop was wrong.
+
+*The Permissions panel was off the screen.* `TranscriptPane`'s `JList` is as wide as its widest cell,
+and since the untruncated tool cards landed that is a whole tool result. The split pane gave the
+transcript its preferred width and laid the tab panel past the right edge — so the jump selected the
+right row in a panel nobody could see, and the run's first screenshot showed only `Verbose`. Fixed
+by bounding the scroll pane's minimum size and clamping the restored divider to
+`width - MIN_SIDE_WIDTH (380)`; the harness now measures the geometry as part of the jump claim
+(`x=… width=… showing=…`), and paints the pane itself for the evidence file.
+
+**A harness bug, not a product one.** Run 7 failed on `pane-hits=0 pane-blocks=0` while
+`policy-decisions=54`. The counters are recorded on the worker that asked the policy and carried to
+the screen by `NaruSessionModel`'s 2 Hz poll — one repaint per tick rather than one per check, which
+is the design — so reading `model.row(id)` in the same millisecond as the denial is a race the pane
+never loses for a human. The harness now waits one poll plus slack (`awaitCounted`, 5 s ceiling)
+before it claims the counter is visible.
+
+**Terminal path unchanged (§7).** Against the installed reactor
+(`mvn -o -pl core/naru-api,extensions/naru-permissions install`): `naru --help` exit 0;
+`naru -d /tmp/perm-repl -t "/permission list"` prints 4 rules including
+`repl-deny-data [deny] type=file patterns=data-1.txt … source=perm:project`, i.e. the committed file
+still loads through the refactored store; `/permission check` and `/permission explain` answer and
+exit 0. `extensions/naru-permissions`: **42 tests, 0 failures**. `app/naru-desktop`: **69 tests
+(+13), 0 failures, 0 errors**.
+
+**Reds that are not this commit's.** `core/naru-impl` is red at HEAD — 238 tests, 16 failures + 3
+errors — and reproduces exactly in a clean worktree at `9005174`, so it is not the working tree's
+doing; this commit changes no `naru-impl` file. Bisected: `NaruToolCallLifecycleTest` +
+`NaruLazyModelResolutionTest` are **14/14 green at `a9a115f`** and **9/14 red at `3720c87` ("[FIXED]
+fixed prompt")**. That commit removed the best-fit tools-capable fallback from `NaruTaskImpl`
+("resolve only a model the user or caller explicitly selected"), and those tests register a
+`FakeProvider` without a `/model use`, so they now fail with `No model is selected` or
+`NaruTask.model() == null`. One further red, `NaruTaskCompletionTest.cancelSettlesTheRunAsKilled`,
+appears only with the uncommitted scheduler edits. See *Decisions needed* below.
+
 ## Open in Phase 2
 
 - **E1** typed tool-call lifecycle from `NaruToolCallStmt` — engine half and desktop half both
@@ -216,3 +327,11 @@ set was not touched by this commit.
   `render/MarkdownHtml` + `MarkdownRenderer`.
 - **G1** a robot-driven scroll on a loaded transcript, next to this test.
 - Task monitor: interrupt / kill / hold, which the task pane says it does not have yet.
+- Transcript wrapping: a long untruncated tool result still sets the list's preferred width, so the
+  panel scrolls sideways. The split now clamps the divider and the tab panel is reachable, but the
+  horizontal bar is the symptom of cells that do not wrap — the same work as D1's renderer pass.
+- Permissions rule rows are cut at the pane's 380-pixel floor; a two-line row (id + patterns) would
+  read better than a horizontal scroll.
+- `core/naru-impl` is red at HEAD (16 failures + 3 errors of 238) since `3720c87` dropped the
+  best-fit model fallback. Blocked on the owner's answer: adapt those tests to explicit-model-only,
+  or restore the fallback.

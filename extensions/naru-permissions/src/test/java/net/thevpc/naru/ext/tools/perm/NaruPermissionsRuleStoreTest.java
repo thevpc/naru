@@ -3,20 +3,26 @@ package net.thevpc.naru.ext.tools.perm;
 import net.thevpc.naru.api.access.NaruAccessEffect;
 import net.thevpc.naru.api.access.NaruAccessPolicy;
 import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.access.NaruActorKind;
 import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.access.NaruSubject;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NElementFormatterStyle;
 import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -132,5 +138,92 @@ public class NaruPermissionsRuleStoreTest {
 
         assertEquals(1, policy.rules(NaruPermissionsExtension.SOURCE_SESSION).size(),
                 "loading the same state twice must not duplicate the rules");
+    }
+
+    // ── the writer: what a host's Save button does ─────────────────────────────
+    //
+    // These cover the format itself, not just the load path, because the store is now the only
+    // implementation of it: a GUI that edits committed rules writes through here rather than keeping
+    // a parser of its own, so "the file we write is the file we read" has to be pinned at the source.
+
+    @Test
+    public void whatTheWriterWritesIsWhatTheLoaderReads() {
+        NaruSessionImpl session = NaruPermissionsTestSupport.session();
+        NaruPermissionsRuleStore store = new NaruPermissionsRuleStore(session);
+        assertFalse(store.projectFile().isRegularFile());
+        assertEquals(List.of(), store.readProjectRules(), "an absent file is an empty policy");
+        assertEquals(NaruAccessEffect.ALLOW, store.readProjectDefaultEffect(NaruAccessEffect.ALLOW));
+
+        NaruPermissionRule first = new NaruPermissionRule().id("no-agent-writes-src")
+                .resourceType(NaruResourceType.FILE).patterns("src/**", ".env")
+                .actions(NaruAction.WRITE).actorKind(NaruActorKind.AGENT)
+                .effect(NaruAccessEffect.DENY).description("no agent writes into src");
+        NaruPermissionRule second = new NaruPermissionRule().id("devs-rw-src")
+                .resourceType(NaruResourceType.FILE).patterns("src/**")
+                .actions(NaruAction.READ, NaruAction.WRITE)
+                .subjects(NaruSubject.group("devs")).effect(NaruAccessEffect.ALLOW);
+
+        assertNull(store.writeProjectRules(List.of(first, second), NaruAccessEffect.DENY));
+        assertTrue(store.projectFile().isRegularFile());
+
+        List<NaruPermissionRule> back = store.readProjectRules();
+        assertEquals(2, back.size());
+        assertEquals("no-agent-writes-src", back.get(0).id(),
+                "file order is evaluation order and must survive the round trip");
+        assertEquals(List.of("src/**", ".env"), back.get(0).patterns());
+        assertEquals(NaruActorKind.AGENT, back.get(0).actorKind());
+        assertEquals("no agent writes into src", back.get(0).description());
+        assertEquals(NaruAccessEffect.DENY, store.readProjectDefaultEffect(NaruAccessEffect.ALLOW));
+
+        // and the committed file is what the policy ends up enforcing
+        store.loadProjectRules();
+        NaruAccessPolicy policy = session.accessPolicy();
+        assertEquals(NaruPermissionsExtension.SOURCE_PROJECT, policy.rule("devs-rw-src").get().source());
+        assertEquals(NaruAccessEffect.DENY, policy.defaultEffect());
+    }
+
+    @Test
+    public void aRuleWithoutAnIdGetsAStableOneAndABadRuleCostsNothingElse() {
+        NaruSessionImpl session = NaruPermissionsTestSupport.session();
+        NaruPermissionsRuleStore store = new NaruPermissionsRuleStore(session);
+        NPath file = store.projectFile();
+        file.parent().mkdirs();
+        // built with the element API rather than hand-typed TSON, because the point is what the
+        // loader sees: a rule with no id, a rule whose effect cannot parse, and a good one
+        NElement noId = NObjectElementBuilder.of()
+                .set("resourceType", "file")
+                .set("patterns", NElement.ofStringArray("src/**"))
+                .set("actions", NElement.ofStringArray("read"))
+                .set("effect", "deny")
+                .build();
+        NElement broken = NObjectElementBuilder.of()
+                .set("resourceType", "file")
+                .set("effect", "not-an-effect")
+                .build();
+        NElement good = new NaruPermissionRule().id("explicit")
+                .resourceType(NaruResourceType.FILE).effect(NaruAccessEffect.ALLOW).toElement();
+        NElement root = NObjectElementBuilder.of()
+                .set("defaultEffect", "deny")
+                .set("rules", NElement.ofArrayBuilder().add(noId).add(broken).add(good).build())
+                .build();
+        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY).write(root, file);
+
+        List<NaruPermissionRule> back = store.readProjectRules();
+        assertEquals(2, back.size(), "one malformed rule must not discard the file");
+        assertNotNull(back.get(0).id(), "a rule with no id cannot be addressed, so it gets a stable one");
+        assertEquals("explicit", back.get(1).id());
+        assertEquals(NaruAccessEffect.DENY, store.readProjectDefaultEffect(NaruAccessEffect.ALLOW));
+    }
+
+    @Test
+    public void anUnparseableDefaultEffectFallsBackInsteadOfFailingTheRead() {
+        NaruSessionImpl session = NaruPermissionsTestSupport.session();
+        NaruPermissionsRuleStore store = new NaruPermissionsRuleStore(session);
+        NPath file = store.projectFile();
+        file.parent().mkdirs();
+        file.writeString("{ defaultEffect:sideways, rules:[] }");
+        assertEquals(NaruAccessEffect.DENY, store.readProjectDefaultEffect(NaruAccessEffect.DENY),
+                "a fallback the file cannot answer falls back to the caller's");
+        assertEquals(List.of(), store.readProjectRules());
     }
 }

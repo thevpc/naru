@@ -1,7 +1,11 @@
 package net.thevpc.naru.ext.tools.perm;
 
+import net.thevpc.naru.api.access.NaruAccessEffect;
 import net.thevpc.naru.api.access.NaruAccessPolicy;
+import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.access.NaruPermissionRule;
+import net.thevpc.naru.api.access.NaruPermissionStore;
+import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.nuts.Nuts;
@@ -12,7 +16,9 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -55,6 +61,34 @@ public class NaruPermissionsExtensionTest {
         assertTrue(session.registry().extension(
                         NaruPermissionsExtension.NAME, NaruPermissionsExtension.class).isPresent(),
                 "the extension must be registered under its SPI name");
+    }
+
+    /**
+     * The door a host that cannot compile against this jar uses: the {@link NaruPermissionStore}
+     * interface in {@code naru-api}, resolved by type token through the registry. The desktop's
+     * Permissions tab reads and writes the committed file this way, so the test has to build nothing
+     * from this module — if it imported {@code NaruPermissionsExtension} it would not be proving the
+     * same thing.
+     */
+    @Test
+    public void aHostThatNeverSeesThisClassReachesTheStoreThroughTheApi() {
+        NaruSession session = newSession("api-surface");
+        NaruPermissionStore store = NaruPermissionStore.of(session);
+        assertNotNull(store, "the committed-file surface must be reachable from naru-api alone");
+        assertEquals(NaruPermissionsExtension.NAME, store.name());
+
+        NaruPermissionRule rule = new NaruPermissionRule().id("gui-save")
+                .resourceType(NaruResourceType.FILE).patterns("src/**")
+                .actions(NaruAction.WRITE).effect(NaruAccessEffect.DENY);
+        assertNull(store.writeProjectRules(List.of(rule), NaruAccessEffect.ALLOW));
+        assertTrue(store.projectFile().isRegularFile());
+        assertEquals(List.of("gui-save"),
+                store.readProjectRules().stream().map(NaruPermissionRule::id).toList(),
+                "what the API writes, the API reads back in order");
+        assertNull(store.reloadProjectRules());
+        assertEquals(NaruPermissionStore.SOURCE_PROJECT,
+                session.accessPolicy().rule("gui-save").get().source(),
+                "a reload through the API tags rules with the same origin the directive uses");
     }
 
     @Test

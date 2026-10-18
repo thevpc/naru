@@ -6,6 +6,7 @@ import net.thevpc.naru.api.agent.NaruWorkspaceBuilder;
 import net.thevpc.naru.desktop.host.InteractionHost;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.ui.InputPane;
+import net.thevpc.naru.desktop.ui.PermissionsPane;
 import net.thevpc.naru.desktop.ui.StatusBar;
 import net.thevpc.naru.desktop.ui.TaskPane;
 import net.thevpc.naru.desktop.ui.ToolsPane;
@@ -59,6 +60,8 @@ public final class MainWindow extends JFrame {
     private TranscriptPane transcript;
     private InputPane input;
     private StatusBar statusBar;
+    private ToolsPane tools;
+    private PermissionsPane permissions;
     private NaruSessionModel session;
     private InteractionHost host;
     private boolean switching;
@@ -138,6 +141,8 @@ public final class MainWindow extends JFrame {
             host.startFlushTimer();
             session = new NaruSessionModel(() -> newWorkspace(dir), dir, host);
             transcript = new TranscriptPane(session);
+            // the §6 jump, from the card the user actually reads
+            transcript.setJumpToPermissions(ruleId -> openPermissions(ruleId));
             input = new InputPane(session);
             statusBar = new StatusBar(session);
             TaskPane tasks = new TaskPane(session);
@@ -145,10 +150,10 @@ public final class MainWindow extends JFrame {
             JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, transcript,
                     sideTabs(tasks, session));
             split.setResizeWeight(0.74);
-            int saved = PREFS.getInt(KEY_DIVIDER, -1);
-            if (saved > 100) {
-                split.setDividerLocation(saved);
-            }
+            placeDivider(split);
+            // once the window has been laid out the split knows its real width, which is the only
+            // honest ceiling for a restored divider
+            SwingUtilities.invokeLater(() -> placeDivider(split));
             split.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY,
                     e -> PREFS.putInt(KEY_DIVIDER, split.getDividerLocation()));
 
@@ -171,16 +176,60 @@ public final class MainWindow extends JFrame {
 
     private JTabbedPane sideTabs;
 
+    /** The narrowest the tab panel may be squeezed to: a rule row needs to be readable. */
+    private static final int MIN_SIDE_WIDTH = 380;
+
+    /**
+     * Put the transcript/tab-panel divider where the user left it, but never so far right that the
+     * tab panel disappears. The saved value is a pixel count taken from whatever window it was
+     * dragged in — possibly a wider one — and the transcript's preferred width is the width of its
+     * longest line, so an unclamped restore parks the divider past the right edge: Tools,
+     * Permissions and the §6 jump all still work, in a panel nobody can see or click.
+     */
+    private void placeDivider(JSplitPane split) {
+        int available = split.getWidth() > 0 ? split.getWidth()
+                : Math.max(getContentPane().getWidth(), getWidth() - 16);
+        if (available <= MIN_SIDE_WIDTH * 2) {
+            // nothing sensible to clamp to; let resizeWeight decide until the window has a width
+            return;
+        }
+        int saved = PREFS.getInt(KEY_DIVIDER, -1);
+        int at = saved > 100 ? Math.min(saved, available - MIN_SIDE_WIDTH)
+                : (int) (available * 0.74);
+        split.setDividerLocation(Math.max(0, at));
+    }
+
     private JTabbedPane sideTabs(TaskPane tasks, NaruSessionModel session) {
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Tasks", tasks);
         // E1 landed the typed lifecycle, so this tab is real data now rather than a placeholder
-        tabs.addTab("Tools", new ToolsPane(session.tools()));
+        tools = new ToolsPane(session.tools());
+        tabs.addTab("Tools", tools);
+        // moved from Phase 4 by the owner: §3.3 makes this the v1 answer to an approval prompt,
+        // and §6 promises a jump into it from a permission denial
+        permissions = new PermissionsPane(session);
+        tabs.addTab("Permissions", permissions);
+        tools.setJumpToPermissions(ruleId -> openPermissions(ruleId));
         // the event log is Phase 3
         tabs.addTab("Log", new JLabel("<html><div style='padding:14px;color:gray'>The event log "
                 + "arrives with Phase 3 (plan E3).</div></html>"));
         this.sideTabs = tabs;
         return tabs;
+    }
+
+    /**
+     * Jump from a denial to the rule that caused it (plan §6). A null id means the default effect
+     * denied the call, which is still worth showing — the fallback combo is what to change — but no
+     * row can be selected for it.
+     */
+    public void openPermissions(String ruleId) {
+        if (!selectSideTab("Permissions")) {
+            return;
+        }
+        PermissionsPane pane = permissions;
+        if (pane != null) {
+            pane.selectRule(ruleId);
+        }
     }
 
     /**
@@ -201,6 +250,30 @@ public final class MainWindow extends JFrame {
         return true;
     }
 
+    /** The side tab now showing, or null before a session exists. Harness-facing, like the setter. */
+    public String selectedSideTab() {
+        JTabbedPane tabs = sideTabs;
+        return tabs == null || tabs.getSelectedIndex() < 0 ? null : tabs.getTitleAt(tabs.getSelectedIndex());
+    }
+
+    /**
+     * The rule the Permissions tab has selected, for a gate run that has to prove a jump landed on
+     * the right row rather than merely switched tabs.
+     */
+    public String selectedPermissionRule() {
+        PermissionsPane pane = permissions;
+        return pane == null ? null : pane.selectedRuleId();
+    }
+
+    /**
+     * What the selected side tab shows. A gate run photographs the panel it just opened, and the
+     * side panel is the part of a 1400-pixel window a full-screen capture tends to cut off.
+     */
+    public java.awt.Component selectedSideComponent() {
+        JTabbedPane tabs = sideTabs;
+        return tabs == null ? null : tabs.getSelectedComponent();
+    }
+
     /**
      * A workspace per project, deliberately not installed as the shared instance: with one window
      * per JVM the shared slot would be a second, global source of truth for widgets (plan §3.1).
@@ -212,6 +285,14 @@ public final class MainWindow extends JFrame {
     private void closeSession() {
         if (transcript != null) {
             transcript.dispose();
+        }
+        // both panes listen to models the session owns, so they unsubscribe before the shutdown
+        // rather than leaving a listener on a model that is about to fire one last time
+        if (tools != null) {
+            tools.dispose();
+        }
+        if (permissions != null) {
+            permissions.dispose();
         }
         if (session != null) {
             session.shutdown();

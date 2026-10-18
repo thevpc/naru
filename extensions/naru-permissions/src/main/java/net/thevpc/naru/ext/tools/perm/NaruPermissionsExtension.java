@@ -7,6 +7,7 @@ import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.access.NaruActorKind;
 import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.access.NaruResourceType;
+import net.thevpc.naru.api.access.NaruPermissionStore;
 import net.thevpc.naru.api.access.NaruSubject;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
@@ -18,6 +19,7 @@ import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NLiteral;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -54,18 +56,21 @@ import java.util.Map;
  * session, while a fresh session starts from the committed file alone. Built-ins
  * sit ahead of both.
  */
-public class NaruPermissionsExtension implements NaruSessionExtension, NaruSessionListener {
+public class NaruPermissionsExtension implements NaruSessionExtension, NaruSessionListener,
+        NaruPermissionStore {
 
     public static final String NAME = "permissions";
 
+    // The tags are declared once, in the API, so a host that looks this extension up by type and a
+    // host that never sees this class agree on what a rule's origin means.
     /** Rules that ship with the build (the {@link NaruPermissionsBuiltins}). */
-    public static final String SOURCE_CORE = NaruAccessPolicy.SOURCE_CORE;
+    public static final String SOURCE_CORE = NaruPermissionStore.SOURCE_CORE;
     /** Rules loaded from the project file. */
-    public static final String SOURCE_PROJECT = "perm:project";
+    public static final String SOURCE_PROJECT = NaruPermissionStore.SOURCE_PROJECT;
     /** Rules added at runtime and kept in the session state. */
-    public static final String SOURCE_SESSION = "perm:session";
+    public static final String SOURCE_SESSION = NaruPermissionStore.SOURCE_SESSION;
     /** Rules scoped to a spawned task; removed when the task dies. */
-    public static final String SOURCE_SPAWN_PREFIX = "perm:spawn:";
+    public static final String SOURCE_SPAWN_PREFIX = NaruPermissionStore.SOURCE_SPAWN_PREFIX;
 
     private volatile NaruSession session;
     private volatile NaruPermissionsRuleStore store;
@@ -306,5 +311,58 @@ public class NaruPermissionsExtension implements NaruSessionExtension, NaruSessi
         return session.registry().extension(NAME, NaruPermissionsExtension.class)
                 .map(NaruPermissionsExtension::store)
                 .orNull();
+    }
+
+    // ── NaruPermissionStore: the API surface a host edits through ─────────────
+    //
+    // Everything here delegates to the same store the /permission directive and the permission_*
+    // tools use, so a desktop Save and a terminal reload cannot disagree about the format. The
+    // session is taken from the extension instance rather than an argument: the registry guarantees
+    // one instance per session, and a host reaches this object through that session's registry.
+
+    @Override
+    public NPath projectFile() {
+        NaruPermissionsRuleStore s = store;
+        return s == null ? null : s.projectFile();
+    }
+
+    @Override
+    public List<NaruPermissionRule> readProjectRules() {
+        NaruPermissionsRuleStore s = store;
+        return s == null ? List.of() : s.readProjectRules();
+    }
+
+    @Override
+    public NaruAccessEffect readProjectDefaultEffect(NaruAccessEffect fallback) {
+        NaruPermissionsRuleStore s = store;
+        return s == null ? fallback : s.readProjectDefaultEffect(fallback);
+    }
+
+    @Override
+    public String reloadProjectRules() {
+        NaruSession s = session;
+        if (s == null) {
+            return "the permissions extension is not bound to a session";
+        }
+        if (!isEnabled(s)) {
+            return "naru.perm.enabled=false, so the project policy is not being applied";
+        }
+        initStore(s);
+        NaruPermissionsRuleStore st = store;
+        if (st == null) {
+            return "no store for this session";
+        }
+        st.loadProjectRules();
+        return null;
+    }
+
+    @Override
+    public String writeProjectRules(List<NaruPermissionRule> rules, NaruAccessEffect defaultEffect) {
+        NaruPermissionsRuleStore s = store;
+        if (s == null && session != null) {
+            s = initStore(session);
+        }
+        return s == null ? "the permissions extension is not bound to a session"
+                : s.writeProjectRules(rules, defaultEffect);
     }
 }

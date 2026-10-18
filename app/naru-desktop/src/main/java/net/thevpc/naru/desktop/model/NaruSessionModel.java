@@ -1,5 +1,6 @@
 package net.thevpc.naru.desktop.model;
 
+import net.thevpc.naru.api.access.NaruPermissionStore;
 import net.thevpc.naru.api.agent.NaruInputMode;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruLogMode;
@@ -56,6 +57,8 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private final InteractionHost host;
     private final TranscriptModel transcript = new TranscriptModel();
     private final ToolCallModel tools = new ToolCallModel();
+    /** The permissions editor's view-model, bound to the session policy once the session exists. */
+    private final PermissionsModel permissions = new PermissionsModel();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private final List<String> inputHistory = new ArrayList<>();
     private int historyCursor = -1;
@@ -164,6 +167,9 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                         onEdt(() -> {
                             transcript.clear();
                             tools.clear();
+                            // a reload rewrote the rule set wholesale; the old ids and their counts
+                            // describe rules that no longer exist, so both go
+                            permissions.resetCounts();
                             statusText = "reloaded";
                             refreshTasks();
                             fireChanged();
@@ -208,6 +214,20 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             booting = false;
             running = true;
             statusText = "running";
+            // the policy only exists on a built session, which is why the permissions editor binds
+            // here rather than in a constructor; a session that refuses the read leaves the tab
+            // attached to nothing, which the pane reports as "not attached".
+            //
+            // The committed file comes from the naru-permissions extension, looked up by interface
+            // through the registry — the desktop must not compile against an extension jar, and a
+            // profile without that extension leaves the store null so the pane says the file is
+            // unavailable instead of parsing a second copy of the format.
+            try {
+                permissions.attach(session.accessPolicy(),
+                        NaruPermissionStore.of(session));
+            } catch (RuntimeException e) {
+                permissions.attach(null);
+            }
             taskPoll = new Timer(TASK_POLL_MILLIS, e -> refreshTasks());
             taskPoll.setRepeats(true);
             taskPoll.start();
@@ -240,6 +260,9 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         if (taskPoll != null) {
             taskPoll.stop();
         }
+        // the policy is still reachable from a stopped session; leaving the bridge attached would
+        // keep this model alive and paint onto a window that is closing
+        permissions.detach();
         host.close();
         closed = true;
         pending = null;
@@ -413,6 +436,12 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     // ── state ─────────────────────────────────────────────────────────────────
 
     private void refreshTasks() {
+        // decisions are counted on the worker that asked the policy, never painted from there; the
+        // 2 Hz poll is what carries those numbers to the screen, so a busy tool run costs one
+        // repaint per tick rather than one per check
+        if (permissions.countsDirty()) {
+            permissions.refresh();
+        }
         if (session == null) {
             return;
         }
@@ -478,6 +507,19 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     /** The tool-call list behind the Tools tab, fed by the same batches as the transcript. */
     public ToolCallModel tools() {
         return tools;
+    }
+
+    /**
+     * The permissions editor's model — a projection of {@code session.accessPolicy()} plus the
+     * traffic through it, bound when the session boots and detached when the window closes.
+     */
+    public PermissionsModel permissions() {
+        return permissions;
+    }
+
+    /** The project directory, for widgets that read or write project files. */
+    public NPath projectDir() {
+        return projectDir;
     }
 
     public List<TaskRow> tasks() {

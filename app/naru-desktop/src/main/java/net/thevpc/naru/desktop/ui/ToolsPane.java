@@ -1,6 +1,7 @@
 package net.thevpc.naru.desktop.ui;
 
 import net.thevpc.naru.desktop.model.ToolCallModel;
+import net.thevpc.naru.desktop.util.PermissionsText;
 import net.thevpc.naru.desktop.util.ToolCardText;
 
 import javax.swing.BorderFactory;
@@ -35,6 +36,9 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
     private final JList<ToolCallModel.Row> list = new JList<>(rows);
     private final JTextArea detail = new JTextArea();
     private final JLabel note = new JLabel(" ");
+    private final javax.swing.JButton toPermissions = new javax.swing.JButton("Permission rule…");
+    /** Opens the Permissions tab on the rule that denied this call, set by the window. */
+    private java.util.function.Consumer<String> onJumpToPermissions;
     /** So a new call can follow the tail without stealing a selection the user is reading. */
     private int previousRows;
 
@@ -51,6 +55,22 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
         note.setFont(note.getFont().deriveFont(Font.PLAIN, 11f));
         note.setForeground(Color.GRAY);
         note.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+
+        // the jump plan §6 promises: a denial row leads to the rule that caused it, so the fix is
+        // one click away instead of a search through /permission output
+        toPermissions.setToolTipText("Open the Permissions tab on the rule that produced this denial");
+        toPermissions.setEnabled(false);
+        toPermissions.addActionListener(e -> {
+            if (onJumpToPermissions == null) {
+                return;
+            }
+            ToolCallModel.Row r = list.getSelectedValue();
+            onJumpToPermissions.accept(r == null ? null : PermissionsText.matchedRuleId(r.result()));
+        });
+        JPanel bar = new JPanel(new BorderLayout());
+        bar.add(toPermissions, BorderLayout.WEST);
+        bar.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        add(bar, BorderLayout.NORTH);
 
         JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
                 new javax.swing.JScrollPane(list), new javax.swing.JScrollPane(detail));
@@ -99,6 +119,7 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
                     ? "No tool calls yet."
                     : "Select a call to see its arguments and its full result.");
             detail.setCaretPosition(0);
+            toPermissions.setEnabled(false);
             return;
         }
         StringBuilder sb = new StringBuilder();
@@ -119,6 +140,18 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
         } else {
             sb.append(r.result());
         }
+        if (PermissionsText.isDenial(r.result())) {
+            // say which rule fired in the header too: the engine puts it at the end of a long result,
+            // and the whole point of §3.3 is that a denial is legible without reading the tail
+            String id = PermissionsText.matchedRuleId(r.result());
+            sb.append("\n\n── denied by ")
+                    .append(id == null ? "the default effect (no rule matched)" : "rule " + id)
+                    .append(" — the Permissions tab edits it");
+            toPermissions.setEnabled(onJumpToPermissions != null);
+            toPermissions.setText(id == null ? "Open Permissions" : "Rule " + id + "…");
+        } else {
+            toPermissions.setEnabled(false);
+        }
         detail.setText(sb.toString());
         detail.setCaretPosition(0);
     }
@@ -127,12 +160,23 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
         model.removeListener(this);
     }
 
+    /**
+     * Install the window's jump: select a permission denial in the list, press the button, and the
+     * Permissions tab opens on the rule that caused it. The id may be null — a denial that came from
+     * the default effect has no rule — and the window still switches tabs.
+     */
+    public void setJumpToPermissions(java.util.function.Consumer<String> jump) {
+        this.onJumpToPermissions = jump;
+        showDetail();
+    }
+
     private static String line(ToolCallModel.Row r) {
         String name = r.toolName() == null || r.toolName().isBlank() ? "(unnamed)" : r.toolName();
         String d = r.measuredDuration();
         return "#" + r.taskId() + "  " + name
                 + (d != null ? "  · " + d : "")
                 + "  · " + r.status()
+                + (PermissionsText.isDenial(r.result()) ? " (denied)" : "")
                 + (r.result() == null ? "" : "  · " + r.resultChars() + " chars");
     }
 

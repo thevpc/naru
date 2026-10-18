@@ -1,12 +1,15 @@
 package net.thevpc.naru.ext.tools.perm;
 
+import net.thevpc.naru.api.access.NaruAccessEffect;
 import net.thevpc.naru.api.access.NaruAccessPolicy;
 import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NElementFormatterStyle;
 import net.thevpc.nuts.elem.NElementReader;
+import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.io.NPath;
@@ -67,11 +70,8 @@ public class NaruPermissionsRuleStore {
         if (file == null || !file.isRegularFile()) {
             return;
         }
-        NElement root;
-        try {
-            root = NElementReader.ofTson().read(file);
-        } catch (Exception e) {
-            warn(NMsg.ofC("cannot read permission file %s: %s", file, e.getMessage()));
+        NElement root = readRoot(file);
+        if (root == null) {
             return;
         }
         NaruAccessPolicy policy = session.accessPolicy();
@@ -82,6 +82,85 @@ public class NaruPermissionsRuleStore {
         String def = readDefaultEffect(root);
         if (def != null) {
             policy.defaultEffect(NaruPermissionsUtil.parseEffect(def));
+        }
+    }
+
+    /**
+     * The rules in the committed file, in file order, without touching the policy. A missing file is
+     * an empty list; a rule that will not parse is skipped by {@link #readRules}, so one bad line
+     * does not cost the user the rest of the file.
+     */
+    public List<NaruPermissionRule> readProjectRules() {
+        NPath file = projectFile();
+        if (file == null || !file.isRegularFile()) {
+            return new ArrayList<>();
+        }
+        NElement root = readRoot(file);
+        return root == null ? new ArrayList<>() : readRules(root);
+    }
+
+    /** The fallback effect recorded in the committed file, or {@code fallback} when it states none. */
+    public NaruAccessEffect readProjectDefaultEffect(NaruAccessEffect fallback) {
+        NPath file = projectFile();
+        if (file == null || !file.isRegularFile()) {
+            return fallback;
+        }
+        NElement root = readRoot(file);
+        String def = root == null ? null : readDefaultEffect(root);
+        if (def == null) {
+            return fallback;
+        }
+        try {
+            return NaruPermissionsUtil.parseEffect(def);
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
+    /**
+     * Write the committed file: the given rules in order, plus the fallback effect they end on.
+     *
+     * <p>This is the counterpart of {@link #loadProjectRules()}, and it is deliberately not called
+     * anywhere inside the extension. The file is the reviewed, committable policy; a runtime that
+     * rewrote it as a side effect would turn a human artifact into session state. It exists because
+     * a human pressing Save in a host is the deliberate act that rule allows — and because that host
+     * must write through this parser rather than keep a second copy of the format.
+     *
+     * @return {@code null} on success, otherwise the message to show the user
+     */
+    public String writeProjectRules(List<NaruPermissionRule> rules, NaruAccessEffect defaultEffect) {
+        NPath file = projectFile();
+        if (file == null) {
+            return "this session has no project directory, so there is no project policy file";
+        }
+        NObjectElementBuilder root = NObjectElementBuilder.of();
+        root.set("defaultEffect", (defaultEffect == null ? NaruAccessEffect.ALLOW : defaultEffect)
+                .name().toLowerCase());
+        NArrayElementBuilder elements = NElement.ofArrayBuilder();
+        for (NaruPermissionRule r : rules == null ? List.<NaruPermissionRule>of() : rules) {
+            elements.add(r.toElement());
+        }
+        root.set("rules", elements.build());
+        try {
+            NPath parent = file.parent();
+            if (parent != null && !parent.isDirectory()) {
+                parent.mkdirs();
+            }
+            NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY)
+                    .write(root.build(), file);
+            return null;
+        } catch (Exception e) {
+            return "cannot write " + file + ": " + e.getMessage();
+        }
+    }
+
+    /** Parse the file, or null when it cannot be read; a read failure is logged, not thrown. */
+    private NElement readRoot(NPath file) {
+        try {
+            return NElementReader.ofTson().read(file);
+        } catch (Exception e) {
+            warn(NMsg.ofC("cannot read permission file %s: %s", file, e.getMessage()));
+            return null;
         }
     }
 
