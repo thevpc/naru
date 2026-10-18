@@ -9,6 +9,8 @@ import net.thevpc.naru.desktop.ui.StatusBar;
 import net.thevpc.naru.desktop.ui.TaskPane;
 import net.thevpc.naru.desktop.ui.ToolsPane;
 import net.thevpc.naru.desktop.ui.TranscriptPane;
+import net.thevpc.naru.desktop.ui.WorkbenchPane;
+import net.thevpc.naru.desktop.ui.InspectorPane;
 import net.thevpc.nuts.io.NPath;
 
 import javax.swing.BorderFactory;
@@ -63,6 +65,8 @@ public final class MainWindow extends JFrame {
     private StatusBar statusBar;
     private ToolsPane tools;
     private TaskPane taskPane;
+    private WorkbenchPane workbench;
+    private InspectorPane inspector;
     private NaruSessionModel session;
     private InteractionHost host;
     private final JLabel activeSessionLabel = new JLabel("No session");
@@ -227,6 +231,8 @@ public final class MainWindow extends JFrame {
             tools.setTaskFilter(id);
             input.setSelectedTaskId(id);
             taskScopeHeader.setText(id < 0 ? "No task selected" : "Task #" + id);
+            if (workbench != null) workbench.setSelectedTaskId(id);
+            if (inspector != null) inspector.setSelectedTaskId(id);
             conversationViews.setSelectedIndex(0);
         });
         selectionSync = () -> {
@@ -286,7 +292,10 @@ public final class MainWindow extends JFrame {
         taskPermissions.add(pendingPermissions, BorderLayout.CENTER);
         tabs.addTab("Task permissions", taskPermissions);
         tools.setJumpToPermissions(ruleId -> openPermissions(ruleId));
-        tabs.addTab("Task details", new JLabel("<html><div style='padding:14px;color:gray'>Select a task to inspect task-scoped state.</div></html>"));
+        inspector = new InspectorPane(session);
+        tabs.addTab("Inspect", inspector);
+        workbench = new WorkbenchPane(session);
+        tabs.addTab("Workspace", workbench);
         this.sideTabs = tabs;
         return tabs;
     }
@@ -388,6 +397,8 @@ public final class MainWindow extends JFrame {
             tools = null;
         }
         if (taskPane != null) { taskPane.dispose(); taskPane = null; }
+        if (inspector != null) { inspector.dispose(); inspector = null; }
+        workbench = null;
         if (input != null) { input.dispose(); input = null; }
         if (statusBar != null) { statusBar.dispose(); statusBar = null; }
         sideTabs = null;
