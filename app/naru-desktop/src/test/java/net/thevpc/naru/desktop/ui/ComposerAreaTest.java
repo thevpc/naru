@@ -18,6 +18,7 @@ import org.junit.jupiter.api.TestMethodOrder;
 
 import javax.swing.JComponent;
 import javax.swing.JFrame;
+import javax.swing.JList;
 import javax.swing.JScrollPane;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
@@ -368,8 +369,121 @@ class ComposerAreaTest {
         }
     }
 
+    /**
+     * The mouse path, which no keyboard harness can see. {@code BasicListUI} calls
+     * {@code SwingUtilities2.adjustFocus(list)} on mouse press, and its condition is
+     * {@code !hasFocus() && isRequestFocusEnabled()} — so a list that is merely not focusable still
+     * asks for the keyboard, and Swing answers by moving it to the next focusable component in the
+     * window. In the real main window that was a {@code JComboBox}: after one click, Enter fired the
+     * button instead of accepting the row, and the composer looked dead.
+     */
     @Test
     @Order(10)
+    void aClickSelectsTheRowAndNeverMovesTheKeyboard() throws Exception {
+        Assumptions.assumeFalse(GraphicsEnvironment.isHeadless(),
+                "a click that must not steal the keyboard needs a real focused window");
+        Candidate[] rows = new Candidate[12];
+        for (int i = 0; i < rows.length; i++) {
+            rows[i] = new Candidate("/c" + i, "candidate number " + i, Kind.DIRECTIVE);
+        }
+        ComposerArea area = inAFrame(answering(resultAt(0, 2, rows)));
+        javax.swing.JButton below = new javax.swing.JButton("send");
+        onEdt(() -> {
+            java.awt.Container cp = frame.getContentPane();
+            cp.setLayout(new java.awt.BorderLayout());
+            cp.removeAll();
+            cp.add(new JScrollPane(area), java.awt.BorderLayout.CENTER);
+            cp.add(below, java.awt.BorderLayout.SOUTH);
+            cp.revalidate();
+            cp.repaint();
+            area.setText("/c");
+            area.setCaretPosition(2);
+        });
+        awaitFocus(area);
+        onEdt(area::requestCompletion);
+        assertTrue(onEdtReturn(area::isCompletionVisible), "the list opened");
+        // The card asks for layout; a real user's reaction time flushes that queue for free, a test
+        // that clicks in the same millisecond has to flush it itself or it aims at nothing.
+        onEdt(() -> area.getRootPane().validate());
+        JList<?> list = candidateList(area);
+        assertNotNull(list, "the list the widget drew is the one the click has to reach");
+        // The exact condition SwingUtilities2.adjustFocus tests on mouse press. A synthetic
+        // MouseEvent does not go through the native focus renegotiation a real click does, so this
+        // test cannot observe the theft itself — ComposerMouseSmoke drives a real Robot click for
+        // that — but it can pin the half of the JDK condition the widget is responsible for.
+        assertFalse(list.isRequestFocusEnabled(),
+                "a focusable-in-request list asks Swing for the keyboard on mouse press, and Swing"
+                        + " answers by moving it to the next focusable component in the window");
+        assertFalse(list.isFocusable(), "the list must not be a focus destination either");
+        assertNotNull(list, "the list the widget drew is the one the click has to reach");
+
+        click(list, 2, 1);
+        assertEquals("/c2", onEdtReturn(area::selectedCompletionInsert),
+                "a single click highlights the row the user aimed at");
+        assertEquals("/c", onEdtReturn(area::getText), "one click chooses; it does not commit");
+        assertTrue(onEdtReturn(area::isCompletionVisible),
+                "the list stays open so the choice can be seen before it is taken");
+        assertFalse(onEdtReturn(() -> below.isFocusOwner()),
+                "the click handed the keyboard to the button below the composer");
+        assertTrue(onEdtReturn(area::isFocusOwner),
+                "the composer must still hold the keyboard after a click");
+
+        click(list, 2, 2);
+        assertEquals("/c2", onEdtReturn(area::getText), "the second click commits, like Enter does");
+        assertFalse(onEdtReturn(area::isCompletionVisible), "committing closes the list");
+        assertTrue(onEdtReturn(area::isFocusOwner),
+                "committing with the mouse leaves the caret where the user is typing");
+        assertFalse(onEdtReturn(() -> below.isFocusOwner()), "and still never moves the keyboard");
+    }
+
+    /**
+     * Find the JList the popup actually put in the window. A card stays in the layered pane once it
+     * has been shown, so a frame reused by several tests can hold more than one — the showing one is
+     * the list a click can land on.
+     */
+    private static JList<?> candidateList(ComposerArea area) throws Exception {
+        return onEdtReturn(() -> findList(area.getRootPane().getLayeredPane()));
+    }
+
+    private static JList<?> findList(java.awt.Container c) {
+        for (java.awt.Component x : c.getComponents()) {
+            if (x instanceof JList<?> l && l.isShowing() && l.getModel().getSize() > 0
+                    && l.getModel().getElementAt(0) instanceof Candidate) {
+                return l;
+            }
+            if (x instanceof java.awt.Container inner) {
+                JList<?> found = findList(inner);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * A real mouse gesture through the event system, not a call to the listener that handles it. The
+     * row's y comes from the list's own fixed cell height rather than {@code getCellBounds}, because
+     * that is the arithmetic the click hit-test uses and it does not depend on the layout queue
+     * having run yet — which a real user's reaction time settles and a test cannot wait for.
+     */
+    private static void click(JList<?> list, int row, int clicks) throws Exception {
+        onEdt(() -> {
+            assertTrue(row < list.getModel().getSize(), "the list holds " + row + " rows or fewer");
+            long now = System.currentTimeMillis();
+            int x = 6;
+            int y = (int) (row * list.getFixedCellHeight() + list.getFixedCellHeight() / 2);
+            list.dispatchEvent(new java.awt.event.MouseEvent(list,
+                    java.awt.event.MouseEvent.MOUSE_PRESSED, now, 0, x, y, clicks, false));
+            list.dispatchEvent(new java.awt.event.MouseEvent(list,
+                    java.awt.event.MouseEvent.MOUSE_RELEASED, now, 0, x, y, clicks, false));
+            list.dispatchEvent(new java.awt.event.MouseEvent(list,
+                    java.awt.event.MouseEvent.MOUSE_CLICKED, now, 0, x, y, clicks, false));
+        });
+    }
+
+    @Test
+    @Order(11)
     void theRealEngineAnswersForTheRealComposer() throws Exception {
         NPath dir = NPath.ofTempFolder("naru-desktop-composer");
         dir.mkdirs();

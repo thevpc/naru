@@ -482,7 +482,12 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         return booting;
     }
 
-    /** Completion for the input field, straight from E2. Safe on the EDT: it never blocks. */
+    /**
+     * Completion for the input field, straight from E2. It stays on the EDT because it is bounded by
+     * what it does: a directive scan and one directory listing, measured at 1.5 ms for 41 candidates
+     * and 400 files. A token that made the engine walk a tree would not be safe here, and this is the
+     * place to notice that.
+     */
     public NaruLineCompletion.Result complete(String rawLine, int caret) {
         if (session == null) {
             return NaruLineCompletion.Result.none("", 0, 0);
@@ -490,9 +495,27 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         try {
             return NaruLineCompletion.complete(session, rawLine, caret);
         } catch (RuntimeException e) {
+            // An empty list is the honest answer for a line that is still being typed, but silence is
+            // not: a completion that throws every time looks exactly like one that found nothing, and
+            // the user is left with a widget that does nothing and no trace of why.
+            if (e != lastCompletionFailure) {
+                lastCompletionFailure = e;
+                lastCompletionLine = rawLine;
+                System.err.println("naru: completion failed for \"" + rawLine + "\" at " + caret);
+                e.printStackTrace();
+            }
             return NaruLineCompletion.Result.none("", 0, 0);
         }
     }
+
+    /** The last completion failure, as one line, for a harness that has to prove the quiet path. */
+    public String describeCompletionFailure() {
+        return lastCompletionFailure == null ? "none"
+                : lastCompletionFailure + " on \"" + lastCompletionLine + "\"";
+    }
+
+    private Throwable lastCompletionFailure;
+    private String lastCompletionLine;
 
     // ── state ─────────────────────────────────────────────────────────────────
 

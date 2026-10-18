@@ -72,8 +72,31 @@ public final class ComposerArea extends RSyntaxTextArea {
                 popup.hide();
             }
         });
-        addCaretListener(e -> popup.hide());
+        // Only a caret that actually MOVED makes the span stale. Swing also fires this listener when
+        // focus arrives or leaves, and a list that vanishes because the window noticed a focus event
+        // is a list the user cannot click: the row they aimed at is gone before the press lands.
+        addCaretListener(e -> {
+            if (e.getDot() != lastCaretDot || e.getMark() != lastCaretMark) {
+                lastCaretDot = e.getDot();
+                lastCaretMark = e.getMark();
+                popup.hide();
+            }
+        });
         installKeys();
+    }
+
+    private int lastCaretDot = -1;
+    private int lastCaretMark = -1;
+
+    /**
+     * The card lives in the window's layered pane, one step outside this component, so nothing would
+     * clean it up when the composer itself goes away — a project switch rebuilds the panes, and the
+     * old card would stay in the old window forever.
+     */
+    @Override
+    public void removeNotify() {
+        popup.detach();
+        super.removeNotify();
     }
 
     private void installKeys() {
@@ -140,19 +163,17 @@ public final class ComposerArea extends RSyntaxTextArea {
     }
 
     /**
-     * Take the highlighted candidate — the Enter binding and a mouse click both come here. Nothing
-     * happens when the list is closed: an edit or a caret move hides it precisely because the span it
-     * remembers no longer describes the text, and inserting at a stale offset is a silent bug.
+     * Take the highlighted candidate — the Enter binding and a double click both come through
+     * {@link CompletionPopup#commitSelected()}, so the two cannot disagree about what committing means.
+     * Nothing happens when the list is closed: an edit or a real caret move hides it precisely because
+     * the span it remembers no longer describes the text, and inserting at a stale offset is a silent
+     * bug that lands in the middle of the user's line.
      */
     public void acceptCompletion() {
         if (!popup.isVisible()) {
             return;
         }
-        NaruLineCompletion.Candidate c = popup.selected();
-        if (c != null) {
-            insertCandidate(c);
-        }
-        popup.hide();
+        popup.commitSelected();
     }
 
     private void insertCandidate(NaruLineCompletion.Candidate c) {
@@ -165,6 +186,9 @@ public final class ComposerArea extends RSyntaxTextArea {
         }
         replaceRange(c.insert(), start, end);
         setCaretPosition(start + c.insert().length());
+        // A pick is not a focus change: the user is still writing this line, and after a click the
+        // keyboard has to be here rather than wherever the window's traversal order went.
+        requestFocusInWindow();
     }
 
     private void recall(String value) {

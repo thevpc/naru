@@ -4,6 +4,7 @@ import net.thevpc.naru.api.registry.NaruLineCompletion;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
+import javax.swing.JComponent;
 import javax.swing.JList;
 import javax.swing.JLayeredPane;
 import javax.swing.JPanel;
@@ -36,6 +37,15 @@ import java.util.List;
  * the window, so the question cannot come up: it is clipped to the window, it moves with the window,
  * and the text area keeps the caret.
  * <p>
+ * The same trap exists one level down, in the mouse path, and a keyboard-only harness cannot see it:
+ * {@code BasicListUI} calls {@code SwingUtilities2.adjustFocus(list)} on mouse press, which for a
+ * list with {@code isFocusable()==false} hands focus to the window's next focusable component — in
+ * the real main window that turned out to be a {@code JComboBox}, and the composer stopped receiving
+ * keys: Enter activated the combo instead of taking the row. {@code setRequestFocusEnabled(false)}
+ * is what closes it, because that is the other half of the same JDK condition, and the Robot-driven
+ * run measured the difference ({@code composer-focus=false global=JComboBox} before, {@code true}
+ * after).
+ * <p>
  * The replacement span comes from {@link NaruLineCompletion.Result}, not from a word boundary the
  * widget guessed: the engine knows that {@code /model use ol} completes inside the third word and
  * that {@code /cat /tmp/fo} completes across slashes, and a host that re-derived those spans would
@@ -51,9 +61,13 @@ final class CompletionPopup {
     private final DefaultListModel<NaruLineCompletion.Candidate> entries = new DefaultListModel<>();
     private final JList<NaruLineCompletion.Candidate> list = new JList<>(entries);
     private NaruLineCompletion.Result result = NaruLineCompletion.Result.none("", 0, 0);
-    /** Set by the composer: a click on a row inserts it, so the mouse and Enter do the same thing. */
+    /** Set by the composer: a double click on a row inserts it, exactly as Enter does. */
     private java.util.function.Consumer<NaruLineCompletion.Candidate> onPick = c -> {
     };
+    /** The text area, so a click can give the keyboard straight back to it. */
+    private Component owner;
+    private JLayeredPane paneOfCard;
+    private boolean shown;
 
     void setOnPick(java.util.function.Consumer<NaruLineCompletion.Candidate> handler) {
         this.onPick = handler;
@@ -71,26 +85,74 @@ final class CompletionPopup {
             label.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
             return label;
         });
+        // Nothing in this card may become the keyboard's destination: not the list, not the scroll
+        // pane that wraps it, not the scrollbars the user may grab to reach row 37 of a long list.
+        list.setFocusable(false);
+        list.setRequestFocusEnabled(false);
         list.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
+            public void mousePressed(java.awt.event.MouseEvent e) {
+                highlightAt(e.getPoint());
+            }
+
+            @Override
+            public void mouseDragged(java.awt.event.MouseEvent e) {
+                highlightAt(e.getPoint());
+            }
+
+            @Override
             public void mouseClicked(java.awt.event.MouseEvent e) {
-                int i = list.locationToIndex(e.getPoint());
-                if (i >= 0) {
-                    list.setSelectedIndex(i);
-                    onPick.accept(entries.get(i));
+                highlightAt(e.getPoint());
+                // One click chooses, the second commits — the way an IDE list behaves, and the way a
+                // user who means "let me look at what I picked before I take it" expects it to.
+                if (e.getClickCount() >= 2) {
+                    commitSelected();
                 }
             }
         });
         JScrollPane scroll = new JScrollPane(list);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setFocusable(false);
+        scroll.setVerifyInputWhenFocusTarget(false);
+        scroll.getViewport().setFocusable(false);
+        scroll.getVerticalScrollBar().setFocusable(false);
+        scroll.getHorizontalScrollBar().setFocusable(false);
         card.add(scroll, BorderLayout.CENTER);
         card.setOpaque(true);
         card.setBackground(list.getBackground());
         card.setBorder(BorderFactory.createLineBorder(new Color(110, 110, 110)));
         // the card is decoration, not a destination: it must never be a focus candidate
         card.setFocusable(false);
-        list.setFocusable(false);
+        card.setName("naru-completion-card");
+    }
+
+    private void highlightAt(java.awt.Point p) {
+        int i = list.locationToIndex(p);
+        if (i >= 0 && i < entries.size()) {
+            list.setSelectedIndex(i);
+            list.ensureIndexIsVisible(i);
+        }
+        keepFocusOnOwner();
+    }
+
+    /**
+     * Insert the highlighted row and hand the keyboard back. Both ways of committing a row come
+     * through here — the double click and the composer's Enter — so they cannot drift apart.
+     */
+    void commitSelected() {
+        NaruLineCompletion.Candidate c = list.getSelectedValue();
+        keepFocusOnOwner();
+        if (c != null) {
+            onPick.accept(c);
+        }
+        hide();
+    }
+
+    private void keepFocusOnOwner() {
+        if (owner instanceof JComponent j && j.isEnabled() && j.isShowing()) {
+            j.requestFocusInWindow();
+        }
     }
 
     /**
@@ -98,6 +160,7 @@ final class CompletionPopup {
      * nothing to show, which the caller treats as "this keystroke did nothing", not as an error.
      */
     boolean show(Component owner, Rectangle at, NaruLineCompletion.Result r) {
+        this.owner = owner;
         result = r;
         List<NaruLineCompletion.Candidate> candidates = r.candidates();
         if (candidates == null || candidates.isEmpty()) {
@@ -108,6 +171,15 @@ final class CompletionPopup {
         if (pane == null) {
             // no window to draw in yet; the composer is not displayable, so there is nothing to ask
             return false;
+        }
+        if (pane != paneOfCard) {
+            // the card lives in exactly one layered pane until that pane is replaced (a project
+            // switch rebuilds the root), so this is the only move it ever makes
+            if (card.getParent() != null) {
+                card.getParent().remove(card);
+            }
+            pane.add(card, JLayeredPane.POPUP_LAYER);
+            paneOfCard = pane;
         }
         entries.clear();
         for (NaruLineCompletion.Candidate c : candidates) {
@@ -122,9 +194,9 @@ final class CompletionPopup {
         int width = Math.max(300, Math.min(widest, Math.max(300, pane.getWidth() - 40)));
         card.setSize(width, height);
         card.setPreferredSize(new Dimension(width, height));
-        pane.add(card, JLayeredPane.POPUP_LAYER);
         card.setBounds(xInside(pane, owner, at.x, width),
                 yInside(pane, owner, at, height), width, height);
+        shown = true;
         card.setVisible(true);
         card.revalidate();
         card.repaint();
@@ -150,15 +222,36 @@ final class CompletionPopup {
         return max < 0 ? 0 : Math.max(0, Math.min(y, max));
     }
 
+    /**
+     * Close the list. Cheap and idempotent on purpose: the composer calls this from its document and
+     * caret listeners, so it runs on every keystroke, and a card that was removed and re-added each
+     * time made the whole window revalidate for a popup that was already gone.
+     */
     void hide() {
-        if (card.getParent() != null) {
-            card.getParent().remove(card);
+        if (!shown && !card.isVisible()) {
+            return;
         }
+        shown = false;
         card.setVisible(false);
     }
 
     boolean isVisible() {
-        return card.isShowing() && !entries.isEmpty();
+        return shown && card.isShowing() && !entries.isEmpty();
+    }
+
+    /**
+     * Take the card out of the window for good. A composer being detached from its hierarchy — a
+     * project switch rebuilding the panes — leaves no reason for its card to sit in a layered pane it
+     * can never be shown in again, and a window that gets rebuilt more than once must not accumulate
+     * one dead card per composer.
+     */
+    void detach() {
+        hide();
+        if (card.getParent() != null) {
+            card.getParent().remove(card);
+        }
+        card.setVisible(false);
+        paneOfCard = null;
     }
 
     /** @param down true for the next candidate, false for the previous; the ends do not wrap. */
@@ -216,10 +309,16 @@ final class CompletionPopup {
 
     private String labelOf(NaruLineCompletion.Candidate c, JList<?> l) {
         String kind = c.kind() == null ? "" : "  [" + c.kind().name().toLowerCase() + "]";
-        if (c.display() == null || c.display().isEmpty()) {
+        String display = c.display();
+        if (display == null || display.isEmpty()) {
             // the kind only earns its space when the engine says the set is ambiguous
             return c.insert() + (result.ambiguous() ? kind : "");
         }
-        return c.insert() + "  —  " + c.display() + (result.ambiguous() ? kind : "");
+        // The engine's own directive descriptions already begin with the command — "/assert — assert
+        // a condition" — so prefixing the insert again shows the user the same word twice.
+        if (display.startsWith(c.insert())) {
+            return display + (result.ambiguous() ? kind : "");
+        }
+        return c.insert() + "  —  " + display + (result.ambiguous() ? kind : "");
     }
 }
