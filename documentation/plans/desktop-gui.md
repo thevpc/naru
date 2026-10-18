@@ -153,6 +153,14 @@ as the opening Phase 2 commit.
 
 Gate: the v1 acceptance list in §6.
 
+**In progress — G3 is closed.** The opening commit made the 50 000-line budget a module test
+(`TranscriptLoadBudgetTest`), and its first run found a real violation: `flushOnce()` bounded its
+drain by the queue capacity, so a flood arriving inside one tick was applied in a single 39 ms EDT
+turn — outside the §4.4 budget, and invisible to Phase 0 because `maxFlushMillis()` stops timing
+before the listener runs. Now bounded by `MAX_EVENTS_PER_FLUSH` (4 000), the same load costs 4 ms a
+tick with nothing dropped. Details and the re-run gate numbers:
+[`desktop-gui-phase2.md`](desktop-gui-phase2.md).
+
 ### Phase 3: sessions and observability
 
 **E3** (promote `rawSessionStore()`, `pendingInputs()`, `isHibernateEligible()`, `hasLiveTasks()`, `deliverPendingInput()` to the API) → sessions browser (`NaruSessionStore.list()`, `NaruSessionVersionStore` versions/diff) and pending-input panel. **E4** (`addEventLogListener` + replay-from-cursor) → event-log panel and resync.
