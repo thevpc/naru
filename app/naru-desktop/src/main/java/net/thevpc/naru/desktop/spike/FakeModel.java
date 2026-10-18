@@ -61,6 +61,11 @@ public class FakeModel {
         this.profile = profile;
     }
 
+    /** What this instance was asked to stream — the Phase 1 smoke run reports it. */
+    public Profile profile() {
+        return profile;
+    }
+
     public int streamCalls() {
         return streamCalls;
     }
