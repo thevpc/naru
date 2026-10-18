@@ -42,6 +42,14 @@ public class InteractionHost implements NaruInteraction {
     public static final int MAX_MERGE_CHARS = 64 * 1024;
     /** Widget updates per second, per plan §4.4. */
     public static final int DEFAULT_FLUSH_HZ = 30;
+    /**
+     * Events applied in one flush. The frame budget is the reason this exists: applying an event
+     * costs about a microsecond in the model and far more once a widget row is attached, so an
+     * unbounded drain of a 50 000-line flood cost 39 ms of EDT time in one tick (measured by
+     * {@code TranscriptLoadBudgetTest}). 4 000 is ~5 ms of model work and 120 000 events a second
+     * at 30 Hz — more than the engine produces by two orders of magnitude.
+     */
+    public static final int MAX_EVENTS_PER_FLUSH = 4_000;
 
     /** Receives a batch of events on the EDT. */
     public interface Listener {
@@ -243,7 +251,10 @@ public class InteractionHost implements NaruInteraction {
     public int flushOnce() {
         long t0 = System.nanoTime();
         List<TranscriptEvent> batch = new ArrayList<>();
-        int budget = capacity;
+        // one flush may never drain the whole queue: at 50 000 lines the unbounded drain applied
+        // ~33 000 events in one EDT turn and cost 39 ms, which breaks the §4.4 frame budget under
+        // a flood. Whatever is left waits for the next tick, in order.
+        int budget = Math.min(capacity, MAX_EVENTS_PER_FLUSH);
         TranscriptEvent e;
         String mergeId = null;
         StringBuilder mergeText = null;
