@@ -165,19 +165,34 @@ public class NoToolWrapHelper {
         }
     }
 
+    /**
+     * Recover a tool call that a model wrote as plain text instead of through the
+     * wire's native tool-call field. Uses the default separators and is safe to
+     * call on any answer: a response that contains no emulated block and no
+     * bare tool-call object is returned unchanged.
+     *
+     * <p>This is what a provider-native parser calls when it assembled the
+     * response as text -- a model that ignores both the native tool API and the
+     * emulation tags. It must not depend on {@code emulate_tool_calls} being set
+     * in the request env, because that comes from a per-model front matter file
+     * that may not have been resolved; the response itself is the evidence.
+     */
+    public static NaruResponse recoverPlainTextToolCalls(NaruResponse naruResponse) {
+        return unwrapResponse(naruResponse, TOOL_CALL_SEP, null);
+    }
+
     public static NaruResponse unwrapResponse(NaruResponse naruResponse, Separators openClose, NaruTask task) {
         NaruMessage msg = naruResponse.getMessage();
         ParsedEmulatedResponse parsed = parseEmulatedToolCalls(msg.getContent(), openClose, task);
         if (!parsed.calls.isEmpty()) {
+            // withContent keeps the provenance and, importantly, the reasoning
+            // channel the parser may have filled (thinking / thinkingSegments) --
+            // the bare constructor used before dropped it, so an emulated call
+            // from a reasoning model lost its own account of the call.
+            NaruMessage rebuiltMessage = msg.withContent(parsed.cleanContent);
+            rebuiltMessage.setToolCalls(parsed.calls);
             NaruResponse rebuilt = new NaruResponse(
-                    new NaruMessage(msg.getSourceName(),
-                            msg.getSource(),
-                            msg.getRole(),
-                            parsed.cleanContent,
-                            msg.getImages(),
-                            msg.getToolCallId(),
-                            msg.getToolName(),
-                            parsed.calls),
+                    rebuiltMessage,
                     naruResponse.isDone(),
                     naruResponse.getStopReason(),
                     naruResponse.getTotalTokens(),
@@ -220,15 +235,144 @@ public class NoToolWrapHelper {
                 call.setArguments(argsEl != null ? (Map) argsEl.convertTo(Map.class) : new HashMap<>());
                 calls.add(call);
             } catch (Exception e) {
-                task.log(NaruLogMode.AGENT_RESPONSE,
-                        NMsg.ofC("Failed to parse emulated tool_call: %s", json));
+                if (task != null) {
+                    task.log(NaruLogMode.AGENT_RESPONSE,
+                            NMsg.ofC("Failed to parse emulated tool_call: %s", json));
+                }
             }
             matcher.appendReplacement(clean, "");
         }
         matcher.appendTail(clean);
 
         String cleanContent = clean.toString().trim();
+        // The sentinels are a request, not a guarantee: small instruct models
+        // ignore them and return the very objects the prompt asked for as bare
+        // JSON (qwen2.5-coder), often several of them back to back. Recover
+        // every such object the tag scan did not already cover -- without this
+        // the user sees raw tool-call objects as the assistant's answer and the
+        // turn stalls. Objects that are not tool calls are left where they are.
+        ParsedEmulatedResponse bare = parseBareJsonToolCalls(cleanContent);
+        if (bare != null) {
+            calls.addAll(bare.calls);
+            cleanContent = bare.cleanContent == null ? "" : bare.cleanContent;
+        }
         return new ParsedEmulatedResponse(cleanContent.isEmpty() ? null : cleanContent, calls);
+    }
+
+    /**
+     * Recovers the tool calls a model wrote as bare JSON objects -- in either
+     * the emulated spelling ({@code {"name":..., "arguments":...}}) or the one
+     * {@link #wrapRequest} also accepts ({@code {"tool":..., "args":...}}) --
+     * and returns them together with whatever text surrounded them.
+     *
+     * <p>Scans for balanced {@code {...}} spans (string-aware, so a brace inside
+     * an argument is not mistaken for the end) rather than requiring the whole
+     * answer to be one object: a model that emits two calls in a row produced
+     * {@code {"name":"pwd",...}\n{"name":"folder_find",...}}, which is not valid
+     * JSON as a whole. Only objects that name a tool <em>and</em> carry an
+     * argument field are taken, so an ordinary JSON answer is left as text.
+     *
+     * @return the recovered calls and the leftover text, or {@code null} when the
+     *         content holds no bare tool-call object
+     */
+    private static ParsedEmulatedResponse parseBareJsonToolCalls(String content) {
+        if (content == null || content.indexOf('{') < 0) {
+            return null;
+        }
+        List<NaruToolCall> calls = new ArrayList<>();
+        StringBuilder remainder = new StringBuilder();
+        int lastCopied = 0;
+        int i = 0;
+        int n = content.length();
+        while (i < n) {
+            if (content.charAt(i) != '{') {
+                i++;
+                continue;
+            }
+            int end = matchingBrace(content, i);
+            if (end < 0) {
+                break;
+            }
+            NaruToolCall call = parseBareJsonToolCall(content.substring(i, end + 1));
+            if (call != null) {
+                remainder.append(content, lastCopied, i);
+                calls.add(call);
+                lastCopied = end + 1;
+                i = end + 1;
+            } else {
+                i++;
+            }
+        }
+        if (calls.isEmpty()) {
+            return null;
+        }
+        remainder.append(content, lastCopied, n);
+        String left = remainder.toString().trim();
+        return new ParsedEmulatedResponse(left.isEmpty() ? null : left, calls);
+    }
+
+    /**
+     * The index of the {@code }} closing the {@code {} at {@code open}, honouring
+     * string literals and escapes; {@code -1} when the object never closes.
+     */
+    private static int matchingBrace(String s, int open) {
+        int depth = 0;
+        boolean inString = false;
+        for (int i = open; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inString) {
+                if (c == '\\') {
+                    i++;
+                } else if (c == '"') {
+                    inString = false;
+                }
+            } else if (c == '"') {
+                inString = true;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Parses one complete JSON object as a tool call, or {@code null} when it is
+     * not one. Only an object that names a tool <em>and</em> carries an argument
+     * field qualifies, so an ordinary JSON answer is left as assistant text.
+     */
+    private static NaruToolCall parseBareJsonToolCall(String content) {
+        if (content == null) {
+            return null;
+        }
+        String trimmed = content.trim();
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+            return null;
+        }
+        try {
+            NElement el = NElementReader.ofJson().read(trimmed);
+            if (!el.isAnyObject()) {
+                return null;
+            }
+            NObjectElement obj = el.asObject().get();
+            String name = obj.getStringValue("name").orElse(
+                    obj.getStringValue("tool").orNull());
+            NElement argsEl = obj.get("arguments").orElse(obj.get("args").orNull());
+            if (NBlankable.isBlank(name) || argsEl == null) {
+                return null;
+            }
+            NaruToolCall call = new NaruToolCall();
+            call.setId("emulated-" + UUID.randomUUID().toString().substring(0, 8));
+            call.setName(name);
+            call.setArguments((Map) argsEl.convertTo(Map.class));
+            return call;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     static class ParsedEmulatedResponse {

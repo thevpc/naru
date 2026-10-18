@@ -27,11 +27,7 @@
         </dependency>
         <!-- the chat provider shares the OpenAI-compatible provider base classes
              (AbstractOpenAICompatProvider, NaruModelCapabilitiesImpl) -->
-        <dependency>
-            <groupId>net.thevpc.naru</groupId>
-            <artifactId>naru-llm-models</artifactId>
-            <version>1.1.0.0</version>
-        </dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-llm-models</artifactId><version>1.1.0.0</version></dependency>
         <dependency>
             <groupId>net.thevpc.nuts</groupId>
             <artifactId>nuts-runtime</artifactId>

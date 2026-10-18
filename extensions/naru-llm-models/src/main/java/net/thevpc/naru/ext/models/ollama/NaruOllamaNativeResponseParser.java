@@ -4,6 +4,7 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
+import net.thevpc.naru.ext.models.NoToolWrapHelper;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
@@ -132,6 +133,14 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
                 response.setEvalTokens(evalTokens);
                 response.setTotalTokens(promptTokens + evalTokens);
             }
+        }
+        // 5. A model that ignores the native tool API and the emulation tags
+        // writes the call as plain text (qwen2.5-coder). The wire produced no
+        // tool_calls, so recover the object from the content here rather than
+        // relying on the request-side emulate_tool_calls flag, which is a
+        // per-model front matter that may not have resolved.
+        if (!response.hasToolCalls()) {
+            response = NoToolWrapHelper.recoverPlainTextToolCalls(response);
         }
         return response;
     }

@@ -2,6 +2,11 @@ package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.registry.NaruDirective;
+import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
+import net.thevpc.naru.api.registry.NaruDirectiveProvider;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
 import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
 import net.thevpc.nuts.Nuts;
@@ -12,6 +17,7 @@ import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.io.NIO;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NText;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -126,6 +132,47 @@ public class NaruNArgCompleteResolverTest {
                 "the ? alias must complete exactly like its canonical /help form");
         assertTrue(aliased.contains("project"),
                 "the help completer should offer matching directive names: " + aliased);
+    }
+
+    @Test
+    public void aSubCommandArgumentReachesItsCompleterThroughTheResolver() {
+        // /tags enable <TAB> relies on this hop: word 2 is an argument of the
+        // "enable" sub-command, and the base directive has to look the sub-command
+        // up and hand the words over. If that lookup regresses, every sub-command
+        // argument completer silently stops appearing in the shell.
+        session.registry().registerDirectiveProvider(new NaruDirectiveProvider() {
+            @Override
+            public String name() {
+                return "resolver-complete-probe";
+            }
+
+            @Override
+            public List<NaruDirective> directives() {
+                return List.of(new TagLikeDirective());
+            }
+        });
+        List<String> c = argumentCandidates("/taggate", "enable", "");
+        assertTrue(c.contains("all"),
+                "the resolver must reach the sub-command completer at word 2, got " + c);
+    }
+
+    /** A directive shaped like {@code /tags}: sub-command then tag-like arguments. */
+    static class TagLikeDirective extends NaruDirectiveBase {
+        TagLikeDirective() {
+            super("taggate", "test", "synthetic sub-command completion probe");
+            register(new AbstractSubCommand("enable", NText.ofPlain("enable things"),
+                    new SubCommandHelp("<name>...", "synthetic")) {
+                @Override
+                public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                    return NaruStmtResult.ofSuccess(0);
+                }
+
+                @Override
+                public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+                    return NArgCompleteResult.ofCandidates(List.of(NArgCompleteCandidate.of("all")));
+                }
+            });
+        }
     }
 
     /** Argument-position completion, using the same position shape the other suites use. */

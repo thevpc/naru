@@ -204,6 +204,52 @@ public class NaruOllamaNativeStreamParserTest {
                 "an argument value must be the plain string, not its TSON rendering");
     }
 
+    @Test
+    public void aBareJsonToolCallInContentIsRecovered() {
+        // qwen2.5-coder ignores the native tool API and writes the call as text:
+        // the wire has no tool_calls, so the object in the content is the call.
+        NaruResponse r = stream(
+                "{\"message\":{\"content\":\"{\\\"name\\\": \\\"run_shell\\\", \\\"arguments\\\": "
+                        + "{\\\"command\\\": \\\"echo hi\\\", \\\"timeout_seconds\\\": 60}}\"},\"done\":true,"
+                        + "\"done_reason\":\"stop\"}");
+        Assertions.assertTrue(r.hasToolCalls(),
+                "a bare object naming a tool must surface as a call, not as the answer");
+        NaruToolCall call = r.getMessage().getToolCalls().get(0);
+        Assertions.assertEquals("run_shell", call.getName());
+        Assertions.assertEquals("echo hi", call.getArguments().get("command"));
+        Assertions.assertEquals(60, ((Number) call.getArguments().get("timeout_seconds")).intValue());
+        Assertions.assertNull(r.getMessage().getContent(),
+                "the recovered object must not linger as answer text");
+    }
+
+    @Test
+    public void aBareJsonToolCallSplitAcrossFramesIsRecovered() {
+        // the same call streamed in pieces, as ollama actually delivers it
+        NaruResponse r = stream(
+                "{\"message\":{\"content\":\"{\\\"name\\\": \\\"run_shell\\\"\"},\"done\":false}",
+                "{\"message\":{\"content\":\", \\\"arguments\\\": {\\\"command\\\": \\\"echo hi\\\"}}\"},\"done\":false}",
+                "{\"done\":true,\"done_reason\":\"stop\"}");
+        Assertions.assertTrue(r.hasToolCalls());
+        Assertions.assertEquals("run_shell", r.getMessage().getToolCalls().get(0).getName());
+        Assertions.assertEquals("echo hi", r.getMessage().getToolCalls().get(0).getArguments().get("command"));
+    }
+
+    @Test
+    public void aBareJsonToolCallBatchMatchesTheStreamedOne() {
+        String document = "{\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"name\\\": \\\"run_shell\\\", "
+                + "\\\"arguments\\\": {\\\"command\\\": \\\"echo hi\\\"}}\"},\"done\":true,\"done_reason\":\"stop\"}";
+        assertSameTurn(parseBatch(document), stream(document));
+    }
+
+    @Test
+    public void aPlainJsonAnswerIsNotTurnedIntoAToolCall() {
+        NaruResponse r = stream(
+                "{\"message\":{\"content\":\"{\\\"poem\\\": \\\"roses are red\\\", \\\"lines\\\": 4}\"},\"done\":true,"
+                        + "\"done_reason\":\"stop\"}");
+        Assertions.assertFalse(r.hasToolCalls());
+        Assertions.assertEquals("{\"poem\": \"roses are red\", \"lines\": 4}", r.getMessage().getContent());
+    }
+
     // ── termination and usage ─────────────────────────────────────────────────
 
     @Test

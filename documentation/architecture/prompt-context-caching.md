@@ -119,7 +119,7 @@ exactly that.
 
 ## State
 
-A `NaruModelCacheExtension` in `naru-ai-models` owns per-session state, stored at
+A `NaruModelCacheExtension` in `naru-llm-models` owns per-session state, stored at
 `<session>/ext/model-cache.tson`. Entries are keyed by **provider + model +
 mode**; a session that talks to several models would otherwise have one model's
 cache identity silently invalidate another's.

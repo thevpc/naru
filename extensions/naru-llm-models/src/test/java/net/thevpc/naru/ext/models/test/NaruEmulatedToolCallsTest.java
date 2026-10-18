@@ -47,6 +47,9 @@ public class NaruEmulatedToolCallsTest {
             "<|tool_call|>\n{\"tool\":\"bash\",\"args\":{\"command\":\"ls\"}}\n<|end_tool_call|>";
     private static final String CUSTOM_TOOLS_BLOCK =
             "<tool_call>\n{\"tool\":\"file_read\",\"args\":{\"path\":\"/x\"}}\n</tool_call>";
+    /** qwen2.5-coder ignoring the sentinels and echoing the requested object bare. */
+    private static final String BARE_JSON_CALL =
+            "{\"name\": \"file_grep\", \"arguments\": {\"pattern\": \"poem\", \"path\": \"current_working_directory\"}}";
 
     private HttpServer server;
 
@@ -105,6 +108,38 @@ public class NaruEmulatedToolCallsTest {
         Assertions.assertTrue(response.hasToolCalls());
         Assertions.assertEquals("file_read", response.getMessage().getToolCalls().get(0).getName());
         Assertions.assertEquals("/x", response.getMessage().getToolCalls().get(0).getArguments().get("path"));
+    }
+
+    @Test
+    public void bareJsonEmulatedCallIsUnwrapped() throws Exception {
+        String baseUrl = startServer(false, BARE_JSON_CALL);
+
+        NaruResponse response = chat(baseUrl, new NaruModelRequest(
+                List.of(NaruMessage.user("assess the current poems")),
+                Collections.emptyList(), envWith(false)));
+
+        Assertions.assertTrue(response.hasToolCalls(),
+                "the bare object must surface as a tool call, not as the answer");
+        Assertions.assertEquals("file_grep", response.getMessage().getToolCalls().get(0).getName());
+        Assertions.assertEquals("poem", response.getMessage().getToolCalls().get(0).getArguments().get("pattern"));
+        Assertions.assertEquals("current_working_directory",
+                response.getMessage().getToolCalls().get(0).getArguments().get("path"));
+        Assertions.assertNull(response.getMessage().getContent(),
+                "the recovered object must not linger as answer text");
+    }
+
+    @Test
+    public void streamedBareJsonEmulatedCallIsUnwrapped() throws Exception {
+        String baseUrl = startServer(true, BARE_JSON_CALL);
+
+        NaruResponse response = chatStream(baseUrl, new NaruModelRequest(
+                List.of(NaruMessage.user("assess the current poems")),
+                Collections.emptyList(), envWith(false)));
+
+        Assertions.assertTrue(response.hasToolCalls(),
+                "the streamed bare object must surface as a tool call too");
+        Assertions.assertEquals("file_grep", response.getMessage().getToolCalls().get(0).getName());
+        Assertions.assertEquals("poem", response.getMessage().getToolCalls().get(0).getArguments().get("pattern"));
     }
 
     @Test

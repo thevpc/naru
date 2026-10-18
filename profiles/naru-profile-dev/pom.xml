@@ -20,27 +20,27 @@
     <dependencies>
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-api</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.1.0.0</version><scope>test</scope></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-fs</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-mcp</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-coder-java</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-shell</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-web</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-llm</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-skills</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-budget</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-routines</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-plan</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-sessions</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tags</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-permissions</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-tasks</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-llm-models</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-index</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-index-java</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-git</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-semantic</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-ollama</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-llama-cpp</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-fs</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-mcp</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-coder-java</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-shell</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-web</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-llm</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-skills</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-budget</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-routines</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-plan</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-sessions</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-tags</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-permissions</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-tasks</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-llm-models</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-index</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-index-java</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-git</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-semantic</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-ollama</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-llama-cpp</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.0</version><scope>test</scope></dependency>
     </dependencies>
 

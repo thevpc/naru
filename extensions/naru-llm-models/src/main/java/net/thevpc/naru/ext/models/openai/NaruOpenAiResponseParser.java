@@ -285,6 +285,30 @@ public class NaruOpenAiResponseParser implements NElementDeserializer<NaruRespon
             }
         }
 
+        // Some small instruct models ignore the requested sentinel format and
+        // return the same call object as bare JSON (for example
+        // {"name":"pwd","arguments":{}}). Only accept a complete JSON
+        // object with an explicit tool name and argument field so ordinary JSON
+        // answers are left as assistant text.
+        String trimmed = content.trim();
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+                NElement el = NElementReader.ofJson().read(trimmed);
+                if (el.isAnyObject()) {
+                    NObjectElement obj = el.asObject().get();
+                    String name = obj.getStringValue("name").orElse(
+                            obj.getStringValue("tool").orNull());
+                    NElement argsEl = obj.get("arguments").orElse(obj.get("args").orNull());
+                    if (!NBlankable.isBlank(name) && argsEl != null) {
+                        calls.add(new NaruToolCall("call_" + UUID.randomUUID().toString().substring(0, 8),
+                                name, parseArguments(argsEl)));
+                    }
+                }
+            } catch (Exception ignored) {
+                // Not a tool call; preserve the original assistant content.
+            }
+        }
+
         return calls;
     }
 }

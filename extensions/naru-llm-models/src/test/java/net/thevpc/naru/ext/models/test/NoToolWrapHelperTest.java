@@ -98,4 +98,92 @@ public class NoToolWrapHelperTest {
         Assertions.assertFalse(unwrapped.hasToolCalls());
         Assertions.assertEquals("just an answer", unwrapped.getMessage().getContent());
     }
+
+    @Test
+    public void aBareJsonCallIsRecoveredWhenTheSentinelIsIgnored() {
+        // qwen2.5-coder ignores the requested tags and echoes the object as-is
+        NaruResponse response = new NaruResponse();
+        response.setMessage(NaruMessage.assistant(
+                "{\"name\": \"file_grep\", \"arguments\": {\"pattern\": \"poem\"}}"));
+
+        NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
+
+        Assertions.assertTrue(unwrapped.hasToolCalls(),
+                "a bare tool-call object must become a call, not be shown as the answer");
+        Assertions.assertEquals("file_grep", unwrapped.getMessage().getToolCalls().get(0).getName());
+        Assertions.assertEquals("poem", unwrapped.getMessage().getToolCalls().get(0).getArguments().get("pattern"));
+        Assertions.assertNull(unwrapped.getMessage().getContent(),
+                "the recovered object must not linger as answer text");
+    }
+
+    @Test
+    public void aBareJsonCallInTheToolArgsSpellingIsRecoveredToo() {
+        NaruResponse response = new NaruResponse();
+        response.setMessage(NaruMessage.assistant(
+                "{\"tool\": \"bash\", \"args\": {\"command\": \"ls\"}}"));
+
+        NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
+
+        Assertions.assertTrue(unwrapped.hasToolCalls());
+        Assertions.assertEquals("bash", unwrapped.getMessage().getToolCalls().get(0).getName());
+        Assertions.assertEquals("ls", unwrapped.getMessage().getToolCalls().get(0).getArguments().get("command"));
+    }
+
+    @Test
+    public void aPlainJsonAnswerIsNotMistakenForAToolCall() {
+        NaruResponse response = new NaruResponse();
+        response.setMessage(NaruMessage.assistant("{\"poem\": \"roses are red\", \"lines\": 4}"));
+
+        NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
+
+        Assertions.assertFalse(unwrapped.hasToolCalls());
+        Assertions.assertEquals("{\"poem\": \"roses are red\", \"lines\": 4}",
+                unwrapped.getMessage().getContent());
+    }
+
+    @Test
+    public void severalBareJsonCallsInARowAreAllRecovered() {
+        // the real qwen2.5-coder output: two calls, one object per line, no tags
+        NaruResponse response = new NaruResponse();
+        response.setMessage(NaruMessage.assistant(
+                "{\"name\": \"pwd\", \"arguments\": {}}\n"
+                        + "{\"name\": \"folder_find\", \"arguments\": {\"path\": \".\", \"recursive\": true}}"));
+
+        NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
+
+        Assertions.assertTrue(unwrapped.hasToolCalls());
+        Assertions.assertEquals(2, unwrapped.getMessage().getToolCalls().size(),
+                "both bare objects must become calls");
+        Assertions.assertEquals("pwd", unwrapped.getMessage().getToolCalls().get(0).getName());
+        Assertions.assertEquals("folder_find", unwrapped.getMessage().getToolCalls().get(1).getName());
+        Assertions.assertEquals(true,
+                unwrapped.getMessage().getToolCalls().get(1).getArguments().get("recursive"));
+        Assertions.assertNull(unwrapped.getMessage().getContent());
+    }
+
+    @Test
+    public void bracesInsideArgumentsDoNotConfuseTheScanner() {
+        NaruResponse response = new NaruResponse();
+        response.setMessage(NaruMessage.assistant(
+                "{\"name\": \"folder_find\", \"arguments\": {\"include_filename\": \"*.java,*.py\", \"nested\": {\"a\": 1}}}"));
+
+        NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
+
+        Assertions.assertTrue(unwrapped.hasToolCalls());
+        Assertions.assertEquals("*.java,*.py",
+                unwrapped.getMessage().getToolCalls().get(0).getArguments().get("include_filename"));
+    }
+
+    @Test
+    public void aBareCallAfterProseKeepsTheProse() {
+        NaruResponse response = new NaruResponse();
+        response.setMessage(NaruMessage.assistant(
+                "Let me look.\n{\"name\": \"pwd\", \"arguments\": {}}"));
+
+        NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
+
+        Assertions.assertTrue(unwrapped.hasToolCalls());
+        Assertions.assertEquals("Let me look.", unwrapped.getMessage().getContent(),
+                "the prose around the recovered call must be kept");
+    }
 }

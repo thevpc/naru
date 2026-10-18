@@ -8,6 +8,7 @@ import net.thevpc.naru.api.model.NaruStreamPipeline;
 import net.thevpc.naru.api.model.NaruThinkingTagParser;
 import net.thevpc.naru.api.model.NaruThinkingTags;
 import net.thevpc.naru.api.model.NaruToolCall;
+import net.thevpc.naru.ext.models.NoToolWrapHelper;
 import net.thevpc.naru.ext.models.stream.NaruStreamResponseParser;
 import net.thevpc.nuts.elem.NArrayElement;
 import net.thevpc.nuts.elem.NElement;
@@ -204,6 +205,15 @@ public class NaruOllamaNativeStreamParser implements NaruStreamResponseParser {
         response.setTotalTokens(totalTokens);
         // Ollama reports no cache breakdown on this endpoint, so it stays
         // unreported rather than being reported as a free cache hit.
+        //
+        // A model that ignores the native tool API writes the call as text; the
+        // wire produced no tool_calls, so recover the object here. Same reason as
+        // the batched parser: the request-side emulate_tool_calls flag is a
+        // per-model front matter that may not have resolved, and the response is
+        // the evidence that it was needed.
+        if (!response.hasToolCalls()) {
+            response = NoToolWrapHelper.recoverPlainTextToolCalls(response);
+        }
         return response;
     }
 
