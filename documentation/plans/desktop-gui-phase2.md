@@ -353,6 +353,74 @@ no chosen model therefore reads the engine's honest "No model is selected. Choos
 /model list and /model use <key>…" turn, which is correct but is the first thing a new user hits. The
 model picker is planned for Phase 4.
 
+## §6 landed: the task monitor, and the three defects only a live run could see
+
+**What is on screen.** The Tasks tab is a tree of the session's live tasks with the terminal's own
+flag letters, and four buttons that are the GUI form of `/task` subcommands: Hold/Resume (one control,
+two directions), Interrupt, Kill, Foreground/Background. Four pieces, none of them reaching past
+`naru-api`: `model/TaskTree` arranges engine order into spawn order with depths, `util/TaskText`
+formats a row and the detail block in the terminal's wording (`#id STATUS [H] ←#parent age name —
+error`, frames as `[1] 3 <routine> instruction`), `ui/TaskPane` is the widget, and the rows come from
+the 2 Hz poll that already lives in `NaruSessionModel` — the one place the desktop reads the engine,
+so nothing on screen can disagree with anything else about which tasks exist.
+
+**The gate run is `smoke/TaskSmoke`**, and it earned its keep three times over. It opens the real
+window, spawns a parent with two children and a fourth task, then walks the five hops of §6 —
+tree, hold/resume, two live parallel turns, kill/interrupt, frames — reading every claim off the
+widget rather than off the engine, and freezing the EDT stack when a ping goes over a second.
+
+1. *A held task could not be un-held.* `setEnabled(live && !held)` left the button reading "Resume"
+   while disabling it, so the only way back from a hold was the keyboard. The model-level unit test
+   could not see this: only the widget has a label and an enabled flag at the same time.
+2. *"Resume" performed a hold.* The listener called `TaskAction.HOLD` unconditionally, so fixing (1)
+   alone produced a button that said Resume and re-held the task. Both directions now read the row's
+   `held` flag, the same source the word is chosen from, and `TaskMonitorTest` order 5 pins the pair
+   by clicking a real button and polling the engine: `Hold/enabled → Resume/enabled → Hold/enabled`.
+3. *The monitor froze the window for eight seconds at a time.* This is the one worth reading twice.
+   The poll itself is innocent — timed inside the tick, **worst 2 ms** — but the pinger measured
+   **max-ping 8666 ms** with the EDT parked in an HTTPS read. The stack named the path:
+   `TaskPane.showSelected → NaruSessionModel.taskDetail → NaruTask.model()`, and `model()` for a task
+   whose model came from a hint asks the registry to enumerate every provider, including the one that
+   answers over the network. The fix stays inside the desktop: the label is resolved on a daemon
+   worker, asked once per task id, and `taskDetail` reads that cache — returning `resolving…` on the
+   first look, with the pane re-reading on the next tick. `TaskMonitorTest` order 6 asserts the
+   caller's clock (first read back in well under a second) and that the marker settles. Measured
+   after the change: **max-ping 108 ms, stalls over 250 ms: 6 → 0**, and the frame budget is now part
+   of the gate's verdict rather than a footnote, so the defect cannot come back as a passing run.
+
+**Four engine facts, measured rather than assumed, and no engine change was needed.** Every API #23
+asks for already exists, so §7's regression obligation is not triggered by this piece — nothing under
+`core/` is in this commit.
+
+- `session.newTask(spec)` parks the task **held and READY**, which is what makes a spawn tree
+  observable instead of racing it to completion; and a task with nothing to run **ends and
+  deregisters the moment it is un-held**. So the monitor's rows are live tasks only — the hold/resume
+  round trip has to be taken on the session's own foreground task, the one task in a live session
+  that is un-held and never deregisters. History for terminal tasks is Phase 3's event log, and the
+  run says so in its own log line.
+- A spawned **root** task does not inherit a `/model use` choice: resolution is hint → parent →
+  session, and with none of them set `NaruPromptStmt` logs "No model is selected" and ends the task
+  in a single tick. The harness therefore pins the model on the spec (`.model(key)`), which is the
+  engine's explicit-selection path — the first version of hop 3 "passed the resume and showed nothing"
+  because it expected a hint-less root task to run a turn.
+- **The scheduler serialises ticks.** Two real model turns were live at the same instant
+  (`max-live-at-once=2`, `both-live-at-once=true`, first seen together after 3 s) but never both
+  `RUNNING` (`max-RUNNING-at-once=1`, sampled every 150 ms). §6's "live parallel tasks" is therefore
+  verified as *simultaneously live, one tick at a time* — reported, not assumed, and the run prints
+  both numbers so the distinction is on the record.
+- **A kill's on-screen effect has two shapes**, and which one appears depends on what the scheduler
+  swept first: the row is briefly drawn `KILLED`, or it is simply gone by the next poll. The harness
+  accepts either and says which happened (`saw-KILLED-row=false row-gone=true in-3s`), because a
+  monitor that promised a brown row that never arrives would be worse than no monitor. The engine's
+  reason string survives the kill and is asserted (`stopped from the desktop task monitor`).
+
+**Numbers.** Desktop suite **99 tests, 0 failures, 0 errors** (new: `TaskTreeTest` 7, `TaskTextTest`
+12, `TaskMonitorTest` 6). Gate runs, both `VERDICT=PASS`: model-free (`-Dnaru.smoke.model=false`) and
+model-driven against local Ollama with `qwen2.5-coder:14b` — 5 rows, `findTaskIdsByParent=2`, pane
+geometry `x=1008 width=364 height=643` on a 1600-px screen, `detail: frames=1 stacktrace-items=1`,
+`task-poll cost worst=2ms`, `edt-pings=117 max-ping-ms=108 stalls-over-16ms=5 stalls-over-250ms=0`.
+Evidence: `/tmp/naru-task-tree.png`, `/tmp/naru-task-parallel.png`, `/tmp/naru-task-final.png`.
+
 ## Open in Phase 2
 
 - **E1** typed tool-call lifecycle from `NaruToolCallStmt` — engine half and desktop half both
@@ -360,7 +428,14 @@ model picker is planned for Phase 4.
 - **D1** flip `BlockStyle.markdown` for `AGENT_RESPONSE`, as its own commit, against the existing
   `render/MarkdownHtml` + `MarkdownRenderer`.
 - **G1** a robot-driven scroll on a loaded transcript, next to this test.
-- Task monitor: interrupt / kill / hold, which the task pane says it does not have yet.
+- ~~Task monitor: interrupt / kill / hold, which the task pane says it does not have yet.~~ — closed:
+  landed above with its gate run. Two things it leaves open by design: the monitor keeps **no history**
+  (a terminal task's row is gone, measured both ways), and a task's model line can lag one tick because
+  the catalogue read moved off the EDT. Both belong to the Phase 3 event log and to the model picker.
+- The engine's own cost is a separate question worth a decision: `NaruTask.model()` fans out to every
+  provider — including an HTTPS call to OpenRouter — for each hinted task. The desktop now avoids it
+  on the EDT; the terminal's `/task` view walks the same path, and any host that shows a task list at
+  any refresh rate inherits it.
 - Transcript wrapping: a long untruncated tool result still sets the list's preferred width, so the
   panel scrolls sideways. The split now clamps the divider and the tab panel is reachable, but the
   horizontal bar is the symptom of cells that do not wrap — the same work as D1's renderer pass.

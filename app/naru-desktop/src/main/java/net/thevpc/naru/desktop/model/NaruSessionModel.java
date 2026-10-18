@@ -11,8 +11,12 @@ import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
 import net.thevpc.naru.api.registry.NaruLineCompletion;
+import net.thevpc.naru.api.scheduler.NaruSchedulerMode;
+import net.thevpc.naru.api.scheduler.NaruTaskMode;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.task.NaruTaskStackFrame;
+import net.thevpc.naru.api.task.NaruTaskStackItem;
 import net.thevpc.naru.desktop.host.InteractionHost;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
 import net.thevpc.naru.desktop.util.EDT;
@@ -21,6 +25,7 @@ import net.thevpc.nuts.time.NDuration;
 
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -87,9 +92,46 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private boolean running;
     private boolean closed;
 
-    /** A row of the task monitor: what the widget needs, read off a live task. */
+    /**
+     * A row of the task monitor: what the widget needs, read off a live task.
+     *
+     * <p>{@code depth} is not engine state — {@link TaskTree#arrange} stamps it when the flat poll
+     * becomes a tree, so a row built straight from a task sits at 0 and no caller may read it as
+     * meaningful until it has been arranged. {@code parentId} is engine state and is {@code -1} for
+     * a root; a child whose parent has already deregistered keeps that real id, which is why the
+     * tree treats an unknown parent as a root rather than as a missing row.
+     */
     public record TaskRow(long id, String name, NaruTaskStatus status, boolean foreground,
-                          long parentId, String error) {
+                          long parentId, boolean held, int pc, java.time.Instant created,
+                          String error, int depth) {
+
+        TaskRow withDepth(int next) {
+            return new TaskRow(id, name, status, foreground, parentId, held, pc, created, error, next);
+        }
+    }
+
+    /**
+     * What the monitor can ask the scheduler to do to one task. Each of these is a documented
+     * {@link NaruTask} call, so the enum exists to keep the pane off the engine surface and to make
+     * the whole action set testable in one place.
+     */
+    public enum TaskAction {
+        INTERRUPT("Interrupt"),
+        KILL("Kill"),
+        HOLD("Hold"),
+        RESUME("Resume"),
+        FOREGROUND("Bring to front"),
+        BACKGROUND("Send to back");
+
+        private final String label;
+
+        TaskAction(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
     }
 
     public NaruSessionModel(java.util.function.Supplier<NaruWorkspace> workspaceFactory,
@@ -228,9 +270,14 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             } catch (RuntimeException e) {
                 permissions.attach(null);
             }
-            taskPoll = new Timer(TASK_POLL_MILLIS, e -> refreshTasks());
+            taskPoll = new Timer(TASK_POLL_MILLIS, e -> {
+                long t0 = System.nanoTime();
+                refreshTasks();
+                recordPollCost(System.nanoTime() - t0);
+            });
             taskPoll.setRepeats(true);
             taskPoll.start();
+            startModelLabelWorker();
             refreshTasks();
             fireChanged();
         });
@@ -260,6 +307,13 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         if (taskPoll != null) {
             taskPoll.stop();
         }
+        // the label worker may be sitting in a provider HTTP call for a task whose window is
+        // closing; interrupting it is enough — the cache dies with the session either way
+        if (modelLabelWorker != null) {
+            modelLabelWorker.shutdownNow();
+            modelLabelWorker = null;
+        }
+        taskModelLabels.clear();
         // the policy is still reachable from a stopped session; leaving the bridge attached would
         // keep this model alive and paint onto a window that is closing
         permissions.detach();
@@ -435,6 +489,104 @@ public final class NaruSessionModel implements InteractionHost.Listener {
 
     // ── state ─────────────────────────────────────────────────────────────────
 
+    /**
+     * What the last and the worst 2 Hz task poll cost, in milliseconds, measured on the EDT inside
+     * the poll itself — the poll reads the engine, so a tick that has to wait for the scheduler or
+     * renders a changed tree shows up here rather than only in a frozen window.
+     */
+    private volatile long lastPollMillis;
+    private volatile long maxPollMillis;
+
+    /**
+     * Each task's model label, resolved off the EDT and remembered once per task id.
+     * <p>
+     * {@code NaruTask#model()} is a lazy catalogue lookup: a task whose model came from a hint asks
+     * the registry to enumerate every provider, and a provider like OpenRouter answers that with an
+     * HTTP round-trip. The §6 gate run caught the detail pane doing exactly that on the EDT, which
+     * is how a monitor whose own poll costs 2 ms froze the window for 8.7 s at a time. The engine's
+     * answer is untouched; only the thread it happens on has moved, and a task asks once.
+     */
+    private final java.util.Map<Long, String> taskModelLabels =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Marks an id whose label is on its way, so a repaint storm cannot launch one lookup per tick. */
+    private static final String MODEL_LABEL_PENDING = "resolving…";
+
+    /** Empty means the engine says this task has no model: the detail line then reads as before. */
+    private static final String MODEL_LABEL_NONE = "";
+
+    private volatile java.util.concurrent.ExecutorService modelLabelWorker;
+
+    public long lastTaskPollMillis() {
+        return lastPollMillis;
+    }
+
+    public long maxTaskPollMillis() {
+        return maxPollMillis;
+    }
+
+    /**
+     * The detail pane's model line for one task: the label if it is known, the {@link
+     * #MODEL_LABEL_PENDING} marker while the worker is still asking the engine, and null when the
+     * task has no model. First call for an id queues the lookup and returns the marker; the pane
+     * re-reads it on the next tick.
+     */
+    private String taskModelLabel(long id) {
+        String known = taskModelLabels.get(id);
+        if (known == null) {
+            if (taskModelLabels.putIfAbsent(id, MODEL_LABEL_PENDING) == null) {
+                resolveModelLabel(id);
+            }
+            return MODEL_LABEL_PENDING;
+        }
+        return MODEL_LABEL_PENDING.equals(known) ? MODEL_LABEL_PENDING
+                : (MODEL_LABEL_NONE.equals(known) ? null : known);
+    }
+
+    /** True while a task's model label is still being worked out; the pane asks again next tick. */
+    public boolean isTaskModelLabelPending(long id) {
+        return MODEL_LABEL_PENDING.equals(taskModelLabels.get(id));
+    }
+
+    private void resolveModelLabel(long id) {
+        java.util.concurrent.ExecutorService worker = modelLabelWorker;
+        NaruSession s = session;
+        if (worker == null || worker.isShutdown() || s == null) {
+            return;
+        }
+        worker.execute(() -> {
+            String label = MODEL_LABEL_NONE;
+            try {
+                NaruTask t = s.findTask(id).orNull();
+                // the call that must not happen on the EDT, and the only place it happens
+                if (t != null && t.model() != null) {
+                    label = String.valueOf(t.model().model());
+                }
+            } catch (RuntimeException | LinkageError e) {
+                // a stopped session or a provider that will not answer leaves the task with no
+                // label rather than a guess; the detail line then says none is selected
+                label = MODEL_LABEL_NONE;
+            }
+            taskModelLabels.put(id, label);
+        });
+    }
+
+    private void startModelLabelWorker() {
+        if (modelLabelWorker == null || modelLabelWorker.isShutdown()) {
+            modelLabelWorker = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "naru-task-model-label");
+                t.setDaemon(true);
+                return t;
+            });
+        }
+    }
+
+    private void recordPollCost(long nanos) {
+        long ms = nanos / 1_000_000;
+        lastPollMillis = ms;
+        maxPollMillis = Math.max(maxPollMillis, ms);
+    }
+
     private void refreshTasks() {
         // decisions are counted on the worker that asked the policy, never painted from there; the
         // 2 Hz poll is what carries those numbers to the screen, so a busy tool run costs one
@@ -475,19 +627,37 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             } catch (RuntimeException ignored) {
                 // task deregistered while reading
             }
-            out.add(new TaskRow(t.id(), t.name(), st, t.id() == fg, -1, err));
+            // every one of these is a field read on an object the poll already holds; reading the
+            // stack would not be, so frames stay in taskDetail() and are fetched on selection
+            long parentId = -1;
+            boolean held = false;
+            int pc = -1;
+            java.time.Instant created = null;
+            try {
+                parentId = t.parentId();
+                held = t.isHeld();
+                pc = t.pc();
+                created = t.creationTime();
+            } catch (RuntimeException ignored) {
+                // same window: a task deregistered mid-read keeps the fields already taken
+            }
+            out.add(new TaskRow(t.id(), t.name(), st, t.id() == fg, parentId, held, pc, created,
+                    err, 0));
         }
-        boolean changed = out.size() != tasks.size();
+        // engine order is a registry's iteration order; the monitor shows a tree, so the
+        // arrangement happens here rather than in a widget that would redo it on every repaint
+        List<TaskRow> arranged = TaskTree.arrange(out);
+        boolean changed = arranged.size() != tasks.size();
         if (!changed) {
-            for (int i = 0; i < out.size(); i++) {
-                if (!out.get(i).equals(tasks.get(i))) {
+            for (int i = 0; i < arranged.size(); i++) {
+                if (!arranged.get(i).equals(tasks.get(i))) {
                     changed = true;
                     break;
                 }
             }
         }
         if (changed) {
-            tasks = List.copyOf(out);
+            tasks = List.copyOf(arranged);
             fireChanged();
         }
     }
@@ -524,6 +694,189 @@ public final class NaruSessionModel implements InteractionHost.Listener {
 
     public List<TaskRow> tasks() {
         return tasks;
+    }
+
+    /**
+     * One task, read for the monitor's detail pane. This is the GUI form of the terminal's
+     * {@code /task frames} and {@code /task stacktrace}: those walk the engine's own objects and
+     * print, so the desktop reads them once when the selection changes and hands the values to
+     * {@code TaskText}. Nothing here is cached — a task that has deregistered between two clicks
+     * has genuinely gone, and an old detail would be a lie — with one exception, the model label,
+     * explained on {@link #taskModelLabels}.
+     *
+     * @return the detail, or null when the session has no such task (stopped, or finished and
+     * deregistered since the last poll)
+     */
+    public TaskDetail taskDetail(long id) {
+        NaruSession s = session;
+        if (s == null) {
+            return null;
+        }
+        NaruTask t;
+        try {
+            t = s.findTask(id).orNull();
+        } catch (RuntimeException e) {
+            // ensureNotStopped(): a session stopped under the selection is a normal race
+            return null;
+        }
+        if (t == null) {
+            return null;
+        }
+        List<NaruTaskStackFrame> frames = List.of();
+        List<NaruTaskStackItem> trace = List.of();
+        try {
+            // frame text is built off the routine table, so a task that ended between the read and
+            // the render must not take the pane down with it
+            frames = t.stackFrames();
+            trace = t.stacktrace();
+        } catch (RuntimeException ignored) {
+            // whatever came through stays; an empty frame list is an honest "nothing to show"
+        }
+        String modelName;
+        try {
+            modelName = taskModelLabel(id);
+        } catch (RuntimeException e) {
+            modelName = null;
+        }
+        NDuration ran;
+        try {
+            ran = t.duration().orNull();
+        } catch (RuntimeException e) {
+            ran = null;
+        }
+        String err;
+        try {
+            err = t.error().orNull();
+        } catch (RuntimeException e) {
+            err = null;
+        }
+        return new TaskDetail(
+                safeLong(t::id, -1),
+                safe(t::name),
+                safeGet(t::status),
+                safeBoolean(() -> t.isFg(), false),
+                safeLong(t::parentId, -1),
+                safeBoolean(t::isHeld, false),
+                safeInt(t::pc, -1),
+                safeBoolean(t::isKillRequested, false),
+                safeBoolean(t::isInterruptRequested, false),
+                safeInstant(t::creationTime),
+                ran,
+                safeGet(t::taskMode),
+                safeGet(t::schedulerMode),
+                modelName,
+                err,
+                frames,
+                trace);
+    }
+
+    /**
+     * Apply one monitor action to one task, then refresh so the result shows now rather than on
+     * the next poll tick.
+     * <p>
+     * These are the terminal's own calls — {@code /task kill}, {@code /task hold}, {@code /task
+     * unhold} — through the same interface, so a button cannot do something the REPL cannot. All
+     * of them are cooperative flags on the engine side: none blocks, so this is safe to run inline
+     * on the EDT, and doing it on a worker would only reorder the repaint against the poll.
+     *
+     * @return null on success, otherwise the reason to show the user
+     */
+    public String taskAction(long id, TaskAction action) {
+        EDT.check("NaruSessionModel.taskAction");
+        NaruSession s = session;
+        if (s == null) {
+            return "no session";
+        }
+        NaruTask t;
+        try {
+            t = s.findTask(id).orNull();
+        } catch (RuntimeException e) {
+            return "the session stopped: " + e.getMessage();
+        }
+        if (t == null) {
+            return "no task #" + id + " — it has already finished and deregistered";
+        }
+        String failure;
+        try {
+            switch (action) {
+                case INTERRUPT -> t.interrupt();
+                // a reason, not a bare kill(): the task keeps it and reports it through error(), so
+                // the row says the user stopped it instead of looking like it died on its own
+                case KILL -> t.cancel("stopped from the desktop task monitor");
+                case HOLD -> t.hold();
+                case RESUME -> t.unhold();
+                case FOREGROUND -> t.fg();
+                case BACKGROUND -> t.bg();
+                default -> {
+                    return "unknown action " + action;
+                }
+            }
+            failure = null;
+        } catch (RuntimeException e) {
+            failure = action.label() + " failed: " + e.getMessage();
+        }
+        refreshTasks();
+        fireChanged();
+        return failure;
+    }
+
+    // The detail reads one task the scheduler may be finishing at this very moment, and a view
+    // model that threw on a race would be worse than one that shows a dash.
+    private static String safe(java.util.function.Supplier<String> get) {
+        try {
+            return get.get();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static long safeLong(java.util.function.Supplier<Long> get, long fallback) {
+        try {
+            return get.get();
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
+    private static int safeInt(java.util.function.Supplier<Integer> get, int fallback) {
+        try {
+            return get.get();
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
+    private static boolean safeBoolean(java.util.function.Supplier<Boolean> get, boolean fallback) {
+        try {
+            return get.get();
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
+    private static Instant safeInstant(java.util.function.Supplier<Instant> get) {
+        try {
+            return get.get();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static <X> X safeGet(java.util.function.Supplier<X> get) {
+        try {
+            return get.get();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** What the monitor's detail pane shows for one task; {@code status} is null only if it vanished. */
+    public record TaskDetail(long id, String name, NaruTaskStatus status, boolean foreground,
+                             long parentId, boolean held, int pc, boolean killRequested,
+                             boolean interruptRequested, Instant created, NDuration ran,
+                             NaruTaskMode taskMode, NaruSchedulerMode schedulerMode, String model,
+                             String error, List<NaruTaskStackFrame> frames,
+                             List<NaruTaskStackItem> stacktrace) {
     }
 
     public String statusText() {
