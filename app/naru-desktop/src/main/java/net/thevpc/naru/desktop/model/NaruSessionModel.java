@@ -55,6 +55,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private final NPath projectDir;
     private final InteractionHost host;
     private final TranscriptModel transcript = new TranscriptModel();
+    private final ToolCallModel tools = new ToolCallModel();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private final List<String> inputHistory = new ArrayList<>();
     private int historyCursor = -1;
@@ -162,6 +163,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                     public void onSessionReloaded(NaruSession s) {
                         onEdt(() -> {
                             transcript.clear();
+                            tools.clear();
                             statusText = "reloaded";
                             refreshTasks();
                             fireChanged();
@@ -265,6 +267,9 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     @Override
     public void onBatch(List<TranscriptEvent> batch, InteractionHost from) {
         transcript.apply(batch);
+        // the same events drive two views: the transcript reads them in order as output, the tools
+        // list keeps them as a table that does not get trimmed away with the chat
+        tools.apply(batch);
         for (TranscriptEvent e : batch) {
             if (e instanceof TranscriptEvent.InputRequested ir) {
                 pending = ir.request();
@@ -468,6 +473,11 @@ public final class NaruSessionModel implements InteractionHost.Listener {
 
     public TranscriptModel transcript() {
         return transcript;
+    }
+
+    /** The tool-call list behind the Tools tab, fed by the same batches as the transcript. */
+    public ToolCallModel tools() {
+        return tools;
     }
 
     public List<TaskRow> tasks() {

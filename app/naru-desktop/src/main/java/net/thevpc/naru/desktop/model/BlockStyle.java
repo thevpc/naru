@@ -50,6 +50,17 @@ public record BlockStyle(String label,
         return s != null ? s : style(mode.name(), Color.GRAY, false, false, true, true);
     }
 
+    /**
+     * A tool card is not a log mode: it is a block the host built from an E1 lifecycle event, and
+     * it borrows {@code SCRIPT} only so the verbose filter leaves it alone. Its own style says
+     * "Tool" and draws it fixed-width, which is what a JSON result wants.
+     */
+    public static final BlockStyle TOOL = style("Tool", new Color(0x0277BD), false, true, false, false);
+
+    public static BlockStyle forBlock(TranscriptBlock b) {
+        return b != null && b.isToolCard() ? TOOL : of(b == null ? null : b.mode());
+    }
+
     private static BlockStyle style(String label, Color gutter, boolean markdown, boolean monospace,
                                     boolean collapsed, boolean verboseOnly) {
         // foreground follows the gutter hue so a dark PLAF still reads; the widget tints further

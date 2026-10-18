@@ -246,6 +246,14 @@ public final class Phase1Smoke {
         int[] finalCounts = counts(session);
         log.add("transcript ended with blocks=" + finalCounts[0] + " chars=" + finalCounts[1]
                 + " trimmed=" + trimmed(session));
+        // Phase 2 evidence (plan §6): a real model called real tools, and this says what the
+        // desktop made of it — cards drawn, and every result longer than the console's 300
+        // characters present in the transcript in full.
+        String toolFailure = toolEvidence(session, log);
+        if (toolFailure != null) {
+            ok = false;
+            log.add("TOOL EVIDENCE FAILED: " + toolFailure);
+        }
         SwingUtilities.invokeAndWait(() -> {
             if (!session.transcript().visible().isEmpty()) {
                 TranscriptBlock b = session.transcript().visible()
@@ -290,7 +298,11 @@ public final class Phase1Smoke {
             }
         }
 
+        // the screenshot is the only visual evidence the gate gets, so show the panel this phase
+        // added rather than the same transcript as Phase 1
+        SwingUtilities.invokeAndWait(() -> win[0].selectSideTab("Tools"));
         File shot = capture(win[0]);
+        SwingUtilities.invokeAndWait(() -> win[0].selectSideTab("Tasks"));
         String stats = win[0].host() == null ? "n/a" : win[0].host().statsLine();
         int[] counts = counts(session);
         String stuck = awaitCloseReleases(session, win[0]);
@@ -501,6 +513,70 @@ public final class Phase1Smoke {
             }
         });
         System.out.println("  transcript-dump=" + file);
+    }
+
+    /**
+     * What the run proves about tool calls, read off the production models rather than off a log
+     * line. Returns null when the evidence holds, otherwise the reason it does not.
+     * <p>
+     * The property that matters is the one E1 exists for: a result the terminal cut to 300
+     * characters is here whole, in a card the user can expand. Everything else — that a parked
+     * call settled, that no card was left claiming to run — is checked in the same pass because
+     * reading the models is already on the EDT.
+     */
+    private static String toolEvidence(NaruSessionModel session, List<String> log) throws Exception {
+        final String[] failure = new String[1];
+        SwingUtilities.invokeAndWait(() -> {
+            List<net.thevpc.naru.desktop.model.ToolCallModel.Row> rows = session.tools().rows();
+            List<TranscriptBlock> cards = session.transcript().toolCards();
+            int ok = 0;
+            int failed = 0;
+            int unsettled = 0;
+            int longest = 0;
+            int over300 = 0;
+            int shownWhole = 0;
+            StringBuilder all = new StringBuilder();
+            for (TranscriptBlock b : cards) {
+                all.append(b.text()).append('\n');
+            }
+            String transcript = all.toString();
+            for (net.thevpc.naru.desktop.model.ToolCallModel.Row r : rows) {
+                switch (r.status()) {
+                    case OK -> ok++;
+                    case FAILED -> failed++;
+                    default -> unsettled++;
+                }
+                longest = Math.max(longest, r.resultChars());
+                if (r.resultChars() > 300) {
+                    over300++;
+                    if (transcript.contains(r.result())) {
+                        shownWhole++;
+                    }
+                }
+            }
+            log.add("tool calls: panel-rows=" + rows.size() + " cards=" + cards.size()
+                    + " ok=" + ok + " failed=" + failed + " unsettled=" + unsettled
+                    + " open-cards=" + session.transcript().openToolCards()
+                    + " longest-result=" + longest + " chars"
+                    + " longer-than-300=" + over300 + " shown-whole=" + shownWhole
+                    + " panel-evictions=" + session.tools().droppedRows()
+                    + " transcript-trimmed=" + session.transcript().trimmedBlocks());
+            if (rows.isEmpty()) {
+                log.add("note: this run called no tools, so the card path was only exercised by its "
+                        + "unit tests — use a prompt that makes the model read a file");
+                return;
+            }
+            if (cards.isEmpty()) {
+                failure[0] = "the panel listed " + rows.size() + " calls but the transcript drew no card";
+            } else if (unsettled > 0 || session.transcript().openToolCards() > 0) {
+                failure[0] = unsettled + " panel rows and " + session.transcript().openToolCards()
+                        + " cards were still marked running at the end of the run";
+            } else if (over300 != shownWhole && session.transcript().trimmedBlocks() == 0) {
+                failure[0] = over300 + " results were longer than the console's abbreviation but only "
+                        + shownWhole + " are present in full, with nothing trimmed";
+            }
+        });
+        return failure[0];
     }
 
     private static File capture(MainWindow w) {

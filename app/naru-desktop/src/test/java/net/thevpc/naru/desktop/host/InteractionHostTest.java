@@ -2,6 +2,9 @@ package net.thevpc.naru.desktop.host;
 
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruOutput;
+import net.thevpc.naru.api.agent.NaruToolCallEvent;
+import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.Test;
@@ -9,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import javax.swing.SwingUtilities;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -178,5 +182,86 @@ class InteractionHostTest {
         // every whole message is its own closed block, which is what lets markdown render once
         long closes = all.stream().filter(e -> e instanceof TranscriptEvent.Closed).count();
         assertEquals(threads * each - 1, closes, "one close per block, none duplicated");
+    }
+
+    // ── E1: the typed tool-call lifecycle ─────────────────────────────────────
+
+    private static NaruToolCall call(String id, String name) {
+        return new NaruToolCall(id, name, Map.of("path", "notes.txt"));
+    }
+
+    @Test
+    void aToolCallKeepsItsPlaceInTheStreamAndIsNeverMergedAway() throws Exception {
+        InteractionHost host = new InteractionHost("test", 1000, null);
+        List<TranscriptEvent> seen = new ArrayList<>();
+        host.setListener((batch, h) -> seen.addAll(batch));
+        onEdt(() -> {
+            host.writeStream(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("hal"), false);
+            host.reportToolCall(NaruToolCallEvent.started(3, call("call-1", "file_read")));
+            host.writeStream(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("lo"), true);
+            host.flushOnce();
+        });
+        List<String> kinds = new ArrayList<>();
+        for (TranscriptEvent e : seen) {
+            kinds.add(e.getClass().getSimpleName());
+        }
+        assertEquals(List.of("Chunk", "ToolCall", "Chunk", "Closed"), kinds,
+                "a card lands where the call happened, and a merged text run stops for it");
+        assertEquals("hal", ((TranscriptEvent.Chunk) seen.get(0)).text(),
+                "the half-run is published as-is rather than overtaken by the card");
+    }
+
+    @Test
+    void saturationDropsChunksButNeverAToolCall() throws Exception {
+        InteractionHost host = new InteractionHost("test", 8, null);
+        List<TranscriptEvent> seen = new ArrayList<>();
+        host.setListener((batch, h) -> seen.addAll(batch));
+        int events = 0;
+        for (int i = 0; i < 40; i++) {
+            host.write(NaruLogMode.SCRIPT, NMsg.ofC("line %d", i));
+            host.reportToolCall(NaruToolCallEvent.result(5, call("c" + i, "echo"), "ok", 3));
+            events += 2;
+        }
+        assertTrue(host.droppedEvents() > 0, "the flood did drop transcript chunks");
+        onEdt(host::drainAllOnEdt);
+        long cards = seen.stream().filter(e -> e instanceof TranscriptEvent.ToolCall).count();
+        assertEquals(40, cards, "a settled call with no card would leave the panel lying");
+        assertEquals(40, host.toolCallEvents());
+    }
+
+    @Test
+    void outputIsStampedWithTheTaskThatWroteIt() throws Exception {
+        InteractionHost host = new InteractionHost("test", 1000, null);
+        List<TranscriptEvent> seen = new ArrayList<>();
+        host.setListener((batch, h) -> seen.addAll(batch));
+        onEdt(() -> {
+            // two tasks, same mode, interleaved: they must not share a block that claims one owner
+            host.write(NaruLogMode.SCRIPT, NMsg.ofC("from one"), 1);
+            host.write(NaruLogMode.SCRIPT, NMsg.ofC("from two"), 2);
+            for (int i = 0; i < 20; i++) {
+                host.writeStream(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("t%d ", i), false, 7);
+            }
+            host.writeStream(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("end"), true, 7);
+            host.flushOnce();
+        });
+        List<TranscriptEvent.Chunk> chunks = new ArrayList<>();
+        for (TranscriptEvent e : seen) {
+            if (e instanceof TranscriptEvent.Chunk c) {
+                chunks.add(c);
+            }
+        }
+        assertEquals(3, chunks.size(), "two whole lines, plus 21 fragments of one task merged to one");
+        assertEquals(1, chunks.get(0).taskId(), "the first line says which task wrote it");
+        assertEquals(2, chunks.get(1).taskId());
+        assertTrue(!chunks.get(0).blockId().equals(chunks.get(1).blockId()),
+                "a task switch is a block boundary, not a guess");
+        TranscriptEvent.Chunk merged = chunks.get(2);
+        assertEquals(7, merged.taskId(), "and merging keeps the stamp");
+        assertTrue(merged.text().startsWith("t0 ") && merged.text().contains("t19 "),
+                "order inside a merged run survives: " + merged.text());
+        assertTrue(merged.finalFragment());
+        assertTrue(seen.stream().noneMatch(e -> e instanceof TranscriptEvent.Chunk c
+                        && c.taskId() == NaruOutput.NO_TASK),
+                "nothing unattributed slipped through a stamped path");
     }
 }

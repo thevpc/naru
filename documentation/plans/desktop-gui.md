@@ -78,9 +78,9 @@ Design it from what the widgets need, then map each backend to it. Each backend 
 
 | Event | Fields | Needed by | InteractionHost source |
 | --- | --- | --- |  --- |
-| `TextChunk` | blockId, taskId?, mode, text, final? | transcript | `write` / `writeStream` |
-| `BlockOpened/Closed` | blockId, mode, taskId? | collapsible blocks | derived: mode change or task change closes a block (heuristic) until the engine marks boundaries |
-| `ToolCall{Started,Result,Failed}` | callId, taskId, tool, args, duration, result, exitCode | tools panel | **E1** (none today) |
+| `TextChunk` | blockId, taskId, mode, text, final? | transcript | `write` / `writeStream` — since E1 both carry the real `NaruOutput.taskId()` (`NaruOutput.NO_TASK` when none) |
+| `BlockOpened/Closed` | blockId, mode, taskId | collapsible blocks | derived: mode change **or task change** closes a block (heuristic). The task is now the engine's, not a guess; only the *turn* boundary inside one task is still heuristic. |
+| `ToolCall{Started,Parked,Result,Failed}` | callId, taskId, tool, args, duration, result | tools panel | **E1 landed**: `NaruInteraction.reportToolCall(NaruToolCallEvent)`. There is **no `exitCode`** — a `NaruTool` returns a `String`, so a non-zero exit is whatever the tool writes. |
 | `TaskStateChanged` | taskId, parentId?, status, stack | task monitor | `session.tasks()` poll → listener |
 | `InputRequested` / `InputAnswered` | requestId, prompt, kind | prompt dialog | `requestInput` / `deliver` — **in v1 this is a first-class surface**: `AskUserTool` (`ask_user`, commits `0be1fe5`/`c70ebce`) parks a model tool call with a question and up to 12 numbered choices, and `NaruToolCallStmt.awaitingInput` makes the wait durable across save/restore. Render choices as buttons plus free text. |
 | `PermissionRequested` | requestId, subject, detail | approval dialog | **not in v1** — no engine source (§3.3). Keep the event type in the vocabulary so E9 can supply it later. |
@@ -95,7 +95,7 @@ Rule: if a widget needs data the vocabulary lacks, extend the vocabulary first, 
 - Block-per-component list in a virtualized scroll container (only visible blocks are laid out). Each `BlockOpened` creates one component; collapse/expand is a component concern.
 - Block types: `MODEL_THINKING` (collapsed by default, summary shows elapsed time and tokens when known), `AGENT_RESPONSE` (markdown), tool-call card (from E1), and `PROGRESS/TRACE/SCHEDULER` (hidden behind a verbose toggle).
 - Markdown: render via `thevpc-common-md`/`nmarkdown` → HTML **only on closed blocks, lazily, for blocks inside the viewport, off the EDT, cached on the row model**. Phase 0 settled this: the same 50 000-row load that costs 26 ms per apply with a plain-text cell costs **14.8 s** with a heavyweight HTML cell per row (EDT ping 2.5 s average, 23 s backlog). A live streaming row is plain text, always. See `desktop-gui-phase0.md` spike 3.
-- Until E1 lands, tool output appears as plain `SCRIPT` text blocks, untruncated and collapsible. That alone beats the REPL.
+- E1 landed, so tool output no longer rides on plain `SCRIPT` text blocks: `TranscriptEvent.ToolCall` drives a real tool card in the transcript (header line + the **whole** result, no 300-char cap) and a row in the Tools panel. The console is unchanged — the REPL's PROGRESS `Result:` line is still the abbreviated one.
 
 ### 4.4 Streaming and threading
 

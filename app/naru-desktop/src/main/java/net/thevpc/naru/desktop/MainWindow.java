@@ -8,6 +8,7 @@ import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.ui.InputPane;
 import net.thevpc.naru.desktop.ui.StatusBar;
 import net.thevpc.naru.desktop.ui.TaskPane;
+import net.thevpc.naru.desktop.ui.ToolsPane;
 import net.thevpc.naru.desktop.ui.TranscriptPane;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.swing.plaf.UIPlaf;
@@ -141,7 +142,8 @@ public final class MainWindow extends JFrame {
             statusBar = new StatusBar(session);
             TaskPane tasks = new TaskPane(session);
 
-            JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, transcript, sideTabs(tasks));
+            JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, transcript,
+                    sideTabs(tasks, session));
             split.setResizeWeight(0.74);
             int saved = PREFS.getInt(KEY_DIVIDER, -1);
             if (saved > 100) {
@@ -167,14 +169,36 @@ public final class MainWindow extends JFrame {
         });
     }
 
-    private JTabbedPane sideTabs(TaskPane tasks) {
+    private JTabbedPane sideTabs;
+
+    private JTabbedPane sideTabs(TaskPane tasks, NaruSessionModel session) {
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Tasks", tasks);
-        // Tools and the event log are Phase 2/3; the tab strip is the extension point
-        JLabel tools = new JLabel("<html><div style='padding:14px;color:gray'>Tool calls appear here "
-                + "once the engine emits them (plan E1, Phase 2).</div></html>");
-        tabs.addTab("Tools", tools);
+        // E1 landed the typed lifecycle, so this tab is real data now rather than a placeholder
+        tabs.addTab("Tools", new ToolsPane(session.tools()));
+        // the event log is Phase 3
+        tabs.addTab("Log", new JLabel("<html><div style='padding:14px;color:gray'>The event log "
+                + "arrives with Phase 3 (plan E3).</div></html>"));
+        this.sideTabs = tabs;
         return tabs;
+    }
+
+    /**
+     * Show one of the side tabs by title. The gate harness needs it: a screenshot of the transcript
+     * cannot be evidence that the Tools tab works, and this is the only way to look at it from
+     * outside the class.
+     */
+    public boolean selectSideTab(String title) {
+        JTabbedPane tabs = sideTabs;
+        if (tabs == null) {
+            return false;
+        }
+        int i = tabs.indexOfTab(title);
+        if (i < 0) {
+            return false;
+        }
+        tabs.setSelectedIndex(i);
+        return true;
     }
 
     /**

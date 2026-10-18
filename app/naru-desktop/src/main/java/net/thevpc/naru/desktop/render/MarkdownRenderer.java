@@ -95,7 +95,7 @@ public final class MarkdownRenderer {
             }
             int lengthAtRender = b.length();
             String text = b.text();
-            String html = BlockStyle.of(b.mode()).markdown()
+            String html = BlockStyle.forBlock(b).markdown()
                     ? MarkdownHtml.toHtml(text)
                     : "<pre>" + escape(text) + "</pre>";
             SwingUtilities.invokeLater(() -> {

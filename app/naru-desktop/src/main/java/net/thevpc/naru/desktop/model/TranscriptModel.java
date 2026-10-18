@@ -1,10 +1,17 @@
 package net.thevpc.naru.desktop.model;
 
+import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruOutput;
+import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
 import net.thevpc.naru.desktop.util.EDT;
+import net.thevpc.naru.desktop.util.ToolCardText;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +34,13 @@ public final class TranscriptModel {
     /** Default ceiling on retained transcript characters — roughly 4 MB of text. */
     public static final int DEFAULT_MAX_CHARS = 4 * 1024 * 1024;
 
+    /**
+     * A tool result longer than this starts collapsed. Cards are the one block kind whose body is
+     * routinely enormous — a {@code file_read} of a whole source file — and a collapsed card still
+     * shows the tool, the duration and the character count, so nothing is hidden, only deferred.
+     */
+    public static final int TOOL_CARD_COLLAPSE_CHARS = 1_200;
+
     public interface Listener {
         /**
          * @param structural true when blocks were added, closed, removed or re-filtered and row
@@ -46,6 +60,14 @@ public final class TranscriptModel {
     private int retainedChars;
     private int trimmedBlocks;
     private String openBlockId;
+    private long cardSequence;
+    /**
+     * Cards waiting for their final event, keyed by {@code (taskId, callId or tool name)}. A deque,
+     * not a map entry, because a model that sends no call id can legitimately have two calls to the
+     * same tool outstanding in one task — and those settle in the order they started, which is the
+     * only ordering the engine gives us to match them by.
+     */
+    private final Map<String, Deque<String>> openCards = new HashMap<>();
 
     // ── feeding ───────────────────────────────────────────────────────────────
 
@@ -57,7 +79,7 @@ public final class TranscriptModel {
         for (TranscriptEvent e : batch) {
             if (e instanceof TranscriptEvent.Chunk c) {
                 boolean isNew = byId.get(c.blockId()) == null;
-                TranscriptBlock b = blockFor(c.blockId(), c.mode());
+                TranscriptBlock b = blockFor(c.blockId(), c.mode(), c.taskId());
                 structural |= isNew;
                 int before = b.length();
                 String add = c.text();
@@ -72,16 +94,24 @@ public final class TranscriptModel {
                 text = true;
             } else if (e instanceof TranscriptEvent.Opened o) {
                 boolean isNew = byId.get(o.blockId()) == null;
-                blockFor(o.blockId(), o.mode());
+                blockFor(o.blockId(), o.mode(), o.taskId());
                 structural |= isNew;
                 openBlockId = o.blockId();
             } else if (e instanceof TranscriptEvent.Closed cl) {
                 structural |= close(cl.blockId()) != null;
+            } else if (e instanceof TranscriptEvent.ToolCall tc) {
+                structural |= toolCard(tc.call());
+                // every lifecycle event appends its header line to a row, so a repaint is due
+                // whether or not a row was added
+                text = true;
             } else if (e instanceof TranscriptEvent.Lagged) {
                 // the host already told us it dropped chunks; a resync line is structural
                 structural = true;
-            } else if (e instanceof TranscriptEvent.HostClosed) {
+            } else if (e instanceof TranscriptEvent.HostClosed hc) {
                 structural |= closeOpen() != null;
+                // a card left open never settles: this activation ended. Say so on the card rather
+                // than let it sit there claiming a tool is still running
+                structural |= settleOpenCards(hc.reason());
             }
         }
         structural |= trim();
@@ -109,17 +139,158 @@ public final class TranscriptModel {
         return id == null ? null : close(id);
     }
 
-    private TranscriptBlock blockFor(String id, net.thevpc.naru.api.agent.NaruLogMode mode) {
+    private TranscriptBlock blockFor(String id, NaruLogMode mode, long taskId) {
         TranscriptBlock b = byId.get(id);
         if (b != null) {
             return b;
         }
-        b = new TranscriptBlock(id, mode, blocks.size());
+        b = new TranscriptBlock(id, mode, taskId, blocks.size());
         blocks.add(b);
         byId.put(id, b);
         openBlockId = id;
         viewDirty = true;
         return b;
+    }
+
+    // ── tool cards (E1) ───────────────────────────────────────────────────────
+
+    /**
+     * Apply one tool-call lifecycle event to the transcript as a card.
+     *
+     * <p>The card is a block like any other, which is what makes it free to scroll, collapse and
+     * trim with the rest of the transcript. Its mode is {@code SCRIPT} so it stays visible without
+     * verbose on — a tool call is not noise — and the widget tells it apart by
+     * {@link TranscriptBlock#isToolCard()}.
+     *
+     * @return true when a row was added or a row's open/closed state moved
+     */
+    private boolean toolCard(NaruToolCallEvent event) {
+        if (event == null) {
+            return false;
+        }
+        String key = cardKey(event);
+        if (event.kind() == NaruToolCallEvent.Kind.STARTED
+                || event.kind() == NaruToolCallEvent.Kind.PARKED) {
+            TranscriptBlock b = null;
+            if (event.kind() == NaruToolCallEvent.Kind.PARKED) {
+                // waiting is a state of the call that is already on screen; STARTED is not, because
+                // a model with no call id can begin a second one while the first is still open
+                Deque<String> q = openCards.get(key);
+                String openId = q == null ? null : q.peekFirst();
+                b = openId == null ? null : byId.get(openId);
+                if (b != null && b.isClosed()) {
+                    b = null;
+                }
+            }
+            boolean added = false;
+            if (b == null) {
+                b = cardBlock(event);
+                openCards.computeIfAbsent(key, k -> new ArrayDeque<>()).addLast(b.id());
+                b.setToolCall(event);
+                added = true;
+            }
+            appendText(b, ToolCardText.header(event));
+            return added;
+        }
+        Deque<String> q = openCards.get(key);
+        String openId = q == null ? null : q.pollFirst();
+        if (q != null && q.isEmpty()) {
+            openCards.remove(key);
+        }
+        TranscriptBlock b = openId == null ? null : byId.get(openId);
+        boolean added = false;
+        if (b == null || b.isClosed()) {
+            // a final event with no open card: the call was rejected before it dispatched, or the
+            // STARTED belonged to an activation that has since been trimmed away
+            b = cardBlock(event);
+            added = true;
+        }
+        b.setToolCall(event);
+        appendText(b, ToolCardText.header(event));
+        String body = ToolCardText.cardBody(event);
+        if (body != null && !body.isEmpty()) {
+            appendText(b, body.endsWith("\n") ? body : body + "\n");
+        }
+        close(b.id());
+        if (b.length() > TOOL_CARD_COLLAPSE_CHARS) {
+            b.setCollapsed(true);
+        }
+        return added;
+    }
+
+    private TranscriptBlock cardBlock(NaruToolCallEvent event) {
+        String id = "tc" + (++cardSequence);
+        // a card must not become the block a later chunk joins, so the text block that was open
+        // before it keeps that role — the card is tracked by openCards instead
+        String previous = openBlockId;
+        TranscriptBlock b = blockFor(id, NaruLogMode.SCRIPT, event.taskId());
+        openBlockId = previous != null && !previous.equals(id) ? previous : null;
+        return b;
+    }
+
+    /**
+     * Match an event to its card. {@code callId} is what the model chose to send and some models
+     * send nothing, so the tool name is the fallback key; the task id keeps two tasks calling the
+     * same tool apart, which is the ambiguity that used to be guessed from ordering.
+     */
+    private static String cardKey(NaruToolCallEvent event) {
+        String id = event.callId();
+        String key = id == null || id.isBlank() ? String.valueOf(event.toolName()) : id;
+        return event.taskId() + "\u0000" + key;
+    }
+
+    /** Close every card still waiting, because this activation is over. */
+    private boolean settleOpenCards(String reason) {
+        if (openCards.isEmpty()) {
+            return false;
+        }
+        boolean changed = false;
+        for (Deque<String> q : openCards.values()) {
+            for (String id : q) {
+                TranscriptBlock b = byId.get(id);
+                if (b != null && !b.isClosed()) {
+                    appendText(b, "✗ no result: " + (reason == null ? "the host closed" : reason) + "\n");
+                    close(id);
+                    changed = true;
+                }
+            }
+        }
+        openCards.clear();
+        return changed;
+    }
+
+    private void appendText(TranscriptBlock b, String s) {
+        if (s == null || s.isEmpty()) {
+            return;
+        }
+        int before = b.length();
+        b.append(s);
+        retainedChars += b.length() - before;
+    }
+
+    /** Cards still awaiting their final event. A widget shows them as running. */
+    public int openToolCards() {
+        int n = 0;
+        for (Deque<String> q : openCards.values()) {
+            n += q.size();
+        }
+        return n;
+    }
+
+    /**
+     * Forget a block as a pending card. Trim only removes closed blocks, so this normally finds
+     * nothing; it is here because a card that stopped being a row must stop being a match target,
+     * or a later final event would settle into a block that is no longer in the transcript.
+     */
+    private void forgetCard(String id) {
+        for (java.util.Iterator<Map.Entry<String, Deque<String>>> it = openCards.entrySet().iterator();
+             it.hasNext(); ) {
+            Map.Entry<String, Deque<String>> e = it.next();
+            e.getValue().remove(id);
+            if (e.getValue().isEmpty()) {
+                it.remove();
+            }
+        }
     }
 
     /** Drop the oldest closed blocks until the retained text fits the budget. */
@@ -138,6 +309,7 @@ public final class TranscriptModel {
                 }
                 blocks.remove(1);
                 byId.remove(next.id());
+                forgetCard(next.id());
                 retainedChars -= next.length();
                 trimmedBlocks++;
                 removed = true;
@@ -145,6 +317,7 @@ public final class TranscriptModel {
             }
             blocks.remove(0);
             byId.remove(first.id());
+            forgetCard(first.id());
             retainedChars -= first.length();
             trimmedBlocks++;
             removed = true;
@@ -161,7 +334,7 @@ public final class TranscriptModel {
         if (viewDirty) {
             view.clear();
             for (TranscriptBlock b : blocks) {
-                if (!verbose && BlockStyle.of(b.mode()).verboseOnly()) {
+                if (!verbose && BlockStyle.forBlock(b).verboseOnly()) {
                     continue;
                 }
                 view.add(b);
@@ -183,6 +356,17 @@ public final class TranscriptModel {
      */
     public List<TranscriptBlock> blocks() {
         return List.copyOf(blocks);
+    }
+
+    /** The tool cards in the transcript, oldest first, whatever the verbose filter does to them. */
+    public List<TranscriptBlock> toolCards() {
+        List<TranscriptBlock> out = new ArrayList<>();
+        for (TranscriptBlock b : blocks) {
+            if (b.isToolCard()) {
+                out.add(b);
+            }
+        }
+        return out;
     }
 
     public int visibleSize() {
@@ -257,6 +441,7 @@ public final class TranscriptModel {
         blocks.clear();
         byId.clear();
         view.clear();
+        openCards.clear();
         openBlockId = null;
         retainedChars = 0;
         trimmedBlocks = 0;

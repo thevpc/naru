@@ -3,7 +3,9 @@ package net.thevpc.naru.desktop.host;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.desktop.util.MsgText;
 import net.thevpc.nuts.text.NMsg;
 
@@ -68,6 +70,7 @@ public class InteractionHost implements NaruInteraction {
     private final Object publishLock = new Object();
 
     private final AtomicLong publishedEvents = new AtomicLong();
+    private final AtomicLong toolCalls = new AtomicLong();
     private final AtomicLong droppedEvents = new AtomicLong();
     private final AtomicLong droppedChars = new AtomicLong();
     private final AtomicLong flushedEvents = new AtomicLong();
@@ -124,30 +127,64 @@ public class InteractionHost implements NaruInteraction {
 
     @Override
     public void write(NaruLogMode mode, NMsg message) {
+        write(mode, message, NaruOutput.NO_TASK);
+    }
+
+    /**
+     * Whole message, stamped with the task that emitted it (E1). The stamp is not cosmetic: it is
+     * what makes a task switch a block boundary in {@link BlockBoundaryHeuristic} instead of an
+     * inference, and what lets the tools panel and the transcript agree about who ran a call.
+     */
+    @Override
+    public void write(NaruLogMode mode, NMsg message, long taskId) {
         long t0 = System.nanoTime();
         String text = MsgText.plain(message == null ? "" : message.toString());
         synchronized (publishLock) {
             // a whole message closes any half-drawn streamed block first
             String closing = blocks.close();
             publish(closing == null ? null : new TranscriptEvent.Closed(closing));
-            String id = blocks.openForWhole(mode);
-            publish(new TranscriptEvent.Chunk(id, mode, text, true));
+            String id = blocks.openForWhole(mode, taskId);
+            publish(new TranscriptEvent.Chunk(id, mode, text, true, taskId));
         }
         recordPublish(t0);
     }
 
     @Override
     public void writeStream(NaruLogMode mode, NMsg fragment, boolean end) {
+        writeStream(mode, fragment, end, NaruOutput.NO_TASK);
+    }
+
+    @Override
+    public void writeStream(NaruLogMode mode, NMsg fragment, boolean end, long taskId) {
         long t0 = System.nanoTime();
         String text = MsgText.plain(fragment == null ? "" : fragment.toString());
         synchronized (publishLock) {
-            String id = blocks.openForStream(mode);
-            publish(new TranscriptEvent.Chunk(id, mode, text, end));
+            String id = blocks.openForStream(mode, taskId);
+            publish(new TranscriptEvent.Chunk(id, mode, text, end, taskId));
             if (end) {
                 String closing = blocks.close();
                 publish(closing == null ? null : new TranscriptEvent.Closed(closing));
             }
         }
+        recordPublish(t0);
+    }
+
+    /**
+     * A tool call changed state. Published under the same lock as text, so a card lands in the
+     * transcript where the call actually happened rather than where the flush timer noticed it;
+     * and it is not a {@code Chunk}, so the saturation rule cannot drop it — a settled call with
+     * no card would leave the panel showing a call that never finishes.
+     */
+    @Override
+    public void reportToolCall(NaruToolCallEvent event) {
+        if (event == null) {
+            return;
+        }
+        long t0 = System.nanoTime();
+        synchronized (publishLock) {
+            publish(new TranscriptEvent.ToolCall(event));
+        }
+        toolCalls.incrementAndGet();
         recordPublish(t0);
     }
 
@@ -188,6 +225,10 @@ public class InteractionHost implements NaruInteraction {
             // the honest outcome: nobody will ever answer, so terminate rather than park
             left.cancel("the desktop host was closed before the question was answered");
         }
+        // a parked tool leg never settles in this activation. The host does not invent a final
+        // event for it — the engine owns that vocabulary — it publishes HostClosed, and
+        // TranscriptModel settles the open card so the panel cannot show a call that finished
+        // in an earlier activation as still running.
         stopFlushTimer();
     }
 
@@ -259,45 +300,52 @@ public class InteractionHost implements NaruInteraction {
         String mergeId = null;
         StringBuilder mergeText = null;
         NaruLogMode mergeMode = null;
+        long mergeTaskId = NaruOutput.NO_TASK;
         while (budget-- > 0 && (e = queue.poll()) != null) {
             queued.decrementAndGet();
             if (e instanceof TranscriptEvent.Chunk c
                     && mergeId != null && mergeId.equals(c.blockId()) && c.mode() == mergeMode
+                    && c.taskId() == mergeTaskId
                     && mergeText.length() + c.text().length() <= MAX_MERGE_CHARS) {
                 mergeText.append(c.text());
                 if (c.finalFragment()) {
-                    batch.add(new TranscriptEvent.Chunk(mergeId, mergeMode, mergeText.toString(), true));
+                    batch.add(new TranscriptEvent.Chunk(mergeId, mergeMode, mergeText.toString(),
+                            true, mergeTaskId));
                     mergeId = null;
                     mergeText = null;
                     mergeMode = null;
+                    mergeTaskId = NaruOutput.NO_TASK;
                 }
                 continue;
             }
             if (e instanceof TranscriptEvent.Chunk c) {
                 // a run never spans two blocks, and text never overtakes a later event
-                flushMerge(batch, mergeId, mergeMode, mergeText);
+                flushMerge(batch, mergeId, mergeMode, mergeText, mergeTaskId);
                 mergeId = null;
                 mergeText = null;
                 mergeMode = null;
+                mergeTaskId = NaruOutput.NO_TASK;
                 if (c.finalFragment()) {
                     batch.add(c);
                 } else {
                     mergeId = c.blockId();
                     mergeMode = c.mode();
+                    mergeTaskId = c.taskId();
                     mergeText = new StringBuilder(c.text());
                 }
                 continue;
             }
-            flushMerge(batch, mergeId, mergeMode, mergeText);
+            flushMerge(batch, mergeId, mergeMode, mergeText, mergeTaskId);
             mergeId = null;
             mergeText = null;
             mergeMode = null;
+            mergeTaskId = NaruOutput.NO_TASK;
             batch.add(e);
         }
-        flushMerge(batch, mergeId, mergeMode, mergeText);
-        TranscriptEvent in;
-        while ((in = inputEvents.poll()) != null) {
-            batch.add(in);
+        flushMerge(batch, mergeId, mergeMode, mergeText, mergeTaskId);
+        TranscriptEvent outOfBand;
+        while ((outOfBand = inputEvents.poll()) != null) {
+            batch.add(outOfBand);
         }
         long dt = System.nanoTime() - t0;
         lastFlushNanos.set(dt);
@@ -315,9 +363,9 @@ public class InteractionHost implements NaruInteraction {
 
     /** Publish a half-merged run as a non-final chunk so a later event cannot overtake it. */
     private static void flushMerge(List<TranscriptEvent> batch, String mergeId, NaruLogMode mergeMode,
-                                   StringBuilder mergeText) {
+                                   StringBuilder mergeText, long mergeTaskId) {
         if (mergeText != null && mergeText.length() > 0) {
-            batch.add(new TranscriptEvent.Chunk(mergeId, mergeMode, mergeText.toString(), false));
+            batch.add(new TranscriptEvent.Chunk(mergeId, mergeMode, mergeText.toString(), false, mergeTaskId));
         }
     }
 
@@ -335,6 +383,11 @@ public class InteractionHost implements NaruInteraction {
 
     public long publishedEvents() {
         return publishedEvents.get();
+    }
+
+    /** Tool-call lifecycle events published, whatever the queue then did with them. */
+    public long toolCallEvents() {
+        return toolCalls.get();
     }
 
     public long droppedEvents() {

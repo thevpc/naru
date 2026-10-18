@@ -214,7 +214,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         public Component getListCellRendererComponent(JList<?> l, Object value, int index,
                                                       boolean selected, boolean focus) {
             TranscriptBlock b = (TranscriptBlock) value;
-            BlockStyle style = BlockStyle.of(b.mode());
+            BlockStyle style = BlockStyle.forBlock(b);
             JLabel label = (JLabel) super.getListCellRendererComponent(l, "", index, selected, focus);
             label.setFont(new Font(style.monospace() ? Font.MONOSPACED : Font.SANS_SERIF,
                     Font.PLAIN, 13));
