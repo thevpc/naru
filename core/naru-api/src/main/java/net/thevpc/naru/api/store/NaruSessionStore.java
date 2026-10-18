@@ -210,6 +210,17 @@ public interface NaruSessionStore extends AutoCloseable {
 
     List<Long> taskIds(String uuid, NaruSessionScope scope);
 
+    /** Task ids whose persisted skeleton marks them as conversations, including terminal tasks. */
+    default List<Long> conversationTaskIds(String uuid, NaruSessionScope scope) {
+        List<Long> out = new java.util.ArrayList<>();
+        for (long id : taskIds(uuid, scope)) {
+            NaruTaskState state = loadTaskSkeleton(uuid, scope, id).orNull();
+            if (state != null && state.skeleton().asObject().get()
+                    .getBooleanValue("conversation").orElse(false)) out.add(id);
+        }
+        return java.util.Collections.unmodifiableList(out);
+    }
+
     void deleteTask(String uuid, NaruSessionScope scope, long taskId);
 
     // ---------------------------------------------------------------- history

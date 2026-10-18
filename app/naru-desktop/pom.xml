@@ -30,7 +30,7 @@
             The long gate run needs a working ollama provider, which the profile supplies.
         -->
         <dependency><groupId>net.thevpc.common</groupId><artifactId>thevpc-common-swing</artifactId><version>2.5.0</version></dependency>
-        <dependency><groupId>net.thevpc.common</groupId><artifactId>thevpc-common-plaf</artifactId><version>1.1.0</version></dependency>
+        <dependency><groupId>net.thevpc.common</groupId><artifactId>thevpc-common-plaf</artifactId><version>1.2.0</version></dependency>
         <dependency><groupId>net.thevpc.nuts</groupId><artifactId>nuts-swing</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>com.formdev</groupId><artifactId>flatlaf</artifactId><version>3.7.1</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.0</version><scope>test</scope></dependency>

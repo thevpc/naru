@@ -59,6 +59,11 @@ public interface NaruModelProvider extends NComponent {
      */
     List<String> findModelIds(NaruSession session);
 
+    /** Optional provider-supplied catalog metadata beyond capabilities. */
+    default NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruSession session) {
+        return new NaruModelInfo(name(), model, capabilities);
+    }
+
     /**
      * Whether this provider is currently reachable/usable.
      * Used to hide unavailable providers from model listings

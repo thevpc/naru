@@ -5,6 +5,7 @@ import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelKey;
+import net.thevpc.naru.api.model.NaruModelInfo;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruModelPsResult;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -34,6 +35,8 @@ import java.util.List;
  * Installing a model provisions its GGUF file(s); uninstalling deletes them.
  */
 public class NaruLlamaCppProvider extends AbstractOpenAICompatProvider {
+
+    private final java.util.Map<String, net.thevpc.naru.ext.tools.llamacpp.LlamaCppModelInfo> localModels = new java.util.HashMap<>();
 
     public NaruLlamaCppProvider() {
         super("llamacpp", new String[0]);
@@ -84,12 +87,28 @@ public class NaruLlamaCppProvider extends AbstractOpenAICompatProvider {
     public List<String> findModelIds(NaruSession session) {
         LlamaCppService service = LlamaCppService.of();
         LinkedHashSet<String> ids = new LinkedHashSet<>(service.modelIds(session));
+        localModels.clear();
+        for (var info : service.listModels(session)) localModels.put(info.getId(), info);
         if (service.isRunning(session)) {
             for (NaruModelPsResult r : service.listPs(session)) {
                 ids.add(r.getModel().model());
             }
         }
         return new ArrayList<>(ids);
+    }
+
+    @Override
+    public NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruSession session) {
+        var local = localModels.get(model);
+        if (local != null) {
+                java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                        "(?i)(?:^|[-_.])((?:IQ|Q)[0-9]+_[A-Z0-9_]+|TQ[0-9]+_[A-Z0-9_]+|F16|BF16|F32)(?:[-_.]|$)")
+                        .matcher(local.getFileName());
+                String quant = matcher.find() ? matcher.group(1).toUpperCase(java.util.Locale.ROOT) : null;
+                return new NaruModelInfo(name(), model, capabilities, quant,
+                        local.getSizeBytes(), null, "GGUF");
+        }
+        return new NaruModelInfo(name(), model, capabilities);
     }
 
     @Override

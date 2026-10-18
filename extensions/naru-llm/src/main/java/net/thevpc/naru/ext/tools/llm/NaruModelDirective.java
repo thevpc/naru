@@ -617,12 +617,16 @@ public class NaruModelDirective extends NaruDirectiveBase {
             NMsg typeMsg = type.equalsIgnoreCase(model.provider())
                     ? NMsg.ofP("")
                     : NMsg.ofC(" (%s)", type);
-            NMsg row = NMsg.ofC("  %s[%s] %s%s%s",
+            String details = model.parameterSize() == null ? "" : " " + model.parameterSize();
+            if (model.quantization() != null) details += " " + model.quantization();
+            if (model.sizeBytes() > 0) details += " " + formatModelBytes(model.sizeBytes());
+            NMsg row = NMsg.ofC("  %s[%s] %s%s%s%s",
                     extra2,
                     NMsg.ofStyledNumber(zformat.format(index)),
                     model.toText(),
                     typeMsg,
-                    extra3 == null ? "" : extra3
+                    extra3 == null ? "" : extra3,
+                    details.isEmpty() ? "" : " {" + details.trim() + "}"
             );
             task.log(NaruLogMode.AGENT_RESPONSE, row);
             sb.println(row.toString());
@@ -1089,6 +1093,14 @@ public class NaruModelDirective extends NaruDirectiveBase {
      * The type behind an instance id (the id itself when it is a built-in or
      * unknown): {@code /model list} annotates and filters by type.
      */
+    private static String formatModelBytes(long bytes) {
+        double value = bytes;
+        String[] units = {"B", "KiB", "MiB", "GiB", "TiB"};
+        int unit = 0;
+        while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+        return String.format(java.util.Locale.ROOT, "%.1f %s", value, units[unit]);
+    }
+
     private static String providerType(NaruSession session, String id) {
         NaruModelProvider p = findProvider(session, id);
         return p == null || NBlankable.isBlank(p.type()) ? id : p.type();

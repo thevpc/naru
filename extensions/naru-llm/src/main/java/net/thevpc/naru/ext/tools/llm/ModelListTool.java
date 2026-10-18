@@ -185,6 +185,9 @@ public class ModelListTool extends DefaultNaruTool {
             if (!type.equalsIgnoreCase(m.provider())) {
                 sb.append(" (").append(type).append(')');
             }
+            if (!NBlankable.isBlank(m.parameterSize())) sb.append(" (params ").append(m.parameterSize()).append(')');
+            if (!NBlankable.isBlank(m.quantization())) sb.append(" [").append(m.quantization()).append(']');
+            if (m.sizeBytes() > 0) sb.append(" ").append(formatBytes(m.sizeBytes()));
             NaruModelCapabilities c = m.capabilities();
             if (c != null) {
                 Set<String> keys = c.keys();
@@ -199,6 +202,14 @@ public class ModelListTool extends DefaultNaruTool {
             sb.append('\n');
         }
         return sb.toString();
+    }
+
+    private static String formatBytes(long bytes) {
+        double value = bytes;
+        String[] units = {"B", "KiB", "MiB", "GiB", "TiB"};
+        int unit = 0;
+        while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+        return String.format(Locale.ROOT, "%.1f %s", value, units[unit]);
     }
 
     /**

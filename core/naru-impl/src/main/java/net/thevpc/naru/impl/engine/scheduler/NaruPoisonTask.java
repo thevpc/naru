@@ -543,6 +543,9 @@ public class NaruPoisonTask implements NaruTask {
         throw new NUnsupportedOperationException();
     }
 
+    @Override public boolean isConversation() { throw new NUnsupportedOperationException(); }
+    @Override public long version() { throw new NUnsupportedOperationException(); }
+
     @Override
     public List<NaruTaskStackFrame> stackFrames() {
         throw new NUnsupportedOperationException();

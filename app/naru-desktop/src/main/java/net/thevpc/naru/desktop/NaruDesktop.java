@@ -3,6 +3,7 @@ package net.thevpc.naru.desktop;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.swing.NSwingUtils;
+import net.thevpc.swing.plaf.UIPlafManager;
 
 import javax.swing.SwingUtilities;
 
@@ -27,6 +28,8 @@ public final class NaruDesktop {
         // the workspace must exist before prepareUI resolves anything through Nuts
         Nuts.require();
         NSwingUtils.prepareUI(args);
+        UIPlafManager.getCurrentManager().apply("FlatLight");
+        UIPlafManager.getCurrentManager().apply("FlatDark");
         NPath project = parseProject(args);
         SwingUtilities.invokeLater(() -> {
             MainWindow w = new MainWindow();

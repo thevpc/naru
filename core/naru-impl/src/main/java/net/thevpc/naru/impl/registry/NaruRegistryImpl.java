@@ -327,7 +327,7 @@ public class NaruRegistryImpl implements NaruRegistry {
                     p.name(),
                     k.model()
             ), session).get().getCapabilities();
-            a.add(new NaruModelInfo(p.name(), k.model(), c));
+            a.add(p.getModelInfo(k.model(), c, session));
         }
         return a;
     }

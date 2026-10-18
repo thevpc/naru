@@ -372,6 +372,32 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return new ArrayList<>(tasks.values());
     }
 
+    @Override
+    public List<NaruTask> conversationTasks() {
+        return tasks.values().stream().filter(NaruTask::isConversation)
+                .sorted(Comparator.comparingLong(NaruTask::id)).collect(Collectors.toList());
+    }
+
+    @Override
+    public NaruTask reactivateTask(long taskId, long expectedVersion) {
+        if (stopped) throw new IllegalStateException("session not live; reactivate through a live session activation");
+        NaruTask task = tasks.get(taskId);
+        if (task == null) throw new IllegalArgumentException("task " + taskId + " not found in this live session");
+        if (!task.isCompleted()) return task;
+        if (!task.isConversation()) throw new IllegalStateException("task " + taskId + " is a job, not a conversation");
+        NaruSessionScope scope = loadTimeScope == null ? scopeForNewState() : loadTimeScope;
+        NaruTaskState stored = store.loadTaskSkeleton(uuid(), scope, taskId).orNull();
+        long storedVersion = stored == null ? -1 : stored.skeleton().asObject().get()
+                .getLongValue("version").orElse(0L);
+        if (storedVersion != expectedVersion || task.version() != expectedVersion) {
+            throw new IllegalStateException("task " + taskId + " version conflict: expected "
+                    + expectedVersion + " but stored version is " + storedVersion);
+        }
+        ((NaruTaskImpl) task).reactivate(expectedVersion);
+        ((NaruSchedulerImpl) scheduler).enqueue(task);
+        return task;
+    }
+
     /**
      * The model definition persisted with the session store, if any (restored
      * sessions only). Fresh sessions carry the model through the project env
@@ -1767,8 +1793,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public boolean isHibernateEligible() {
-        if (tasks.isEmpty()) return false;
-        for (NaruTask task : tasks.values()) {
+        List<NaruTask> live = tasks.values().stream().filter(t -> !t.status().isCompleted()).collect(Collectors.toList());
+        if (live.isEmpty()) return false;
+        for (NaruTask task : live) {
             if (task.status() != NaruTaskStatus.BLOCKED_ON_INPUT) return false;
         }
         for (NaruToolset toolset : registry.toolsets()) {
@@ -1783,7 +1810,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public boolean hasLiveTasks() {
-        return !tasks.isEmpty();
+        return tasks.values().stream().anyMatch(t -> !t.status().isCompleted());
     }
 
     public synchronized void hibernate() {
@@ -2576,14 +2603,18 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             foregroundTaskId(-1);
         }
         if (tasks.containsKey(tid)) {
-            if (deferTaskCheckpoints) {
-                // Persist the terminal task before deregistration removes it from the live
-                // task map. This is the last consistent point at which its final status and
-                // history can be checkpointed.
+            NaruTask current = tasks.get(tid);
+            if (deferTaskCheckpoints || (current != null && current.isConversation())) {
+                // Persist terminal conversations before retaining them as zombies. Jobs keep
+                // their existing deregistration path and are checkpointed by their turn.
                 writeToStore(scopeForNewState());
             }
-            NaruTask i = tasks.remove(tid);
-            notifyTaskDeregistered(tid);
+            NaruTask i = tasks.get(tid);
+            boolean zombie = i.isConversation();
+            if (!zombie) {
+                tasks.remove(tid);
+                notifyTaskDeregistered(tid);
+            }
             Map<String, Object> payload = NMaps.of(
                     "status", i.status().name(),
                     "name", i.name()
@@ -2592,7 +2623,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             eventLog.append(new NaruEvent(
                     NaruEvent.TASK_TERMINATED,
                     payload, tid, i.parentId(), Instant.now(), NaruEventTargets.ofEveryone(), NaruRetentionPolicies.ofDefault()));
-            if (tasks.isEmpty()) {
+            if (!hasLiveTasks()) {
                 stop();
             }
         }

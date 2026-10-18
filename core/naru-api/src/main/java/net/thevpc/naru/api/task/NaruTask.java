@@ -245,6 +245,12 @@ public interface NaruTask extends NToElement {
 
     NaruTask taskMode(NaruTaskMode newMode);
 
+    /** Whether this task has ever entered INTERACTIVE mode. This flag is monotonic. */
+    boolean isConversation();
+
+    /** Stored task-record version token, used for optimistic lifecycle operations. */
+    long version();
+
     NPath projectDir();
 
     String getExtraContext();

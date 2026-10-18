@@ -28,6 +28,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
 
     private final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
     private final Map<String, NaruModelCapabilities> cachedCapabilities = new HashMap<>();
+    private final Map<String, NElement> cachedTagDetails = new HashMap<>();
 
     public NaruOllamaProvider() {
         this("ollama");
@@ -97,6 +98,18 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
             // fallback — assume minimal capabilities
             return NaruModelCapabilitiesImpl.UNKNOWN;
         }
+    }
+
+    @Override
+    public NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruSession session) {
+        NElement entry = cachedTagDetails.get(model);
+        if (entry == null || !entry.isAnyObject()) return new NaruModelInfo(name(), model, capabilities);
+        NObjectElement obj = entry.asObject().get();
+        NObjectElement details = obj.getObject("details").orNull();
+        String quant = details == null ? null : details.getStringValue("quantization_level").orNull();
+        String params = details == null ? null : details.getStringValue("parameter_size").orNull();
+        String family = details == null ? null : details.getStringValue("family").orNull();
+        return new NaruModelInfo(name(), model, capabilities, quant, obj.getLongValue("size").orElse(-1L), params, family);
     }
 
     @Override
@@ -281,12 +294,16 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
             String json = response.contentAsString();
             NElement root = NElementReader.ofJson().read(json);
             List<String> models = new ArrayList<>();
+            cachedTagDetails.clear();
             if (root.isAnyObject()) {
                 NArrayElement modelsArr = root.asObject().get().getArray("models").orNull();
                 if (modelsArr != null) {
                     for (NElement el : modelsArr) {
                         el.asObject().ifPresent(obj -> {
-                            obj.getStringValue("name").ifPresent(models::add);
+                            obj.getStringValue("name").ifPresent(id -> {
+                                models.add(id);
+                                cachedTagDetails.put(id, el);
+                            });
                         });
                     }
                 }

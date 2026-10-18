@@ -115,6 +115,10 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private NPath projectDir;
     private NaruPromptMode promptMode;
     private NaruTaskMode taskMode = NaruTaskMode.BATCH;
+    private boolean conversation;
+    private long version;
+    private String terminationReason;
+    private final List<NElement> lifecycleLog = new ArrayList<>();
     private NaruTaskStatus status = NaruTaskStatus.READY;
     /**
      * multi line REPL buffer
@@ -183,7 +187,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
      */
     private static final String ENV_RESULT = "lastResult";
 
-    private final CompletableFuture<NaruTask> completion = new CompletableFuture<>();
+    private volatile CompletableFuture<NaruTask> completion = new CompletableFuture<>();
     private final List<Consumer<NaruTask>> completionCallbacks = new ArrayList<>();
     private final Object completionLock = new Object();
     private volatile Instant endTime;
@@ -233,9 +237,29 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NaruTask taskMode(NaruTaskMode newMode) {
-        this.taskMode = newMode == null ? NaruTaskMode.BATCH : newMode;
+        if (isCompleted()) throw new IllegalStateException("task " + id() + " is terminated; use reactivateTask");
+        NaruTaskMode next = newMode == null ? NaruTaskMode.BATCH : newMode;
+        NaruTaskMode old = this.taskMode;
+        if (old == next) return this;
+        boolean promoted = next == NaruTaskMode.INTERACTIVE && !conversation;
+        this.taskMode = next;
+        if (next == NaruTaskMode.INTERACTIVE) conversation = true;
+        lifecycleLog.add(NElement.ofObjectBuilder()
+                .set("event", "mode-change").set("oldMode", old.name()).set("newMode", next.name())
+                .set("at", Instant.now()).set("promotedToConversation", promoted).build());
+        fireChanged();
         return this;
     }
+
+    @Override
+    public boolean isConversation() { return conversation; }
+
+    @Override
+    public long version() { return version; }
+
+    public List<NElement> lifecycleLog() { return Collections.unmodifiableList(lifecycleLog); }
+
+    public String terminationReason() { return terminationReason; }
 
     @Override
     public Instant creationTime() {
@@ -624,6 +648,12 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         if (newStatus != status) {
             this.status = newStatus;
+            if (newStatus.isCompleted()) {
+                terminationReason = newStatus == NaruTaskStatus.DONE ? "done"
+                        : newStatus == NaruTaskStatus.KILLED
+                        ? (cancelReason == null ? "killed" : cancelReason)
+                        : (envValue(ENV_ERROR) == null ? "failed" : String.valueOf(envValue(ENV_ERROR)));
+            }
             switch (status) {
                 case KILLED:
                 case DONE:
@@ -651,6 +681,85 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     // ── completion and result ─────────────────────────────────────────────────
+
+    public synchronized NaruTask reactivate(long expectedVersion) {
+        if (!isCompleted()) return this;
+        if (!conversation) throw new IllegalStateException("task " + id + " is not a conversation and cannot be reactivated");
+        if (version != expectedVersion) throw new IllegalStateException("task " + id + " version conflict: expected "
+                + expectedVersion + " but current version is " + version);
+        ensureHistoryLoaded();
+        int discardedDepth = Math.max(0, frames.size() - 1);
+        int synthesized = repairInterruptedHistory();
+        String previousReason = terminationReason;
+        NaruTaskStatus old = status;
+        NaruTaskMode oldMode = taskMode;
+        frames.clear();
+        frames.add(new NaruTaskFrameImpl());
+        pendingStatement = null;
+        doing = null;
+        inputMode = NaruInputMode.LINE;
+        inputBuffer = "";
+        pendingPrompt = null;
+        linesDelivered.clear();
+        killRequested = false;
+        interruptRequested = false;
+        cancelReason = null;
+        taskMode = NaruTaskMode.INTERACTIVE;
+        conversation = true;
+        status = NaruTaskStatus.READY;
+        terminationReason = null;
+        endTime = null;
+        frozenError = null;
+        frozenValue = null;
+        frozenVars = null;
+        frozenExitCode = 0;
+        outcomeSettled = false;
+        completion = new CompletableFuture<>();
+        synchronized (completionLock) { completionCallbacks.clear(); }
+        lifecycleLog.add(NElement.ofObjectBuilder().set("event", "reactivated")
+                .set("at", Instant.now()).set("previousTerminationReason", previousReason)
+                .set("discardedFrameDepth", discardedDepth).set("synthesizedToolResults", synthesized)
+                .set("oldStatus", old.name()).set("oldMode", oldMode.name()).build());
+        fireChanged();
+        return this;
+    }
+
+    private int repairInterruptedHistory() {
+        List<NaruMessage> repaired = new ArrayList<>();
+        Map<String, String> pending = new LinkedHashMap<>();
+        int synthesized = 0;
+        for (NaruMessage message : history) {
+            if (message.getRole() == NaruRole.tool) {
+                if (message.getToolCallId() != null) pending.remove(message.getToolCallId());
+                repaired.add(message);
+                continue;
+            }
+            if (!pending.isEmpty()) {
+                for (Map.Entry<String, String> call : pending.entrySet()) {
+                    repaired.add(NaruMessage.tool(call.getValue(), call.getKey(),
+                            "Interrupted before the tool call completed; result synthesized during conversation reactivation."));
+                    synthesized++;
+                }
+                pending.clear();
+            }
+            repaired.add(message);
+            if (message.getRole() == NaruRole.assistant && message.hasToolCalls()) {
+                for (NaruToolCall call : message.getToolCalls()) {
+                    if (call.getId() != null) pending.put(call.getId(), call.getName() == null ? "unknown" : call.getName());
+                }
+            }
+        }
+        for (Map.Entry<String, String> call : pending.entrySet()) {
+            repaired.add(NaruMessage.tool(call.getValue(), call.getKey(),
+                    "Interrupted before the tool call completed; result synthesized during conversation reactivation."));
+            synthesized++;
+        }
+        if (synthesized > 0) {
+            history.clear();
+            history.addAll(repaired);
+        }
+        return synthesized;
+    }
 
     @Override
     public NOptional<Instant> endTime() {
@@ -939,6 +1048,12 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         NObjectElementBuilder o = NObjectElementBuilder.of();
         o.set("schemaVersion", TASK_SCHEMA_VERSION);
         o.set("status", status.name());
+        o.set("conversation", conversation);
+        o.set("version", version);
+        o.set("terminationReason", terminationReason);
+        NArrayElementBuilder lifecycle = NArrayElementBuilder.of();
+        for (NElement entry : lifecycleLog) lifecycle.add(entry);
+        o.set("lifecycleLog", lifecycle.build());
         o.set("pendingPrompt", pendingPrompt == null ? null : pendingPrompt.toString());
         NArrayElementBuilder _deliveredLines = NArrayElementBuilder.of();
         for (String line : linesDelivered) _deliveredLines.add(line);
@@ -977,6 +1092,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         o.set("extraContext", extraContext);
         o.set("lastResult", lastResult == null ? null : lastResult.toElement());
         o.set("inputMode", inputMode.name());
+        o.set("taskMode", taskMode.name());
         o.set("inputBuffer", inputBuffer);
         NArrayElementBuilder _todos = NArrayElementBuilder.of();
         for (NaruTaskFrameImpl a : frames) {
@@ -1024,6 +1140,14 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         this.deliveredInputKeys.clear();
         NArrayElement inputKeys = o.get("deliveredInputKeys").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
         if (inputKeys != null) for (NElement key : inputKeys) key.asStringValue().ifPresent(this.deliveredInputKeys::add);
+        String savedMode = o.getStringValue("taskMode").orElse(NaruTaskMode.BATCH.name());
+        try { this.taskMode = NaruTaskMode.valueOf(savedMode); } catch (IllegalArgumentException ignored) { this.taskMode = NaruTaskMode.BATCH; }
+        this.conversation = o.getBooleanValue("conversation").orElse(this.taskMode == NaruTaskMode.INTERACTIVE);
+        this.version = o.getLongValue("version").orElse(0L);
+        this.terminationReason = o.getStringValue("terminationReason").orNull();
+        lifecycleLog.clear();
+        NArrayElement lifecycle = o.get("lifecycleLog").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
+        if (lifecycle != null) for (NElement entry : lifecycle) lifecycleLog.add(entry);
         this.id = o.getLongValue("id").orElse(1L);
         this.parentId = o.getLongValue("parentId").orElse(-1L);
         this.name = o.getStringValue("name").orNull();
@@ -1218,6 +1342,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     protected void fireChanged() {
         this.modificationDate = Instant.now();
+        version++;
         ((NaruSessionImpl) session).fireChangedTask(id());
     }
 

@@ -149,7 +149,7 @@ as the opening Phase 2 commit.
 
 ### Phase 2: tools + tasks (completes v1)
 
-**E1 first** (typed tool-call lifecycle fired from `NaruToolCallStmt`; removes the 300-char truncation). Then: tools panel, task monitor (`tasks()`, `NaruTaskStatus`, `stackFrames()` call tree, `findTaskIdsByParent()` spawn tree, interrupt/kill/hold).
+**E1 first** (typed tool-call lifecycle fired from `NaruToolCallStmt`; removes the 300-char truncation). Then: tools panel, task monitor (`tasks()`, `NaruTaskStatus`, `stackFrames()` call tree, `findTaskIdsByParent()` spawn tree, interrupt/kill/hold), and the **permissions editor** — **MOVED IN from Phase 4 (owner, Phase 2)**, because §3.3 made it the v1 substitute for an approval prompt and §6 promises a jump to it from a denial card.
 
 Gate: the v1 acceptance list in §6.
 
@@ -167,7 +167,7 @@ tick with nothing dropped. Details and the re-run gate numbers:
 
 ### Phase 4: management panels
 
-Permissions editor (`NaruAccessPolicy` CRUD/reorder/`onDecision`; needs no engine work, so schedule it as a cheap early win if there is slack), model picker (`NaruRegistry`, `NaruModelFilter`, `session.listedModels()` for `/model use <n>` parity), routine editor, budget dashboard, skills and plan panels. **E7** (change listeners) only if polling proves inadequate. **E6** (typed git/fs diff API) → diff viewer.
+Model picker (`NaruRegistry`, `NaruModelFilter`, `session.listedModels()` for `/model use <n>` parity), routine editor, budget dashboard, skills and plan panels. (The permissions editor moved to Phase 2 at the owner's call — §3.3 depends on it, §6 does too.) **E7** (change listeners) only if polling proves inadequate. **E6** (typed git/fs diff API) → diff viewer.
 
 ### Phase 5: packaging and lifecycle
 

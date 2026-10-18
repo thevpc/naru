@@ -15,11 +15,23 @@ public class NaruModelInfo implements NToElement {
     private final String provider;
     private final String model;
     private final NaruModelCapabilities capabilities;
+    private final String quantization;
+    private final long sizeBytes;
+    private final String parameterSize;
+    private final String family;
 
     public NaruModelInfo(String provider, String model, NaruModelCapabilities capabilities) {
+        this(provider, model, capabilities, null, -1, null, null);
+    }
+
+    public NaruModelInfo(String provider, String model, NaruModelCapabilities capabilities, String quantization, long sizeBytes, String parameterSize, String family) {
         this.provider = provider;
         this.model = model;
         this.capabilities = capabilities;
+        this.quantization = quantization;
+        this.sizeBytes = sizeBytes;
+        this.parameterSize = parameterSize;
+        this.family = family;
     }
 
     public String provider() {
@@ -30,16 +42,22 @@ public class NaruModelInfo implements NToElement {
         return model;
     }
 
-    public NaruModelCapabilities capabilities() {
-        return capabilities;
-    }
+    public NaruModelCapabilities capabilities() { return capabilities; }
+    public String quantization() { return quantization; }
+    public long sizeBytes() { return sizeBytes; }
+    public String parameterSize() { return parameterSize; }
+    public String family() { return family; }
 
     @Override
     public NElement toElement() {
         return NElement.ofObjectBuilder()
                 .set("model", model)
                 .set("provider", provider)
-                .set("capabilities", capabilities.toElement())
+                .set("capabilities", capabilities == null ? NElement.ofNull() : capabilities.toElement())
+                .set("quantization", quantization)
+                .set("sizeBytes", sizeBytes > 0 ? sizeBytes : null)
+                .set("parameterSize", parameterSize)
+                .set("family", family)
                 .build()
                 ;
     }
@@ -53,12 +71,15 @@ public class NaruModelInfo implements NToElement {
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         NaruModelInfo that = (NaruModelInfo) o;
-        return Objects.equals(provider, that.provider) && Objects.equals(model, that.model) && Objects.equals(capabilities, that.capabilities);
+        return sizeBytes == that.sizeBytes && Objects.equals(provider, that.provider)
+                && Objects.equals(model, that.model) && Objects.equals(capabilities, that.capabilities)
+                && Objects.equals(quantization, that.quantization)
+                && Objects.equals(parameterSize, that.parameterSize) && Objects.equals(family, that.family);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(provider, model, capabilities);
+        return Objects.hash(provider, model, capabilities, quantization, sizeBytes, parameterSize, family);
     }
 
     public NText toText() {

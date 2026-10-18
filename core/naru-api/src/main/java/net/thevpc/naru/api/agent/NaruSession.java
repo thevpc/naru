@@ -300,6 +300,15 @@ public interface NaruSession {
 
     List<NaruTask> tasks();
 
+    /** Live tasks and retained terminated conversation tasks in this activation. */
+    List<NaruTask> conversationTasks();
+
+    /**
+     * Reactivates a retained conversation zombie in this live session, preserving its task id and history.
+     * The expected version is the task.version() observed by the caller.
+     */
+    NaruTask reactivateTask(long taskId, long expectedVersion);
+
     NaruTask newTask(NaruTaskSpec taskBuilder);
 
     /**
