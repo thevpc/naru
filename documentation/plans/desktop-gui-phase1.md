@@ -237,14 +237,15 @@ DISPLAY=:99 java -Dnaru.smoke.stream=300 -Dnaru.smoke.dump=/tmp/naru-smoke-gate2
 The harness exits 0 only when every gate check passed, so it is usable as a smoke test once the
 manual pieces around it are automated.
 
-## Needed from the owner before Phase 2
+## Owner answers, recorded at this gate (also in plan §2)
 
-1. **G4** — the long turn is now proven with a deterministic provider because every local
-   model attempt refused (four ways, recorded above). Accept that as the Phase 1 evidence, or name
-   a local model that will stream for minutes so the same scripted conversation can be run against
-   it. Either way §6's v1 acceptance line ("10+ minutes") should be re-run with
-   `-Dnaru.smoke.stream=600` before v1 ships.
-2. **D1** — confirm that markdown rendering for `AGENT_RESPONSE` is a Phase 2 change with its own
-   review, rather than turning it on inside this gate.
-3. **G3** — confirm the 50 000-line budget becomes a module test now (before Phase 2 features) or
-   later at the v1 acceptance run.
+1. **G4 — accepted.** The deterministic fake-provider stream is the Phase 1 evidence for the long
+   load; the real-model turns stay short and are not held to the minute criterion. §6's "10+
+   minutes" is settled the same way, with `-Dnaru.smoke.stream=600` at the v1 acceptance run.
+2. **D1 — separate Phase 2 change.** Flipping `BlockStyle.markdown` for `AGENT_RESPONSE` is its own
+   reviewable Phase 2 commit against the already-built and tested `render/MarkdownHtml`; v1 ships
+   plain-text agent rows until then.
+3. **G3 — now, before Phase 2 features.** The opening Phase 2 commit is a headless module test on
+   `TranscriptModel` + `InteractionHost` that reproduces Phase 0 spike 3's 50 000-line load and
+   asserts the budget (flush inside one frame, bounded memory), so every later Phase 2 feature is
+   checked against it.

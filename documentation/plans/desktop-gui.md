@@ -32,6 +32,9 @@ Non-goals: replacing the terminal UI (it stays, feature-comparable), changing ag
 | Scope | Full cockpit is the destination, **but v1 is the cut line in §6.** |
 | Rendering | Block-per-component transcript (see §4.3), not a single `JEditorPane`. |
 | Engine work | Interleaved: each engine item lands immediately before the first widget that needs it. No separate "engine phase". |
+| Long-load evidence | **DECIDED (owner, at the Phase 1 gate): the deterministic fake-provider stream is the v1 evidence** for the 3-10 minute prefill criterion; real-model turns stay short. §6's "10+ minutes" is met with `-Dnaru.smoke.stream=600` at the v1 acceptance run. |
+| Markdown for agent responses | **DECIDED (owner, at the Phase 1 gate): a separate Phase 2 change** that flips `BlockStyle.markdown` for `AGENT_RESPONSE`, not part of the gate. Until then v1 renders agent text as plain text (deviation D1). |
+| 50 000-line budget | **DECIDED (owner, at the Phase 1 gate): a headless module test first**, as the opening Phase 2 commit, before any Phase 2 feature work (gap G3). |
 
 House patterns to copy: ndb (reflective dispatch via `NSearch`), kifkif (`-c/--console`, `UIPlafManager`, `JPlafMenu`), pangaea-note (`@NAppInstall` launchers), `NSwingUtils.prepareUI(args)` + `setSharedWorkspaceInstance()` before any frame, `SwingUtilities3.invokeLater/invokeAndWait` as the EDT bridge.
 
@@ -140,7 +143,9 @@ pings over the 16 ms frame budget, with `maxFlushMs=0`, `dropped=0` and worst wo
 input "dialog" is an inline panel rather than a modal (D2). The long-prefill criterion is proven
 with a deterministic provider because the local 14B coder refuses to generate for minutes (G4).
 Terminal REPL regression: clean, 220 engine tests and 28 desktop tests green.
-**Phase 2 waits on the three decisions at the end of that file.**
+The three questions it raised are answered in §2: the fake-provider stream is v1's load evidence,
+markdown becomes its own Phase 2 change, and the 50 000-line budget becomes a headless module test
+as the opening Phase 2 commit.
 
 ### Phase 2: tools + tasks (completes v1)
 
