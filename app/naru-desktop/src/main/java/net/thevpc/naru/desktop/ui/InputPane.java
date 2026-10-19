@@ -39,6 +39,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
      * candidate set and the span to replace are never re-derived here.
      */
     private final ComposerArea area;
+    private final ComposerSyntax syntax;
     private final JLabel reason = new JLabel(" ");
     private final JButton send = new JButton("Send");
     private final JComboBox<String> model = new JComboBox<>(new String[]{"Choose model…", "Default model", "Local model"});
@@ -54,6 +55,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         super(new BorderLayout(6, 4));
         this.session = session;
         this.area = new ComposerArea(session::complete);
+        // the engine decides which word is a directive, an option, a path or a comment; this host only
+        // decides the hue of each, so the terminal and the composer cannot drift apart
+        this.syntax = ComposerSyntax.install(area, session::session);
         setBorder(BorderFactory.createEmptyBorder(6, 8, 8, 8));
 
         JScrollPane scroller = new JScrollPane(area);
@@ -231,5 +235,18 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     public void dispose() {
         session.removeListener(this);
         session.setInputListener(null);
+    }
+
+    /**
+     * Which grammar is painting the composer: {@code "naru"} for a command line, otherwise the
+     * {@code SyntaxConstants} id of the draft's detected language.
+     */
+    public String composerMode() {
+        return syntax.mode();
+    }
+
+    /** Lines the engine could not be asked about, and the first reason. Meant for a gate run to read. */
+    public String composerSyntaxFailure() {
+        return syntax.describeFailure();
     }
 }

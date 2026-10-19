@@ -15,9 +15,11 @@ import java.awt.Font;
  * {@link RSyntaxTextArea} is used because it <em>is</em> a {@code JTextArea}: {@code getText},
  * {@code setCaretPosition}, {@code modelToView} and {@code replaceRange} all keep their usual
  * meaning, so the widget swap costs nothing at the call sites and buys undo, a real popup position
- * under word wrap, and antialiased drawing. No syntax style is ever applied — the engine's own log
- * modes and tool-card text are the only formats this host renders, and inventing a directive
- * grammar here would be a second one to keep in sync.
+ * under word wrap, and antialiased drawing. This factory leaves every pane unstyled — the engine's
+ * own log modes and tool-card text are the only formats a read-only pane renders, and inventing a
+ * directive grammar here would be a second one to keep in sync. The composer is the exception: it
+ * arrives plain from here and {@link ComposerSyntax} then installs its own style, because the roles
+ * it paints come from the engine's scanner rather than from a grammar this host would own.
  */
 public final class TextAreas {
 

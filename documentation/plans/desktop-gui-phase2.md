@@ -603,6 +603,120 @@ rows stay hidden.
 `TaskMonitorTest`). No §7 engine PR is owed — nothing under `core/` changed, the terminal REPL path is
 untouched, and the only new dependency is on the desktop module's own classpath.
 
+## The composer is coloured: the engine's roles, the host's hues
+
+The owner's complaint about the widget after the mouse fix was not a defect report but an unfinished
+feature: *"i expect as well \"/file\" to be syntax coloured (blue or something), options should be in
+other coulor, option values as well, / comments as well and non directive should be redered using some
+detected content type (java, bash, etc...) / so the composer is not finished at all"*. Four demands, so
+four pieces: the command head, options and their values, comments, and a non-command line painted as
+whatever language it is.
+
+**Where the line is drawn between engine and host.** The rule the plan set — a host must not duplicate
+an engine format — decides this on its own. *Which word is a directive* is engine knowledge; the
+terminal has had it all along (`NaruTerminalFormatter.formatDirective` colours a registered command
+`primary5` and an unknown one `error`), but it emits a styled `NText` and throws the offsets away, so a
+Swing widget that wanted the same colours would have to re-derive the grammar and drift the first time
+the language changed. *Which hue a role gets* is host knowledge: `NTextStyle` names mean nothing to an
+`RSyntaxTextArea`. So the roles and their spans went into `core/naru-api` as this phase's §7 PR, and the
+palette stayed in the desktop.
+
+- `core/naru-api/…/registry/NaruLineSyntax` (new) — `scan(session, line)` returns
+  `List<Span(Role, start, end)>` over `COMMENT, DIRECTIVE, UNKNOWN_DIRECTIVE, SUBCOMMAND, OPTION_KEY,
+  OPTION_VALUE, STRING, NUMBER, PATH, TEXT`. Two rules are worth their reasons being written down. A
+  `NaruDirective` declares **no argument grammar**, so `SUBCOMMAND`/`OPTION_KEY`/`OPTION_VALUE` are
+  positional and conventional — a word from `-` is an option, what follows `=` or a bare option is its
+  value, otherwise the first word after a known head is the sub-command — and the class says so rather
+  than implying it knows `/model use` takes a model name. And `PATH` is decided by *shape*, never by
+  `exists()`: a highlighter runs on every keystroke and a filesystem probe there is an I/O call per
+  character typed.
+- `core/naru-api/…/registry/NaruLineCompletion` (changed) — the tokenizer the completer already did
+  this work with is now a public `Token(text, start, end, quoted)` + `tokens(line)`, and `tokenize()`
+  is implemented on top of it. One split for two features: `NaruLineSyntaxTest` pins that the last span
+  of `/assert --level=2 "a b" /tmp/x` has exactly the completer's `replaceStart`/`replaceEnd`, so the
+  popup cannot insert a candidate somewhere other than the word the colour says it is.
+- `app/naru-desktop/…/ui/ComposerTokenMaker` (new) — an RSTA `TokenMaker` over those spans. Mapping
+  roles onto **standard** `TokenTypes` rather than a private range is what keeps the user's theme
+  working, and it costs one known overlap the harness measured instead of hiding: `RESERVED_WORD` is
+  the directive's type, so Java's `public` and `null` arrive in the same blue (`null=#4ea6ff`,
+  `public=#4ea5fe`). `getLastTokenTypeOnLine` returns `Token.NULL` in naru mode because a command line
+  carries no state into the next line — without the override the base class tokenizes every line twice,
+  which the failure counter then reported as two failures for one bad line.
+- `ui/ComposerSyntax` (new) — installs the maker on the *document* (`RSyntaxDocument.setSyntaxStyle`,
+  the public seam; `RSyntaxTextArea` has no `setTokenMaker`), applies the palette, and re-decides the
+  mode on every edit. A mode flip re-installs the style deliberately: RSTA caches a token list per line
+  and drops it only when *that* line is edited, so a paste that turns a command into Java would leave
+  every line above the caret painted as naru.
+- `ui/ComposerLanguage` (new) — the content-type guess.
+- `ui/InputPane` (changed) — one line: `ComposerSyntax.install(area, session::session)`.
+
+**Plan deviation, recorded as the plan requires.** *Detection of a non-command draft lives in the
+desktop, not the engine.* The engine offers `NCodeHighlighter` **ids** — java, python, sh, markdown,
+json — but nothing anywhere in naru looks at content and answers "this is Java"; inventing that is a new
+behaviour, not a new seam, and "never change agent behaviour" is the binding instruction. So
+`ComposerLanguage.detect` is bounded signature-matching (a shebang, a statement only one language
+writes, or three weak signals from one family) over the first 4 000 chars, and anything unmatched stays
+`SYNTAX_STYLE_NONE` — painting prose as Java is worse than not painting it, which is also why an
+unrecognised id falls back to plain rather than to the naru grammar. If the owner later wants detection
+in `core`, this class is the whole of it and moves unchanged.
+
+**Failures are counted, not swallowed** — the other half of the complaint, *"i see no stacktracce yet
+the ui is lagging as if there is an error swallown"*, which was literally true of
+`NaruSessionModel.complete` and is what the previous commit fixed. Here the same rule applies to the
+scanner: if `NaruLineSyntax.scan` throws, `ComposerTokenMaker` paints that line plain and increments a
+counter `ComposerSyntax.describeFailure()` reports (`none`, or `N scan failures, first: …`), so a
+harness can see an error the user cannot.
+
+**Proof at three levels.** Engine: `NaruLineSyntaxTest`, 13 tests over roles *and* offsets — both
+comment prefixes, indented comment, known vs unknown head, bare `/`, `/help/`, half-typed `/hel`,
+`--flag=v` versus `--flag v`, a quoted path that stays `STRING`, `-3.5` that is a number not a flag, a
+number after a bare option that must read as that option's value, `PATH` beating `SUBCOMMAND`, prose as
+one `TEXT` span, non-overlapping left-to-right spans, null session / empty line, and the
+scanner-agrees-with-completer pin above.
+Desktop: `ComposerSyntaxTest`, 10 tests that read the document's *own* per-line token lists
+(`RSyntaxDocument.getTokenListForLine`), so they assert the types and **document offsets** RSTA will
+paint — `RESERVED_WORD@0-7('/assert') ANNOTATION@8-15('--level') VARIABLE@16-17('2')
+LITERAL_STRING_DOUBLE_QUOTE@18-23('"a b"') DATA_TYPE@24-30('/tmp/x')`, and line 2 starting at 6, which
+is the arithmetic a wrapper cannot fake.
+Window: `smoke/ComposerColourSmoke`, Robot-typed into the real `MainWindow`, measuring the ink of each
+word's own box and classifying it against the palette (mean of the pixels furthest from the background,
+nearest hue by RGB distance):
+
+```
+typed text="/assert --level 2 /tmp/x 42 tail" composer-mode=naru scan-failures=none
+  DIRECTIVE         "/assert"  ink=#4da5fd wanted=#4ea6ff distance=2
+  OPTION_KEY        "--level"  ink=#daba58 wanted=#e8c55a distance=18
+  OPTION_VALUE      "2"        ink=#bd8cde wanted=#c792ea distance=17
+  PATH              "/tmp/x"   ink=#9bdbfd wanted=#9cdcfe distance=2
+  NUMBER            "42"       ink=#6accba wanted=#6cd3c0 distance=9
+  TEXT              "tail"     ink=#c9c9ca wanted=#dddddd distance=34  [plain foreground]
+  STRING            ""hello world"" ink=#dd996b wanted=#f0a36f distance=22
+  UNKNOWN_DIRECTIVE "/no-such-command" ink=#fe6b6b wanted=#ff6b6b distance=1
+  COMMENT           "# a line the engine skips" ink=#767e84 wanted=#7a8288 distance=7
+draft composer-mode=text/java
+line 1 tokens=[RESERVED_WORD:public, WHITESPACE: , RESERVED_WORD:class, … SEPARATOR:{]
+typed 44 keys in 757ms, edt stalls over 16ms=0 max-ping-ms=1
+VERDICT=PASS
+```
+
+Every distance is a glyph-antialiasing artefact, not a wrong hue: the highest is 22 (`STRING`), and the
+classification names the intended role in all nine samples. `ComposerSmoke` and `ComposerMouseSmoke`
+were re-run after this change and still PASS, so the completion card and the click path are unaffected.
+
+**Cost.** The scan is on the EDT and was measured rather than assumed: 44 keystrokes typed in 757 ms
+with **0 EDT stalls over 16 ms** during them and `max-ping-ms=1`; the candidate list still opens in 2 ms
+(the `82 ms` in the earlier section was the card's first paint, corrected there). The only stalls in the
+run are the 2–3 at session boot that every harness in this phase has reported.
+
+**Suite: 120 tests, 0 failures, 0 errors** (was 110: `ComposerSyntaxTest` 10). The engine side is the
+one §7 PR this piece owes: `NaruLineSyntax` + the `NaruLineCompletion` tokenizer, unit-tested under
+`mvn -o -pl core/naru-api,core/naru-impl test` — **`naru-api` 171 / 0 failures, `naru-impl` 251 / 1**,
+and the one red is the pre-existing `NaruTaskCompletionTest.cancelSettlesTheRunAsKilled:574` already
+reported at the top of this section's list (238 → 251 in that module is these 13 tests, nothing else).
+The PR changes no agent behaviour and no terminal code path: the terminal does not call
+`NaruLineSyntax`, and `NaruLineCompletion`'s behaviour is unchanged because `tokenize` now runs on the
+same split it always produced.
+
 ## Open in Phase 2
 
 - **`core/naru-impl` is red at HEAD again**: `NaruTaskCompletionTest.cancelSettlesTheRunAsKilled:574`
@@ -616,6 +730,15 @@ untouched, and the only new dependency is on the desktop module's own classpath.
   is 204 px; a window dragged below that height cuts the rows instead of offering a scrollbar. The
   trade was deliberate (a scrollbar inside a layered-pane card competes with the composer for keys), but
   it is untested at that size.
+- **Composer colour: four things left as choices, not defects.** (a) A half-typed command (`/fil`) is
+  red until it becomes a real one, because that is exactly what the terminal does with it — if the owner
+  reads it as noisy, the fix is a dimmed "in progress" role, which is an engine change, not a hue.
+  (b) The grammar mode is per **document**, decided from its first non-blank line, so one composer cannot
+  hold a command and a Java snippet at once; per-line modes would need RSTA to track state it does not.
+  (c) Language detection is the desktop's heuristic (see the deviation above) — moving it into `core`
+  makes it engine behaviour and wants a ruling first. (d) In a Java draft the keywords arrive in the
+  directive's blue, because `RESERVED_WORD` is the type the role maps to; separating them means giving
+  the roles private token types, which drops the user's theme with them.
 - **The routine editor now word-wraps.** It went through the shared factory, so a long routine line
   folds rather than scrolling sideways. Right for reading, untested for editing; if it annoys anyone
   writing routines, that pane wants `setLineWrap(false)` rather than a different widget.
