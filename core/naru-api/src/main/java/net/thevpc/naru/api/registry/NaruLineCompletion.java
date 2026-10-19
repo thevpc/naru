@@ -283,6 +283,69 @@ public final class NaruLineCompletion {
 
     // ------------------------------------------------------------------ tokenizer
 
+    /**
+     * One word of a line, with the offsets it occupies. The text keeps its quotes so a caller can
+     * paint the raw line; {@code quoted} says whether the word opens with a quote character.
+     */
+    record Token(String text, int start, int end, boolean quoted) {
+    }
+
+    /**
+     * Split a whole line into quote-aware words, last half-typed word included. No filesystem, no
+     * session: this is the grammar the completer and {@link NaruLineSyntax} share, and a highlighter
+     * asks it on every keystroke.
+     */
+    static List<Token> tokens(String line) {
+        List<Token> out = new ArrayList<>();
+        if (line == null || line.isEmpty()) {
+            return out;
+        }
+        StringBuilder cur = new StringBuilder();
+        int start = -1;
+        boolean inQuotes = false;
+        char quote = 0;
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            if (inQuotes) {
+                cur.append(ch);
+                if (ch == quote) {
+                    inQuotes = false;
+                }
+                continue;
+            }
+            if (ch == '"' || ch == '\'') {
+                if (start < 0) {
+                    start = i;
+                }
+                inQuotes = true;
+                quote = ch;
+                cur.append(ch);
+                continue;
+            }
+            if (Character.isWhitespace(ch)) {
+                if (cur.length() > 0) {
+                    out.add(new Token(cur.toString(), start, i, isQuoted(cur)));
+                    cur.setLength(0);
+                }
+                start = -1;
+                continue;
+            }
+            if (start < 0) {
+                start = i;
+            }
+            cur.append(ch);
+        }
+        if (cur.length() > 0) {
+            out.add(new Token(cur.toString(), start, line.length(), isQuoted(cur)));
+        }
+        return out;
+    }
+
+    private static boolean isQuoted(StringBuilder cur) {
+        char c0 = cur.charAt(0);
+        return c0 == '"' || c0 == '\'';
+    }
+
     static final class Words {
         final List<String> words = new ArrayList<>();
         String currentToken = "";
@@ -298,57 +361,27 @@ public final class NaruLineCompletion {
     }
 
     /**
-     * Split the text before the caret into words, quote-aware, and report the token the caret sits
-     * in. A caret right after a space opens a new empty token, which is why {@code trailing} is
-     * passed separately from the text.
+     * Split the text before the caret into words and report the token the caret sits in. A caret
+     * right after a space opens a new empty token, which is why the empty token's start is the end
+     * of the text rather than the end of the last word.
      */
     static Words tokenize(String beforeCaret) {
-        List<String> words = new ArrayList<>();
-        List<int[]> spans = new ArrayList<>();
-        StringBuilder cur = new StringBuilder();
-        int start = -1;
-        boolean inQuotes = false;
-        char quote = 0;
-        for (int i = 0; i < beforeCaret.length(); i++) {
-            char ch = beforeCaret.charAt(i);
-            if (inQuotes) {
-                if (ch == quote) {
-                    inQuotes = false;
-                }
-                cur.append(ch);
+        List<Token> all = tokens(beforeCaret);
+        // The caret is inside the last word when the text does not trail whitespace: that word is
+        // still being typed, so it is the token to replace, not one of the finished ones.
+        boolean insideLast = !all.isEmpty()
+                && !Character.isWhitespace(beforeCaret.charAt(beforeCaret.length() - 1));
+        List<String> finished = new ArrayList<>();
+        for (int i = 0; i < all.size(); i++) {
+            if (insideLast && i == all.size() - 1) {
                 continue;
             }
-            if (ch == '"' || ch == '\'') {
-                if (start < 0) {
-                    start = i;
-                }
-                inQuotes = true;
-                quote = ch;
-                cur.append(ch);
-                continue;
-            }
-            if (Character.isWhitespace(ch)) {
-                if (cur.length() > 0) {
-                    words.add(cur.toString());
-                    spans.add(new int[]{start, i});
-                    cur.setLength(0);
-                }
-                start = -1;
-                continue;
-            }
-            if (start < 0) {
-                start = i;
-            }
-            cur.append(ch);
+            finished.add(all.get(i).text());
         }
-        if (cur.length() > 0) {
-            // caret in the middle of a word
-            return new Words(words, cur.toString(), start, words.size());
+        if (!insideLast) {
+            return new Words(finished, "", beforeCaret.length(), finished.size());
         }
-        if (beforeCaret.isEmpty() || Character.isWhitespace(beforeCaret.charAt(beforeCaret.length() - 1))) {
-            // caret after a space (or at the very beginning): a fresh empty token
-            return new Words(words, "", beforeCaret.length(), words.size());
-        }
-        return new Words(words, "", beforeCaret.length(), Math.max(0, words.size() - 1));
+        Token last = all.get(all.size() - 1);
+        return new Words(finished, last.text(), last.start(), finished.size());
     }
 }
