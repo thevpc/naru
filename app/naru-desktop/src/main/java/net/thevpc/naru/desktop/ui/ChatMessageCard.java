@@ -3,14 +3,17 @@ package net.thevpc.naru.desktop.ui;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruMessagePart;
+import net.thevpc.naru.desktop.render.TextHtml;
 
 import javax.swing.BorderFactory;
+import javax.swing.JComponent;
 import javax.swing.JEditorPane;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.FlowLayout;
 import java.util.function.Consumer;
 
@@ -90,8 +93,16 @@ public final class ChatMessageCard extends JPanel {
         if (!this.message.getParts().isEmpty()) {
             for (NaruMessagePart part : this.message.getParts()) {
                 ChatPartRenderer renderer = renderers == null ? null : renderers.find(part.type());
-                if (renderer != null) body.add(renderer.render(part, actionHandler));
-                else body.add(selectableText(part.type() + "\n" + part.payload()));
+                JComponent partComponent = renderer != null ? renderer.render(part, actionHandler)
+                        : selectableText(part.type() + "\n" + part.payload());
+                // Parts that ask for it (forms, …) keep their natural width in a horizontal
+                // scroller; everything else wraps at the card width so the conversation panel
+                // only ever scrolls vertically.
+                if (renderer != null && renderer.horizontalScrollRequested()) {
+                    partComponent = horizontalScroller(partComponent);
+                }
+                partComponent.setAlignmentX(Component.LEFT_ALIGNMENT);
+                body.add(partComponent);
             }
         }
         if (this.message.getToolCalls() != null) {
@@ -116,29 +127,29 @@ public final class ChatMessageCard extends JPanel {
     public NaruMessage message() { return message.copy(); }
 
     private static JEditorPane selectableHtml(String html) {
-        JEditorPane pane = new JEditorPane("text/html", "<html><body>" + html + "</body></html>");
-        pane.setEditable(false);
-        pane.setOpaque(false);
-        pane.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
-        pane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
-        return pane;
+        return HtmlPanes.create("<html><body>" + html + "</body></html>", -1f, 2);
     }
 
     private static JEditorPane selectableText(String text) {
-        JEditorPane pane = new JEditorPane("text/html", "<html><body><pre style='font-family:sans-serif;white-space:pre-wrap;margin:0;'>" + escape(text) + "</pre></body></html>");
-        pane.setEditable(false);
-        pane.setOpaque(false);
-        pane.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
-        pane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
-        return pane;
+        return HtmlPanes.create("<html><body>" + TextHtml.paragraphs(text)
+                + "</body></html>", -1f, 4);
+    }
+
+    /** Hosts a natural-width part so wide content scrolls inside the card instead of widening it. */
+    private static JComponent horizontalScroller(JComponent content) {
+        JScrollPane scroller = new JScrollPane(content,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scroller.setBorder(BorderFactory.createEmptyBorder());
+        scroller.setViewportBorder(BorderFactory.createEmptyBorder());
+        scroller.setAlignmentX(Component.LEFT_ALIGNMENT);
+        scroller.getHorizontalScrollBar().setUnitIncrement(16);
+        scroller.getVerticalScrollBar().setUnitIncrement(16);
+        return scroller;
     }
 
     private static String nonBlank(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
-    }
-
-    private static String escape(String value) {
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private static Color blend(Color a, Color b, float mix) {

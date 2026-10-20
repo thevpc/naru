@@ -15,7 +15,8 @@ class MarkdownHtmlTest {
     @Test
     void rendersACodeFenceAsPreformattedText() {
         String html = MarkdownHtml.toHtml("```java\nint x = 1;\n```\n");
-        assertTrue(html.contains("<pre>int x = 1;\n</pre>"), html);
+        // a <pre> would never wrap in Swing, so the fence is a monospace paragraph
+        assertTrue(html.contains("<p style='font-family:monospace;margin:2px 0'>int x = 1;<br></p>"), html);
     }
 
     @Test
@@ -31,7 +32,9 @@ class MarkdownHtmlTest {
     void escapesHtmlSoModelOutputCannotFakeMarkup() {
         String html = MarkdownHtml.toHtml("<script>alert(1)</script> and <b>not bold</b>");
         assertFalse(html.contains("<script>"), html);
-        assertTrue(html.contains("&lt;script&gt;"), html);
+        // the run may be cut into wrappable spans, but the text that survives escaping is intact
+        assertTrue(html.replaceAll("</?span>", "").contains("&lt;script&gt;"), html);
+        assertTrue(html.replaceAll("</?span>", "").contains("&lt;b&gt;not bold&lt;/b&gt;"), html);
     }
 
     @Test

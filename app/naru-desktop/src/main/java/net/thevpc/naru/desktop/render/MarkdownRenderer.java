@@ -23,9 +23,9 @@ import java.util.concurrent.BlockingQueue;
  * (b) never done on the EDT, (c) done at most once per block, and (d) driven by what the
  * viewport actually shows rather than by every block in history.
  * <p>
- * Markdown blocks go through {@link MarkdownHtml}; the rest get their text escaped into a
- * {@code <pre>} so wrapping works without a second cache field. Either way the cost is paid
- * once, off the EDT.
+ * Markdown blocks go through {@link MarkdownHtml}; the rest get their text through
+ * {@link TextHtml#codeBlock}, which wraps at the pane width instead of running off it. Either
+ * way the cost is paid once, off the EDT.
  * <p>
  * The queue is bounded and lossy on purpose: a block that is skipped simply stays plain text,
  * which is the correct degradation, whereas an unbounded queue behind a 50 000-block transcript
@@ -97,7 +97,7 @@ public final class MarkdownRenderer {
             String text = b.text();
             String html = BlockStyle.forBlock(b).markdown()
                     ? MarkdownHtml.toHtml(text)
-                    : "<pre>" + escape(text) + "</pre>";
+                    : TextHtml.codeBlock(text);
             SwingUtilities.invokeLater(() -> {
                 // only publish if the block has not grown since (it cannot: closed blocks are frozen)
                 if (b.isClosed() && b.length() == lengthAtRender) {
@@ -110,10 +110,6 @@ public final class MarkdownRenderer {
                 }
             });
         }
-    }
-
-    private static String escape(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     public void shutdown() {

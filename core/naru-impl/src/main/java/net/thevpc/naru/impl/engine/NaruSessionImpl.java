@@ -1813,19 +1813,33 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return tasks.values().stream().anyMatch(t -> !t.status().isCompleted());
     }
 
-    public synchronized void hibernate() {
+    public void hibernate() {
+        // Never hold this session's monitor across save(): the save is posted to the workspace
+        // maintenance thread, and that thread takes this very monitor to write the state
+        // (writeStateInPlace), as does a worker mid-way through its tick (checkpointTask).
+        // Holding it here meant the writer waited for this caller while this caller waited for
+        // the writer — hibernate() never returned. That is how closing an idle window froze the
+        // whole desktop: the close path sat inside this method on the EDT and never reached its
+        // exit. Eligibility still decides first; only the teardown below takes the monitor.
         if (!isHibernateEligible()) throw new IllegalStateException("session is not quiescent on input");
         save();
-        for (NaruToolset toolset : registry.toolsets()) toolset.onHibernate(this);
-        for (NaruTool tool : registry.tools().values()) tool.onHibernate(this);
-        interaction.onHibernate();
-        registry.closeToolsets();
-        // Toolsets with restartable resources release them in onHibernate; clearing the
-        // open marker lets the next activation lazily reopen them when tools are resolved.
-        stopped = true;
-        running = false;
-        scheduler.shutdown();
-        interaction.close();
+        synchronized (this) {
+            if (stopped || stopping) {
+                // stop() got here first (it needs no monitor of its own); its teardown is the one
+                // that stands, and repeating the teardown below would close every toolset twice
+                return;
+            }
+            for (NaruToolset toolset : registry.toolsets()) toolset.onHibernate(this);
+            for (NaruTool tool : registry.tools().values()) tool.onHibernate(this);
+            interaction.onHibernate();
+            registry.closeToolsets();
+            // Toolsets with restartable resources release them in onHibernate; clearing the
+            // open marker lets the next activation lazily reopen them when tools are resolved.
+            stopped = true;
+            running = false;
+            scheduler.shutdown();
+            interaction.close();
+        }
     }
 
     /**

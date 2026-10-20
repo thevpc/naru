@@ -166,6 +166,39 @@ public class NaruSessionInputApiTest {
                 "once a task is off the input park it is no longer quiescent");
     }
 
+    /**
+     * hibernate() must finish the save it performs rather than wait on it from under the
+     * monitor that save needs: the save runs on the workspace maintenance thread and takes
+     * this session's monitor to write the state. Holding it across the save made the two
+     * threads wait on each other forever — which is how closing an idle desktop window froze
+     * the whole application: the close path sat inside hibernate() and never reached its exit.
+     */
+    @Test
+    void hibernateCompletesInsteadOfWaitingOnTheSaveThatWaitsOnIt() throws Exception {
+        List<NaruInputRequest> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        NaruSessionImpl impl = (NaruSessionImpl) newSession(seen);
+        NaruSession s = impl;
+        parkOne(s, impl);
+        Assertions.assertTrue(s.isHibernateEligible(),
+                "the parked task is the state hibernate exists for");
+
+        final Throwable[] failure = new Throwable[1];
+        Thread closer = new Thread(() -> {
+            try {
+                s.hibernate();
+            } catch (Throwable t) {
+                failure[0] = t;
+            }
+        }, "test-hibernate");
+        closer.setDaemon(true);
+        closer.start();
+        closer.join(30_000);
+        Assertions.assertFalse(closer.isAlive(),
+                "hibernate() must complete: it waits on the save that waits on it");
+        Assertions.assertNull(failure[0], "hibernate() failed: " + failure[0]);
+        Assertions.assertFalse(s.isRunning(), "a hibernated session is no longer running");
+    }
+
     @Test
     void theVersionHandleIsScopedToThisSession() {
         List<NaruInputRequest> seen = new java.util.concurrent.CopyOnWriteArrayList<>();

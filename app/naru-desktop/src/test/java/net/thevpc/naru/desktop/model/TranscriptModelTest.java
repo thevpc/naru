@@ -159,4 +159,46 @@ class TranscriptModelTest {
             assertEquals(0, m.visibleSize());
         });
     }
+
+    @Test
+    void aTextOnlyBatchNamesTheBlocksThatGrew() throws Exception {
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.MODEL_THINKING, "think", true)));
+            assertEquals(List.of("b1"), ids(m.lastTextChanged()),
+                    "the row a text-only batch grew is named, so the view can refresh just it");
+            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.MODEL_THINKING, "ing", false)));
+            assertEquals(List.of("b1"), ids(m.lastTextChanged()));
+            m.apply(List.of(new TranscriptEvent.Closed("b1")));
+            assertTrue(m.lastTextChanged().isEmpty(),
+                    "a batch that only moves rows names nothing; the view reloads those");
+        });
+    }
+
+    @Test
+    void hasOpenBlockSeesPastANoteThatOpensAndClosesInOneBatch() throws Exception {
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.MODEL_RESPONSE, "to", false)));
+            assertTrue(m.hasOpenBlock());
+            // a host note is a block of its own, opened and closed inside one batch: the
+            // "currently open" pointer ends up empty while the stream is still flowing
+            m.apply(List.of(new TranscriptEvent.Opened("note", NaruLogMode.PROGRESS),
+                    new TranscriptEvent.Chunk("note", NaruLogMode.PROGRESS, "stopping", true),
+                    new TranscriptEvent.Closed("note")));
+            assertNull(m.openBlock());
+            assertTrue(m.hasOpenBlock(), "the streamed block is still open");
+            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.MODEL_RESPONSE, "ken", true),
+                    new TranscriptEvent.Closed("b1")));
+            assertFalse(m.hasOpenBlock(), "everything settled");
+        });
+    }
+
+    private static List<String> ids(List<TranscriptBlock> blocks) {
+        List<String> out = new ArrayList<>();
+        for (TranscriptBlock b : blocks) {
+            out.add(b.id());
+        }
+        return out;
+    }
 }

@@ -45,7 +45,8 @@ public final class TranscriptModel {
     public interface Listener {
         /**
          * @param structural true when blocks were added, closed, removed or re-filtered and row
-         *                   indices moved; false when only the text of existing rows changed
+         *                   indices moved; false when only the text of existing rows changed —
+         *                   the rows in question are then listed by {@link #lastTextChanged()}
          */
         void transcriptChanged(boolean structural);
     }
@@ -53,6 +54,13 @@ public final class TranscriptModel {
     private final List<TranscriptBlock> blocks = new ArrayList<>();
     private final List<TranscriptBlock> view = new ArrayList<>();
     private final Map<String, TranscriptBlock> byId = new HashMap<>();
+    /**
+     * Blocks whose text changed in the most recent {@link #apply}. A text-only batch reports
+     * these instead of a boolean alone, so a view refreshes exactly the rows that grew — the
+     * difference between one row repainting and the whole card column being thrown away on
+     * every flush tick while an answer streams.
+     */
+    private final List<TranscriptBlock> changedText = new ArrayList<>();
 
     private final List<Listener> listeners = new ArrayList<>();
 
@@ -78,6 +86,7 @@ public final class TranscriptModel {
         boolean structural = false;
         boolean text = false;
         boolean messagesChanged = false;
+        changedText.clear();
         for (TranscriptEvent e : batch) {
             if (e instanceof TranscriptEvent.Chunk c) {
                 boolean isNew = byId.get(c.blockId()) == null;
@@ -90,6 +99,7 @@ public final class TranscriptModel {
                 }
                 b.append(add);
                 retainedChars += b.length() - before;
+                noteTextChanged(b);
                 // Chunk.finalFragment() ends a *message*, not the block: a run of whole
                 // messages from one directive is still one block, and only Closed freezes it.
                 // Closing here would make the next line in the same block undrawable.
@@ -119,6 +129,7 @@ public final class TranscriptModel {
                         for (var part : m.message().getParts()) body += "\n" + part.type() + ": " + part.payload();
                     }
                     appendText(b, body.endsWith("\n") || body.isEmpty() ? body : body + "\n");
+                    noteTextChanged(b);
                     close(m.blockId());
                     structural |= isNew;
                     messagesChanged = true;
@@ -218,6 +229,7 @@ public final class TranscriptModel {
                 added = true;
             }
             appendText(b, ToolCardText.header(event));
+            noteTextChanged(b);
             return added;
         }
         Deque<String> q = openCards.get(key);
@@ -239,6 +251,7 @@ public final class TranscriptModel {
         if (body != null && !body.isEmpty()) {
             appendText(b, body.endsWith("\n") ? body : body + "\n");
         }
+        noteTextChanged(b);
         close(b.id());
         if (b.length() > TOOL_CARD_COLLAPSE_CHARS) {
             b.setCollapsed(true);
@@ -294,6 +307,13 @@ public final class TranscriptModel {
         int before = b.length();
         b.append(s);
         retainedChars += b.length() - before;
+    }
+
+    /** Record one block for {@link #lastTextChanged()}; a batch rarely touches more than a few. */
+    private void noteTextChanged(TranscriptBlock b) {
+        if (b != null && !changedText.contains(b)) {
+            changedText.add(b);
+        }
     }
 
     /** Cards still awaiting their final event. A widget shows them as running. */
@@ -441,6 +461,33 @@ public final class TranscriptModel {
         return openBlockId == null ? null : byId.get(openBlockId);
     }
 
+    /**
+     * True while any block is still open: output is arriving, or a card has not settled yet.
+     * <p>
+     * This is deliberately not {@code openBlock() != null}: a host note or a stored message
+     * opens a block of its own for the length of one batch, which leaves the "currently open"
+     * pointer empty while a stream is still flowing into an older block. A reader that needs
+     * "is the engine producing something right now" — the composer's Stop state — wants this
+     * question answered from the blocks themselves.
+     */
+    public boolean hasOpenBlock() {
+        for (TranscriptBlock b : blocks) {
+            if (!b.isClosed()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The blocks whose text changed in the last {@link #apply}, in batch order. A view showing
+     * a text-only change refreshes these rows and nothing else; an empty list means the batch
+     * only moved rows, which is already covered by a structural reload.
+     */
+    public List<TranscriptBlock> lastTextChanged() {
+        return java.util.Collections.unmodifiableList(changedText);
+    }
+
     // ── listeners ─────────────────────────────────────────────────────────────
 
     public void addListener(Listener l) {
@@ -475,6 +522,7 @@ public final class TranscriptModel {
         byId.clear();
         view.clear();
         openCards.clear();
+        changedText.clear();
         openBlockId = null;
         retainedChars = 0;
         trimmedBlocks = 0;

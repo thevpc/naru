@@ -57,6 +57,20 @@ import java.util.List;
  */
 public final class MainWindow extends JFrame {
 
+    /**
+     * How long the close path waits for session teardowns before exiting anyway. Bounded rather
+     * than trusted: a hibernate stops the world to persist and a stop-the-world waits out
+     * whatever a worker is mid-way through, so a wedged provider must not outlive the window it
+     * was answering for. The normal teardown finishes well inside this.
+     */
+    private static final long CLOSE_GRACE_MS = 5000;
+    /**
+     * How long a reopen waits for the previous activation's teardown before touching the store
+     * anyway. Generous compared with the exit budget: this wait sits on the boot worker behind
+     * the loading overlay, and letting a slow toolset release finish is the whole point.
+     */
+    private static final long REOPEN_TEARDOWN_WAIT_MS = 30000;
+
 
     private final JPanel center = new JPanel(new BorderLayout());
     private DefaultListModel<SessionEntry> sessionRows = new DefaultListModel<>();
@@ -110,11 +124,38 @@ public final class MainWindow extends JFrame {
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
+                // The window goes away first: the teardown below can take a while (a save stops
+                // the world, a toolset close may kill a server process) and it used to run right
+                // here on the EDT — the app froze on close and never reached the exit below.
                 disposeSessionViews();
-                for (SessionEntry entry : sessions) if (entry.model != null) entry.model.shutdown();
-                                dispose();
-                // the engine holds worker threads; an explicit exit is the honest shutdown here
-                System.exit(0);
+                dispose();
+                List<NaruSessionModel> closing = new ArrayList<>();
+                for (SessionEntry entry : sessions) {
+                    // a row that was closed but never reopened still has a teardown draining
+                    NaruSessionModel model = entry.model != null ? entry.model : entry.pendingTeardown;
+                    if (model != null) closing.add(model);
+                }
+                for (NaruSessionModel model : closing) {
+                    try {
+                        model.shutdown();
+                    } catch (RuntimeException ignored) {
+                        // one broken session must not be what keeps the process alive
+                    }
+                }
+                // The engine holds worker threads; an explicit exit is the honest shutdown here.
+                // Give the teardowns their budget, then exit regardless — the window is gone and
+                // nothing the engine is still doing deserves to keep the app running.
+                Thread exit = new Thread(() -> {
+                    long deadline = System.currentTimeMillis() + CLOSE_GRACE_MS;
+                    for (NaruSessionModel model : closing) {
+                        long remaining = deadline - System.currentTimeMillis();
+                        if (remaining <= 0) break;
+                        model.awaitShutdown(remaining);
+                    }
+                    System.exit(0);
+                }, "naru-exit");
+                exit.setDaemon(true);
+                exit.start();
             }
         });
         sessionList.addListSelectionListener(e -> {
@@ -589,8 +630,16 @@ public final class MainWindow extends JFrame {
             InteractionHost selectedHost = new InteractionHost();
             selectedHost.startFlushTimer();
             selected.host = selectedHost;
-            selected.model = new NaruSessionModel(() -> NaruDesktop.workspace(selected.projectDir),
-                    selected.projectDir, selectedHost, selected.id, selected.scope);
+            NaruSessionModel previous = selected.pendingTeardown;
+            selected.pendingTeardown = null;
+            selected.model = new NaruSessionModel(() -> {
+                // The supplier runs on the boot worker: wait out the previous activation's
+                // teardown before the workspace exists, so its background save of this same
+                // session id cannot race this boot's reads and writes. A teardown that somehow
+                // outlives the budget must not wedge the open forever, hence the bound.
+                if (previous != null) previous.awaitShutdown(REOPEN_TEARDOWN_WAIT_MS);
+                return NaruDesktop.workspace(selected.projectDir);
+            }, selected.projectDir, selectedHost, selected.id, selected.scope);
             selected.model.start();
         }
         session = selected.model;
@@ -775,6 +824,13 @@ public final class MainWindow extends JFrame {
         final net.thevpc.naru.api.agent.NaruResourceInfo savedInfo;
         NaruSessionModel model;
         InteractionHost host;
+        /**
+         * The model this row last closed with, kept only while its engine teardown runs in the
+         * background. The next activation waits that out before touching the store, so the save
+         * finishing behind us cannot interleave with the save a reopen performs on the same
+         * session record; once consumed the reference is dropped with the row.
+         */
+        NaruSessionModel pendingTeardown;
 
         SessionEntry(int number, String id, net.thevpc.naru.api.store.NaruSessionScope scope,
                      NPath projectDir, net.thevpc.naru.api.agent.NaruResourceInfo savedInfo,
@@ -928,6 +984,9 @@ public final class MainWindow extends JFrame {
         boolean wasActive = active.model == session;
         disposeSessionViews();
         active.model.shutdown();
+        // shutdown() returns before the engine teardown finishes; the row keeps the model so the
+        // next activation and a delete can wait for that teardown rather than race its save
+        active.pendingTeardown = active.model;
         active.model = null;
         active.host = null;
         if (wasActive) { session = null; host = null; }
@@ -947,6 +1006,9 @@ public final class MainWindow extends JFrame {
                 "Permanently delete “" + name + "” and its saved conversation and history?", "Delete")) return;
         net.thevpc.naru.api.agent.NaruSession stoppedEngine = entry.model == null ? null : entry.model.session();
         if (entry.model != null) hibernateSession(entry);
+        // set by the hibernateSession above, or left there by an earlier close of this row: the
+        // teardown behind it may still be saving this very session record
+        NaruSessionModel draining = entry.pendingTeardown;
         if (entry.id == null) {
             net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, "Delete session", "Wait for the session to finish opening before deleting it.");
             return;
@@ -954,6 +1016,9 @@ public final class MainWindow extends JFrame {
         showLoading("Deleting " + name + "…");
         new javax.swing.SwingWorker<Boolean, Void>() {
             protected Boolean doInBackground() {
+                // shutdown() tears the engine down on its own worker now: wait that out before
+                // deleting, or a save still in flight would re-create the record under us
+                if (draining != null) draining.awaitShutdown(CLOSE_GRACE_MS);
                 if (stoppedEngine != null) stoppedEngine.waitFor();
                 return catalog(entry.projectDir).delete(entry.id);
             }

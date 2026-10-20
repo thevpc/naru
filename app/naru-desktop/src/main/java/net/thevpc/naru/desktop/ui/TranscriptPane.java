@@ -6,6 +6,7 @@ import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.model.TranscriptBlock;
 import net.thevpc.naru.desktop.model.TranscriptModel;
 import net.thevpc.naru.desktop.render.MarkdownRenderer;
+import net.thevpc.naru.desktop.render.TextHtml;
 import net.thevpc.naru.desktop.util.PermissionsText;
 
 import javax.swing.BorderFactory;
@@ -17,6 +18,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
+import javax.swing.Scrollable;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import java.awt.BorderLayout;
@@ -40,7 +42,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     private final TranscriptModel model;
     private final NaruSessionModel sessionModel;
     private final boolean showChatMessages;
-    private final JPanel cards = new JPanel();
+    private final CardsPanel cards = new CardsPanel();
     private final JScrollPane scroll = new JScrollPane(cards);
     private final JLabel counter = new JLabel(" ");
     private final javax.swing.JTextField search = new javax.swing.JTextField(18);
@@ -128,6 +130,9 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         add(bar, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);
         scroll.setMinimumSize(new Dimension(240, 120));
+        // Message cards always wrap at the panel width; horizontal overflow is hosted by the
+        // message items themselves, and only those that explicitly ask for it.
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.addMouseWheelListener(e -> {
             JScrollBar scrollBar = scroll.getVerticalScrollBar();
             if (e.getWheelRotation() < 0 && scrollBar.getValue() <= 4
@@ -306,8 +311,8 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         if (block.isChatMessage()) {
             ChatMessageCard card = new ChatMessageCard(block.message(), partRenderers, onMessageAction,
                     block.htmlIsCurrent() ? block.html() : null);
+            card.putClientProperty("transcript.block", block);
             card.setAlignmentX(Component.LEFT_ALIGNMENT);
-            card.setMaximumSize(new Dimension(Integer.MAX_VALUE, card.getPreferredSize().height));
             return card;
         }
         if (block.mode() == net.thevpc.naru.api.agent.NaruLogMode.AGENT_RESPONSE) {
@@ -315,8 +320,8 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
                     net.thevpc.naru.api.model.NaruMessage.assistant(block.text()),
                     partRenderers, onMessageAction,
                     block.htmlIsCurrent() ? block.html() : null);
+            card.putClientProperty("transcript.block", block);
             card.setAlignmentX(Component.LEFT_ALIGNMENT);
-            card.setMaximumSize(new Dimension(Integer.MAX_VALUE, card.getPreferredSize().height));
             return card;
         }
         BlockStyle style = BlockStyle.forBlock(block);
@@ -349,18 +354,21 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         title.setForeground(accent);
         card.add(title, BorderLayout.NORTH);
 
-        String html = block.htmlIsCurrent() ? block.html() : "<pre style='margin:0;'>" + escape(block.text()) + "</pre>";
-        JEditorPane body = new JEditorPane("text/html", "<html><body>" + html + "</body></html>");
-        body.setEditable(false);
-        body.setOpaque(false);
-        body.setFont(body.getFont().deriveFont(13f));
-        body.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+        JEditorPane body = HtmlPanes.create(bodyHtml(block), 13f, 0);
+        card.putClientProperty("transcript.block", block);
+        // the body is what a streaming row refreshes in place; see refreshRow
+        card.putClientProperty("transcript.body", body);
         card.add(body, BorderLayout.CENTER);
         if (block.isToolCard() && PermissionsText.isDenial(block.text())) {
             card.setComponentPopupMenu(denialPopup(block.text()));
         }
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, card.getPreferredSize().height));
         return card;
+    }
+
+    private static String bodyHtml(TranscriptBlock block) {
+        return "<html><body>"
+                + (block.htmlIsCurrent() ? block.html() : TextHtml.codeBlock(block.text()))
+                + "</body></html>";
     }
 
     private javax.swing.JPopupMenu denialPopup(String text) {
@@ -384,10 +392,6 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         return new Color((int) (a.getRed() * (1 - mix) + b.getRed() * mix),
                 (int) (a.getGreen() * (1 - mix) + b.getGreen() * mix),
                 (int) (a.getBlue() * (1 - mix) + b.getBlue() * mix));
-    }
-
-    private static String escape(String value) {
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private void requestRenderedBlocks() {
@@ -414,21 +418,46 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
 
     @Override
     public void transcriptChanged(boolean structural) {
-        if (!structural && !engineSearch) {
-            TranscriptBlock open = model.openBlock();
-            if (open != null) {
-                int index = matching.indexOf(open);
-                if (index >= first && index < last) {
-                    int componentIndex = (index - first) * 2;
-                    cards.remove(componentIndex);
-                    cards.add(createCard(open), componentIndex);
-                    cards.revalidate();
-                    cards.repaint();
-                    return;
-                }
-            }
+        if (structural || engineSearch) {
+            syncRows(false);
+            return;
         }
-        syncRows(false);
+        // Text-only batch: refresh the rows that grew and nothing else. Rebuilding the column
+        // here used to run on every flush tick (30 Hz), and for a block this pane filters out
+        // — the chat view hides raw MODEL_RESPONSE output — it threw away and re-created every
+        // visible card for text it never shows, which is the flicker.
+        for (TranscriptBlock block : model.lastTextChanged()) {
+            refreshRow(block);
+        }
+    }
+
+    /** Swap one row's content, keeping the card already on screen whenever it can be reused. */
+    private void refreshRow(TranscriptBlock block) {
+        int index = matching.indexOf(block);
+        if (index < first || index >= last) {
+            // hidden by a filter or outside the window: nothing on screen changed
+            return;
+        }
+        int componentIndex = (index - first) * 2;
+        if (componentIndex >= cards.getComponentCount()) {
+            return;
+        }
+        Component current = cards.getComponent(componentIndex);
+        if (current instanceof JPanel card && block == card.getClientProperty("transcript.block")
+                && card.getClientProperty("transcript.body") instanceof JEditorPane body) {
+            // same block, same card, only more text: re-set it in place. Destroying and
+            // re-creating the card per tick re-laid out (and re-painted) the whole column.
+            body.setText(bodyHtml(block));
+            cards.revalidate();
+            cards.repaint();
+            return;
+        }
+        cards.remove(componentIndex);
+        JPanel replacement = createCard(block);
+        replacement.putClientProperty("transcript.index", index);
+        cards.add(replacement, componentIndex);
+        cards.revalidate();
+        cards.repaint();
     }
 
     public void dispose() {
@@ -455,4 +484,37 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     public String visibleRange() { return matching.isEmpty() ? "none" : first + "-" + (last - 1); }
     public String scrollState() { JScrollBar b = scroll.getVerticalScrollBar(); return b.getValue() + "/" + b.getMaximum(); }
     public boolean isStuckToTail() { return isNearBottom(); }
+
+    /**
+     * The card column always takes the viewport's width, whatever the cards' natural width is.
+     * That width bound is what makes every text card wrap at the panel edge — and re-wrap when
+     * the panel resizes — instead of stretching the conversation into a horizontal scrollbar.
+     */
+    private static final class CardsPanel extends JPanel implements Scrollable {
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(16, (orientation == javax.swing.SwingConstants.VERTICAL
+                    ? visibleRect.height : visibleRect.width) - 16);
+        }
+    }
 }

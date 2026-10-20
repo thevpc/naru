@@ -131,6 +131,19 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private NaruInputMode inputMode = NaruInputMode.LINE;
     private boolean running;
     private boolean closed;
+    /**
+     * The worker running the engine teardown that {@link #shutdown()} starts off the EDT.
+     * Volatile because the close path's exit watchdog reads it from its own thread.
+     */
+    private volatile Thread engineTeardown;
+    /**
+     * True while some transcript block is still open — output is arriving, or a card has not
+     * settled. The task poll reads engine state at 2 Hz and the engine parks its worker between
+     * ticks, so a status read routinely misses a turn that is streaming right now; this is the
+     * desktop's own observation of live output and it is what lets the composer offer Stop
+     * while tokens are flowing.
+     */
+    private boolean streamingOutput;
     private final java.util.Map<Long, String> transcriptHistoryCursors = new java.util.LinkedHashMap<>();
 
     /**
@@ -493,6 +506,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         transcriptHistoryCursors.clear();
         transcriptHistoryCursors.putAll(page.cursors());
         if (!page.events().isEmpty()) transcript.apply(page.events());
+        updateStreamingOutput();
     }
 
     /** Load another durable history page for every task that still has older messages. */
@@ -512,6 +526,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                     transcriptHistoryCursors.clear();
                     transcriptHistoryCursors.putAll(page.cursors());
                     if (!page.events().isEmpty()) transcript.apply(page.events());
+                    updateStreamingOutput();
                     callback.accept(!page.events().isEmpty());
                 }));
     }
@@ -524,6 +539,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         transcript.apply(List.of(new TranscriptEvent.Opened(id, NaruLogMode.PROGRESS),
                 new TranscriptEvent.Chunk(id, NaruLogMode.PROGRESS, text, true),
                 new TranscriptEvent.Closed(id)));
+        updateStreamingOutput();
     }
 
     /** Add a small host status entry to the session transcript. */
@@ -532,6 +548,9 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     /** Persist a quiescent session as hibernated; stop only when it cannot safely hibernate. */
     public void shutdown() {
         EDT.check("NaruSessionModel.shutdown");
+        if (closed) {
+            return;
+        }
         if (taskPoll != null) {
             taskPoll.stop();
         }
@@ -548,25 +567,58 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         permissions.detach();
         closed = true;
         pending = null;
-        if (session != null) {
+        statusText = "closed";
+        if (session == null) {
+            host.close();
+            refreshTasks();
+            fireChanged();
+            return;
+        }
+        // The engine teardown must not run here: hibernate() stops the world to persist, and a
+        // stop-the-world waits out whatever a worker is mid-way through — a whole model call, a
+        // toolset killing its server process. Running that on the EDT froze the very window that
+        // asked to close, and the exit behind it never came. The teardown moves to a worker;
+        // awaitShutdown() is the bound for callers that need it done rather than a frozen UI.
+        NaruSession closing = session;
+        Thread teardown = new Thread(() -> {
             try {
-                if (session.isHibernateEligible()) {
-                    session.hibernate();
+                if (closing.isHibernateEligible()) {
+                    closing.hibernate();
                 } else {
-                    session.stop();
+                    closing.stop();
                 }
             } catch (RuntimeException ignored) {
                 // already stopped; closing the window must not throw
             }
-        } else {
-            host.close();
+            // the poll timer has stopped, so this is the last chance to show real state: without it
+            // the monitor keeps displaying the task that was parked *before* the close and the
+            // parking guarantee looks violated when it was actually honoured
+            onEdt(() -> {
+                refreshTasks();
+                fireChanged();
+            });
+        }, "naru-session-shutdown");
+        teardown.setDaemon(true);
+        engineTeardown = teardown;
+        teardown.start();
+    }
+
+    /**
+     * Wait for the engine teardown {@link #shutdown()} started, up to the timeout. Any thread may
+     * call this: it is how the close path puts a bound on the exit instead of trusting the engine
+     * to be quick. Reports whether the teardown finished within the budget.
+     */
+    public boolean awaitShutdown(long timeoutMillis) {
+        Thread teardown = engineTeardown;
+        if (teardown == null || teardown == Thread.currentThread()) {
+            return true;
         }
-        statusText = "closed";
-        // the poll timer has stopped, so this is the last chance to show real state: without it
-        // the monitor keeps displaying the task that was parked *before* the close and the
-        // parking guarantee looks violated when it was actually honoured
-        refreshTasks();
-        fireChanged();
+        try {
+            teardown.join(timeoutMillis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return !teardown.isAlive();
     }
 
     public boolean isClosed() {
@@ -623,6 +675,25 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                 fireChanged();
             }
         }
+        updateStreamingOutput();
+    }
+
+    /**
+     * Re-read {@link #streamingOutput} and notify the widgets only on an edge. Firing on every
+     * batch would repaint the whole window at the flush rate; not firing at all would leave the
+     * composer's Stop state frozen at whatever the last task poll happened to see.
+     */
+    private void updateStreamingOutput() {
+        boolean now = transcript.hasOpenBlock();
+        if (now != streamingOutput) {
+            streamingOutput = now;
+            fireChanged();
+        }
+    }
+
+    /** @see #streamingOutput */
+    public boolean isStreamingOutput() {
+        return streamingOutput;
     }
 
     private static boolean isConsolePrompt(String text) {
@@ -712,8 +783,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         NaruSession current = session;
         if (current == null || closed) return "no open session";
         try {
-            long id = current.foregroundTaskId();
-            NaruTask task = current.findTask(id).orNull();
+            NaruTask task = stopTarget(current);
             if (task == null || task.isCompleted()) return "there is no running statement to stop";
             task.interrupt();
             notifyUser("stopping the current statement");
@@ -722,6 +792,32 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         } catch (RuntimeException ex) {
             return "could not stop the current statement: " + ex.getMessage();
         }
+    }
+
+    /**
+     * The task Stop has to interrupt: the statement that is actually executing. A conversation
+     * whose work runs in a child task — or whose foreground pointer was never set — still has a
+     * running statement, and a Stop that interrupts nothing but a parked conversation would look
+     * like a button that does nothing while tokens keep arriving.
+     */
+    private static NaruTask stopTarget(NaruSession current) {
+        NaruTask foreground = null;
+        try { foreground = current.findTask(current.foregroundTaskId()).orNull(); }
+        catch (RuntimeException ignored) { }
+        if (foreground != null && !foreground.isCompleted()
+                && foreground.status() == NaruTaskStatus.RUNNING) {
+            return foreground;
+        }
+        try {
+            for (NaruTask task : current.tasks()) {
+                if (!task.isCompleted() && task.status() == NaruTaskStatus.RUNNING) {
+                    return task;
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // the session stopped between the read and the lookup; the caller reports it
+        }
+        return foreground;
     }
 
     public String inputDisabledReason() {

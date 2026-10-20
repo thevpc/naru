@@ -393,6 +393,12 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         try { busy = foreground != null && !foreground.isCompleted()
                 && foreground.status() == net.thevpc.naru.api.scheduler.NaruTaskStatus.RUNNING; }
         catch (RuntimeException ignored) { }
+        // The engine's task state is polled, and a turn that is streaming tokens can sit in a
+        // state the poll never reads as RUNNING — the worker parks between ticks, and the
+        // foreground pointer is not always the task doing the work. The desktop sees the output
+        // itself, so live output counts as busy too: that is what turns Send into Stop while
+        // the agent is still writing.
+        if (!busy && canQueue && session.isStreamingOutput()) busy = true;
         if (can) composerAction = ComposerAction.SEND;
         else if (busy && !hasText) composerAction = ComposerAction.STOP;
         else if (canQueue && hasText) composerAction = ComposerAction.ENQUEUE;

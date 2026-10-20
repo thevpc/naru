@@ -2,6 +2,7 @@ package net.thevpc.naru.desktop.ui;
 
 import net.thevpc.naru.api.model.NaruMessagePart;
 import net.thevpc.naru.desktop.render.MarkdownHtml;
+import net.thevpc.naru.desktop.render.TextHtml;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -68,11 +69,9 @@ public final class ChatPartRenderers implements AutoCloseable {
         public javax.swing.JComponent render(NaruMessagePart part, Consumer<String> actionHandler) {
             String raw = part.payload().asStringValue().orNull();
             final String value = raw == null ? part.payload().toString() : raw;
-            JEditorPane pane = new JEditorPane("text/html", "<html><body><pre>" + escape(value) + "</pre></body></html>");
-            pane.setEditable(false);
-            pane.setOpaque(false);
-            pane.setBorder(BorderFactory.createEmptyBorder(4, 0, 4, 0));
-            pane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+            JEditorPane pane = HtmlPanes.create(
+                    "<html><body>" + TextHtml.codeBlock(value) + "</body></html>",
+                    -1f, 4);
             if (markdown) worker.execute(() -> {
                 String html = MarkdownHtml.toHtml(value);
                 javax.swing.SwingUtilities.invokeLater(() -> {
@@ -126,6 +125,13 @@ public final class ChatPartRenderers implements AutoCloseable {
 
     private static final class FormRenderer implements ChatPartRenderer {
         public String type() { return "form"; }
+
+        @Override
+        public boolean horizontalScrollRequested() {
+            // A squeezed two-column grid is unusable: forms keep their natural width instead.
+            return true;
+        }
+
         public javax.swing.JComponent render(NaruMessagePart part, Consumer<String> actionHandler) {
             JPanel panel = new JPanel(new BorderLayout(8, 4));
             panel.setBorder(BorderFactory.createCompoundBorder(
@@ -202,9 +208,5 @@ public final class ChatPartRenderers implements AutoCloseable {
             JOptionPane.showMessageDialog(null, "Invalid download link: " + ex.getMessage(),
                     "Download", JOptionPane.ERROR_MESSAGE);
         }
-    }
-
-    private static String escape(String text) {
-        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 }

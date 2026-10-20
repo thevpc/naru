@@ -55,7 +55,7 @@ public final class MarkdownHtml {
                 if (i < lines.size()) {
                     i++; // skip closing fence
                 }
-                out.append("<pre>").append(escape(code.toString())).append("</pre>");
+                out.append(TextHtml.codeBlock(code.toString()));
                 continue;
             }
 
@@ -158,13 +158,17 @@ public final class MarkdownHtml {
 
     private static String inline(String s) {
         StringBuilder out = new StringBuilder();
+        // Plain runs are buffered so they can be escaped and seeded with break opportunities in
+        // one step — a long URL in a paragraph must wrap like any other token.
+        StringBuilder plain = new StringBuilder();
         int i = 0;
         while (i < s.length()) {
             char c = s.charAt(i);
             if (c == '`') {
                 int end = s.indexOf('`', i + 1);
                 if (end > i) {
-                    out.append("<tt><b>").append(escape(s.substring(i + 1, end))).append("</b></tt>");
+                    flushPlain(plain, out);
+                    out.append("<tt><b>").append(TextHtml.escapeWrap(s.substring(i + 1, end))).append("</b></tt>");
                     i = end + 1;
                     continue;
                 }
@@ -178,6 +182,7 @@ public final class MarkdownHtml {
                 if (len >= 2) {
                     int close = s.indexOf(run + run, i + len);
                     if (close > i) {
+                        flushPlain(plain, out);
                         out.append("<b>").append(inline(s.substring(i + len, close))).append("</b>");
                         i = close + len;
                         continue;
@@ -186,12 +191,13 @@ public final class MarkdownHtml {
                 if (len == 1) {
                     int close = s.indexOf(run, i + 1);
                     if (close > i + 1) {
+                        flushPlain(plain, out);
                         out.append("<i>").append(inline(s.substring(i + 1, close))).append("</i>");
                         i = close + 1;
                         continue;
                     }
                 }
-                out.append(escape(run.repeat(len)));
+                plain.append(run.repeat(len));
                 i += len;
                 continue;
             }
@@ -200,23 +206,37 @@ public final class MarkdownHtml {
                 if (closeBracket > i && closeBracket + 1 < s.length() && s.charAt(closeBracket + 1) == '(') {
                     int closeParen = s.indexOf(')', closeBracket + 2);
                     if (closeParen > closeBracket) {
+                        flushPlain(plain, out);
                         String label = s.substring(i + 1, closeBracket);
                         String href = s.substring(closeBracket + 2, closeParen);
-                        out.append("<u>").append(escape(label)).append("</u>");
-                        out.append(" <font size=-2>(").append(escape(href)).append(")</font>");
+                        out.append("<u>").append(TextHtml.escapeWrap(label)).append("</u>");
+                        out.append(" <font size=-2>(").append(TextHtml.escapeWrap(href)).append(")</font>");
                         i = closeParen + 1;
                         continue;
                     }
                 }
+                plain.append(c);
+                i++;
+                continue;
             }
-            out.append(escape(String.valueOf(c)));
+            if (Character.isWhitespace(c)) {
+                flushPlain(plain, out);
+                out.append(' ');
+                i++;
+                continue;
+            }
+            plain.append(c);
             i++;
         }
+        flushPlain(plain, out);
         return out.toString();
     }
 
-    private static String escape(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    private static void flushPlain(StringBuilder plain, StringBuilder out) {
+        if (plain.length() > 0) {
+            out.append(TextHtml.escapeWrap(plain.toString()));
+            plain.setLength(0);
+        }
     }
 
     private static List<String> splitLines(String s) {
