@@ -69,6 +69,13 @@ public class InteractionHost implements NaruInteraction {
      */
     private final Object publishLock = new Object();
 
+    /**
+     * Set while the desktop is running a {@code /}-directive for the user, so every block the
+     * directive emits is marked as conversation content rather than engine noise. Guarded by
+     * {@link #publishLock}.
+     */
+    private boolean pendingDirective;
+
     private final AtomicLong publishedEvents = new AtomicLong();
     private final AtomicLong toolCalls = new AtomicLong();
     private final AtomicLong droppedEvents = new AtomicLong();
@@ -149,7 +156,8 @@ public class InteractionHost implements NaruInteraction {
                 publish(closing == null ? null : new TranscriptEvent.Closed(closing));
             }
             String id = blocks.openForWhole(mode, taskId);
-            publish(new TranscriptEvent.Chunk(id, mode, text, true, taskId));
+            boolean directive = directiveMark();
+            publish(new TranscriptEvent.Chunk(id, mode, text, true, taskId, directive));
         }
         recordPublish(t0);
     }
@@ -165,7 +173,8 @@ public class InteractionHost implements NaruInteraction {
         String text = MsgText.plain(fragment == null ? "" : fragment.toString());
         synchronized (publishLock) {
             String id = blocks.openForStream(mode, taskId);
-            publish(new TranscriptEvent.Chunk(id, mode, text, end, taskId));
+            boolean directive = directiveMark();
+            publish(new TranscriptEvent.Chunk(id, mode, text, end, taskId, directive));
             if (end) {
                 String closing = blocks.close();
                 publish(closing == null ? null : new TranscriptEvent.Closed(closing));
@@ -207,6 +216,44 @@ public class InteractionHost implements NaruInteraction {
         synchronized (publishLock) {
             String closing = blocks.close();
             publish(closing == null ? null : new TranscriptEvent.Closed(closing));
+        }
+    }
+
+    /**
+     * Force a block boundary and mark the block that follows as a directive result: close whatever
+     * is open so the next output opens a fresh card.
+     * <p>
+     * The boundary matters because the heuristic merges consecutive whole messages of the same mode
+     * and task — that is what keeps a multi-line listing from exploding into one card per line —
+     * and a failed turn can leave its {@code AGENT_RESPONSE} block open with no final fragment, so
+     * the next directive's output (same mode, same task) used to be appended to that error text
+     * instead of appearing as its own result.
+     * <p>
+     * The mark matters because directive output is <em>conversation</em> — a reply to something the
+     * user typed — and would otherwise be indistinguishable from the raw {@code AGENT_RESPONSE}
+     * the engine also uses for a streamed model answer. The conversation view shows a directive
+     * result unconditionally rather than hiding it behind the activity toggle.
+     */
+    public void beginDirectiveBlock() {
+        synchronized (publishLock) {
+            String closing = blocks.close();
+            publish(closing == null ? null : new TranscriptEvent.Closed(closing));
+            pendingDirective = true;
+        }
+    }
+
+    /**
+     * The mark for a block that just opened. A directive sets it before it runs and clears it after,
+     * so every block the directive emits carries the mark.
+     */
+    private boolean directiveMark() {
+        return pendingDirective;
+    }
+
+    /** Stop marking new blocks as directive results; the directive that set the mark has finished. */
+    public void endDirectiveBlock() {
+        synchronized (publishLock) {
+            pendingDirective = false;
         }
     }
 
@@ -306,6 +353,7 @@ public class InteractionHost implements NaruInteraction {
         StringBuilder mergeText = null;
         NaruLogMode mergeMode = null;
         long mergeTaskId = NaruOutput.NO_TASK;
+        boolean mergeDirective = false;
         while (budget-- > 0 && (e = queue.poll()) != null) {
             queued.decrementAndGet();
             if (e instanceof TranscriptEvent.Chunk c
@@ -315,39 +363,43 @@ public class InteractionHost implements NaruInteraction {
                 mergeText.append(c.text());
                 if (c.finalFragment()) {
                     batch.add(new TranscriptEvent.Chunk(mergeId, mergeMode, mergeText.toString(),
-                            true, mergeTaskId));
+                            true, mergeTaskId, mergeDirective));
                     mergeId = null;
                     mergeText = null;
                     mergeMode = null;
                     mergeTaskId = NaruOutput.NO_TASK;
+                    mergeDirective = false;
                 }
                 continue;
             }
             if (e instanceof TranscriptEvent.Chunk c) {
                 // a run never spans two blocks, and text never overtakes a later event
-                flushMerge(batch, mergeId, mergeMode, mergeText, mergeTaskId);
+                flushMerge(batch, mergeId, mergeMode, mergeText, mergeTaskId, mergeDirective);
                 mergeId = null;
                 mergeText = null;
                 mergeMode = null;
                 mergeTaskId = NaruOutput.NO_TASK;
+                mergeDirective = false;
                 if (c.finalFragment()) {
                     batch.add(c);
                 } else {
                     mergeId = c.blockId();
                     mergeMode = c.mode();
                     mergeTaskId = c.taskId();
+                    mergeDirective = c.directiveResult();
                     mergeText = new StringBuilder(c.text());
                 }
                 continue;
             }
-            flushMerge(batch, mergeId, mergeMode, mergeText, mergeTaskId);
+            flushMerge(batch, mergeId, mergeMode, mergeText, mergeTaskId, mergeDirective);
             mergeId = null;
             mergeText = null;
             mergeMode = null;
             mergeTaskId = NaruOutput.NO_TASK;
+            mergeDirective = false;
             batch.add(e);
         }
-        flushMerge(batch, mergeId, mergeMode, mergeText, mergeTaskId);
+        flushMerge(batch, mergeId, mergeMode, mergeText, mergeTaskId, mergeDirective);
         TranscriptEvent outOfBand;
         while ((outOfBand = inputEvents.poll()) != null) {
             batch.add(outOfBand);
@@ -368,9 +420,10 @@ public class InteractionHost implements NaruInteraction {
 
     /** Publish a half-merged run as a non-final chunk so a later event cannot overtake it. */
     private static void flushMerge(List<TranscriptEvent> batch, String mergeId, NaruLogMode mergeMode,
-                                   StringBuilder mergeText, long mergeTaskId) {
+                                   StringBuilder mergeText, long mergeTaskId, boolean mergeDirective) {
         if (mergeText != null && mergeText.length() > 0) {
-            batch.add(new TranscriptEvent.Chunk(mergeId, mergeMode, mergeText.toString(), false, mergeTaskId));
+            batch.add(new TranscriptEvent.Chunk(mergeId, mergeMode, mergeText.toString(), false, mergeTaskId,
+                    mergeDirective));
         }
     }
 

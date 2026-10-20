@@ -19,12 +19,18 @@ import net.thevpc.naru.api.model.NaruMessage;
  */
 public sealed interface TranscriptEvent {
 
-    /** A new renderable block begins. Everything after it belongs to {@code blockId} until {@link Closed}. */
-    record Opened(String blockId, NaruLogMode mode, long taskId) implements TranscriptEvent {
+    /**
+     * A new renderable block begins. Everything after it belongs to {@code blockId} until {@link Closed}.
+     * <p>
+     * {@code directiveResult} marks output the host produced while running a {@code /}-directive
+     * for the user. It is conversation content — a reply to something typed — so the conversation
+     * view shows it rather than treating it as engine noise.
+     */
+    record Opened(String blockId, NaruLogMode mode, long taskId, boolean directiveResult) implements TranscriptEvent {
 
         /** Output that the engine did not attribute to a task. */
         public Opened(String blockId, NaruLogMode mode) {
-            this(blockId, mode, NaruOutput.NO_TASK);
+            this(blockId, mode, NaruOutput.NO_TASK, false);
         }
     }
 
@@ -35,13 +41,18 @@ public sealed interface TranscriptEvent {
      * whole messages of one mode/task shares one block until {@link Closed} arrives.
      * <p>
      * {@code taskId} is {@link NaruOutput#NO_TASK} unless the engine stamped the line, which since
-     * E1 it does for anything a task emits.
+     * E1 it does for anything a task emits. {@code directiveResult} is set on every fragment of a
+     * block opened for a directive, so a fragment that arrives first can carry the mark too.
      */
-    record Chunk(String blockId, NaruLogMode mode, String text, boolean finalFragment, long taskId)
-            implements TranscriptEvent {
+    record Chunk(String blockId, NaruLogMode mode, String text, boolean finalFragment, long taskId,
+                 boolean directiveResult) implements TranscriptEvent {
+
+        public Chunk(String blockId, NaruLogMode mode, String text, boolean finalFragment, long taskId) {
+            this(blockId, mode, text, finalFragment, taskId, false);
+        }
 
         public Chunk(String blockId, NaruLogMode mode, String text, boolean finalFragment) {
-            this(blockId, mode, text, finalFragment, NaruOutput.NO_TASK);
+            this(blockId, mode, text, finalFragment, NaruOutput.NO_TASK, false);
         }
     }
 

@@ -894,6 +894,11 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             rememberHistory(line);
         }
         echoUser(line, task.id());
+        // Close any block the previous turn left open, so the directive's output is its own card.
+        // A failed prompt parks the task with its AGENT_RESPONSE block still open and no final
+        // fragment; without this boundary the directive's result (same mode, same task) is merged
+        // into that error text and reads as "nothing happened".
+        host.beginBlock();
         try {
             task.invokeDirective(line);
         } catch (RuntimeException ex) {

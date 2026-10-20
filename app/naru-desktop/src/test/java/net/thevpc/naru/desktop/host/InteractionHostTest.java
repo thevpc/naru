@@ -211,6 +211,45 @@ class InteractionHostTest {
                 "the previous block closes exactly once, at the boundary");
     }
 
+    @Test
+    void anExplicitBoundarySplitsSameModeOutputIntoTwoCards() throws Exception {
+        // A failed turn parks its task with the AGENT_RESPONSE block still open and no final
+        // fragment. The next directive logs the same mode on the same task, so without a boundary
+        // its result is merged into that error text and reads as "nothing happened".
+        InteractionHost host = new InteractionHost("test", 1000, null);
+        List<TranscriptEvent> seen = new ArrayList<>();
+        host.setListener((batch, h) -> seen.addAll(batch));
+        onEdt(() -> {
+            host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("No model is selected."), 4);
+            host.beginBlock();
+            host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("/home/user/project"), 4);
+            host.flushOnce();
+        });
+        List<TranscriptEvent.Chunk> chunks = seen.stream()
+                .filter(e -> e instanceof TranscriptEvent.Chunk)
+                .map(e -> (TranscriptEvent.Chunk) e).toList();
+        assertEquals(2, chunks.size(), "both lines are still published");
+        assertTrue(!chunks.get(0).blockId().equals(chunks.get(1).blockId()),
+                "the directive's output is its own card, not appended to the previous error");
+        assertEquals(1, seen.stream().filter(e -> e instanceof TranscriptEvent.Closed).count(),
+                "the forced boundary closes exactly once");
+    }
+
+    @Test
+    void anExplicitBoundaryWithNothingOpenClosesNothing() throws Exception {
+        // The common case: the previous turn already closed its block, so the boundary is a no-op
+        // and must not publish a spurious Closed.
+        InteractionHost host = new InteractionHost("test", 1000, null);
+        List<TranscriptEvent> seen = new ArrayList<>();
+        host.setListener((batch, h) -> seen.addAll(batch));
+        onEdt(() -> {
+            host.beginBlock();
+            host.flushOnce();
+        });
+        assertTrue(seen.stream().noneMatch(e -> e instanceof TranscriptEvent.Closed),
+                "nothing was open, so nothing closed");
+    }
+
     // ── E1: the typed tool-call lifecycle ─────────────────────────────────────
 
     private static NaruToolCall call(String id, String name) {
