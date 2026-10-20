@@ -77,6 +77,20 @@ public interface NaruModelProvider extends NComponent {
     }
 
     /**
+     * A short, user-facing explanation of why this provider currently lists no model —
+     * {@code "API key not set"}, {@code "endpoint unreachable"}, and so on — or {@code null}
+     * when there is nothing to explain.
+     *
+     * <p>The catalog omits a provider whose listing is empty, which is correct but silent: a host
+     * that shows the catalog (the desktop model picker, {@code /model list}) can call this to tell
+     * the user <em>why</em> a provider they expect is missing instead of leaving them guessing
+     * between "no key", "disabled" and "not registered at all".
+     */
+    default String statusMessage(NaruSession session) {
+        return null;
+    }
+
+    /**
      * Whether this provider's endpoint runs on the local machine (a local Ollama,
      * llama.cpp or endpoint, as opposed to a cloud API). Local endpoints get a much
      * longer default read timeout, because prefill on constrained hardware is slow,

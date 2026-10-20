@@ -106,7 +106,7 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
         allTasks.setIcon(javax.swing.UIManager.getIcon("Tree.openIcon"));
         allTasks.putClientProperty("JButton.buttonType", "toolBarButton");
         allTasks.setToolTipText("Show all tasks as a tree"); allTasks.getAccessibleContext().setAccessibleName("Show all tasks as a tree");
-        allTasks.setFocusable(false); allTasks.setMargin(new java.awt.Insets(2,6,2,6)); allTasks.setPreferredSize(new java.awt.Dimension(30,27));
+        allTasks.setFocusable(false); allTasks.setMargin(new java.awt.Insets(2,6,2,6));
         allTasks.addActionListener(e -> { interactiveOnly = !allTasks.isSelected(); ((java.awt.CardLayout)taskView.getLayout()).show(taskView, interactiveOnly?"list":"tree"); sessionTitle.setText(interactiveOnly?"Tasks":"All tasks"); sessionModelChanged(); });
         search.putClientProperty("JTextField.placeholderText", "Filter tasks…");
         search.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
@@ -114,9 +114,15 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
             public void removeUpdate(javax.swing.event.DocumentEvent e) { sessionModelChanged(); }
             public void changedUpdate(javax.swing.event.DocumentEvent e) { sessionModelChanged(); }
         });
-        JPanel heading = new JPanel(new BorderLayout(0, 4)); heading.add(sessionTitle, BorderLayout.NORTH); heading.add(search, BorderLayout.SOUTH);
-        listHeader.add(heading, BorderLayout.CENTER);
-        listHeader.add(allTasks, BorderLayout.EAST);
+        // The title row and the filter row used to be stacked, which stretched the pane for a
+        // control that is a peer of the filter: the tree toggle sits at the filter's own level.
+        JPanel heading = new JPanel(new BorderLayout(6, 0));
+        heading.add(search, BorderLayout.CENTER);
+        heading.add(allTasks, BorderLayout.EAST);
+        JPanel titleRow = new JPanel(new BorderLayout());
+        titleRow.add(sessionTitle, BorderLayout.WEST);
+        listHeader.add(titleRow, BorderLayout.NORTH);
+        listHeader.add(heading, BorderLayout.SOUTH);
         add(listHeader, BorderLayout.NORTH);
         JPanel upper = new JPanel(new BorderLayout()); upper.add(taskView,BorderLayout.CENTER); upper.add(empty,BorderLayout.SOUTH);
         JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, upper, detailScroll);
@@ -151,9 +157,12 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
             b.setMargin(new java.awt.Insets(2, 5, 2, 5));
             b.setFocusable(false);
             b.putClientProperty("JButton.buttonType", "toolBarButton");
-            b.setPreferredSize(new java.awt.Dimension(30, 26));
             bar.add(b);
         }
+        // A fixed pixel size clips the glyph once the interface size grows: the button keeps its
+        // 26px box while the font no longer fits. Size to the font instead — the buttons carry a
+        // single glyph, so the text dimension is exactly the square that shows it.
+        reflowActionButtons();
         holdButton.setToolTipText("Hold / resume selected task");
         interruptButton.setToolTipText("Interrupt selected task");
         killButton.setToolTipText("Stop selected task");
@@ -162,6 +171,22 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
         panel.add(note, BorderLayout.CENTER);
         panel.add(actionNote, BorderLayout.SOUTH);
         return panel;
+    }
+
+    /**
+     * Size the single-glyph action buttons to the font they currently carry, so the glyph is never
+     * clipped when the interface size changes. Called once when the bar is built; a fixed pixel
+     * square would keep its 26px box while the font grows past it, which is how the buttons turned
+     * invisible. The size is derived from live metrics, not a constant.
+     */
+    private void reflowActionButtons() {
+        for (JButton b : List.of(holdButton, interruptButton, killButton, fgButton)) {
+            java.awt.FontMetrics fm = b.getFontMetrics(b.getFont());
+            int side = Math.max(fm.getHeight(), fm.stringWidth(b.getText()) + 8) + 6;
+            java.awt.Dimension d = new java.awt.Dimension(side, fm.getHeight() + 6);
+            b.setPreferredSize(d);
+            b.setMinimumSize(d);
+        }
     }
 
     private void act(NaruSessionModel.TaskAction action) {
@@ -275,6 +300,9 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
         killButton.setEnabled(live);
         interruptButton.setEnabled(live);
         fgButton.setEnabled(r != null);
+        // the glyph and the font both move — hold flips its text, and the interface size can change
+        // while the window is open — so the square is re-derived whenever the buttons change
+        reflowActionButtons();
     }
 
     /**

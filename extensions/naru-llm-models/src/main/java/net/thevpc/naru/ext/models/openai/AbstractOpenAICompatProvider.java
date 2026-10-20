@@ -316,6 +316,27 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
         return session == null ? null : providerErrors.get(session);
     }
 
+    /**
+     * Why this provider lists nothing right now, phrased for a user. An explicit key failure or a
+     * failed live lookup wins; otherwise a provider with no key says so, which is the difference
+     * between "openai is missing" and "openai needs OPENAI_API_KEY".
+     */
+    @Override
+    public String statusMessage(NaruSession session) {
+        String recorded = getError(session);
+        if (recorded != null && !recorded.isBlank()) {
+            return recorded;
+        }
+        // Only a provider that declares env keys has a key to be missing (ollama declares none),
+        // so the keyless case is named rather than assumed and a local server is never told it
+        // needs an API key.
+        String[] declared = defaultEnvKey();
+        if (declared != null && declared.length > 0 && !isApiKeySet(session)) {
+            return "API key not set";
+        }
+        return null;
+    }
+
     protected List<String> fetchLiveModelIds(NaruSession session) {
         String apiKey = apiKey(session).orNull();
         if (NBlankable.isBlank(apiKey)) {

@@ -118,19 +118,28 @@ public final class TranscriptModel {
                 text = true;
             } else if (e instanceof TranscriptEvent.Message m) {
                 if (m.message() != null) {
-                    boolean isNew = byId.get(m.blockId()) == null;
+                    // An assistant answer is streamed as the raw model turn and later arrives
+                    // again as the durable message. Attaching the message to the block that is
+                    // already on screen turns that streaming row into the model's own card — the
+                    // answer appears as it is written and settles in the place it already
+                    // occupies — where creating a second block would show the same text twice.
+                    TranscriptBlock streamed = (m.message().getRole() == net.thevpc.naru.api.agent.NaruRole.assistant)
+                            ? streamedAnswerFor(m.taskId(), m.message().getContent()) : null;
+                    boolean isNew = streamed == null && byId.get(m.blockId()) == null;
                     NaruLogMode mode = m.message().getRole() == net.thevpc.naru.api.agent.NaruRole.user
                             ? NaruLogMode.SCRIPT : NaruLogMode.AGENT_RESPONSE;
-                    TranscriptBlock b = blockFor(m.blockId(), mode, m.taskId());
+                    TranscriptBlock b = streamed != null ? streamed : blockFor(m.blockId(), mode, m.taskId());
                     b.setMessage(m.message(), m.sequence());
                     String body = m.message().getContent();
                     if (body == null) body = "";
                     if (!m.message().getParts().isEmpty()) {
                         for (var part : m.message().getParts()) body += "\n" + part.type() + ": " + part.payload();
                     }
-                    appendText(b, body.endsWith("\n") || body.isEmpty() ? body : body + "\n");
+                    if (streamed == null) {
+                        appendText(b, body.endsWith("\n") || body.isEmpty() ? body : body + "\n");
+                    }
                     noteTextChanged(b);
-                    close(m.blockId());
+                    close(b.id());
                     structural |= isNew;
                     messagesChanged = true;
                     text = true;
@@ -170,6 +179,31 @@ public final class TranscriptModel {
             openBlockId = null;
         }
         return b;
+    }
+
+    /**
+     * The still-open raw-model block that the stored assistant message is the durable copy of, or
+     * null when this message has no streamed counterpart to promote.
+     * <p>
+     * Matched by task and text on purpose: the raw stream and the stored message carry different
+     * ids, and the whole point is to end up with one block rather than two. A blank stored body
+     * never matches — a card is still due for a message whose text the stream did not show.
+     */
+    private TranscriptBlock streamedAnswerFor(long taskId, String content) {
+        if (content == null || content.isBlank()) {
+            return null;
+        }
+        String wanted = content.strip();
+        for (TranscriptBlock b : blocks) {
+            if (b.taskId() == taskId
+                    && !b.isChatMessage()
+                    && !b.isToolCard()
+                    && b.mode() == NaruLogMode.MODEL_RESPONSE
+                    && b.text().strip().equals(wanted)) {
+                return b;
+            }
+        }
+        return null;
     }
 
     /** Close whatever is open, so a shutdown or an interrupt never leaves a half block. */

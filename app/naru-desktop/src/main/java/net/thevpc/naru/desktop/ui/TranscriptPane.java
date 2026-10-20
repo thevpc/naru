@@ -88,7 +88,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         cards.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
         cards.setBackground(javax.swing.UIManager.getColor("List.background"));
         internalEvents.setToolTipText(showChatMessages
-                ? "Include internal activity in the conversation"
+                ? "Show engine activity between messages (progress notes, host events). Answers and tool calls are always shown."
                 : "Show regular session output and logs");
         internalEvents.setFocusable(false);
         internalEvents.setMargin(new java.awt.Insets(2, 6, 2, 6));
@@ -233,7 +233,11 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
 
     private void syncRows(boolean resetToTail) {
         if (engineSearch && !query.isEmpty()) return;
-        boolean wasAtTail = isNearBottom();
+        // The stick decision has to be taken against the OLD content: isNearBottom() reads the
+        // bar's maximum, and once the new rows are added the maximum grows and the bar is no
+        // longer near the bottom even though the user never moved. When the user has scrolled
+        // up, the reveal below must not drag them back down.
+        boolean wasAtTail = resetToTail || initial || isNearBottom();
         matching.clear();
         String needle = query.toLowerCase(java.util.Locale.ROOT);
         for (TranscriptBlock b : model.allBlocks()) {
@@ -247,7 +251,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             first = Math.max(0, last - WINDOW_SIZE);
             initial = false;
             renderWindow(-1);
-            SwingUtilities.invokeLater(() -> scroll.getVerticalScrollBar().setValue(scroll.getVerticalScrollBar().getMaximum()));
+            if (wasAtTail) followTail();
         } else {
             first = Math.min(first, Math.max(0, matching.size() - 1));
             last = Math.min(matching.size(), Math.max(first, last));
@@ -260,20 +264,36 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             if (block.isChatMessage() || block.isToolCard()) {
                 return true;
             }
-            if (block.mode() == net.thevpc.naru.api.agent.NaruLogMode.AGENT_RESPONSE
-                    || block.mode() == net.thevpc.naru.api.agent.NaruLogMode.MODEL_THINKING
-                    || block.mode() == net.thevpc.naru.api.agent.NaruLogMode.SCRIPT) {
-                return true;
-            }
-            return internalEvents.isSelected();
+            return conversationsMode(block.mode()) || internalEvents.isSelected();
         }
-        if (block.isChatMessage()) return false;
+        // The Logs tab is the whole record, so it keeps the stored conversation too: after a restart
+        // only durable messages exist, and hiding them left the tab blank — the raw engine output
+        // that made it useful is not persisted. Messages and tool calls are always shown; the
+        // toggles below still decide the engine's quieter output.
+        if (block.isChatMessage() || block.isToolCard()) return true;
         if (block.mode() == net.thevpc.naru.api.agent.NaruLogMode.TRACE
                 || block.mode() == net.thevpc.naru.api.agent.NaruLogMode.SCHEDULER) {
             return traceEvents.isSelected();
         }
         if (block.mode() == net.thevpc.naru.api.agent.NaruLogMode.DEBUG) return debugEvents.isSelected();
         return internalEvents.isSelected();
+    }
+
+    /**
+     * Whether a log mode is part of the conversation rather than engine noise.
+     * <p>
+     * {@code AGENT_RESPONSE}, {@code MODEL_THINKING} and {@code SCRIPT} always were.
+     * {@code MODEL_RESPONSE} is the raw model turn — the answer as the model wrote it — and it is
+     * exactly what the user is reading while it streams, so hiding it behind the Activity toggle
+     * was showing the answer only when it was already finished and stored. It belongs to the
+     * conversation; Activity keeps the remaining detail (progress notes, host events) behind an
+     * explicit opt-in.
+     */
+    private static boolean conversationsMode(net.thevpc.naru.api.agent.NaruLogMode mode) {
+        return mode == net.thevpc.naru.api.agent.NaruLogMode.AGENT_RESPONSE
+                || mode == net.thevpc.naru.api.agent.NaruLogMode.MODEL_RESPONSE
+                || mode == net.thevpc.naru.api.agent.NaruLogMode.MODEL_THINKING
+                || mode == net.thevpc.naru.api.agent.NaruLogMode.SCRIPT;
     }
 
     private void renderWindow(int anchorIndex) {
@@ -308,6 +328,15 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     }
 
     private JPanel createCard(TranscriptBlock block) {
+        JPanel card = buildCard(block);
+        // A card built now is not in the tree the last scale pass walked, so it would keep the
+        // absolute font it was constructed with and ignore the interface size. Join it to the same
+        // base/scale scheme the rest of the window uses.
+        net.thevpc.naru.desktop.NaruDesktop.scaleNewComponent(card);
+        return card;
+    }
+
+    private JPanel buildCard(TranscriptBlock block) {
         if (block.isChatMessage()) {
             ChatMessageCard card = new ChatMessageCard(block.message(), partRenderers, onMessageAction,
                     block.htmlIsCurrent() ? block.html() : null);
@@ -324,6 +353,11 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             card.setAlignmentX(Component.LEFT_ALIGNMENT);
             return card;
         }
+        return engineCard(block);
+    }
+
+    /** A non-message block: a tool card, thinking, or one of the verbose log modes. */
+    private JPanel engineCard(TranscriptBlock block) {
         BlockStyle style = BlockStyle.forBlock(block);
         Color baseBg = javax.swing.UIManager.getColor("Panel.background");
         Color accent = style.foreground();
@@ -348,6 +382,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         card.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
 
         String labelText = (block.mode() == net.thevpc.naru.api.agent.NaruLogMode.MODEL_THINKING ? "🧠 "
+                : block.mode() == net.thevpc.naru.api.agent.NaruLogMode.MODEL_RESPONSE ? "✨ "
                 : block.isToolCard() ? "🔧 " : "⚡ ") + style.label() + (block.isToolCard() ? " · Tool" : "");
         JLabel title = new JLabel(labelText);
         title.setFont(title.getFont().deriveFont(Font.BOLD, 12f));
@@ -424,23 +459,33 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         }
         // Text-only batch: refresh the rows that grew and nothing else. Rebuilding the column
         // here used to run on every flush tick (30 Hz), and for a block this pane filters out
-        // — the chat view hides raw MODEL_RESPONSE output — it threw away and re-created every
-        // visible card for text it never shows, which is the flicker.
+        // it threw away and re-created every visible card for text it never shows, which is the
+        // flicker.
+        // The stick decision is taken before the rows are touched: streaming text makes the
+        // column taller, and a pane the user left at the bottom has to keep following it, while
+        // one the user scrolled up must be left where it is.
+        boolean wasAtTail = isNearBottom();
+        boolean followed = false;
         for (TranscriptBlock block : model.lastTextChanged()) {
-            refreshRow(block);
+            if (refreshRow(block)) {
+                followed = true;
+            }
+        }
+        if (followed && wasAtTail) {
+            followTail();
         }
     }
 
     /** Swap one row's content, keeping the card already on screen whenever it can be reused. */
-    private void refreshRow(TranscriptBlock block) {
+    private boolean refreshRow(TranscriptBlock block) {
         int index = matching.indexOf(block);
         if (index < first || index >= last) {
             // hidden by a filter or outside the window: nothing on screen changed
-            return;
+            return false;
         }
         int componentIndex = (index - first) * 2;
         if (componentIndex >= cards.getComponentCount()) {
-            return;
+            return false;
         }
         Component current = cards.getComponent(componentIndex);
         if (current instanceof JPanel card && block == card.getClientProperty("transcript.block")
@@ -450,14 +495,18 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             body.setText(bodyHtml(block));
             cards.revalidate();
             cards.repaint();
-            return;
+            return true;
         }
+        // A chat card owns its body layout (parts, forms, a scroller), so it is rebuilt rather
+        // than re-texted; that is the same work createCard did when the row first appeared, and
+        // it only happens for the rows whose text actually changed in this batch.
         cards.remove(componentIndex);
         JPanel replacement = createCard(block);
         replacement.putClientProperty("transcript.index", index);
         cards.add(replacement, componentIndex);
         cards.revalidate();
         cards.repaint();
+        return true;
     }
 
     public void dispose() {
@@ -473,6 +522,11 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     }
     public void registerPartRenderer(ChatPartRenderer renderer) { partRenderers.register(renderer); syncRows(false); }
     public void setTaskFilter(long taskId) { taskFilter = taskId < 0 ? Long.MIN_VALUE : taskId; syncRows(true); }
+    /**
+     * Jump to the newest row. Deferred by one EDT turn so it runs after the card column has been
+     * re-validated and the scrollbar's maximum reflects the rows that were just added — setting
+     * the value against the old maximum lands one card short of the bottom.
+     */
     public void followTail() { SwingUtilities.invokeLater(() -> scroll.getVerticalScrollBar().setValue(scroll.getVerticalScrollBar().getMaximum())); }
 
     // Harness-facing reads retained for existing transcript smoke diagnostics.

@@ -25,11 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * What the chat column does while an answer streams. The host flushes at 30 Hz, so every one of
- * those ticks used to reach the pane as a text-only change and end in a full reload of the card
- * column — for a block the chat view filters out (raw {@code MODEL_RESPONSE} output is hidden
- * behind the Activity toggle) that threw away and re-created every visible card for text it never
- * shows, which is the blinking. A refresh now touches only the rows that grew, and reuses the card
- * already on screen when it can.
+ * those ticks reaches the pane as a text-only change. A refresh touches only the rows that grew,
+ * and reuses the card already on screen when it can — the model's answer is on screen as it is
+ * written, not only once it is finished.
  * <p>
  * Unstarted {@link NaruSessionModel} on purpose, like {@link TaskMonitorTest}: the pane talks to
  * the model and the transcript, and a booted engine would only add 3 minutes to prove the same
@@ -78,29 +76,45 @@ class TranscriptPaneStreamTest {
     }
 
     @Test
-    void aHiddenStreamingBlockLeavesTheVisibleCardsAlone() throws Exception {
+    void aStreamingAnswerIsShownAndStaysTheSameCardWhileItGrows() throws Exception {
         buildPane();
         onEdt(() -> {
             // one visible conversation card — a stored user message — then the first fragment
-            // of a model answer, which this pane hides: the block exists, no row shows it
+            // of a model answer, which this pane shows: the answer is the conversation
             model.onBatch(List.of(
                     new TranscriptEvent.Message("u1", 1, 1, NaruMessage.user("hello")),
-                    new TranscriptEvent.Chunk("m1", NaruLogMode.MODEL_RESPONSE, "one", false)), host);
-            assertEquals(1, pane.rowCount());
-            Container column = cards();
-            Component card = column.getComponent(0);
-            int components = column.getComponentCount();
+                    new TranscriptEvent.Chunk("m1", NaruLogMode.MODEL_RESPONSE, "one", false, 1)), host);
+            assertEquals(2, pane.rowCount(), "the streamed answer is a row of its own, by default");
+            Component card = cards().getComponent(2);
+            int components = cards().getComponentCount();
 
-            // the answer keeps streaming: nothing on screen changed, so nothing is rebuilt
+            // the answer keeps streaming: the row grows in place, nothing else is rebuilt
             for (int i = 0; i < 20; i++) {
                 model.onBatch(List.of(
-                        new TranscriptEvent.Chunk("m1", NaruLogMode.MODEL_RESPONSE, "tok" + i, false)), host);
+                        new TranscriptEvent.Chunk("m1", NaruLogMode.MODEL_RESPONSE, "tok" + i, false, 1)), host);
             }
-            assertEquals(1, pane.rowCount(), "the hidden block adds no row");
-            assertSame(card, cards().getComponent(0),
-                    "the visible card is reused rather than destroyed and re-created per tick");
+            assertEquals(2, pane.rowCount());
+            assertSame(card, cards().getComponent(2),
+                    "the streamed answer card is reused rather than destroyed and re-created per tick");
             assertEquals(components, cards().getComponentCount());
-            assertTrue(pane.cellTextAt(0).contains("hello"));
+            assertTrue(pane.cellTextAt(1).contains("tok19"),
+                    "every fragment lands in the visible answer row");
+        });
+    }
+
+    @Test
+    void theStoredAnswerPromotesTheStreamedRowInsteadOfAddingASecondCard() throws Exception {
+        buildPane();
+        onEdt(() -> {
+            model.onBatch(List.of(
+                    new TranscriptEvent.Chunk("m1", NaruLogMode.MODEL_RESPONSE, "the answer", true, 1)), host);
+            assertEquals(1, pane.rowCount());
+            // the durable copy of the same answer arrives with a different id: the streamed row
+            // becomes the model's card instead of the text appearing twice
+            model.onBatch(List.of(
+                    new TranscriptEvent.Message("stored-1-9", 1, 9, NaruMessage.assistant("the answer"))), host);
+            assertEquals(1, pane.rowCount(), "one answer, one card");
+            assertTrue(pane.cellTextAt(0).contains("the answer"));
         });
     }
 
@@ -122,6 +136,27 @@ class TranscriptPaneStreamTest {
                     "the streaming row is updated in place, not re-created");
             assertTrue(pane.cellTextAt(0).contains("think-tick-tick"),
                     "every fragment lands in the row");
+        });
+    }
+
+    @Test
+    void theLogsTabKeepsTheStoredConversationInsteadOfGoingBlank() throws Exception {
+        // A restarted session has only durable messages — the raw engine output the Logs tab
+        // normally shows is not persisted. Hiding messages there left the tab empty after a
+        // restart, which read as "the log was lost". It is the whole record, so it keeps them.
+        onEdt(() -> {
+            host = new InteractionHost();
+            model = new NaruSessionModel(() -> null,
+                    NPath.ofTempFolder("naru-desktop-transcript-logs"), host);
+            pane = new TranscriptPane(model, false);
+        });
+        onEdt(() -> {
+            model.onBatch(List.of(
+                    new TranscriptEvent.Message("restored-1-1", 1, 1, NaruMessage.user("hi")),
+                    new TranscriptEvent.Message("restored-1-2", 1, 2, NaruMessage.assistant("hello"))), host);
+            assertEquals(2, pane.rowCount(), "the restored conversation is in the log");
+            assertTrue(pane.cellTextAt(0).contains("hi"));
+            assertTrue(pane.cellTextAt(1).contains("hello"));
         });
     }
 

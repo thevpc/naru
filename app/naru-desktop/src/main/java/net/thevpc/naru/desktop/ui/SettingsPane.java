@@ -32,11 +32,16 @@ public final class SettingsPane extends JPanel {
     public SettingsPane(String selectedTheme, Consumer<String> onThemeChanged, int selectedFontScale, IntConsumer onFontScaleChanged, Runnable back) {
         super(new BorderLayout());
         setBorder(BorderFactory.createEmptyBorder(22, 26, 24, 26));
-        JPanel header = new JPanel(new BorderLayout());
+        JPanel header = new JPanel(new BorderLayout(24, 0));
         JLabel title = new JLabel("Settings"); title.setFont(title.getFont().deriveFont(Font.BOLD, 24f));
         javax.swing.JButton close = new javax.swing.JButton("←  Back to workspace"); close.setMargin(new java.awt.Insets(7,14,7,14)); close.setMinimumSize(new java.awt.Dimension(190,36)); close.addActionListener(e -> back.run());
         header.add(title, BorderLayout.WEST); header.add(close, BorderLayout.EAST);
-        add(header, BorderLayout.NORTH);
+        // the page already has its own padding; the header sits apart from the section card so the
+        // back button never reads as one of the appearance controls
+        JPanel headerWrap = new JPanel(new BorderLayout());
+        headerWrap.add(header, BorderLayout.CENTER);
+        headerWrap.setBorder(BorderFactory.createEmptyBorder(0, 0, 20, 0));
+        add(headerWrap, BorderLayout.NORTH);
 
         JPanel navigation = new JPanel(new BorderLayout());
         JList<String> sections = new JList<>(new String[]{"Appearance", "Input & shortcuts", "Workspace"});
@@ -64,7 +69,8 @@ public final class SettingsPane extends JPanel {
         JPanel themeRow=new JPanel(new BorderLayout(18,0)); themeRow.add(new JLabel("Theme"),BorderLayout.WEST); themeRow.add(theme,BorderLayout.CENTER);
         JPanel fontRow=new JPanel(new BorderLayout(18,0));
         JLabel fontLabel=new JLabel("Interface size · "+selectedFontScale+"%");
-        JSlider fontScale=new JSlider(80,150,selectedFontScale);fontScale.setName("naru-font-scale");fontScale.setMajorTickSpacing(10);fontScale.setMinorTickSpacing(5);fontScale.setPaintTicks(true);fontScale.setSnapToTicks(true);
+        JSlider fontScale=new JSlider(net.thevpc.naru.desktop.NaruDesktop.MIN_FONT_SCALE, net.thevpc.naru.desktop.NaruDesktop.MAX_FONT_SCALE, selectedFontScale);
+        fontScale.setName("naru-font-scale");fontScale.setMajorTickSpacing(25);fontScale.setMinorTickSpacing(5);fontScale.setPaintTicks(true);fontScale.setSnapToTicks(true);
         fontScale.addChangeListener(e->{fontLabel.setText("Interface size · "+fontScale.getValue()+"%");if(!fontScale.getValueIsAdjusting())onFontScaleChanged.accept(fontScale.getValue());});
         fontRow.add(fontLabel,BorderLayout.WEST);fontRow.add(fontScale,BorderLayout.CENTER);
         selector.add(themeRow,BorderLayout.NORTH);selector.add(fontRow,BorderLayout.CENTER);

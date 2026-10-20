@@ -75,6 +75,8 @@ public final class MainWindow extends JFrame {
     private final JPanel center = new JPanel(new BorderLayout());
     private DefaultListModel<SessionEntry> sessionRows = new DefaultListModel<>();
     private final JList<SessionEntry> sessionList = new JList<>(sessionRows);
+    /** The sessions sidebar, kept so its width can follow the interface size like everything else. */
+    private JPanel sessionRailPanel;
     private final javax.swing.JTextField sessionFilter = new javax.swing.JTextField();
     private final List<SessionEntry> sessions = new ArrayList<>();
     /**
@@ -105,6 +107,9 @@ public final class MainWindow extends JFrame {
     private NaruSessionModel.Listener sessionListSync;
     private boolean sessionFilterBound;
     private long sessionSwitchGeneration;
+    /** The transcript/composer divider, saved across sessions so the user keeps the room they made. */
+    private int composerDivider;
+    private JSplitPane composerSplit;
     private JPanel loadingPanel;
     private JLabel loadingLabel;
 
@@ -196,7 +201,7 @@ public final class MainWindow extends JFrame {
                 sessionList.setSelectedIndex(row);
                 javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
                 SessionEntry entry = sessionList.getSelectedValue();
-                javax.swing.JMenuItem openClose = new javax.swing.JMenuItem(entry.isOpen() ? "Hibernate session" : "Open session");
+                javax.swing.JMenuItem openClose = new javax.swing.JMenuItem(entry.isOpen() ? "Close session" : "Open session");
                 openClose.addActionListener(x -> {
                     if (entry.isOpen()) hibernateSession(entry);
                     else activateSession(entry);
@@ -218,7 +223,7 @@ public final class MainWindow extends JFrame {
         JMenu file = new JMenu("File");
         JMenuItem newSession = new JMenuItem("New session…");
         newSession.addActionListener(e -> createSession());
-        JMenuItem close = new JMenuItem("Hibernate session");
+        JMenuItem close = new JMenuItem("Close session");
         close.addActionListener(e -> closeSession());
         JMenuItem exit = new JMenuItem("Exit");
         exit.addActionListener(e -> dispatchEvent(new WindowEvent(this, WindowEvent.WINDOW_CLOSING)));
@@ -234,7 +239,7 @@ public final class MainWindow extends JFrame {
             SessionEntry selected = sessionList.getSelectedValue(); if (selected != null) activateSession(selected);
         });
         JMenuItem rename = new JMenuItem("Rename session…"); rename.addActionListener(e -> renameSelectedSession());
-        JMenuItem closeCurrent = new JMenuItem("Hibernate session"); closeCurrent.addActionListener(e -> closeSession());
+        JMenuItem closeCurrent = new JMenuItem("Close session"); closeCurrent.addActionListener(e -> closeSession());
         JMenuItem deleteSelected = new JMenuItem("Delete selected session…"); deleteSelected.addActionListener(e -> deleteSession(sessionList.getSelectedValue()));
         sessionMenu.add(openSelected); sessionMenu.add(rename); sessionMenu.add(closeCurrent); sessionMenu.add(deleteSelected);
         JMenu help = new JMenu("Help"); help.add(new JMenuItem("About NARU"));
@@ -310,6 +315,38 @@ public final class MainWindow extends JFrame {
     private void showLoading(String message) { loadingLabel.setText(message); refreshLoadingPalette(); loadingPanel.setVisible(true); }
     private void hideLoading() { loadingPanel.setVisible(false); }
 
+    /**
+     * The session row's height. The cell draws two lines (name, then the created/state line), so a
+     * constant 58px fits one interface size and clips the rest: at a larger interface size the
+     * second line is cut off, at a smaller one the row is mostly empty. Derive it from the list's
+     * own font so the row grows and shrinks with the interface size the way everything else does.
+     */
+    private void applySessionRowHeight() {
+        if (sessionList == null) return;
+        java.awt.Font f = sessionList.getFont();
+        if (f == null) return;
+        int line = sessionList.getFontMetrics(f).getHeight();
+        sessionList.setFixedCellHeight(Math.max(38, (int) Math.round(line * 2.7)));
+        if (sessionRailPanel != null) {
+            // the "＋ New" button sits on the same row as the "Sessions" title; a fixed 220px rail
+            // clips it once the interface size grows, so the rail keeps pace with the font too
+            sessionRailPanel.setPreferredSize(new java.awt.Dimension(
+                    railWidth(), sessionRailPanel.getPreferredSize().height));
+        }
+    }
+
+    /** The sessions sidebar's width for the current interface size. */
+    private int railWidth() {
+        java.awt.Font f = sessionList == null ? null : sessionList.getFont();
+        if (f == null) f = getFont();
+        if (f == null) return 220;
+        java.awt.FontMetrics fm = sessionList != null
+                ? sessionList.getFontMetrics(f)
+                : getFontMetrics(f);
+        if (fm == null) return 220;
+        return Math.max(180, (int) Math.round(fm.stringWidth("Sessions") * 2.6) + 40);
+    }
+
     /** Reapply the active look-and-feel to UI pieces that use custom renderers or a glass pane. */
     public void refreshThemePalette() {
         TextAreas.refreshThemeColors(getContentPane());
@@ -325,6 +362,7 @@ public final class MainWindow extends JFrame {
             java.awt.Color fieldBg = javax.swing.UIManager.getColor("TextField.background");
             if (fieldBg != null) sessionFilter.setBackground(fieldBg);
         }
+        applySessionRowHeight();
         if (input != null) input.refreshThemePalette();
         if (taskPane != null) taskPane.refreshThemePalette();
         refreshLoadingPalette();
@@ -690,9 +728,24 @@ public final class MainWindow extends JFrame {
         sessionAndConversation.setResizeWeight(0.33);
         JSplitPane whole = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sessionAndConversation, taskTools);
         whole.setResizeWeight(0.78);
+        // The transcript and the composer share the middle column through a draggable divider, so
+        // the user can give the composer room for a long prompt (or hide it) instead of living
+        // with whatever fixed height the layout picked. The divider is remembered for the next
+        // session/relaunch; resizeWeight keeps the transcript growing when the window does.
+        JSplitPane conversationAndComposer = new JSplitPane(JSplitPane.VERTICAL_SPLIT, whole, input);
+        conversationAndComposer.setResizeWeight(1.0);
+        conversationAndComposer.setContinuousLayout(true);
+        conversationAndComposer.setOneTouchExpandable(false);
+        conversationAndComposer.setDividerLocation(composerDivider);
+        conversationAndComposer.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, e -> {
+            Object value = e.getNewValue();
+            if (value instanceof Integer location && location > 0) composerDivider = location;
+        });
+        composerSplit = conversationAndComposer;
+        input.setMinimumSize(new java.awt.Dimension(180, 96));
+        whole.setMinimumSize(new java.awt.Dimension(120, 80));
         JPanel body = new JPanel(new BorderLayout());
-        body.add(whole, BorderLayout.CENTER);
-        body.add(input, BorderLayout.SOUTH);
+        body.add(conversationAndComposer, BorderLayout.CENTER);
         body.add(statusBar, BorderLayout.NORTH);
         center.removeAll(); center.setLayout(new BorderLayout()); center.add(body, BorderLayout.CENTER);
         center.revalidate(); center.repaint();
@@ -720,7 +773,8 @@ public final class MainWindow extends JFrame {
 
     private JPanel sessionRail(TaskPane tasks) {
         JPanel rail = new JPanel(new BorderLayout());
-        rail.setPreferredSize(new java.awt.Dimension(220, 100));
+        sessionRailPanel = rail;
+        rail.setPreferredSize(new java.awt.Dimension(railWidth(), 100));
         Color borderColor = javax.swing.UIManager.getColor("Component.borderColor");
         rail.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, borderColor != null ? borderColor : new Color(210, 215, 225)));
         JPanel sessionHeader = new JPanel(new BorderLayout());
@@ -732,7 +786,7 @@ public final class MainWindow extends JFrame {
         JButton open = new JButton("↗");
         open.setMargin(new java.awt.Insets(2, 6, 2, 6));
         open.setFocusable(false);
-        open.setToolTipText("Open selected hibernated session");
+        open.setToolTipText("Open selected closed session");
         open.getAccessibleContext().setAccessibleName("Open selected session");
         open.putClientProperty("JButton.buttonType", "toolBarButton");
         open.addActionListener(e -> { SessionEntry selected = sessionList.getSelectedValue(); if (selected != null) activateSession(selected); });
@@ -755,16 +809,22 @@ public final class MainWindow extends JFrame {
             });
         }
         sessionList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
-        sessionList.setFixedCellHeight(58);
+        applySessionRowHeight();
         sessionList.setCellRenderer((list, value, index, selected, focus) -> {
             String dates = value.dateSummary();
             String state = value.stateLabel();
             String mark = value.isOpen() ? "●" : value.isOpening() ? "◌" : value.needsAttention() ? "!" : "○";
             String stateColor = value.isOpen() ? "#10B981" : value.isOpening() ? "#F59E0B"
                     : value.needsAttention() ? "#EF4444" : "#9CA3AF";
-            JLabel label = new JLabel("<html><div style='padding:2px 4px;'><b><span style='color:" + stateColor + ";'>" + mark + "</span>  " + value.toString()
-                    + "</b><br><span style='font-size:9pt;color:" + stateColor + "'><b>" + state
-                    + "</b></span><span style='font-size:9pt;color:#6B7280;'> · " + dates + "</span></div></html>");
+            // The date and the state pill are painted with fixed colours, which a selected row
+            // replaces with the LAF's selection background. On a light LAF that selection is a
+            // saturated blue, and a grey "Created …" on it disappears; selected rows therefore
+            // take the selection foreground for both the name and the metadata.
+            String metaColor = selected ? css(list.getSelectionForeground()) : "#6B7280";
+            String pillColor = selected ? css(list.getSelectionForeground()) : stateColor;
+            JLabel label = new JLabel("<html><div style='padding:2px 4px;'><b><span style='color:" + pillColor + ";'>" + mark + "</span>  " + value.toString()
+                    + "</b><br><span style='font-size:9pt;color:" + pillColor + "'><b>" + state
+                    + "</b></span><span style='font-size:9pt;color:" + metaColor + ";'> · " + dates + "</span></div></html>");
             label.setOpaque(true);
             label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
             label.setForeground(selected ? list.getSelectionForeground() : javax.swing.UIManager.getColor("List.foreground"));
@@ -793,7 +853,7 @@ public final class MainWindow extends JFrame {
         host = null;
         JPanel preview = new JPanel(new BorderLayout(12, 12));
         preview.setBorder(BorderFactory.createEmptyBorder(28, 32, 28, 32));
-        JLabel title = new JLabel("Session is hibernated");
+        JLabel title = new JLabel("Session is closed");
         title.setFont(title.getFont().deriveFont(java.awt.Font.BOLD, 20f));
         JLabel details = new JLabel("<html><b>" + entry.toString() + "</b><br>" + entry.dateSummary()
                 + "<br><br>This session is closed. Open it to load its conversation, tasks, and workspace.</html>");
@@ -811,9 +871,19 @@ public final class MainWindow extends JFrame {
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sessionRail(null), preview);
         split.setResizeWeight(0.24);
         center.removeAll(); center.setLayout(new BorderLayout()); center.add(split, BorderLayout.CENTER);
-        activeSessionLabel.setText(entry.toString() + " · Hibernated");
+        activeSessionLabel.setText(entry.toString() + " · Closed");
         center.revalidate(); center.repaint();
         hideLoading();
+    }
+
+    /**
+     * A {@code java.awt.Color} as a CSS {@code #rrggbb} literal for the session renderer's HTML.
+     * The selection foreground is whatever the LAF says it is, so the metadata line stays legible
+     * on every theme rather than only on the dark one.
+     */
+    private static String css(Color color) {
+        if (color == null) return "#000000";
+        return String.format(java.util.Locale.ROOT, "#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
     }
 
     private static final class SessionEntry {
@@ -847,7 +917,7 @@ public final class MainWindow extends JFrame {
             if (isOpening()) return "Opening";
             if (isOpen()) return "Open";
             if (needsAttention()) return "Needs attention";
-            return "Hibernated";
+            return "Closed";
         }
 
         @Override public String toString(){
@@ -1069,6 +1139,7 @@ public final class MainWindow extends JFrame {
         workbench = null;
         if (input != null) { input.dispose(); input = null; }
         if (statusBar != null) { statusBar.dispose(); statusBar = null; }
+        composerSplit = null;
         sideTabs = null;
         conversationTabs = null;
     }

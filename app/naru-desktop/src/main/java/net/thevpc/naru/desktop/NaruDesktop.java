@@ -76,10 +76,16 @@ public final class NaruDesktop {
     private static Preferences preferences() { return Preferences.userNodeForPackage(NaruDesktop.class); }
 
     public static String selectedTheme() { return preferences().get(THEME_KEY, DEFAULT_THEME); }
-    public static int fontScale() { return Math.max(80, Math.min(150, preferences().getInt(FONT_SCALE_KEY, 100))); }
+    /** Smallest / largest interface size the shortcut and the settings slider both allow. */
+    public static final int MIN_FONT_SCALE = 50;
+    public static final int MAX_FONT_SCALE = 300;
+    public static int fontScale() { return clampFontScale(preferences().getInt(FONT_SCALE_KEY, 100)); }
+    public static int clampFontScale(int percent) {
+        return Math.max(MIN_FONT_SCALE, Math.min(MAX_FONT_SCALE, percent));
+    }
 
     public static void setFontScale(int percent) {
-        int value=Math.max(80,Math.min(150,percent)); if(value==fontScale()) return; preferences().putInt(FONT_SCALE_KEY,value);
+        int value=clampFontScale(percent); if(value==fontScale()) return; preferences().putInt(FONT_SCALE_KEY,value);
         if(themeBaseFont==null) themeBaseFont=UIManager.getFont("defaultFont");
         applyScaledFontDefaults(100);
         for(java.awt.Window window:java.awt.Window.getWindows()) {
@@ -124,6 +130,18 @@ public final class NaruDesktop {
         if(c instanceof java.awt.Container p) for(java.awt.Component child:p.getComponents()) clearFontBases(child);
     }
     public static void initializeFontScale(java.awt.Component c) { clearFontBases(c); scaleComponentFonts(c,fontScale()); }
+
+    /**
+     * Apply the current interface size to a component built after the last scale pass.
+     * <p>
+     * Scaling walks the tree once, when the size changes, and captures each component's font as its
+     * base. A card, a button or an HTML body created later is not in that tree yet, so it keeps the
+     * absolute size it was built with — which is why a streamed answer used to ignore the interface
+     * size until Ctrl+| ran the walk again. Callers that create components at runtime hand them here
+     * so they join the same base/scale scheme.
+     */
+    public static void scaleNewComponent(java.awt.Component c) { scaleComponentFonts(c, fontScale()); }
+
     private static void scaleComponentFonts(java.awt.Component c,int percent) {
         if(c instanceof javax.swing.JComponent j && j.getFont()!=null) {
             java.awt.Font base=(java.awt.Font)j.getClientProperty("naru.baseFont");

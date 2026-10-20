@@ -60,8 +60,14 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private java.util.List<net.thevpc.naru.api.model.NaruModelInfo> modelInfos = java.util.List.of();
     private net.thevpc.naru.api.agent.NaruSession modelCatalogSession;
     private boolean modelCatalogLoading;
-    private enum ComposerAction { SEND, ENQUEUE, STOP, DISABLED }
+    private enum ComposerAction { RUN, SEND, ENQUEUE, STOP, DISABLED }
     private ComposerAction composerAction = ComposerAction.DISABLED;
+    /** Fallback border for the composer card when the LAF defines no component border colour. */
+    private static final Color COMPOSER_IDLE_BORDER = new Color(200, 205, 215);
+    /** Accent drawn around the composer card while the text area owns the keyboard focus. */
+    private Color composerFocusBorder;
+    private JPanel composerCard;
+    private javax.swing.Timer focusBorderTimer;
 
     public InputPane(NaruSessionModel session) {
         super(new BorderLayout(6, 4));
@@ -93,16 +99,27 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                 if (bg == null) bg = getBackground();
                 g2.setColor(bg);
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), 16, 16);
-                Color borderColor = javax.swing.UIManager.getColor("Component.borderColor");
-                if (borderColor == null) borderColor = new Color(200, 205, 215);
+                // the border says where the keyboard is: focus draws the same accent a focused
+                // text field uses, so the composer reads as selected like every other component
+                Color borderColor = composerFocusBorder != null
+                        ? composerFocusBorder
+                        : javax.swing.UIManager.getColor("Component.borderColor");
+                if (borderColor == null) borderColor = COMPOSER_IDLE_BORDER;
                 g2.setColor(borderColor);
-                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 16, 16);
+                g2.setStroke(new java.awt.BasicStroke(composerFocusBorder != null ? 2f : 1f));
+                g2.drawRoundRect(1, 1, getWidth() - 2, getHeight() - 2, 16, 16);
                 g2.dispose();
                 super.paintComponent(g);
             }
         };
         composerCard.setOpaque(false);
         composerCard.setBorder(BorderFactory.createEmptyBorder(6, 10, 8, 10));
+        this.composerCard = composerCard;
+        // focus returns to the composer after Send and after a Stop click, but Swing delivers
+        // that asynchronously; a short one-shot timer re-reads the real focus so the border cannot
+        // stay lit on a composer that no longer has it (or stay dark on one that does).
+        focusBorderTimer = new javax.swing.Timer(120, e -> refreshComposerFocus());
+        focusBorderTimer.setRepeats(false);
 
         JScrollPane scroller = new JScrollPane(area);
         scroller.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
@@ -159,6 +176,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         add(composerCard, BorderLayout.CENTER);
 
         installKeys();
+        installFocusBorder();
         area.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             public void insertUpdate(javax.swing.event.DocumentEvent e) { updateEnabledState(); }
             public void removeUpdate(javax.swing.event.DocumentEvent e) { updateEnabledState(); }
@@ -177,6 +195,43 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private void installKeys() {
         area.setOnSend(() -> doSend(null));
         area.setHistory(session::historyPrev, session::historyNext);
+    }
+
+    /**
+     * Track whether the composer's text area owns the keyboard focus, so the card can draw the
+     * focus ring. A {@code FocusListener} answers the direct case; the timer covers the code
+     * paths that move focus programmatically (Send, a Stop click, or a prompt answer).
+     */
+    private void installFocusBorder() {
+        java.awt.event.FocusAdapter focus = new java.awt.event.FocusAdapter() {
+            @Override public void focusGained(java.awt.event.FocusEvent e) { scheduleRefreshComposerFocus(); }
+            @Override public void focusLost(java.awt.event.FocusEvent e) { scheduleRefreshComposerFocus(); }
+        };
+        area.addFocusListener(focus);
+    }
+
+    void scheduleRefreshComposerFocus() {
+        if (focusBorderTimer != null) focusBorderTimer.restart();
+        else refreshComposerFocus();
+    }
+
+    private void refreshComposerFocus() {
+        boolean focused = area != null && area.isFocusOwner();
+        Color next = focused ? focusAccent() : null;
+        boolean changed = (next == null) != (composerFocusBorder == null)
+                || (next != null && !next.equals(composerFocusBorder));
+        composerFocusBorder = next;
+        if (changed && composerCard != null) {
+            composerCard.repaint();
+        }
+    }
+
+    /** The accent a focused component draws: the LAF's own, or the one the Send button uses. */
+    private Color focusAccent() {
+        Color accent = javax.swing.UIManager.getColor("Component.focusColor");
+        if (accent == null) accent = javax.swing.UIManager.getColor("Component.accentColor");
+        if (accent == null) accent = new Color(45, 115, 205);
+        return accent;
     }
 
     // ── prompt ────────────────────────────────────────────────────────────────
@@ -265,6 +320,23 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         if (line.isEmpty()) {
             return;
         }
+        // A directive is not a message. Route it to the engine as a statement now — even while
+        // the agent is mid-turn — instead of letting it fall through to the queue, where it would
+        // be delivered as a prompt and answered by the model (the "/model read as a prompt" bug).
+        if (NaruSessionModel.isDirective(line)) {
+            String failure = session.submitDirective(line);
+            if (failure != null) {
+                DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Directive", failure);
+            } else {
+                area.clearForSend();
+            }
+            updateEnabledState();
+            SwingUtilities.invokeLater(() -> {
+                if (area.isShowing()) area.requestFocusInWindow();
+                scheduleRefreshComposerFocus();
+            });
+            return;
+        }
         boolean accepted;
         if (r != null) {
             clearPrompt();
@@ -292,6 +364,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         // the enabled-state update so the next keystroke always goes back to the composer.
         SwingUtilities.invokeLater(() -> {
             if (area.isShowing()) area.requestFocusInWindow();
+            scheduleRefreshComposerFocus();
         });
     }
 
@@ -389,6 +462,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         boolean canQueue = session.isRunning() && task != null && !task.isCompleted();
         area.setEnabled(session.isRunning());
         boolean hasText = !area.composerText().isBlank();
+        boolean directive = hasText && NaruSessionModel.isDirective(area.composerText());
         boolean busy = false;
         try { busy = foreground != null && !foreground.isCompleted()
                 && foreground.status() == net.thevpc.naru.api.scheduler.NaruTaskStatus.RUNNING; }
@@ -399,18 +473,23 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         // itself, so live output counts as busy too: that is what turns Send into Stop while
         // the agent is still writing.
         if (!busy && canQueue && session.isStreamingOutput()) busy = true;
-        if (can) composerAction = ComposerAction.SEND;
+        // A directive runs against the conversation whether or not it is busy, so it gets its own
+        // action rather than being mistaken for something to enqueue.
+        if (directive && session.isRunning()) composerAction = ComposerAction.RUN;
+        else if (can) composerAction = ComposerAction.SEND;
         else if (busy && !hasText) composerAction = ComposerAction.STOP;
         else if (canQueue && hasText) composerAction = ComposerAction.ENQUEUE;
         else composerAction = ComposerAction.DISABLED;
         send.setEnabled(composerAction != ComposerAction.DISABLED);
         send.setText(switch (composerAction) {
+            case RUN -> "▶ Run";
             case SEND -> "➤ Send";
             case ENQUEUE -> "Enqueue";
             case STOP -> "■ Stop";
             case DISABLED -> "➤ Send";
         });
         send.setToolTipText(switch (composerAction) {
+            case RUN -> "Run this directive on the conversation now";
             case SEND -> "Send to the task waiting for input";
             case ENQUEUE -> "Queue this message for the task's next prompt";
             case STOP -> "Stop the current statement and return to interactive mode";
@@ -479,7 +558,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         model.setEnabled(true);
         model.putClientProperty("selectedModel", current);
         model.setText(current == null ? "Choose model…" : current.toString());
-        model.setToolTipText(modelInfos.size() + " models exposed by providers registered for this session");
+        String absent = absentProvidersSummary();
+        model.setToolTipText(modelInfos.size() + " models exposed by providers registered for this session"
+                + (absent == null ? "" : " · " + absent));
     }
 
     private void chooseModel() {
@@ -531,7 +612,21 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         JPanel filters = new JPanel(new BorderLayout(5,5)); filters.add(filter,BorderLayout.NORTH);
         JPanel facets=new JPanel(new FlowLayout(FlowLayout.LEFT,5,0)); facets.add(provider);facets.add(source);facets.add(capability);filters.add(facets,BorderLayout.SOUTH);
         JPanel titleAndSort = new JPanel(new BorderLayout(5,0)); titleAndSort.add(new JLabel("Models available in this session"),BorderLayout.CENTER); titleAndSort.add(sort,BorderLayout.EAST);
-        top.add(titleAndSort, BorderLayout.NORTH); top.add(filters, BorderLayout.SOUTH);
+        top.add(titleAndSort, BorderLayout.NORTH);
+        String absent = absentProvidersSummary();
+        if (absent != null) {
+            // A provider with an empty catalog is simply not in the list above, so a user whose
+            // remote models are gone cannot tell "no key" from "not installed". Say which
+            // providers are registered but contributed nothing, and why.
+            JLabel note = new JLabel("<html><small>" + absent + "</small></html>");
+            note.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
+            note.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
+            JPanel north = new JPanel(new BorderLayout());
+            north.add(titleAndSort, BorderLayout.NORTH);
+            north.add(note, BorderLayout.SOUTH);
+            top.add(north, BorderLayout.NORTH);
+        }
+        top.add(filters, BorderLayout.SOUTH);
         java.awt.event.ActionListener refilter=e->{String q=filter.getText();filter.setText(q+" ");filter.setText(q);};
         provider.addActionListener(refilter);source.addActionListener(refilter);capability.addActionListener(refilter);sort.addActionListener(refilter);
         body.add(top, BorderLayout.NORTH); body.add(new JScrollPane(list), BorderLayout.CENTER); body.add(select, BorderLayout.SOUTH);
@@ -543,6 +638,38 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         var registration=registration(info.provider());
         try { return registration!=null && Boolean.TRUE.equals(registration.booleanValue("free").orNull()); }
         catch(RuntimeException ignored) { return false; }
+    }
+
+    /**
+     * One line naming the providers that are registered but contributed no model to the catalog,
+     * with the reason each gives. Null when every provider either listed models or has nothing to
+     * report, so the common case adds no noise.
+     */
+    private String absentProvidersSummary() {
+        var current = session.session();
+        if (current == null) return null;
+        java.util.List<String> listed = new java.util.ArrayList<>();
+        for (var info : modelInfos) {
+            if (info.provider() != null) listed.add(info.provider().toLowerCase(java.util.Locale.ROOT));
+        }
+        java.util.List<String> notes = new java.util.ArrayList<>();
+        try {
+            for (var p : current.registry().modelProviders().values()) {
+                if (listed.contains(p.name().toLowerCase(java.util.Locale.ROOT))) continue;
+                if (!p.isEnabled()) {
+                    notes.add(p.name() + ": disabled");
+                    continue;
+                }
+                String why = p.statusMessage(current);
+                if (why != null && !why.isBlank()) {
+                    notes.add(p.name() + ": " + why);
+                }
+            }
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+        if (notes.isEmpty()) return null;
+        return "No models from — " + String.join("; ", notes);
     }
 
     private boolean isLocal(net.thevpc.naru.api.model.NaruModelInfo info) {
@@ -587,12 +714,16 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         send.setBackground(accent); send.setForeground(contrast(accent)); send.setOpaque(true);
         send.putClientProperty("JButton.buttonType", "roundRect");
         for (JButton b : new JButton[]{queued, attach}) b.putClientProperty("JButton.buttonType", "toolBarButton");
+        refreshComposerFocus();
         revalidate(); repaint();
     }
 
+    /** Whether the composer card is drawing its focus ring, for a gate run that has to see it. */
+    public boolean composerFocusRingVisible() { return composerFocusBorder != null; }
+
     @Override public void addNotify() {
         super.addNotify();
-        SwingUtilities.invokeLater(() -> { javax.swing.JRootPane root=SwingUtilities.getRootPane(this); if(root!=null) root.setDefaultButton(send); });
+        SwingUtilities.invokeLater(() -> { javax.swing.JRootPane root=SwingUtilities.getRootPane(this); if(root!=null) root.setDefaultButton(send); scheduleRefreshComposerFocus(); });
     }
 
     private static java.awt.Color contrast(java.awt.Color c) {
@@ -617,6 +748,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     public void dispose() {
         session.removeListener(this);
         session.setInputListener(null);
+        if (focusBorderTimer != null) focusBorderTimer.stop();
     }
 
     /**

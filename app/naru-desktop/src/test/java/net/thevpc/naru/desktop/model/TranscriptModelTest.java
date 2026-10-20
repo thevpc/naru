@@ -194,6 +194,37 @@ class TranscriptModelTest {
         });
     }
 
+    @Test
+    void theStoredAnswerBecomesTheStreamedBlockInsteadOfASecondOne() throws Exception {
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(new TranscriptEvent.Chunk("raw-1", NaruLogMode.MODEL_RESPONSE, "the ", false, 7)));
+            m.apply(List.of(new TranscriptEvent.Chunk("raw-1", NaruLogMode.MODEL_RESPONSE, "answer", true, 7)));
+            TranscriptBlock streamed = m.blocks().get(0);
+            assertFalse(streamed.isChatMessage(), "still the raw stream while it runs");
+
+            // the durable copy arrives with its own id; the streamed row is promoted, not doubled
+            m.apply(List.of(new TranscriptEvent.Message("stored-7", 7, 3,
+                    net.thevpc.naru.api.model.NaruMessage.assistant("the answer"))));
+            assertEquals(1, m.blocks().size(), "one block, not the raw plus the stored card");
+            assertEquals("raw-1", m.blocks().get(0).id(), "the block already on screen is the one kept");
+            assertTrue(m.blocks().get(0).isChatMessage(), "it is now the model's own card");
+            assertEquals("the answer\n", m.blocks().get(0).text(), "the streamed text is not appended a second time");
+        });
+    }
+
+    @Test
+    void anUnstreamedStoredAnswerStillGetsItsOwnCard() throws Exception {
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(new TranscriptEvent.Message("stored-7", 7, 3,
+                    net.thevpc.naru.api.model.NaruMessage.assistant("no stream for this one"))));
+            assertEquals(1, m.blocks().size());
+            assertEquals("stored-7", m.blocks().get(0).id());
+            assertTrue(m.blocks().get(0).isChatMessage());
+        });
+    }
+
     private static List<String> ids(List<TranscriptBlock> blocks) {
         List<String> out = new ArrayList<>();
         for (TranscriptBlock b : blocks) {

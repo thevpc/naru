@@ -867,6 +867,76 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     }
 
     /**
+     * Run a {@code /}-directive against the live conversation, the way the terminal does.
+     * <p>
+     * A directive is not a message: it is a statement for the engine to execute now. The
+     * terminal/host path parses the line on the <em>conversation task</em> so {@code /model use 3}
+     * sets the model on the task that is actually talking ({@code NaruModelDirective}), and the
+     * desktop has to do the same. Queuing it as a task message — which is what used to happen when
+     * no prompt was pending — deferred it to the next readline, so the agent answered the
+     * directive text as if it were a prompt. This runs it immediately whether or not the agent is
+     * mid-turn, and returns a failure description for the caller to show, or null on success.
+     */
+    public String submitDirective(String line) {
+        EDT.check("NaruSessionModel.submitDirective");
+        if (line == null || line.isBlank() || !isDirective(line)) {
+            return null;
+        }
+        NaruSession current = session;
+        if (current == null || closed) {
+            return "no open session";
+        }
+        NaruTask task = directiveTargetTask(current);
+        if (task == null) {
+            return "no task is available to run " + line.strip();
+        }
+        if (!line.isBlank()) {
+            rememberHistory(line);
+        }
+        echoUser(line, task.id());
+        try {
+            task.invokeDirective(line);
+        } catch (RuntimeException ex) {
+            String why = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+            notifyUser("directive failed: " + why);
+            refreshTasks();
+            fireChanged();
+            return why;
+        }
+        statusText = "ran " + line.strip();
+        refreshTasks();
+        fireChanged();
+        return null;
+    }
+
+    /** True for a line the engine would parse as a directive rather than a model turn. */
+    public static boolean isDirective(String line) {
+        if (line == null) return false;
+        String trimmed = line.stripLeading();
+        return trimmed.startsWith("/") && trimmed.length() > 1
+                && !Character.isWhitespace(trimmed.charAt(1));
+    }
+
+    /**
+     * The task a directive belongs to: the foreground conversation when there is one, so the
+     * change lands where the conversation is. A restored, idle session has no foreground task yet;
+     * the first task it does have takes it, which is the task the next turn will use.
+     */
+    private NaruTask directiveTargetTask(NaruSession current) {
+        try {
+            NaruTask foreground = current.findTask(current.foregroundTaskId()).orNull();
+            if (foreground != null) {
+                return foreground;
+            }
+            for (NaruTask task : current.tasks()) {
+                return task;
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return null;
+    }
+
+    /**
      * Show the answer in the transcript and hand it to the request. Public because the prompt
      * buttons answer a request the field did not come from, and the pending slot may already have
      * moved on by then.
