@@ -2,14 +2,19 @@ package net.thevpc.naru.desktop.ui;
 
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.registry.NaruLineCompletion;
+import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.desktop.model.InputPrompt;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.util.MsgText;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.DefaultListModel;
+import javax.swing.JDialog;
+import javax.swing.JList;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
+import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
@@ -41,63 +46,128 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private final ComposerArea area;
     private final ComposerSyntax syntax;
     private final JLabel reason = new JLabel(" ");
-    private final JButton send = new JButton("Send");
-    private final JComboBox<String> model = new JComboBox<>(new String[]{"Choose model…", "Default model", "Local model"});
+    private final JButton send = new JButton("➤ Send");
+    private final JButton queued = new JButton("Queued · 0");
+    private final JButton model = new JButton("⚡ Choose model…");
     private final JComboBox<String> agentMode = new JComboBox<>(new String[]{"Agent", "Ask", "Plan"});
-    private final JButton attach = new JButton("＋ Attach");
+    private final JCheckBox thinking = new JCheckBox("🧠 Thinking", true);
+    private final JButton attach = new JButton("📎 Attach");
     private final JPanel promptPanel = new JPanel(new BorderLayout());
     private final JLabel promptQuestion = new JLabel(" ");
     private final JPanel promptChoices = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
     private NaruInputRequest shownFor;
     private long selectedTaskId = -1;
+    private java.util.List<net.thevpc.naru.api.model.NaruModelInfo> modelInfos = java.util.List.of();
+    private net.thevpc.naru.api.agent.NaruSession modelCatalogSession;
+    private boolean modelCatalogLoading;
+    private enum ComposerAction { SEND, ENQUEUE, STOP, DISABLED }
+    private ComposerAction composerAction = ComposerAction.DISABLED;
 
     public InputPane(NaruSessionModel session) {
         super(new BorderLayout(6, 4));
         this.session = session;
         this.area = new ComposerArea(session::complete);
-        // the engine decides which word is a directive, an option, a path or a comment; this host only
-        // decides the hue of each, so the terminal and the composer cannot drift apart
         this.syntax = ComposerSyntax.install(area, session::session);
-        setBorder(BorderFactory.createEmptyBorder(6, 8, 8, 8));
+        setBorder(BorderFactory.createEmptyBorder(6, 10, 8, 10));
+
+        send.setFont(send.getFont().deriveFont(Font.BOLD, 12f));
+        send.putClientProperty("JButton.buttonType", "roundRect");
+        send.setMargin(new java.awt.Insets(4, 14, 4, 14));
+
+        queued.setMargin(new java.awt.Insets(2, 6, 2, 6));
+        queued.setFont(queued.getFont().deriveFont(Font.PLAIN, 11f));
+        queued.putClientProperty("JButton.buttonType", "toolBarButton");
+        queued.setVisible(false);
+
+        model.putClientProperty("JButton.buttonType", "roundRect");
+        model.setMargin(new java.awt.Insets(2, 8, 2, 8));
+        attach.putClientProperty("JButton.buttonType", "toolBarButton");
+        attach.setMargin(new java.awt.Insets(2, 6, 2, 6));
+
+        JPanel composerCard = new JPanel(new BorderLayout(0, 4)) {
+            @Override
+            protected void paintComponent(java.awt.Graphics g) {
+                java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+                g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                Color bg = javax.swing.UIManager.getColor("TextArea.background");
+                if (bg == null) bg = getBackground();
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 16, 16);
+                Color borderColor = javax.swing.UIManager.getColor("Component.borderColor");
+                if (borderColor == null) borderColor = new Color(200, 205, 215);
+                g2.setColor(borderColor);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 16, 16);
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        composerCard.setOpaque(false);
+        composerCard.setBorder(BorderFactory.createEmptyBorder(6, 10, 8, 10));
 
         JScrollPane scroller = new JScrollPane(area);
-        scroller.setBorder(BorderFactory.createLineBorder(getBackground().darker()));
+        scroller.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        scroller.setOpaque(false);
+        scroller.getViewport().setOpaque(false);
 
         promptPanel.setVisible(false);
+        promptPanel.setOpaque(false);
         promptQuestion.setFont(promptQuestion.getFont().deriveFont(Font.BOLD));
+        promptChoices.setOpaque(false);
         promptPanel.add(promptQuestion, BorderLayout.NORTH);
         promptPanel.add(promptChoices, BorderLayout.SOUTH);
 
         JPanel tools = new JPanel(new BorderLayout());
+        tools.setOpaque(false);
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        model.setToolTipText("Model selection · provider data will be connected here");
+        left.setOpaque(false);
+        model.setToolTipText("Choose the model for the selected task");
         agentMode.setToolTipText("Conversation mode · mode actions will be connected here");
         attach.setToolTipText("Attach files to this task conversation");
+        thinking.setToolTipText("Enable or disable thinking for the selected task");
+        thinking.setOpaque(false);
+        thinking.addActionListener(e -> {
+            NaruTask task = selectedTask();
+            if (task != null) task.setTaskEnv(net.thevpc.naru.api.model.NaruThinkingConfig.THINKING_KEY,
+                    thinking.isSelected());
+        });
         attach.addActionListener(e -> {
             javax.swing.JFileChooser chooser = new javax.swing.JFileChooser();
             chooser.setMultiSelectionEnabled(true);
             if (chooser.showOpenDialog(this) == javax.swing.JFileChooser.APPROVE_OPTION) {
-                attach.setText("＋ " + chooser.getSelectedFiles().length + " attached");
+                attach.setText("📎 " + chooser.getSelectedFiles().length + " attached");
             }
         });
         left.add(model);
         left.add(agentMode);
+        left.add(thinking);
         left.add(attach);
+        left.add(queued);
         tools.add(left, BorderLayout.WEST);
+
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        right.setOpaque(false);
         right.add(reason);
+        queued.addActionListener(e -> editQueue());
         send.addActionListener(this::doSend);
+        model.addActionListener(e -> chooseModel());
         right.add(send);
         tools.add(right, BorderLayout.EAST);
 
-        add(promptPanel, BorderLayout.NORTH);
-        add(scroller, BorderLayout.CENTER);
-        add(tools, BorderLayout.SOUTH);
+        composerCard.add(promptPanel, BorderLayout.NORTH);
+        composerCard.add(scroller, BorderLayout.CENTER);
+        composerCard.add(tools, BorderLayout.SOUTH);
+        add(composerCard, BorderLayout.CENTER);
 
         installKeys();
+        area.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { updateEnabledState(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { updateEnabledState(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { updateEnabledState(); }
+        });
         session.setInputListener(this::showPrompt);
         session.addListener(this);
         sessionModelChanged();
+        refreshThemePalette();
     }
 
     /**
@@ -177,46 +247,327 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     }
 
     private static String escape(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     // ── sending ───────────────────────────────────────────────────────────────
 
     private void doSend(ActionEvent e) {
+        if (composerAction == ComposerAction.STOP) {
+            String failure = session.interruptForegroundStatement();
+            if (failure != null) DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Stop statement", failure);
+            updateEnabledState();
+            area.requestFocusInWindow();
+            return;
+        }
         String line = area.composerText();
         NaruInputRequest r = shownFor;
         if (line.isEmpty()) {
             return;
         }
+        boolean accepted;
         if (r != null) {
             clearPrompt();
             session.echoAndDeliver(line, r);
-        } else {
+            accepted = true;
+        } else if (session.canAcceptInput() && session.pendingRequest() != null
+                && (selectedTaskId <= 0 || session.pendingRequest().task().id() == selectedTaskId)) {
             session.submit(line);
+            accepted = true;
+        } else {
+            accepted = queueDraft();
         }
-        area.clearForSend();
+        if (accepted) {
+            area.clearForSend();
+        } else {
+            // Never clear a message that no task accepted. The old path dropped it on the
+            // floor and looked exactly like a successful send.
+            String why = session.inputDisabledReason();
+            if (why == null) why = "no task is available to receive this message";
+            reason.setText("<html><i>" + escape(why) + "</i></html>");
+            reason.setForeground(new Color(180, 95, 60));
+        }
         updateEnabledState();
+        // Submission changes task state asynchronously; return focus after Swing has applied
+        // the enabled-state update so the next keystroke always goes back to the composer.
+        SwingUtilities.invokeLater(() -> {
+            if (area.isShowing()) area.requestFocusInWindow();
+        });
+    }
+
+    private boolean queueDraft() {
+        String draft = area.composerText();
+        NaruTask task = queueTargetTask();
+        if (draft.isBlank() || task == null) return false;
+        try {
+            task.queueMessage(draft);
+            // The queued line belongs in the conversation immediately. It will be delivered
+            // when the task next asks for input; noteQueued() also records the echo so the
+            // delivered copy is not drawn a second time.
+            session.noteQueued(draft, task.id());
+            updateEnabledState();
+            area.requestFocusInWindow();
+            return true;
+        } catch (RuntimeException ex) {
+            DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Message queue", String.valueOf(ex.getMessage()));
+            return false;
+        }
+    }
+
+    private void editQueue() {
+        NaruTask task = selectedTask();
+        if (task == null) return;
+        DefaultListModel<String> rows = new DefaultListModel<>();
+        task.queuedMessages().forEach(rows::addElement);
+        JList<String> list = new JList<>(rows);
+        list.setSelectionMode(javax.swing.ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+        list.setVisibleRowCount(8);
+        JButton edit = new JButton("Edit");
+        JButton remove = new JButton("Delete");
+        JButton merge = new JButton("Merge selected");
+        JDialog dialog = DesktopDialog.create(SwingUtilities.getWindowAncestor(this), "Queued messages");
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        actions.add(edit); actions.add(merge); actions.add(remove);
+        edit.addActionListener(e -> {
+            int i = list.getSelectedIndex(); if (i < 0) return;
+            String value = DesktopDialog.promptText(SwingUtilities.getWindowAncestor(this), "Edit queued message", "Message", rows.get(i));
+            if (value != null && !value.isBlank()) { task.editQueuedMessage(i, value); rows.set(i, value); updateEnabledState(); }
+        });
+        remove.addActionListener(e -> {
+            int[] selected = list.getSelectedIndices();
+            for (int i = selected.length - 1; i >= 0; i--) { task.deleteQueuedMessage(selected[i]); rows.remove(selected[i]); }
+            updateEnabledState();
+        });
+        merge.addActionListener(e -> {
+            int[] selected = list.getSelectedIndices();
+            if (selected.length < 2) return;
+            for (int i=1;i<selected.length;i++) if (selected[i] != selected[0] + i) {
+                DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Message queue", "Select adjacent messages to merge."); return;
+            }
+            task.mergeQueuedMessages(selected[0], selected[selected.length - 1]);
+            String merged = String.join("\n\n", java.util.Arrays.stream(selected).mapToObj(rows::get).toList());
+            for (int i=selected.length-1;i>=selected[0];i--) rows.remove(i);
+            rows.add(selected[0], merged); list.setSelectedIndex(selected[0]); updateEnabledState();
+        });
+        JPanel body=new JPanel(new BorderLayout(8,8)); body.setBorder(BorderFactory.createEmptyBorder(12,14,12,14));
+        JLabel hint=new JLabel("Queued messages are sent in order when this task next asks for input.");
+        body.add(hint,BorderLayout.NORTH);body.add(new JScrollPane(list),BorderLayout.CENTER);body.add(actions,BorderLayout.SOUTH);
+        DesktopDialog.setBody(dialog,body); DesktopDialog.showCentered(dialog,SwingUtilities.getWindowAncestor(this),560,360);
+    }
+
+    private NaruTask selectedTask() {
+        if (selectedTaskId >= 0 && session.session() != null) {
+            NaruTask t = session.session().findTask(selectedTaskId).orNull();
+            if (t != null) return t;
+        }
+        NaruInputRequest pending = session.pendingRequest();
+        if (pending != null) {
+            return pending.task();
+        }
+        return foregroundTask();
+    }
+
+    private NaruTask foregroundTask() {
+        var current = session.session();
+        if (current == null) return null;
+        try { return current.findTask(current.foregroundTaskId()).orNull(); }
+        catch (RuntimeException ignored) { return null; }
+    }
+
+    private NaruTask queueTargetTask() {
+        NaruTask selected = selectedTask();
+        return selected == null || selected.isCompleted() ? foregroundTask() : selected;
     }
 
     private void updateEnabledState() {
         String why = session.inputDisabledReason();
         NaruInputRequest pending = session.pendingRequest();
-        boolean matchesTask = pending != null && selectedTaskId == pending.task().id();
+        boolean matchesTask = pending != null && (selectedTaskId <= 0 || selectedTaskId == pending.task().id());
         boolean can = session.canAcceptInput() && matchesTask;
-        area.setEnabled(can);
-        send.setEnabled(can);
+        NaruTask task = queueTargetTask();
+        NaruTask foreground = foregroundTask();
+        boolean canQueue = session.isRunning() && task != null && !task.isCompleted();
+        area.setEnabled(session.isRunning());
+        boolean hasText = !area.composerText().isBlank();
+        boolean busy = false;
+        try { busy = foreground != null && !foreground.isCompleted()
+                && foreground.status() == net.thevpc.naru.api.scheduler.NaruTaskStatus.RUNNING; }
+        catch (RuntimeException ignored) { }
+        if (can) composerAction = ComposerAction.SEND;
+        else if (busy && !hasText) composerAction = ComposerAction.STOP;
+        else if (canQueue && hasText) composerAction = ComposerAction.ENQUEUE;
+        else composerAction = ComposerAction.DISABLED;
+        send.setEnabled(composerAction != ComposerAction.DISABLED);
+        send.setText(switch (composerAction) {
+            case SEND -> "➤ Send";
+            case ENQUEUE -> "Enqueue";
+            case STOP -> "■ Stop";
+            case DISABLED -> "➤ Send";
+        });
+        send.setToolTipText(switch (composerAction) {
+            case SEND -> "Send to the task waiting for input";
+            case ENQUEUE -> "Queue this message for the task's next prompt";
+            case STOP -> "Stop the current statement and return to interactive mode";
+            case DISABLED -> "Select a task that can accept or queue input";
+        });
+        send.setForeground(composerAction == ComposerAction.STOP
+                ? new Color(255, 255, 255) : null);
+        if (composerAction == ComposerAction.STOP) send.setBackground(new Color(190, 68, 68));
+        else refreshThemePalette();
+        int queueSize = task == null ? 0 : task.queuedMessages().size();
+        queued.setText("Queued · " + queueSize);
+        queued.setVisible(queueSize > 0);
+        queued.setEnabled(task != null);
         if (can) {
             reason.setText(" ");
         } else {
-            if (pending != null && !matchesTask) why = "Select task #" + pending.task().id() + " to answer its question";
+            if (canQueue) why = hasText ? "Agent is working. This message will be enqueued." : "Agent is working. Stop is available.";
+            else if (pending != null && !matchesTask) why = "Select task #" + pending.task().id() + " to answer its question";
             reason.setText("<html><i>" + escape(why) + "</i></html>");
-            reason.setForeground(new Color(180, 95, 60));
+            reason.setForeground(canQueue ? javax.swing.UIManager.getColor("Label.disabledForeground") : new Color(180, 95, 60));
+        }
+    }
+
+    private void applySelectedModel() {
+        var key = (net.thevpc.naru.api.model.NaruModelKey) model.getClientProperty("selectedModel");
+        if (key == null || selectedTaskId < 0 || session.session() == null) return;
+        var task = session.session().findTask(selectedTaskId).orNull();
+        if (task == null) return;
+        try {
+            task.setModel(new net.thevpc.naru.api.model.NaruModelConfig(key));
+        } catch (RuntimeException ex) {
+            DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Model", String.valueOf(ex.getMessage()));
         }
     }
 
     @Override
     public void sessionModelChanged() {
+        refreshModels();
         updateEnabledState();
+    }
+
+    private void refreshModels() {
+        if (session.session() == null) return;
+        var task = selectedTaskId < 0 ? null : session.session().findTask(selectedTaskId).orNull();
+        var current = task == null || task.model() == null ? null : task.model().key();
+        if (modelCatalogSession != session.session()) {
+            if (!modelCatalogLoading) {
+                modelCatalogLoading = true;
+                model.setEnabled(false); model.setText("Loading models…");
+                var owner = session.session();
+                new javax.swing.SwingWorker<java.util.List<net.thevpc.naru.api.model.NaruModelInfo>, Void>() {
+                    protected java.util.List<net.thevpc.naru.api.model.NaruModelInfo> doInBackground() {
+                        return java.util.List.copyOf(owner.registry().modelsInfos(owner));
+                    }
+                    protected void done() {
+                        modelCatalogLoading = false;
+                        if (session.session() != owner) return;
+                        try { modelInfos = get(); modelCatalogSession = owner; }
+                        catch (Exception ignored) { modelInfos = java.util.List.of(); modelCatalogSession = owner; }
+                        model.setEnabled(true); refreshModels();
+                    }
+                }.execute();
+            }
+            return;
+        }
+        model.setEnabled(true);
+        model.putClientProperty("selectedModel", current);
+        model.setText(current == null ? "Choose model…" : current.toString());
+        model.setToolTipText(modelInfos.size() + " models exposed by providers registered for this session");
+    }
+
+    private void chooseModel() {
+        if (modelCatalogLoading) return;
+        DefaultListModel<net.thevpc.naru.api.model.NaruModelInfo> rows = new DefaultListModel<>();
+        DefaultListModel<net.thevpc.naru.api.model.NaruModelInfo> all = new DefaultListModel<>();
+        modelInfos.forEach(info -> { rows.addElement(info); all.addElement(info); });
+        JList<net.thevpc.naru.api.model.NaruModelInfo> list = new JList<>(rows);
+        list.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+        list.setCellRenderer((l, value, index, selected, focus) -> {
+            var cap = value.capabilities();
+            String features = cap == null ? "" : String.join(" · ", java.util.stream.Stream.of(cap.isVision() ? "Vision" : null, cap.isTools() ? "Tools" : null, cap.isThinking() ? "Reasoning" : null).filter(java.util.Objects::nonNull).toList());
+            String context = cap == null || cap.contextLength() <= 0 ? "Context unknown" : String.format(java.util.Locale.ROOT, "%,d tokens", cap.contextLength());
+            String meta = String.join(" · ", java.util.stream.Stream.of(value.quantization(), value.parameterSize(), context, features, rateStatus(value.provider())).filter(s -> s != null && !s.isBlank()).toList());
+            JLabel label = new JLabel("<html><b>" + value.provider() + "/" + value.model() + "</b><br><small>" + meta + "</small></html>"); label.setOpaque(true);
+            label.setBackground(selected ? l.getSelectionBackground() : l.getBackground());
+            label.setForeground(selected ? l.getSelectionForeground() : l.getForeground());
+            label.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8)); return label;
+        });
+        javax.swing.JTextField filter = new javax.swing.JTextField();
+        filter.putClientProperty("JTextField.placeholderText", "Filter models available in this session…");
+        javax.swing.JComboBox<String> provider = new javax.swing.JComboBox<>(); provider.addItem("All providers");
+        modelInfos.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).distinct().sorted(String.CASE_INSENSITIVE_ORDER).forEach(provider::addItem);
+        javax.swing.JComboBox<String> sort = new javax.swing.JComboBox<>(new String[]{"Name", "Context size"});
+        javax.swing.JComboBox<String> source = new javax.swing.JComboBox<>(new String[]{"All sources", "Local", "Remote", "Free (declared)"});
+        javax.swing.JComboBox<String> capability = new javax.swing.JComboBox<>(new String[]{"All capabilities", "Vision", "Tools", "Reasoning", "Embeddings"});
+        JDialog dialog = DesktopDialog.create(SwingUtilities.getWindowAncestor(this), "Choose model");
+        filter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            private void apply() {
+                String q = filter.getText().trim().toLowerCase(java.util.Locale.ROOT); rows.clear();
+                java.util.List<net.thevpc.naru.api.model.NaruModelInfo> matches = new java.util.ArrayList<>();
+                for (int i=0;i<all.size();i++) { var x=all.get(i); String hay=x.toString()+" "+x.quantization()+" "+x.parameterSize()+" "+x.family()+" "+(x.capabilities()==null?"":x.capabilities().keys()); boolean providerMatch="All providers".equals(provider.getSelectedItem()) || java.util.Objects.equals(provider.getSelectedItem(),x.provider()); boolean sourceMatch=switch(String.valueOf(source.getSelectedItem())){case "Local"->isLocal(x);case "Remote"->!isLocal(x);case "Free (declared)"->isDeclaredFree(x);default->true;}; String cap=String.valueOf(capability.getSelectedItem()); boolean capMatch=switch(cap){case "Vision"->x.capabilities()!=null&&x.capabilities().isVision();case "Tools"->x.capabilities()!=null&&x.capabilities().isTools();case "Reasoning"->x.capabilities()!=null&&x.capabilities().isThinking();case "Embeddings"->x.capabilities()!=null&&x.capabilities().isEmbedding();default->true;}; if(providerMatch&&sourceMatch&&capMatch&&hay.toLowerCase(java.util.Locale.ROOT).contains(q)) matches.add(x); }
+                if ("Context size".equals(sort.getSelectedItem())) matches.sort(java.util.Comparator.comparingLong((net.thevpc.naru.api.model.NaruModelInfo x)->x.capabilities()==null?0:x.capabilities().contextLength()).reversed()); else matches.sort(java.util.Comparator.comparing(x->x.provider()+"/"+x.model(),String.CASE_INSENSITIVE_ORDER));
+                matches.forEach(rows::addElement);
+            }
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { apply(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { apply(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { apply(); }
+        });
+        JButton select = new JButton("Use model");
+        select.addActionListener(e -> {
+            var value = list.getSelectedValue();
+            if (value != null) { model.putClientProperty("selectedModel", value.key()); model.setText(value.key().toString()); applySelectedModel(); }
+            dialog.dispose();
+        });
+        list.addMouseListener(new java.awt.event.MouseAdapter() { public void mouseClicked(java.awt.event.MouseEvent e) { if (e.getClickCount() == 2) select.doClick(); } });
+        JPanel body = new JPanel(new BorderLayout(6, 6)); body.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        JPanel top = new JPanel(new BorderLayout(0, 6));
+        JPanel filters = new JPanel(new BorderLayout(5,5)); filters.add(filter,BorderLayout.NORTH);
+        JPanel facets=new JPanel(new FlowLayout(FlowLayout.LEFT,5,0)); facets.add(provider);facets.add(source);facets.add(capability);filters.add(facets,BorderLayout.SOUTH);
+        JPanel titleAndSort = new JPanel(new BorderLayout(5,0)); titleAndSort.add(new JLabel("Models available in this session"),BorderLayout.CENTER); titleAndSort.add(sort,BorderLayout.EAST);
+        top.add(titleAndSort, BorderLayout.NORTH); top.add(filters, BorderLayout.SOUTH);
+        java.awt.event.ActionListener refilter=e->{String q=filter.getText();filter.setText(q+" ");filter.setText(q);};
+        provider.addActionListener(refilter);source.addActionListener(refilter);capability.addActionListener(refilter);sort.addActionListener(refilter);
+        body.add(top, BorderLayout.NORTH); body.add(new JScrollPane(list), BorderLayout.CENTER); body.add(select, BorderLayout.SOUTH);
+        DesktopDialog.setBody(dialog, body);
+        DesktopDialog.showCentered(dialog, SwingUtilities.getWindowAncestor(this), 560, 480);
+    }
+
+    private boolean isDeclaredFree(net.thevpc.naru.api.model.NaruModelInfo info) {
+        var registration=registration(info.provider());
+        try { return registration!=null && Boolean.TRUE.equals(registration.booleanValue("free").orNull()); }
+        catch(RuntimeException ignored) { return false; }
+    }
+
+    private boolean isLocal(net.thevpc.naru.api.model.NaruModelInfo info) {
+        String p=String.valueOf(info.provider()).toLowerCase(java.util.Locale.ROOT);
+        if(p.contains("ollama")||p.contains("local")||p.contains("lmstudio")||p.contains("llamacpp")) return true;
+        var r=registration(info.provider()); if(r==null) return false;
+        try { if(Boolean.TRUE.equals(r.booleanValue("local").orNull())) return true; } catch(RuntimeException ignored) {}
+        for(String key:new String[]{"url","baseUrl","endpoint","host"}) try {
+            String v=r.stringValue(key).orNull(); if(v!=null){String x=v.toLowerCase(java.util.Locale.ROOT);if(x.contains("localhost")||x.contains("127.0.0.1")||x.contains("::1"))return true;}
+        } catch(RuntimeException ignored) {}
+        return false;
+    }
+
+    private net.thevpc.naru.api.model.NaruModelRegistration registration(String provider) {
+        try { return session.session()==null?null:session.session().registrations().get(provider); }
+        catch(RuntimeException ignored) { return null; }
+    }
+
+    private String rateStatus(String provider) {
+        for(var info:session.providerRateLimits()) if(java.util.Objects.equals(info.providerName(),provider)) {
+            for(var bucket:info.tokenBuckets()) {
+                Integer limit=bucket.getLimit().orNull(), remaining=bucket.getRemaining().orNull();
+                if(limit!=null&&remaining!=null&&limit>0) {
+                    if(remaining==0) return "Rate limited";
+                    int used=100-(int)Math.round(100d*remaining/limit);
+                    return "Quota "+used+"% used";
+                }
+            }
+            var retry=info.retryAfter().orNull(); if(retry!=null) return "Retry after "+retry;
+        }
+        return "";
     }
 
     /** Prompt the user to look at the transcript when output stops mid-turn. */
@@ -224,10 +575,35 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         area.requestFocusInWindow();
     }
 
+    public void refreshThemePalette() {
+        java.awt.Color accent = javax.swing.UIManager.getColor("Component.accentColor");
+        if (accent == null) accent = new java.awt.Color(45, 115, 205);
+        send.setBackground(accent); send.setForeground(contrast(accent)); send.setOpaque(true);
+        send.putClientProperty("JButton.buttonType", "roundRect");
+        for (JButton b : new JButton[]{queued, attach}) b.putClientProperty("JButton.buttonType", "toolBarButton");
+        revalidate(); repaint();
+    }
+
+    @Override public void addNotify() {
+        super.addNotify();
+        SwingUtilities.invokeLater(() -> { javax.swing.JRootPane root=SwingUtilities.getRootPane(this); if(root!=null) root.setDefaultButton(send); });
+    }
+
+    private static java.awt.Color contrast(java.awt.Color c) {
+        return c.getRed()*299+c.getGreen()*587+c.getBlue()*114 > 145000 ? java.awt.Color.BLACK : java.awt.Color.WHITE;
+    }
+
+    public ComposerArea composer() { return area; }
+
     public void setSelectedTaskId(long taskId) {
         selectedTaskId = taskId;
+        NaruTask task = selectedTask();
+        thinking.setEnabled(task != null);
+        thinking.setSelected(task == null || net.thevpc.naru.api.model.NaruThinkingConfig.find(task)
+                .orElse(Boolean.TRUE));
+        refreshModels();
         NaruInputRequest pending = session.pendingRequest();
-        if (pending != null && pending.task().id() == taskId) showPrompt(pending);
+        if (pending != null && (taskId <= 0 || pending.task().id() == taskId)) showPrompt(pending);
         else if (shownFor != null) clearPrompt();
         updateEnabledState();
     }

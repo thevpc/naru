@@ -300,7 +300,26 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
         } else if (user != null) {
             session.user(user);
         }
-        if (task != null) {
+        // A caller that names a session means it: the id is how a restored conversation is
+        // found again, and how a host addresses the same session across two processes. It
+        // used to be honoured only on the handle path, so a plain build() with an id minted
+        // a fresh random uuid and a restore then looked for a session that was never there.
+        boolean resumed = false;
+        if (id != null && !id.isBlank()) {
+            NaruSessionScope useScope = scope == null ? NaruSessionScope.PRIVATE : scope;
+            NaruSessionStore useStore = store == null ? session.rawSessionStore() : store;
+            if (useStore.exists(id, useScope)) {
+                session.loadStored(id, useScope);
+                resumed = true;
+            } else {
+                session.initializeHandleId(id, useScope);
+            }
+        }
+        // The configured task belongs to a session being created. A session hydrated from the
+        // store already has its own task tree; seeding another here would put a fresh
+        // interactive task next to the restored one and make every reopen look like a new
+        // session, which is exactly the bug the desktop's restore path tripped over.
+        if (task != null && !resumed) {
             // the task is its own builder, so the mode is set on the handle rather than
             // on the spec
             NaruTask handle = session.newTask(task);

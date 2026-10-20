@@ -1,0 +1,78 @@
+package net.thevpc.naru.desktop.ui;
+
+import javax.swing.BorderFactory;
+import javax.swing.DefaultListCellRenderer;
+import javax.swing.JComboBox;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JPanel;
+import javax.swing.JSlider;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.IntConsumer;
+
+/** Full-client-area settings surface. Categories are a stable home for future preferences. */
+public final class SettingsPane extends JPanel {
+    public record Theme(String name, String className) {
+        @Override public String toString() { return name; }
+    }
+
+    public static final List<Theme> THEMES = List.of(
+            new Theme("FlatLaf Light", "com.formdev.flatlaf.FlatLightLaf"),
+            new Theme("FlatLaf Dark", "com.formdev.flatlaf.FlatDarkLaf"),
+            new Theme("FlatLaf IntelliJ", "com.formdev.flatlaf.FlatIntelliJLaf"),
+            new Theme("FlatLaf Darcula", "com.formdev.flatlaf.FlatDarculaLaf"),
+            new Theme("FlatLaf Mac Light", "com.formdev.flatlaf.themes.FlatMacLightLaf"),
+            new Theme("FlatLaf Mac Dark", "com.formdev.flatlaf.themes.FlatMacDarkLaf"));
+
+    public SettingsPane(String selectedTheme, Consumer<String> onThemeChanged, int selectedFontScale, IntConsumer onFontScaleChanged, Runnable back) {
+        super(new BorderLayout());
+        setBorder(BorderFactory.createEmptyBorder(22, 26, 24, 26));
+        JPanel header = new JPanel(new BorderLayout());
+        JLabel title = new JLabel("Settings"); title.setFont(title.getFont().deriveFont(Font.BOLD, 24f));
+        javax.swing.JButton close = new javax.swing.JButton("←  Back to workspace"); close.setMargin(new java.awt.Insets(7,14,7,14)); close.setMinimumSize(new java.awt.Dimension(190,36)); close.addActionListener(e -> back.run());
+        header.add(title, BorderLayout.WEST); header.add(close, BorderLayout.EAST);
+        add(header, BorderLayout.NORTH);
+
+        JPanel navigation = new JPanel(new BorderLayout());
+        JList<String> sections = new JList<>(new String[]{"Appearance", "Input & shortcuts", "Workspace"});
+        sections.setSelectedIndex(0); sections.setFixedCellHeight(38); sections.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+        navigation.add(sections, BorderLayout.NORTH); navigation.setPreferredSize(new java.awt.Dimension(210, 100));
+
+        JPanel appearance = new JPanel(new BorderLayout(10, 12));
+        Color borderColor = javax.swing.UIManager.getColor("Component.borderColor");
+        appearance.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(borderColor == null ? new Color(120,120,120) : borderColor),
+                BorderFactory.createEmptyBorder(20, 22, 22, 22)));
+        JLabel heading = new JLabel("Appearance"); heading.setFont(heading.getFont().deriveFont(Font.BOLD, 18f));
+        JLabel copy = new JLabel("Choose a comfortable theme. NARU remembers your choice for the next launch.");
+        JComboBox<Theme> theme = new JComboBox<>(THEMES.toArray(Theme[]::new));
+        theme.setEditable(false); theme.setPreferredSize(new java.awt.Dimension(310, 36));
+        theme.setRenderer(new DefaultListCellRenderer() {
+            @Override public java.awt.Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                    boolean selected, boolean focus) {
+                super.getListCellRendererComponent(list, value, index, selected, focus);
+                setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8)); return this;
+            }
+        });
+        for (Theme t : THEMES) if (t.className().equals(selectedTheme)) theme.setSelectedItem(t);
+        theme.addActionListener(e -> { Theme t = (Theme) theme.getSelectedItem(); if (t != null) onThemeChanged.accept(t.className()); });
+        JPanel selector = new JPanel(new BorderLayout(0,16));
+        JPanel themeRow=new JPanel(new BorderLayout(18,0)); themeRow.add(new JLabel("Theme"),BorderLayout.WEST); themeRow.add(theme,BorderLayout.CENTER);
+        JPanel fontRow=new JPanel(new BorderLayout(18,0));
+        JLabel fontLabel=new JLabel("Interface size · "+selectedFontScale+"%");
+        JSlider fontScale=new JSlider(80,150,selectedFontScale);fontScale.setName("naru-font-scale");fontScale.setMajorTickSpacing(10);fontScale.setMinorTickSpacing(5);fontScale.setPaintTicks(true);fontScale.setSnapToTicks(true);
+        fontScale.addChangeListener(e->{fontLabel.setText("Interface size · "+fontScale.getValue()+"%");if(!fontScale.getValueIsAdjusting())onFontScaleChanged.accept(fontScale.getValue());});
+        fontRow.add(fontLabel,BorderLayout.WEST);fontRow.add(fontScale,BorderLayout.CENTER);
+        selector.add(themeRow,BorderLayout.NORTH);selector.add(fontRow,BorderLayout.CENTER);
+        JPanel content = new JPanel(new BorderLayout(0, 14));
+        JPanel texts = new JPanel(new BorderLayout(0, 6)); texts.add(heading, BorderLayout.NORTH); texts.add(copy, BorderLayout.SOUTH);
+        content.add(texts, BorderLayout.NORTH); content.add(selector, BorderLayout.CENTER);
+        appearance.add(content, BorderLayout.NORTH);
+        JPanel page = new JPanel(new BorderLayout(22, 0)); page.add(navigation, BorderLayout.WEST); page.add(appearance, BorderLayout.CENTER);
+        add(page, BorderLayout.CENTER);
+    }
+}

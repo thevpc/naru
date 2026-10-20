@@ -9,6 +9,7 @@ import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.*;
+import net.thevpc.naru.api.store.NaruMessageStore;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.stmt.NaruStatement;
@@ -31,6 +32,14 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 public interface NaruTask extends NToElement {
+    /** Durable user messages waiting for the next input prompt on this task. */
+    default List<String> queuedMessages() { return List.of(); }
+    default NaruTask queueMessage(String message) { throw new UnsupportedOperationException("message queue is unavailable"); }
+    default NaruTask editQueuedMessage(int index, String message) { throw new UnsupportedOperationException("message queue is unavailable"); }
+    default NaruTask deleteQueuedMessage(int index) { throw new UnsupportedOperationException("message queue is unavailable"); }
+    default NaruTask mergeQueuedMessages(int first, int last) { throw new UnsupportedOperationException("message queue is unavailable"); }
+    /** Removes and returns the next queued message, or null when the queue is empty. */
+    default String pollQueuedMessage() { return null; }
     /**
      * Exit code reported when a task was killed rather than allowed to finish. Deliberately
      * the conventional 130: a host reading exit codes should not have to know this enum.
@@ -306,6 +315,11 @@ public interface NaruTask extends NToElement {
      * @return an unmodifiable snapshot; mutate the task through its history methods
      */
     List<NaruMessage> history();
+
+    /** Durable, cursor-queryable messages for this task. */
+    default NaruMessageStore messages() {
+        throw new UnsupportedOperationException("durable message store is unavailable");
+    }
 
     /**
      * The context view: history minus the items an active summary stands in for, with each

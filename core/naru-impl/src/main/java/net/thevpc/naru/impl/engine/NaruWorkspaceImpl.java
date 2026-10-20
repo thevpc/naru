@@ -71,6 +71,14 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
      * two sessions started at once.
      */
     private final Set<NaruSession> sessions = new CopyOnWriteArraySet<>();
+    /**
+     * The saved-session catalog, built on first use and rebuilt when the project changes.
+     * Guarded by {@code this} rather than being volatile-only: two readers racing to build
+     * it would otherwise create two handles to the same folder, which is the duplication
+     * this class exists to prevent.
+     */
+    private NaruSessionStoreManager sessionCatalog;
+    private NPath catalogProjectDirectory;
     private final Object signal = new Object();
     private volatile Thread maintenanceThread;
     private final ExecutorService STOP_THE_WORLD_EXECUTOR =
@@ -418,6 +426,29 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     @Override
     public List<NaruSession> sessions() {
         return List.copyOf(sessions);
+    }
+
+    /**
+     * The saved catalog, one per workspace.
+     * <p>
+     * Rebuilt whenever the project directory changes, because the catalog is disk state
+     * rooted at that directory: keeping the old one would list the previous project's
+     * sessions under the new project's name. Held otherwise, so every reader shares one
+     * handle and a delete always hits the row that was listed.
+     */
+    @Override
+    public NaruSessionStoreManager sessionCatalog() {
+        NaruSessionStoreManager current = sessionCatalog;
+        if (current != null && catalogProjectDirectory == projectDirectory) {
+            return current;
+        }
+        synchronized (this) {
+            if (sessionCatalog == null || catalogProjectDirectory != projectDirectory) {
+                sessionCatalog = new NaruWorkspaceSessionCatalog(this);
+                catalogProjectDirectory = projectDirectory;
+            }
+            return sessionCatalog;
+        }
     }
 
     @Override

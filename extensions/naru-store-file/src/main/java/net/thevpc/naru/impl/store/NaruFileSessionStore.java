@@ -382,6 +382,54 @@ public class NaruFileSessionStore implements NaruSessionStore {
     }
 
     @Override
+    public NaruMessagePage queryMessages(String uuid, NaruSessionScope scope, long taskId,
+                                          NaruMessageQuery query) {
+        NPath taskDir = taskDir(rootOf(scope).resolve(uuid), taskId);
+        NPath taskFile = taskDir.resolve("task.tson");
+        if (!NaruFileIo.isFile(taskFile)) return new NaruMessagePage(List.of(), null, null, false);
+        NElement task = read(taskFile);
+        NElement history = task.asObject().get().get("history").orNull();
+        // Legacy inline histories need their existing migration read path.
+        if (history != null && history.isAnyArray()) {
+            for (NElement item : history.asArray().get()) if (!item.isString()) {
+                return NaruSessionStore.super.queryMessages(uuid, scope, taskId, query);
+            }
+        }
+        List<String> ids = new ArrayList<>();
+        if (history != null && history.isAnyArray()) {
+            for (NElement item : history.asArray().get()) {
+                String id = item.asStringValue().orNull();
+                if (id != null) ids.add(id);
+            }
+        }
+        ids.sort(Comparator.comparingLong(NaruFileSessionStore::messageSequence));
+        if (query.direction() == NaruMessageQueryDirection.BACKWARD) java.util.Collections.reverse(ids);
+        long cursor = query.cursor() == null ? Long.MIN_VALUE : messageSequence(query.cursor());
+        List<NaruStoredMessage> selected = new ArrayList<>();
+        NPath historyDir = taskDir.resolve("history");
+        boolean more = false;
+        for (String id : ids) {
+            long sequence = messageSequence(id);
+            if (query.cursor() != null && (query.direction() == NaruMessageQueryDirection.FORWARD
+                    ? sequence <= cursor : sequence >= cursor)) continue;
+            NPath file = historyFile(historyDir, id);
+            if (!NaruFileIo.isFile(file)) continue;
+            NaruMessage message = NaruMessage.of(read(file));
+            if (message == null || (!query.roles().isEmpty() && !query.roles().contains(message.getRole()))) continue;
+            if (selected.size() == query.limit()) { more = true; break; }
+            selected.add(new NaruStoredMessage(id, sequence, message));
+        }
+        String next = selected.isEmpty() ? null : selected.get(selected.size() - 1).id();
+        String previous = selected.isEmpty() ? null : selected.get(0).id();
+        return new NaruMessagePage(selected, next, previous, more);
+    }
+
+    private static long messageSequence(String id) {
+        try { return Long.parseLong(id); }
+        catch (RuntimeException ignored) { return id.hashCode() & 0x7fffffffL; }
+    }
+
+    @Override
     public List<Long> taskIds(String uuid, NaruSessionScope scope) {
         List<Long> ids = new ArrayList<>();
         for (NPath dir : NaruFileIo.children(rootOf(scope).resolve(uuid).resolve("tasks"))) {

@@ -1,7 +1,6 @@
 package net.thevpc.naru.desktop;
 
 import net.thevpc.naru.api.agent.NaruWorkspace;
-import net.thevpc.naru.api.agent.NaruWorkspaceBuilder;
 import net.thevpc.naru.desktop.host.InteractionHost;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.ui.InputPane;
@@ -10,13 +9,16 @@ import net.thevpc.naru.desktop.ui.TaskPane;
 import net.thevpc.naru.desktop.ui.ToolsPane;
 import net.thevpc.naru.desktop.ui.TranscriptPane;
 import net.thevpc.naru.desktop.ui.WorkbenchPane;
+import net.thevpc.naru.desktop.ui.SettingsPane;
 import net.thevpc.naru.desktop.ui.InspectorPane;
+import net.thevpc.naru.desktop.ui.TextAreas;
 import net.thevpc.nuts.io.NPath;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JProgressBar;
 import javax.swing.JButton;
 import javax.swing.JList;
 import javax.swing.JMenu;
@@ -27,7 +29,9 @@ import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.FlowLayout;
 import java.awt.Point;
 import java.awt.Cursor;
@@ -55,9 +59,17 @@ public final class MainWindow extends JFrame {
 
 
     private final JPanel center = new JPanel(new BorderLayout());
-    private final DefaultListModel<SessionEntry> sessionRows = new DefaultListModel<>();
+    private DefaultListModel<SessionEntry> sessionRows = new DefaultListModel<>();
     private final JList<SessionEntry> sessionList = new JList<>(sessionRows);
+    private final javax.swing.JTextField sessionFilter = new javax.swing.JTextField();
     private final List<SessionEntry> sessions = new ArrayList<>();
+    /**
+     * Projects whose saved catalog has already been loaded into the sidebar. The catalog is
+     * disk state that does not change while the desktop runs, so reading it twice would only
+     * risk listing the same session twice.
+     */
+    private final java.util.Set<String> catalogLoadedProjects = new java.util.HashSet<>();
+    private NPath projectDirectory;
 
     private TranscriptPane transcript;
     private TranscriptPane sessionLogPane;
@@ -75,22 +87,32 @@ public final class MainWindow extends JFrame {
     private int nextSessionNumber = 1;
     private final JLabel taskScopeHeader = new JLabel("No task selected");
     private NaruSessionModel.Listener selectionSync;
+    private NaruSessionModel.Listener loadingListener;
+    private NaruSessionModel.Listener sessionListSync;
+    private boolean sessionFilterBound;
+    private long sessionSwitchGeneration;
+    private JPanel loadingPanel;
+    private JLabel loadingLabel;
 
     public MainWindow() {
         super("NARU");
         setUndecorated(true);
+        java.net.URL icon = MainWindow.class.getResource("/net/thevpc/naru/desktop/naru.png");
+        if (icon != null) setIconImage(new javax.swing.ImageIcon(icon).getImage());
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         setLayout(new BorderLayout());
         add(topBar(), BorderLayout.NORTH);
         add(center, BorderLayout.CENTER);
+        installLoadingOverlay();
+        installNavigationKeys();
         installResizeSupport();
         addWelcome();
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
                 disposeSessionViews();
-                for (SessionEntry entry : sessions) entry.model.shutdown();
-                dispose();
+                for (SessionEntry entry : sessions) if (entry.model != null) entry.model.shutdown();
+                                dispose();
                 // the engine holds worker threads; an explicit exit is the honest shutdown here
                 System.exit(0);
             }
@@ -98,7 +120,53 @@ public final class MainWindow extends JFrame {
         sessionList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 SessionEntry item = sessionList.getSelectedValue();
-                if (item != null && item.model != session) activateSession(item);
+                // Selecting a hibernated row is intentionally inert. Users may want to
+                // rename or delete it without starting its engine; opening is a separate action.
+                if (item != null && item.model != null && item.model != session) {
+                    long generation = ++sessionSwitchGeneration;
+                    showLoading("Opening " + item.toString() + "…");
+                    Timer switchDelay = new Timer(70, event -> {
+                        if (generation == sessionSwitchGeneration) activateSession(item);
+                    });
+                    switchDelay.setRepeats(false); switchDelay.start();
+                } else if (item != null && item.model == null) {
+                    ++sessionSwitchGeneration;
+                    showHibernatedSession(item);
+                }
+            }
+        });
+        sessionList.getInputMap().put(javax.swing.KeyStroke.getKeyStroke("F2"), "rename-session");
+        sessionList.getActionMap().put("rename-session", new javax.swing.AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) { renameSelectedSession(); }
+        });
+        sessionList.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2 && sessionList.locationToIndex(e.getPoint()) >= 0) {
+                    SessionEntry entry = sessionList.getSelectedValue();
+                    if (entry != null) activateSession(entry);
+                }
+            }
+            @Override public void mousePressed(MouseEvent e) { showMenu(e); }
+            @Override public void mouseReleased(MouseEvent e) { showMenu(e); }
+            private void showMenu(MouseEvent e) {
+                if (!e.isPopupTrigger()) return;
+                int row = sessionList.locationToIndex(e.getPoint());
+                if (row < 0) return;
+                sessionList.setSelectedIndex(row);
+                javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
+                SessionEntry entry = sessionList.getSelectedValue();
+                javax.swing.JMenuItem openClose = new javax.swing.JMenuItem(entry.isOpen() ? "Hibernate session" : "Open session");
+                openClose.addActionListener(x -> {
+                    if (entry.isOpen()) hibernateSession(entry);
+                    else activateSession(entry);
+                });
+                menu.add(openClose);
+                javax.swing.JMenuItem rename = new javax.swing.JMenuItem("Rename session…");
+                rename.addActionListener(x -> renameSelectedSession()); menu.add(rename);
+                menu.addSeparator();
+                javax.swing.JMenuItem delete = new javax.swing.JMenuItem("Delete session…");
+                delete.addActionListener(x -> deleteSession(entry)); menu.add(delete);
+                menu.show(sessionList, e.getX(), e.getY());
             }
         });
     }
@@ -109,40 +177,165 @@ public final class MainWindow extends JFrame {
         JMenu file = new JMenu("File");
         JMenuItem newSession = new JMenuItem("New session…");
         newSession.addActionListener(e -> createSession());
-        JMenuItem close = new JMenuItem("Close session");
+        JMenuItem close = new JMenuItem("Hibernate session");
         close.addActionListener(e -> closeSession());
         JMenuItem exit = new JMenuItem("Exit");
         exit.addActionListener(e -> dispatchEvent(new WindowEvent(this, WindowEvent.WINDOW_CLOSING)));
         file.add(newSession); file.add(close); file.addSeparator(); file.add(exit);
         JMenu view = new JMenu("View");
         JMenuItem conversation = new JMenuItem("Conversation"); conversation.addActionListener(e -> selectSideTab("Conversation"));
-        JMenuItem log = new JMenuItem("Session log"); log.addActionListener(e -> selectSideTab("Session log"));
-        view.add(conversation); view.add(log);
+        JMenuItem log = new JMenuItem("Logs & trace"); log.addActionListener(e -> selectSideTab("Logs"));
+        JMenuItem focusComposer = new JMenuItem("Focus composer"); focusComposer.setAccelerator(javax.swing.KeyStroke.getKeyStroke("control L")); focusComposer.addActionListener(e -> { if (input != null) input.focusInput(); });
+        JMenuItem settingsPage = new JMenuItem("Settings…"); settingsPage.setAccelerator(javax.swing.KeyStroke.getKeyStroke("control COMMA")); settingsPage.addActionListener(e -> showSettings());
+        view.add(conversation); view.add(log); view.addSeparator(); view.add(focusComposer); view.add(settingsPage);
         JMenu sessionMenu = new JMenu("Session");
-        JMenuItem stop = new JMenuItem("Stop current session"); stop.addActionListener(e -> closeSession()); sessionMenu.add(stop);
+        JMenuItem openSelected = new JMenuItem("Open selected session"); openSelected.addActionListener(e -> {
+            SessionEntry selected = sessionList.getSelectedValue(); if (selected != null) activateSession(selected);
+        });
+        JMenuItem rename = new JMenuItem("Rename session…"); rename.addActionListener(e -> renameSelectedSession());
+        JMenuItem closeCurrent = new JMenuItem("Hibernate session"); closeCurrent.addActionListener(e -> closeSession());
+        JMenuItem deleteSelected = new JMenuItem("Delete selected session…"); deleteSelected.addActionListener(e -> deleteSession(sessionList.getSelectedValue()));
+        sessionMenu.add(openSelected); sessionMenu.add(rename); sessionMenu.add(closeCurrent); sessionMenu.add(deleteSelected);
         JMenu help = new JMenu("Help"); help.add(new JMenuItem("About NARU"));
         menus.add(file); menus.add(view); menus.add(sessionMenu); menus.add(help);
         shell.add(menus, BorderLayout.WEST);
+
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 4));
-        bar.add(activeSessionLabel);
-        JButton settings = new JButton("⚙"); settings.setToolTipText("Settings (coming soon)");
-        settings.addActionListener(e -> javax.swing.JOptionPane.showMessageDialog(this,
-                "Settings will be available here.", "Settings", javax.swing.JOptionPane.INFORMATION_MESSAGE));
-        bar.add(settings);
+        JPanel sessionPill = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 2)) {
+            @Override
+            protected void paintComponent(java.awt.Graphics g) {
+                java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+                g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                Color bg = javax.swing.UIManager.getColor("TextField.background");
+                if (bg == null) bg = getBackground();
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                Color border = javax.swing.UIManager.getColor("Component.borderColor");
+                if (border != null) {
+                    g2.setColor(border);
+                    g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
+                }
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        sessionPill.setOpaque(false);
+        sessionPill.setBorder(BorderFactory.createEmptyBorder(2, 10, 2, 10));
+        activeSessionLabel.setFont(activeSessionLabel.getFont().deriveFont(java.awt.Font.BOLD, 11.5f));
+        sessionPill.add(activeSessionLabel);
+        bar.add(sessionPill);
+
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 2));
+        JButton settings = new JButton("⚙"); settings.setToolTipText("Settings"); settings.getAccessibleContext().setAccessibleName("Settings");
+        settings.setFocusable(false); settings.setMargin(new java.awt.Insets(2, 7, 2, 7)); settings.putClientProperty("JButton.buttonType", "toolBarButton");
+        settings.addActionListener(e -> showSettings()); controls.add(settings);
+
         JButton min = new JButton("—"); min.setToolTipText("Minimize"); min.addActionListener(e -> setState(ICONIFIED));
         JButton max = new JButton("□"); max.setToolTipText("Maximize / restore"); max.addActionListener(e -> toggleMaximize());
         JButton quit = new JButton("×"); quit.setToolTipText("Close"); quit.addActionListener(e -> dispatchEvent(new WindowEvent(this, WindowEvent.WINDOW_CLOSING)));
-        controls.add(min); controls.add(max); controls.add(quit);
+        for (JButton b : new JButton[]{min, max, quit}) {
+            b.setFocusable(false);
+            b.putClientProperty("JButton.buttonType", "toolBarButton");
+            b.setMargin(new java.awt.Insets(2, 8, 2, 8));
+            controls.add(b);
+        }
+
         shell.add(bar, BorderLayout.CENTER); shell.add(controls, BorderLayout.EAST);
-        shell.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, java.awt.Color.GRAY));
+        java.awt.Color separator = javax.swing.UIManager.getColor("Component.borderColor");
+        if (separator == null) separator = javax.swing.UIManager.getColor("Separator.foreground");
+        shell.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, separator == null ? new Color(210, 215, 225) : separator));
         MouseAdapter drag = new MouseAdapter() {
             @Override public void mousePressed(MouseEvent e) { if (e.getButton()==MouseEvent.BUTTON1 && !maximized) { dragOffset=e.getLocationOnScreen(); Point p=getLocation(); dragOffset.translate(-p.x,-p.y); } }
             @Override public void mouseDragged(MouseEvent e) { if (dragOffset!=null && !maximized) { Point p=e.getLocationOnScreen(); setLocation(p.x-dragOffset.x,p.y-dragOffset.y); } }
             @Override public void mouseReleased(MouseEvent e) { dragOffset=null; }
+            @Override public void mouseClicked(MouseEvent e) { if (e.getClickCount() == 2 && e.getButton() == MouseEvent.BUTTON1) toggleMaximize(); }
         };
         installDrag(shell, drag);
         return shell;
+    }
+
+    private void installLoadingOverlay() {
+        loadingPanel = new JPanel(new java.awt.GridBagLayout());
+        loadingPanel.setOpaque(true);
+        JPanel card = new JPanel(new BorderLayout(12, 12));
+        card.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(javax.swing.UIManager.getColor("Component.borderColor")),
+                BorderFactory.createEmptyBorder(16, 20, 16, 20)));
+        loadingLabel = new JLabel("Loading…");
+        JProgressBar progress = new JProgressBar(); progress.setIndeterminate(true); progress.setPreferredSize(new java.awt.Dimension(240, 8));
+        card.add(loadingLabel, BorderLayout.NORTH); card.add(progress, BorderLayout.CENTER);
+        loadingPanel.add(card); loadingPanel.setVisible(false); setGlassPane(loadingPanel);
+    }
+
+    private void showLoading(String message) { loadingLabel.setText(message); refreshLoadingPalette(); loadingPanel.setVisible(true); }
+    private void hideLoading() { loadingPanel.setVisible(false); }
+
+    /** Reapply the active look-and-feel to UI pieces that use custom renderers or a glass pane. */
+    public void refreshThemePalette() {
+        TextAreas.refreshThemeColors(getContentPane());
+        java.awt.Color surface = javax.swing.UIManager.getColor("Panel.background");
+        if (surface != null) { center.setBackground(surface); loadingPanel.setBackground(surface); }
+        if (sessionList != null) {
+            sessionList.updateUI();
+            java.awt.Color listBg = javax.swing.UIManager.getColor("List.background");
+            if (listBg != null) sessionList.setBackground(listBg);
+        }
+        if (sessionFilter != null) {
+            sessionFilter.updateUI();
+            java.awt.Color fieldBg = javax.swing.UIManager.getColor("TextField.background");
+            if (fieldBg != null) sessionFilter.setBackground(fieldBg);
+        }
+        if (input != null) input.refreshThemePalette();
+        if (taskPane != null) taskPane.refreshThemePalette();
+        refreshLoadingPalette();
+        repaint();
+    }
+
+    private void refreshLoadingPalette() {
+        java.awt.Color surface = javax.swing.UIManager.getColor("Panel.background");
+        java.awt.Color text = javax.swing.UIManager.getColor("Label.foreground");
+        java.awt.Color accent = javax.swing.UIManager.getColor("Component.accentColor");
+        if (surface != null) { loadingPanel.setBackground(surface); }
+        if (text != null) loadingLabel.setForeground(text);
+        if (accent != null) javax.swing.UIManager.put("ProgressBar.foreground", accent);
+    }
+
+    private void installNavigationKeys() {
+        javax.swing.InputMap inputMap = getRootPane().getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW);
+        javax.swing.ActionMap actions = getRootPane().getActionMap();
+        inputMap.put(javax.swing.KeyStroke.getKeyStroke("control L"), "focus-composer");
+        actions.put("focus-composer", new javax.swing.AbstractAction() { public void actionPerformed(java.awt.event.ActionEvent e) { if (input != null) input.focusInput(); } });
+        inputMap.put(javax.swing.KeyStroke.getKeyStroke("control shift F"), "focus-session-filter");
+        actions.put("focus-session-filter", new javax.swing.AbstractAction() { public void actionPerformed(java.awt.event.ActionEvent e) { sessionFilter.requestFocusInWindow(); sessionFilter.selectAll(); } });
+        inputMap.put(javax.swing.KeyStroke.getKeyStroke("F6"), "cycle-workspace-focus");
+        actions.put("cycle-workspace-focus", new javax.swing.AbstractAction() {
+            private int index;
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                java.awt.Component[] targets = {sessionFilter, sessionList, taskPane, transcript, input == null ? null : input.composer()};
+                for (int n=0;n<targets.length;n++) { index=(index+1)%targets.length; if(targets[index]!=null && targets[index].isShowing() && targets[index].isEnabled()){ targets[index].requestFocusInWindow(); return; } }
+            }
+        });
+        inputMap.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_PLUS,java.awt.event.InputEvent.CTRL_DOWN_MASK),"font-increase");
+        inputMap.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_EQUALS,java.awt.event.InputEvent.CTRL_DOWN_MASK|java.awt.event.InputEvent.SHIFT_DOWN_MASK),"font-increase");
+        inputMap.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ADD,java.awt.event.InputEvent.CTRL_DOWN_MASK),"font-increase");
+        actions.put("font-increase",new javax.swing.AbstractAction(){public void actionPerformed(java.awt.event.ActionEvent e){NaruDesktop.setFontScale(NaruDesktop.fontScale()+10);}});
+        inputMap.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_MINUS,java.awt.event.InputEvent.CTRL_DOWN_MASK),"font-decrease");
+        inputMap.put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_SUBTRACT,java.awt.event.InputEvent.CTRL_DOWN_MASK),"font-decrease");
+        actions.put("font-decrease",new javax.swing.AbstractAction(){public void actionPerformed(java.awt.event.ActionEvent e){NaruDesktop.setFontScale(NaruDesktop.fontScale()-10);}});
+        inputMap.put(javax.swing.KeyStroke.getKeyStroke("control 0"),"font-reset");
+        actions.put("font-reset",new javax.swing.AbstractAction(){public void actionPerformed(java.awt.event.ActionEvent e){NaruDesktop.setFontScale(100);}});
+    }
+
+    private void renameSelectedSession() {
+        SessionEntry entry = sessionList.getSelectedValue();
+        if (entry == null || entry.model == null || entry.model.session() == null) return;
+        String oldName = entry.model.session().name();
+        String value=net.thevpc.naru.desktop.ui.DesktopDialog.promptText(this,"Rename session","Session name",oldName==null||"NO_NAME".equals(oldName)?"":oldName);
+        if(value==null||value.isBlank()) return;
+        String newName=value.trim(); showLoading("Saving session name…");
+            new javax.swing.SwingWorker<Void,Void>() {
+                protected Void doInBackground(){entry.model.session().name(newName).save();return null;}
+                protected void done(){hideLoading();try{get();rebuildSessionList();sessionList.repaint();activeSessionLabel.setText(newName);}catch(Exception ex){Throwable c=ex.getCause()==null?ex:ex.getCause();net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this,"Rename session",String.valueOf(c.getMessage()));}}
+            }.execute();
     }
 
     private void installDrag(java.awt.Component c, MouseAdapter drag) {
@@ -155,9 +348,59 @@ public final class MainWindow extends JFrame {
     private void toggleMaximize() { if (maximized) { setExtendedState(NORMAL); maximized=false; } else { setExtendedState(MAXIMIZED_BOTH); maximized=true; } }
 
     private void createSession() {
-        // The current engine builder still needs a base directory. It stays implicit in the UI;
-        // future task creation will supply per-task project/cwd values.
-        openProject(NPath.of(System.getProperty("user.dir", ".")).toAbsolute());
+        NPath dir = projectDirectory == null
+                ? NPath.of(System.getProperty("user.dir", ".")).toAbsolute() : projectDirectory;
+        openProject(dir);
+    }
+
+    /** Load durable rows without building or starting a session. */
+    public void loadProjectCatalog(NPath dir) {
+        projectDirectory = dir.toAbsolute();
+        NaruDesktop.rememberProject(projectDirectory);
+        catalogLoadedProjects.add(projectDirectory.toString());
+        showLoading("Loading saved sessions…");
+        new javax.swing.SwingWorker<List<net.thevpc.naru.api.agent.NaruResourceInfo>, Void>() {
+            protected List<net.thevpc.naru.api.agent.NaruResourceInfo> doInBackground() {
+                return catalog(projectDirectory).list();
+            }
+            protected void done() {
+                hideLoading();
+                try {
+                    List<net.thevpc.naru.api.agent.NaruResourceInfo> saved = get();
+                    sessions.clear();
+                    for (var info : saved) {
+                        var scope = info.getMode() == net.thevpc.naru.api.agent.NaruVisibility.PUBLIC
+                                ? net.thevpc.naru.api.store.NaruSessionScope.PUBLIC
+                                : net.thevpc.naru.api.store.NaruSessionScope.PRIVATE;
+                        sessions.add(new SessionEntry(nextSessionNumber++, info.getUuid(), scope,
+                                projectDirectory, info, null, null));
+                    }
+                    rebuildSessionList();
+                    if (sessions.isEmpty()) {
+                        activeSessionLabel.setText("No session");
+                        addWelcome();
+                    } else {
+                        sessionList.setSelectedIndex(0);
+                    }
+                } catch (Exception ex) {
+                    addWelcome();
+                    net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this,
+                            "Load sessions", String.valueOf(ex.getCause() == null ? ex.getMessage() : ex.getCause().getMessage()));
+                }
+            }
+        }.execute();
+    }
+
+    /**
+     * The saved-session catalog for a project, one per workspace.
+     * <p>
+     * Deliberately not a store opened here: a host that opens its own handle to the same
+     * folder lists a session once per handle and then cannot delete the row it just read,
+     * because the delete goes through a different handle than the listing did. The workspace
+     * owns the one catalog, and this is the only door to it.
+     */
+    private static net.thevpc.naru.api.agent.NaruSessionStoreManager catalog(NPath dir) {
+        return NaruDesktop.workspace(dir).sessionCatalog();
     }
 
     private void installResizeSupport() {
@@ -176,45 +419,198 @@ public final class MainWindow extends JFrame {
     private int cursorFor(int d){return switch(d){case 1->Cursor.W_RESIZE_CURSOR;case 2->Cursor.E_RESIZE_CURSOR;case 4->Cursor.N_RESIZE_CURSOR;case 8->Cursor.S_RESIZE_CURSOR;case 5->Cursor.NW_RESIZE_CURSOR;case 6->Cursor.NE_RESIZE_CURSOR;case 9->Cursor.SW_RESIZE_CURSOR;case 10->Cursor.SE_RESIZE_CURSOR;default->Cursor.DEFAULT_CURSOR;};}
 
     private void addWelcome() {
-        JPanel p = new JPanel(new BorderLayout());
-        JLabel hello = new JLabel("<html><div style='padding:18px'>"
-                + "<b>NARU desktop</b><br>"
-                + "Create a session from the File menu or the + button."
-                + "</div></html>");
-        hello.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
-        p.add(hello, BorderLayout.NORTH);
+        JPanel p = new JPanel(new java.awt.GridBagLayout());
+        JPanel card = new JPanel(new BorderLayout(0, 16)) {
+            @Override
+            protected void paintComponent(java.awt.Graphics g) {
+                java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+                g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                Color bg = javax.swing.UIManager.getColor("TextArea.background");
+                if (bg == null) bg = getBackground();
+                g2.setColor(bg);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 16, 16);
+                Color border = javax.swing.UIManager.getColor("Component.borderColor");
+                if (border != null) {
+                    g2.setColor(border);
+                    g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 16, 16);
+                }
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        card.setOpaque(false);
+        card.setBorder(BorderFactory.createEmptyBorder(28, 36, 28, 36));
+        card.setPreferredSize(new java.awt.Dimension(540, 240));
+
+        JLabel title = new JLabel("✨ Welcome to NARU");
+        title.setFont(title.getFont().deriveFont(java.awt.Font.BOLD, 18f));
+        Color accent = javax.swing.UIManager.getColor("Component.accentColor");
+        if (accent != null) title.setForeground(accent);
+
+        JLabel desc = new JLabel("<html><p style='line-height:1.5;color:#6B7280;'>"
+                + "A high-performance desktop and terminal environment for agentic coding, "
+                + "multi-agent coordination, and local & cloud AI workflows.<br><br>"
+                + "Get started by launching a new interactive session or choosing an existing one from the sidebar."
+                + "</p></html>");
+        desc.setFont(desc.getFont().deriveFont(13f));
+
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        actions.setOpaque(false);
+        JButton create = new JButton("＋ New Session");
+        create.setFont(create.getFont().deriveFont(java.awt.Font.BOLD, 12.5f));
+        create.putClientProperty("JButton.buttonType", "roundRect");
+        create.addActionListener(e -> createSession());
+
+        JButton settings = new JButton("⚙ Settings");
+        settings.putClientProperty("JButton.buttonType", "roundRect");
+        settings.addActionListener(e -> showSettings());
+
+        actions.add(create);
+        actions.add(settings);
+
+        JLabel tip = new JLabel("<html><span style='font-size:9pt;color:#9CA3AF;'>Shortcuts: <b>Ctrl+L</b> Focus input · <b>Ctrl+,</b> Settings · <b>F6</b> Cycle panes</span></html>");
+
+        JPanel bottom = new JPanel(new BorderLayout(0, 12));
+        bottom.setOpaque(false);
+        bottom.add(actions, BorderLayout.NORTH);
+        bottom.add(tip, BorderLayout.SOUTH);
+
+        card.add(title, BorderLayout.NORTH);
+        card.add(desc, BorderLayout.CENTER);
+        card.add(bottom, BorderLayout.SOUTH);
+
+        p.add(card);
         center.removeAll();
         center.add(p, BorderLayout.CENTER);
         center.revalidate();
+        center.repaint();
     }
 
     /** Close whatever is open and bind a fresh session to {@code dir}. */
     public void openProject(NPath dir) {
+        openProject(dir, null);
+    }
+
+    private void openProject(NPath dir, String restoreId) {
+        openProject(dir, restoreId, net.thevpc.naru.api.store.NaruSessionScope.PRIVATE);
+    }
+
+    private void openProject(NPath dir, String restoreId, net.thevpc.naru.api.store.NaruSessionScope restoreScope) {
+        openProject(dir, restoreId, restoreScope, true);
+    }
+
+    private void openProject(NPath dir, String restoreId, net.thevpc.naru.api.store.NaruSessionScope restoreScope,
+                             boolean selectOnCreate) {
         SwingUtilities.invokeLater(() -> {
             host = new InteractionHost();
             // the queue drains from the first frame, so whatever the engine writes while the
             // workspace is still resolving shows up instead of being buffered behind the boot
             host.startFlushTimer();
-            NaruSessionModel created = new NaruSessionModel(() -> newWorkspace(dir), dir, host);
-            sessions.add(new SessionEntry(nextSessionNumber++, created, host));
+            NaruSessionModel created = new NaruSessionModel(() -> NaruDesktop.workspace(dir), dir, host, restoreId, restoreScope);
+            SessionEntry entry = new SessionEntry(nextSessionNumber++, restoreId, restoreScope, dir,
+                    (net.thevpc.naru.api.agent.NaruResourceInfo) null, created, host);
+            sessions.add(entry);
             rebuildSessionList();
-            sessionList.setSelectedIndex(sessions.size() - 1);
+            if (selectOnCreate) sessionList.setSelectedValue(entry, true);
             created.start();
+            if (restoreId == null && catalogLoadedProjects.add(dir.toString())) {
+                // The workspace owns a single catalog handle for the project. Always list
+                // through it: a fresh store handle per read is what created duplicate sidebar
+                // rows and made a deleted row appear to not exist.
+                Timer catalogPoll = new Timer(250, null);
+                catalogPoll.addActionListener(ev -> {
+                    if (created.session() == null) return;
+                    catalogPoll.stop();
+                    // Session stores may touch disk, initialize a database, or scan a large
+                    // catalog. Never do that from a Swing timer: the desktop must remain usable
+                    // while durable sessions are being discovered.
+                    new javax.swing.SwingWorker<List<net.thevpc.naru.api.agent.NaruResourceInfo>, Void>() {
+                        @Override
+                        protected List<net.thevpc.naru.api.agent.NaruResourceInfo> doInBackground() {
+                            return catalog(dir).list();
+                        }
+
+                        @Override
+                        protected void done() {
+                            try {
+                                List<net.thevpc.naru.api.agent.NaruResourceInfo> saved = get();
+                                java.util.Set<String> known = new java.util.HashSet<>();
+                                for (SessionEntry current : sessions) if (current.id != null) known.add(current.id);
+                                for (var info : saved) {
+                                    if (known.add(info.getUuid())) {
+                                        var scope = info.getMode() == net.thevpc.naru.api.agent.NaruVisibility.PUBLIC
+                                                ? net.thevpc.naru.api.store.NaruSessionScope.PUBLIC
+                                                : net.thevpc.naru.api.store.NaruSessionScope.PRIVATE;
+                                        // Saved sessions are lightweight rows until selected. Eagerly
+                                        // booting the whole catalog created dozens of session threads
+                                        // that all waited for Swing to finish rebuilding this list.
+                                        sessions.add(new SessionEntry(nextSessionNumber++, info.getUuid(),
+                                                scope, dir, info, null, null));
+                                    }
+                                }
+                                rebuildSessionList();
+                                if (!saved.isEmpty()) SwingUtilities.invokeLater(() -> {
+                                    if (sessionRows.size() > 0) sessionList.setSelectedIndex(0);
+                                });
+                            } catch (Exception ex) {
+                                created.notifyUser("Could not list saved sessions: "
+                                        + (ex.getCause() == null ? ex.getMessage() : ex.getCause().getMessage()));
+                            }
+                        }
+                    }.execute();
+                });
+                catalogPoll.start();
+            }
         });
     }
 
     private void rebuildSessionList() {
-        sessionRows.clear();
-        for (SessionEntry entry : sessions) sessionRows.addElement(entry);
+        SessionEntry selected = sessionList.getSelectedValue();
+        DefaultListModel<SessionEntry> replacement = new DefaultListModel<>();
+        String query = sessionFilter.getText().trim().toLowerCase(java.util.Locale.ROOT);
+        int selectedIndex = -1;
+        for (SessionEntry entry : sessions) {
+            if (query.isEmpty() || entry.toString().toLowerCase(java.util.Locale.ROOT).contains(query)) {
+                replacement.addElement(entry);
+                if (entry == selected || entry.model == session) selectedIndex = replacement.size() - 1;
+            }
+        }
+        // Populate off-list, then publish once. DefaultListModel emits one event per insertion;
+        // BasicListUI recomputes renderer sizes on every event, making a large durable catalog an
+        // O(n²) EDT task (the thread dump showed it stuck in updateLayoutState here).
+        sessionRows = replacement;
+        sessionList.setModel(replacement);
+        if (selectedIndex >= 0) sessionList.setSelectedIndex(selectedIndex);
     }
 
     private void activateSession(SessionEntry selected) {
         disposeSessionViews();
+        if (selected.model == null) {
+            InteractionHost selectedHost = new InteractionHost();
+            selectedHost.startFlushTimer();
+            selected.host = selectedHost;
+            selected.model = new NaruSessionModel(() -> NaruDesktop.workspace(selected.projectDir),
+                    selected.projectDir, selectedHost, selected.id, selected.scope);
+            selected.model.start();
+        }
         session = selected.model;
         host = selected.host;
+        loadingListener = () -> {
+            if (selected.model.isBooting()) showLoading("Opening " + selected.toString() + "…");
+            else { hideLoading(); if (selected.model == session) activeSessionLabel.setText(selected.toString()); }
+            if (selected.model.session() != null) {
+                selected.id = selected.model.session().uuid();
+            }
+            sessionList.repaint();
+        };
+        selected.model.addListener(loadingListener);
+        if (selected.model.isBooting()) showLoading("Opening " + selected.toString() + "…");
+        sessionListSync = sessionList::repaint;
+        selected.model.addListener(sessionListSync);
         transcript = new TranscriptPane(session);
-        transcript.setTaskFilter(-1);
-        sessionLogPane = new TranscriptPane(session);
+        transcript.setTaskFilter(Long.MIN_VALUE);
+        transcript.setMessageActionHandler(session::submitMessageAction);
+        sessionLogPane = new TranscriptPane(session, false);
         sessionLogPane.setTaskFilter(Long.MIN_VALUE);
         transcript.setJumpToPermissions(ruleId -> openPermissions(ruleId));
         input = new InputPane(session);
@@ -224,7 +620,7 @@ public final class MainWindow extends JFrame {
         JTabbedPane conversationViews = new JTabbedPane();
         conversationTabs = conversationViews;
         conversationViews.addTab("Conversation", transcript);
-        conversationViews.addTab("Session log", sessionLogPane);
+        conversationViews.addTab("Logs", sessionLogPane);
         JTabbedPane taskTools = sideTabs(tasks, session);
         tasks.setTaskSelectionListener(id -> {
             transcript.setTaskFilter(id);
@@ -251,29 +647,174 @@ public final class MainWindow extends JFrame {
         body.add(statusBar, BorderLayout.NORTH);
         center.removeAll(); center.setLayout(new BorderLayout()); center.add(body, BorderLayout.CENTER);
         center.revalidate(); center.repaint();
-        activeSessionLabel.setText("Session " + selected.number);
+        activeSessionLabel.setText(selected.toString());
         tasks.sessionModelChanged();
+        sessionList.repaint();
+        if (selected.model.isBooting()) showLoading("Opening " + selected.toString() + "…"); else hideLoading();
+    }
+
+    private void showSettings() {
+        SettingsPane pane = new SettingsPane(NaruDesktop.selectedTheme(), theme -> {
+            try { NaruDesktop.applyTheme(theme); }
+            catch (RuntimeException ex) { net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this,"Appearance",String.valueOf(ex.getMessage())); }
+        }, NaruDesktop.fontScale(), NaruDesktop::setFontScale, this::showWorkspace);
+        center.removeAll(); center.setLayout(new BorderLayout()); center.add(pane, BorderLayout.CENTER);
+        center.revalidate(); center.repaint();
+    }
+
+    private void showWorkspace() {
+        if (session != null) {
+            SessionEntry active = sessions.stream().filter(e -> e.model == session).findFirst().orElse(null);
+            if (active != null) activateSession(active);
+        } else addWelcome();
     }
 
     private JPanel sessionRail(TaskPane tasks) {
-        JPanel rail=new JPanel(new BorderLayout()); rail.setPreferredSize(new java.awt.Dimension(210,100));
-        rail.setBorder(BorderFactory.createMatteBorder(0,0,0,1,java.awt.Color.GRAY));
-        JPanel sessionHeader=new JPanel(new BorderLayout()); sessionHeader.add(new JLabel("  SESSIONS"),BorderLayout.WEST);
-        JButton add=new JButton("+");add.setToolTipText("Create a session");add.addActionListener(e->createSession());sessionHeader.add(add,BorderLayout.EAST);
+        JPanel rail = new JPanel(new BorderLayout());
+        rail.setPreferredSize(new java.awt.Dimension(220, 100));
+        Color borderColor = javax.swing.UIManager.getColor("Component.borderColor");
+        rail.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, borderColor != null ? borderColor : new Color(210, 215, 225)));
+        JPanel sessionHeader = new JPanel(new BorderLayout());
+        JLabel sessionTitle = new JLabel("Sessions");
+        sessionTitle.setFont(sessionTitle.getFont().deriveFont(java.awt.Font.BOLD, 13f));
+        sessionTitle.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 0));
+        sessionHeader.add(sessionTitle, BorderLayout.WEST);
+        JPanel sessionActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        JButton open = new JButton("↗");
+        open.setMargin(new java.awt.Insets(2, 6, 2, 6));
+        open.setFocusable(false);
+        open.setToolTipText("Open selected hibernated session");
+        open.getAccessibleContext().setAccessibleName("Open selected session");
+        open.putClientProperty("JButton.buttonType", "toolBarButton");
+        open.addActionListener(e -> { SessionEntry selected = sessionList.getSelectedValue(); if (selected != null) activateSession(selected); });
+        JButton add = new JButton("＋ New");
+        add.setMargin(new java.awt.Insets(2, 8, 2, 8));
+        add.setFocusable(false);
+        add.setToolTipText("Create a session");
+        add.putClientProperty("JButton.buttonType", "roundRect");
+        add.addActionListener(e -> createSession());
+        sessionActions.add(open);
+        sessionActions.add(add);
+        sessionHeader.add(sessionActions, BorderLayout.EAST);
+        if (!sessionFilterBound) {
+            sessionFilterBound = true;
+            sessionFilter.putClientProperty("JTextField.placeholderText", "Filter sessions…");
+            sessionFilter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+                public void insertUpdate(javax.swing.event.DocumentEvent e) { rebuildSessionList(); }
+                public void removeUpdate(javax.swing.event.DocumentEvent e) { rebuildSessionList(); }
+                public void changedUpdate(javax.swing.event.DocumentEvent e) { rebuildSessionList(); }
+            });
+        }
         sessionList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+        sessionList.setFixedCellHeight(58);
         sessionList.setCellRenderer((list, value, index, selected, focus) -> {
-            JLabel label=new JLabel("  " + value.toString()); label.setOpaque(true);
-            label.setBackground(selected?list.getSelectionBackground():list.getBackground());
-            label.setForeground(selected?list.getSelectionForeground():list.getForeground());
-            label.setBorder(BorderFactory.createEmptyBorder(8,4,8,4)); return label;
+            String dates = value.dateSummary();
+            String state = value.stateLabel();
+            String mark = value.isOpen() ? "●" : value.isOpening() ? "◌" : value.needsAttention() ? "!" : "○";
+            String stateColor = value.isOpen() ? "#10B981" : value.isOpening() ? "#F59E0B"
+                    : value.needsAttention() ? "#EF4444" : "#9CA3AF";
+            JLabel label = new JLabel("<html><div style='padding:2px 4px;'><b><span style='color:" + stateColor + ";'>" + mark + "</span>  " + value.toString()
+                    + "</b><br><span style='font-size:9pt;color:" + stateColor + "'><b>" + state
+                    + "</b></span><span style='font-size:9pt;color:#6B7280;'> · " + dates + "</span></div></html>");
+            label.setOpaque(true);
+            label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
+            label.setForeground(selected ? list.getSelectionForeground() : javax.swing.UIManager.getColor("List.foreground"));
+            label.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+            return label;
         });
-        JPanel top=new JPanel(new BorderLayout()); top.add(sessionHeader,BorderLayout.NORTH); top.add(new JScrollPane(sessionList),BorderLayout.CENTER);
-        JSplitPane left=new JSplitPane(JSplitPane.VERTICAL_SPLIT,top,tasks); left.setResizeWeight(.25); left.setDividerLocation(205);
-        rail.add(left,BorderLayout.CENTER); return rail;
+        sessionList.setOpaque(true);
+        sessionFilter.setOpaque(true);
+        JPanel top=new JPanel(new BorderLayout(0,5)); JPanel heading=new JPanel(new BorderLayout(0,5)); heading.add(sessionHeader,BorderLayout.NORTH); heading.add(sessionFilter,BorderLayout.SOUTH);
+        top.add(heading,BorderLayout.NORTH); top.add(new JScrollPane(sessionList),BorderLayout.CENTER);
+        if (tasks == null) {
+            rail.add(top, BorderLayout.CENTER);
+        } else {
+            JSplitPane left=new JSplitPane(JSplitPane.VERTICAL_SPLIT,top,tasks); left.setResizeWeight(.25); left.setDividerLocation(205);
+            rail.add(left,BorderLayout.CENTER);
+        }
+        return rail;
     }
 
-    private record SessionEntry(int number, NaruSessionModel model, InteractionHost host) {
-        @Override public String toString(){return "Session " + number;}
+    private void showHibernatedSession(SessionEntry entry) {
+        disposeSessionViews();
+        // The engine may still be open in the background. This preview is only the active
+        // workspace binding, so clear the UI's active reference; selecting that open row again
+        // must rebuild its components on a single click.
+        session = null;
+        host = null;
+        JPanel preview = new JPanel(new BorderLayout(12, 12));
+        preview.setBorder(BorderFactory.createEmptyBorder(28, 32, 28, 32));
+        JLabel title = new JLabel("Session is hibernated");
+        title.setFont(title.getFont().deriveFont(java.awt.Font.BOLD, 20f));
+        JLabel details = new JLabel("<html><b>" + entry.toString() + "</b><br>" + entry.dateSummary()
+                + "<br><br>This session is closed. Open it to load its conversation, tasks, and workspace.</html>");
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JButton open = new JButton("Open session");
+        open.addActionListener(e -> activateSession(entry));
+        JButton delete = new JButton("Delete session…");
+        delete.addActionListener(e -> deleteSession(entry));
+        actions.add(open); actions.add(delete);
+        JPanel content = new JPanel(new BorderLayout(0, 14));
+        content.add(title, BorderLayout.NORTH);
+        content.add(details, BorderLayout.CENTER);
+        content.add(actions, BorderLayout.SOUTH);
+        preview.add(content, BorderLayout.NORTH);
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sessionRail(null), preview);
+        split.setResizeWeight(0.24);
+        center.removeAll(); center.setLayout(new BorderLayout()); center.add(split, BorderLayout.CENTER);
+        activeSessionLabel.setText(entry.toString() + " · Hibernated");
+        center.revalidate(); center.repaint();
+        hideLoading();
+    }
+
+    private static final class SessionEntry {
+        final int number;
+        String id;
+        final net.thevpc.naru.api.store.NaruSessionScope scope;
+        final NPath projectDir;
+        final net.thevpc.naru.api.agent.NaruResourceInfo savedInfo;
+        NaruSessionModel model;
+        InteractionHost host;
+
+        SessionEntry(int number, String id, net.thevpc.naru.api.store.NaruSessionScope scope,
+                     NPath projectDir, net.thevpc.naru.api.agent.NaruResourceInfo savedInfo,
+                     NaruSessionModel model, InteractionHost host) {
+            this.number = number; this.id = id; this.scope = scope; this.projectDir = projectDir;
+            this.savedInfo = savedInfo; this.model = model; this.host = host;
+        }
+
+        boolean isOpen() { return model != null && model.isRunning(); }
+        boolean isOpening() { return model != null && model.isBooting(); }
+        boolean needsAttention() { return model != null && model.statusText() != null
+                && model.statusText().toLowerCase(java.util.Locale.ROOT).contains("fail"); }
+        String stateLabel() {
+            if (isOpening()) return "Opening";
+            if (isOpen()) return "Open";
+            if (needsAttention()) return "Needs attention";
+            return "Hibernated";
+        }
+
+        @Override public String toString(){
+            String name = model != null && model.session() != null ? model.session().name() : null;
+            if (model == null || model.session() == null) name = savedInfo != null ? savedInfo.getName()
+                    : null;
+            return name == null || name.isBlank() || "NO_NAME".equals(name)
+                    ? "Session " + number : name;
+        }
+        String dateSummary() {
+            if (model != null && model.session() != null) {
+                var s = model.session();
+                return "Created " + shortDate(s.creationInstant()) + " · Updated " + shortDate(s.modificationInstant());
+            }
+            if (savedInfo != null) return "Created " + shortDate(savedInfo.getCreationInstant())
+                    + " · Updated " + shortDate(savedInfo.getModificationInstant());
+            return "Opening…";
+        }
+        private static String shortDate(java.time.Instant value) {
+            if (value == null) return "—";
+            return java.time.format.DateTimeFormatter.ofPattern("MMM d, HH:mm:ss")
+                    .withZone(java.time.ZoneId.systemDefault()).format(value);
+        }
     }
 
     private JTabbedPane sideTabs;
@@ -374,31 +915,77 @@ public final class MainWindow extends JFrame {
     }
 
     /**
-     * A workspace per project, deliberately not installed as the shared instance: with one window
-     * per JVM the shared slot would be a second, global source of truth for widgets (plan §3.1).
+     * Close the active session while keeping the desktop's shared workspace alive for other tabs.
      */
-    private static NaruWorkspace newWorkspace(NPath dir) {
-        return NaruWorkspaceBuilder.of().projectDirectory(dir).build();
-    }
-
     private void closeSession() {
         SessionEntry active = null;
         for (SessionEntry entry : sessions) if (entry.model == session) { active = entry; break; }
+        if (active != null) hibernateSession(active);
+    }
+
+    private void hibernateSession(SessionEntry active) {
+        if (active == null || active.model == null || active.model.isBooting()) return;
+        boolean wasActive = active.model == session;
         disposeSessionViews();
-        if (active != null) { active.model.shutdown(); sessions.remove(active); }
-        session = null;
-        host = null;
-        sessionRows.clear();
-        for (SessionEntry entry : sessions) sessionRows.addElement(entry);
-        if (!sessions.isEmpty()) {
-            sessionList.setSelectedIndex(0);
-        } else {
-            activeSessionLabel.setText("No session");
-            addWelcome();
+        active.model.shutdown();
+        active.model = null;
+        active.host = null;
+        if (wasActive) { session = null; host = null; }
+        rebuildSessionList();
+        if (!sessions.isEmpty()) showHibernatedSession(active);
+        else { activeSessionLabel.setText("No session"); addWelcome(); }
+    }
+
+    private void deleteSession(SessionEntry entry) {
+        if (entry == null) return;
+        if (entry.model != null && entry.model.isBooting()) {
+            net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, "Delete session", "Wait for the session to finish opening before deleting it.");
+            return;
         }
+        String name = entry.toString();
+        if (!net.thevpc.naru.desktop.ui.DesktopDialog.confirm(this, "Delete session",
+                "Permanently delete “" + name + "” and its saved conversation and history?", "Delete")) return;
+        net.thevpc.naru.api.agent.NaruSession stoppedEngine = entry.model == null ? null : entry.model.session();
+        if (entry.model != null) hibernateSession(entry);
+        if (entry.id == null) {
+            net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, "Delete session", "Wait for the session to finish opening before deleting it.");
+            return;
+        }
+        showLoading("Deleting " + name + "…");
+        new javax.swing.SwingWorker<Boolean, Void>() {
+            protected Boolean doInBackground() {
+                if (stoppedEngine != null) stoppedEngine.waitFor();
+                return catalog(entry.projectDir).delete(entry.id);
+            }
+            protected void done() {
+                hideLoading();
+                try {
+                    if (!get()) throw new IllegalStateException("The session was not found in its saved catalog.");
+                    sessions.remove(entry);
+                    rebuildSessionList();
+                    if (sessions.isEmpty()) {
+                        activeSessionLabel.setText("No session");
+                        addWelcome();
+                    } else {
+                        SessionEntry selected = sessionList.getSelectedValue();
+                        if (selected == null) {
+                            sessionList.setSelectedIndex(0);
+                            selected = sessionList.getSelectedValue();
+                        }
+                        if (selected != null && selected.model == null) showHibernatedSession(selected);
+                    }
+                } catch (Exception ex) {
+                    Throwable c = ex.getCause() == null ? ex : ex.getCause();
+                    net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this, "Delete session", String.valueOf(c.getMessage()));
+                }
+            }
+        }.execute();
     }
 
     private void disposeSessionViews() {
+        if (session != null && loadingListener != null) session.removeListener(loadingListener);
+        if (session != null && sessionListSync != null) session.removeListener(sessionListSync);
+        loadingListener = null; sessionListSync = null;
         if (session != null && selectionSync != null) session.removeListener(selectionSync);
         selectionSync = null;
         if (transcript != null) {

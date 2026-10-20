@@ -5,6 +5,7 @@ import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
 import net.thevpc.naru.desktop.util.EDT;
+import net.thevpc.naru.desktop.util.MsgText;
 import net.thevpc.naru.desktop.util.ToolCardText;
 
 import java.util.ArrayDeque;
@@ -76,21 +77,22 @@ public final class TranscriptModel {
         EDT.check("TranscriptModel.apply");
         boolean structural = false;
         boolean text = false;
+        boolean messagesChanged = false;
         for (TranscriptEvent e : batch) {
             if (e instanceof TranscriptEvent.Chunk c) {
                 boolean isNew = byId.get(c.blockId()) == null;
                 TranscriptBlock b = blockFor(c.blockId(), c.mode(), c.taskId());
                 structural |= isNew;
                 int before = b.length();
-                String add = c.text();
+                String add = MsgText.plain(c.text());
                 if (c.finalFragment() && !add.isEmpty() && !add.endsWith("\n")) {
                     add = add + "\n";
                 }
                 b.append(add);
                 retainedChars += b.length() - before;
-                if (c.finalFragment()) {
-                    close(c.blockId());
-                }
+                // Chunk.finalFragment() ends a *message*, not the block: a run of whole
+                // messages from one directive is still one block, and only Closed freezes it.
+                // Closing here would make the next line in the same block undrawable.
                 text = true;
             } else if (e instanceof TranscriptEvent.Opened o) {
                 boolean isNew = byId.get(o.blockId()) == null;
@@ -104,6 +106,24 @@ public final class TranscriptModel {
                 // every lifecycle event appends its header line to a row, so a repaint is due
                 // whether or not a row was added
                 text = true;
+            } else if (e instanceof TranscriptEvent.Message m) {
+                if (m.message() != null) {
+                    boolean isNew = byId.get(m.blockId()) == null;
+                    NaruLogMode mode = m.message().getRole() == net.thevpc.naru.api.agent.NaruRole.user
+                            ? NaruLogMode.SCRIPT : NaruLogMode.AGENT_RESPONSE;
+                    TranscriptBlock b = blockFor(m.blockId(), mode, m.taskId());
+                    b.setMessage(m.message(), m.sequence());
+                    String body = m.message().getContent();
+                    if (body == null) body = "";
+                    if (!m.message().getParts().isEmpty()) {
+                        for (var part : m.message().getParts()) body += "\n" + part.type() + ": " + part.payload();
+                    }
+                    appendText(b, body.endsWith("\n") || body.isEmpty() ? body : body + "\n");
+                    close(m.blockId());
+                    structural |= isNew;
+                    messagesChanged = true;
+                    text = true;
+                }
             } else if (e instanceof TranscriptEvent.Lagged) {
                 // the host already told us it dropped chunks; a resync line is structural
                 structural = true;
@@ -113,6 +133,14 @@ public final class TranscriptModel {
                 // than let it sit there claiming a tool is still running
                 structural |= settleOpenCards(hc.reason());
             }
+        }
+        if (messagesChanged) {
+            // Blocks are appended in the order the conversation happened. Never re-sort them
+            // afterwards: a live echo has no durable sequence yet, and mixing "sequence when
+            // known" with "creation index otherwise" is not a transitive comparator. It can
+            // throw IllegalArgumentException from List.sort and it can move a just-sent user
+            // line below the answer it prompted.
+            structural = true;
         }
         structural |= trim();
         if (structural) {
@@ -342,6 +370,11 @@ public final class TranscriptModel {
             viewDirty = false;
         }
         return view;
+    }
+
+    /** All retained blocks before any pane-specific visibility filters. */
+    public List<TranscriptBlock> allBlocks() {
+        return java.util.Collections.unmodifiableList(blocks);
     }
 
     public TranscriptBlock visibleAt(int row) {

@@ -55,7 +55,8 @@ class TranscriptModelTest {
         onEdt(() -> {
             TranscriptModel m = new TranscriptModel();
             m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "Hel", false)));
-            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "lo", true)));
+            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "lo", true),
+                    new TranscriptEvent.Closed("b1")));
             assertEquals(1, m.visibleSize());
             TranscriptBlock b = m.visibleAt(0);
             assertEquals("Hello\n", b.text());
@@ -65,11 +66,26 @@ class TranscriptModelTest {
     }
 
     @Test
+    void aFinalFragmentDoesNotFreezeTheBlock() throws Exception {
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "one", true)));
+            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "two", true),
+                    new TranscriptEvent.Closed("b1")));
+            assertEquals(1, m.visibleSize(), "both whole messages share the block");
+            assertEquals("one\ntwo\n", m.visibleAt(0).text());
+            assertTrue(m.visibleAt(0).isClosed());
+        });
+    }
+
+    @Test
     void modeChangeStartsANewBlock() throws Exception {
         onEdt(() -> {
             TranscriptModel m = new TranscriptModel();
-            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.MODEL_THINKING, "thinking", true)));
-            m.apply(List.of(new TranscriptEvent.Chunk("b2", NaruLogMode.AGENT_RESPONSE, "answer", true)));
+            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.MODEL_THINKING, "thinking", true),
+                    new TranscriptEvent.Closed("b1")));
+            m.apply(List.of(new TranscriptEvent.Chunk("b2", NaruLogMode.AGENT_RESPONSE, "answer", true),
+                    new TranscriptEvent.Closed("b2")));
             assertEquals(2, m.visibleSize());
             assertEquals(NaruLogMode.MODEL_THINKING, m.visibleAt(0).mode());
             assertEquals(NaruLogMode.AGENT_RESPONSE, m.visibleAt(1).mode());
@@ -80,8 +96,10 @@ class TranscriptModelTest {
     void verboseOnlyModesAreFilteredFromTheViewButRetained() throws Exception {
         onEdt(() -> {
             TranscriptModel m = new TranscriptModel();
-            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "answer", true)));
-            m.apply(List.of(new TranscriptEvent.Chunk("b2", NaruLogMode.SCHEDULER, "tick", true)));
+            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "answer", true),
+                    new TranscriptEvent.Closed("b1")));
+            m.apply(List.of(new TranscriptEvent.Chunk("b2", NaruLogMode.SCHEDULER, "tick", true),
+                    new TranscriptEvent.Closed("b2")));
             assertEquals(1, m.visibleSize(), "scheduler output is noise until asked for");
             assertEquals(2, m.totalBlocks(), "...but never thrown away");
             m.setVerbose(true);
@@ -98,7 +116,7 @@ class TranscriptModelTest {
             m.setMaxChars(1_024);
             for (int i = 0; i < 200; i++) {
                 m.apply(List.of(new TranscriptEvent.Chunk("b" + i, NaruLogMode.SCRIPT,
-                        "x".repeat(64), true)));
+                        "x".repeat(64), true), new TranscriptEvent.Closed("b" + i)));
             }
             assertTrue(m.retainedChars() <= 1_024, "retained text respects the budget");
             assertTrue(m.trimmedBlocks() > 0, "and the UI can say how much went away");
@@ -114,9 +132,10 @@ class TranscriptModelTest {
             m.addListener(structural -> kinds.add(structural));
             m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "a", false)));
             m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "b", false)));
-            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "c", true)));
-            assertEquals(List.of(true, false, false), kinds,
-                    "one structural notification per new block, then text only");
+            m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.AGENT_RESPONSE, "c", true),
+                    new TranscriptEvent.Closed("b1")));
+            assertEquals(List.of(true, false, true), kinds,
+                    "one structural notification per new block, then one for the batch that closes it");
         });
     }
 

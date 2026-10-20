@@ -71,4 +71,13 @@ public final class TextAreas {
             a.setForeground(fg);
         }
     }
+
+    /** RSTA stores its paint colors explicitly, so a look-and-feel switch must refresh them. */
+    public static void refreshThemeColors(java.awt.Container root) {
+        if (root instanceof RSyntaxTextArea area) {
+            Color bg=UIManager.getColor("TextArea.background"), fg=UIManager.getColor("TextArea.foreground");
+            if(bg!=null) area.setBackground(bg); if(fg!=null) area.setForeground(fg);
+        }
+        for(java.awt.Component child:root.getComponents()) if(child instanceof java.awt.Container c) refreshThemeColors(c);
+    }
 }

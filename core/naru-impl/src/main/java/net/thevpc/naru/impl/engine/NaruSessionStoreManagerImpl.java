@@ -130,7 +130,12 @@ public class NaruSessionStoreManagerImpl implements NaruSessionStoreManager {
             b = true;
         }
         if (adapter.uuid().equals(uuid)) {
-            adapter.reset(false);
+            // A desktop may hibernate (stop) the session before deleting its saved catalog
+            // entry. The durable directory is already gone above; resetting a stopped adapter
+            // would call ensureNotStopped() and turn a successful delete into an exception.
+            if (adapter.isRunning()) {
+                adapter.reset(false);
+            }
             b = true;
         }
         return b;

@@ -3,6 +3,7 @@ package net.thevpc.naru.desktop.model;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
+import net.thevpc.naru.api.model.NaruMessage;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -32,6 +33,8 @@ public final class TranscriptBlock {
     private final long taskId;
     /** Non-null for a tool card: the event that opened it, kept so a widget can show details. */
     private NaruToolCallEvent toolCall;
+    private NaruMessage message;
+    private long messageSequence = Long.MAX_VALUE;
 
     private final StringBuilder text = new StringBuilder();
     private boolean closed;
@@ -81,6 +84,19 @@ public final class TranscriptBlock {
     public boolean isToolCard() {
         return toolCall != null;
     }
+
+    public NaruMessage message() { return message == null ? null : message.copy(); }
+
+    public void setMessage(NaruMessage message) { setMessage(message, Long.MAX_VALUE); }
+
+    public void setMessage(NaruMessage message, long sequence) {
+        this.message = message == null ? null : message.copy();
+        this.messageSequence = sequence;
+    }
+
+    public long messageSequence() { return messageSequence; }
+
+    public boolean isChatMessage() { return message != null; }
 
     /** Position in the model at creation time; only used for stable sort/ordering hints. */
     public int index() {

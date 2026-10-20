@@ -7,6 +7,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.agent.NaruSessionUsageListener;
+import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
@@ -15,6 +16,8 @@ import net.thevpc.naru.api.scheduler.NaruSchedulerMode;
 import net.thevpc.naru.api.scheduler.NaruTaskMode;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.task.NaruTaskStackFrame;
 import net.thevpc.naru.api.task.NaruTaskStackItem;
 import net.thevpc.naru.desktop.host.InteractionHost;
@@ -26,8 +29,13 @@ import net.thevpc.nuts.time.NDuration;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -49,6 +57,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class NaruSessionModel implements InteractionHost.Listener {
 
+    public record MessageSearchHit(long taskId, net.thevpc.naru.api.store.NaruStoredMessage stored) { }
+    public record MessageSearchResult(List<MessageSearchHit> hits, java.util.Map<Long, String> nextCursors,
+                                      boolean hasMore) { }
+    private record TranscriptRestore(List<TranscriptEvent> events, java.util.Map<Long, String> cursors) { }
+
     public interface Listener {
         /** Coarse "something visible changed"; widgets re-read the getters they care about. */
         void sessionModelChanged();
@@ -59,6 +72,8 @@ public final class NaruSessionModel implements InteractionHost.Listener {
 
     private final java.util.function.Supplier<NaruWorkspace> workspaceFactory;
     private final NPath projectDir;
+    private final String restoreId;
+    private final net.thevpc.naru.api.store.NaruSessionScope restoreScope;
     private final InteractionHost host;
     private final TranscriptModel transcript = new TranscriptModel();
     private final ToolCallModel tools = new ToolCallModel();
@@ -67,6 +82,27 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private final List<String> inputHistory = new ArrayList<>();
     private int historyCursor = -1;
+    /**
+     * User lines that are already on screen but may still be echoed back by the durable store.
+     * The live echo is what makes a submission visible immediately; the store callback is what
+     * makes it survive a restart. Without this bridge the same line appears twice, once when it
+     * is sent and once when the checkpoint completes.
+     */
+    private final Map<Long, Deque<UserEcho>> userEchoes = new HashMap<>();
+    private static final int MAX_PENDING_ECHOES = 200;
+
+    /** One user line shown locally, waiting to be matched by its stored copy (or delivered). */
+    private static final class UserEcho {
+        final String text;
+        final String blockId;
+        boolean awaitingDelivery;
+
+        UserEcho(String text, String blockId, boolean awaitingDelivery) {
+            this.text = text;
+            this.blockId = blockId;
+            this.awaitingDelivery = awaitingDelivery;
+        }
+    }
 
     private volatile NaruSession session;
     private Timer taskPoll;
@@ -86,11 +122,16 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private long completionTokens;
     private long cacheReadTokens;
     private long modelCalls;
+    private long latestPromptTokens = -1;
+    private long latestContextWindow = -1;
+    private net.thevpc.naru.api.model.NaruModelKey latestUsageModel;
+    private final java.util.Map<String,net.thevpc.naru.api.model.NaruProviderRateLimitInfo> providerRateLimits = new java.util.LinkedHashMap<>();
     private String model = "—";
     private String saveState = "—";
     private NaruInputMode inputMode = NaruInputMode.LINE;
     private boolean running;
     private boolean closed;
+    private final java.util.Map<Long, String> transcriptHistoryCursors = new java.util.LinkedHashMap<>();
 
     /**
      * A row of the task monitor: what the widget needs, read off a live task.
@@ -143,10 +184,23 @@ public final class NaruSessionModel implements InteractionHost.Listener {
 
     public NaruSessionModel(java.util.function.Supplier<NaruWorkspace> workspaceFactory,
                             NPath projectDir, InteractionHost host) {
+        this(workspaceFactory, projectDir, host, null, net.thevpc.naru.api.store.NaruSessionScope.PRIVATE);
+    }
+
+    public NaruSessionModel(java.util.function.Supplier<NaruWorkspace> workspaceFactory,
+                            NPath projectDir, InteractionHost host, String restoreId) {
+        this(workspaceFactory, projectDir, host, restoreId, net.thevpc.naru.api.store.NaruSessionScope.PRIVATE);
+    }
+
+    public NaruSessionModel(java.util.function.Supplier<NaruWorkspace> workspaceFactory,
+                            NPath projectDir, InteractionHost host, String restoreId,
+                            net.thevpc.naru.api.store.NaruSessionScope restoreScope) {
         EDT.check("NaruSessionModel construct");
         this.workspaceFactory = workspaceFactory;
         this.projectDir = projectDir;
         this.host = host;
+        this.restoreId = restoreId;
+        this.restoreScope = restoreScope;
         host.setListener(this);
     }
 
@@ -181,11 +235,11 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private void boot() {
         try {
             NaruWorkspace workspace = workspaceFactory.get();
-            session = workspace.newSession()
+            var builder = workspace.newSession()
                 .directory(projectDir)
+                .id(restoreId == null ? java.util.UUID.randomUUID().toString() : restoreId)
+                .scope(restoreScope)
                 .interaction(host)
-                .statements(new String[0])
-                .interactive()
                 .banner(false)
                 .richTerm(false)
                 .sessionListener(new NaruSessionListener() {
@@ -215,13 +269,20 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                     public void onSessionReloaded(NaruSession s) {
                         onEdt(() -> {
                             transcript.clear();
+                            transcriptHistoryCursors.clear();
                             tools.clear();
+                            userEchoes.clear();
                             // a reload rewrote the rule set wholesale; the old ids and their counts
                             // describe rules that no longer exist, so both go
                             permissions.resetCounts();
                             statusText = "reloaded";
                             refreshTasks();
                             fireChanged();
+                            java.util.concurrent.CompletableFuture.supplyAsync(
+                                    () -> loadTranscriptPage(s, java.util.Map.of(), 80))
+                                    .whenComplete((page, failure) -> {
+                                        if (failure == null && page != null) onEdt(() -> restoreTranscript(page));
+                                    });
                         });
                     }
 
@@ -230,8 +291,77 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                         // any worker thread; the poll timer is the backstop
                         onEdt(NaruSessionModel.this::refreshTasks);
                     }
-                })
-                .build();
+
+                    @Override
+                    public void onMessageComplete(long taskId, String cursor) {
+                        NaruSession s = session;
+                        if (s == null) return;
+                        NaruTask t = s.findTask(taskId).orNull();
+                        if (t != null) {
+                            try {
+                                var storedList = t.messages().get(List.of(cursor));
+                                if (storedList != null && !storedList.isEmpty()) {
+                                    var item = storedList.get(0);
+                                    if (item != null && item.message() != null) {
+                                        NaruMessage stored = item.message();
+                                        onEdt(() -> {
+                                            // The store is allowed to echo a message that the
+                                            // transcript already shows: user lines are echoed
+                                            // immediately, assistant text arrives as a stream, and
+                                            // tool results arrive as typed cards. Only add a card
+                                            // when nothing on screen represents this message yet.
+                                            if (stored.getRole() == NaruRole.user
+                                                    && consumeUserEcho(taskId, stored.getContent())) {
+                                                return;
+                                            }
+                                            if (stored.getRole() == NaruRole.system) return;
+                                            if (stored.getRole() == NaruRole.tool) return;
+                                            if (stored.getRole() == NaruRole.assistant
+                                                    && isShownAsStreamedAnswer(taskId, stored)) {
+                                                return;
+                                            }
+                                            if (stored.getRole() == NaruRole.assistant
+                                                    && (stored.getContent() == null || stored.getContent().isBlank())
+                                                    && stored.getParts().isEmpty()) {
+                                                return;
+                                            }
+                                            String id = "stored-" + taskId + "-" + item.id();
+                                            transcript.apply(List.of(new TranscriptEvent.Message(
+                                                    id, taskId, item.creationSequence(), stored)));
+                                            fireChanged();
+                                        });
+                                    }
+                                }
+                            } catch (Exception ignored) {
+                            }
+                        }
+                    }
+                });
+            // A user-created session gets the long-lived interactive task that its first line
+            // will answer. A restored session already has its saved task tree: build() hydrates
+            // it from the store because the id was given, and seeding another configured task
+            // here would put a fresh interactive task beside the restored one, making every
+            // reopen look like a newly-created session.
+            if (restoreId == null) {
+                builder.statements(new String[0]).interactive();
+            }
+            session = builder.build();
+            if (restoreId == null) {
+                // Create the durable session before the first turn. Task checkpoints are cheap
+                // but they deliberately do nothing while the store has no session record, which
+                // is why a desktop session used to reach the model and then vanish on restart.
+                // Saving here makes every later message checkpoint land in the store.
+                session.save();
+            } else {
+                if (session.uuid() == null || !restoreId.equals(session.uuid())) {
+                    throw new IllegalStateException("Saved session " + restoreId
+                            + " is no longer present in this project's session store."
+                            + " The desktop will not replace it with a new session.");
+                }
+                NaruSession restored = session;
+                TranscriptRestore page = loadTranscriptPage(restored, java.util.Map.of(), 80);
+                SwingUtilities.invokeAndWait(() -> restoreTranscript(page));
+            }
         // usage has no builder hook: it is a per-session listener, and the core announces it on
         // the thread that made the call, so everything below marshals before touching state
         session.addUsageListener(new NaruSessionUsageListener() {
@@ -242,6 +372,10 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                 String took = duration == null ? "" : " " + duration;
                 onEdt(() -> {
                     modelCalls++;
+                    latestPromptTokens = p;
+                    latestUsageModel = m;
+                    try { Long w = task.model() == null ? null : task.model().contextLength(); latestContextWindow = w == null ? -1 : w; }
+                    catch (RuntimeException ignored) { latestContextWindow = -1; }
                     promptTokens += Math.max(0, p);
                     completionTokens += Math.max(0, c);
                     cacheReadTokens += Math.max(0, cr);
@@ -255,7 +389,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
 
             @Override
             public void onProviderRateLimits(NaruProviderRateLimitInfo info) {
-                onEdt(NaruSessionModel.this::fireChanged);
+                onEdt(() -> { providerRateLimits.put(info.providerName(), info); fireChanged(); });
             }
         });
         session.start();
@@ -301,14 +435,101 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         }
     }
 
+    /** Load only the newest cursor page per task; older pages are requested by the transcript. */
+    private TranscriptRestore loadTranscriptPage(NaruSession restored, java.util.Map<Long, String> cursors,
+                                                  int limit) {
+        List<TranscriptEvent> events = new ArrayList<>();
+        java.util.Map<Long, String> nextCursors = new java.util.LinkedHashMap<>();
+        java.util.Map<Long, NaruTask> taskMap = new java.util.TreeMap<>();
+        for (NaruTask task : restored.tasks()) taskMap.put(task.id(), task);
+        for (NaruTask task : restored.conversationTasks()) taskMap.put(task.id(), task);
+        List<NaruTask> ordered = new ArrayList<>(taskMap.values());
+        ordered.sort(java.util.Comparator.comparingLong(NaruTask::id));
+        for (NaruTask task : ordered) {
+            String cursor = cursors.get(task.id());
+            if (!cursors.isEmpty() && cursor == null) continue;
+            try {
+                net.thevpc.naru.api.store.NaruMessagePage page = task.messages().query(
+                        new net.thevpc.naru.api.store.NaruMessageQuery(cursor,
+                                net.thevpc.naru.api.store.NaruMessageQueryDirection.BACKWARD,
+                                limit, java.util.Set.of(), null, null));
+                List<net.thevpc.naru.api.store.NaruStoredMessage> items = new ArrayList<>(page.items());
+                // Some older stores retain task history in the task skeleton and do not expose
+                // message pages. An empty page is therefore not proof that the conversation is
+                // empty; forcing history also invokes the lazy durable-history loader installed
+                // during restore.
+                if (items.isEmpty() && cursor == null) {
+                    appendRestoredHistory(events, task, task.history(), limit);
+                    continue;
+                }
+                java.util.Collections.reverse(items);
+                for (var item : items) {
+                    NaruMessage message = item.message();
+                    if (message == null || message.getRole() == null || message.getRole() == NaruRole.system) continue;
+                    String id = "restored-" + task.id() + "-" + item.id();
+                    events.add(new TranscriptEvent.Message(id, task.id(), item.creationSequence(), message));
+                }
+                if (page.hasMore()) nextCursors.put(task.id(), page.nextCursor());
+            } catch (UnsupportedOperationException ignored) {
+                appendRestoredHistory(events, task, task.history(), limit);
+            }
+        }
+        return new TranscriptRestore(events, nextCursors);
+    }
+
+    private static void appendRestoredHistory(List<TranscriptEvent> events, NaruTask task,
+                                              List<NaruMessage> history, int limit) {
+        int start = Math.max(0, history.size() - limit);
+        for (int i = start; i < history.size(); i++) {
+            NaruMessage message = history.get(i);
+            if (message == null || message.getRole() == null || message.getRole() == NaruRole.system) continue;
+            events.add(new TranscriptEvent.Message("restored-" + task.id() + "-" + i,
+                    task.id(), i, message));
+        }
+    }
+
+    private void restoreTranscript(TranscriptRestore page) {
+        EDT.check("NaruSessionModel.restoreTranscript");
+        transcriptHistoryCursors.clear();
+        transcriptHistoryCursors.putAll(page.cursors());
+        if (!page.events().isEmpty()) transcript.apply(page.events());
+    }
+
+    /** Load another durable history page for every task that still has older messages. */
+    public void loadOlderTranscript(java.util.function.Consumer<Boolean> callback) {
+        NaruSession current = session;
+        java.util.Map<Long, String> cursors = java.util.Map.copyOf(transcriptHistoryCursors);
+        if (current == null || cursors.isEmpty()) {
+            onEdt(() -> callback.accept(false));
+            return;
+        }
+        java.util.concurrent.CompletableFuture.supplyAsync(() -> loadTranscriptPage(current, cursors, 80))
+                .whenComplete((page, failure) -> onEdt(() -> {
+                    if (failure != null || page == null) {
+                        callback.accept(false);
+                        return;
+                    }
+                    transcriptHistoryCursors.clear();
+                    transcriptHistoryCursors.putAll(page.cursors());
+                    if (!page.events().isEmpty()) transcript.apply(page.events());
+                    callback.accept(!page.events().isEmpty());
+                }));
+    }
+
+    public boolean hasOlderTranscript() { return !transcriptHistoryCursors.isEmpty(); }
+
     /** Append a host-originated line (not engine output) as its own closed block. */
     private void note(String text) {
         String id = "n" + System.nanoTime();
-        transcript.apply(List.of(new TranscriptEvent.Opened(id, NaruLogMode.PROGRESS)));
-        transcript.apply(List.of(new TranscriptEvent.Chunk(id, NaruLogMode.PROGRESS, text, true)));
+        transcript.apply(List.of(new TranscriptEvent.Opened(id, NaruLogMode.PROGRESS),
+                new TranscriptEvent.Chunk(id, NaruLogMode.PROGRESS, text, true),
+                new TranscriptEvent.Closed(id)));
     }
 
-    /** Close the host and stop the session. A parked task is released, not left blocked. */
+    /** Add a small host status entry to the session transcript. */
+    public void notifyUser(String text) { note(text); }
+
+    /** Persist a quiescent session as hibernated; stop only when it cannot safely hibernate. */
     public void shutdown() {
         EDT.check("NaruSessionModel.shutdown");
         if (taskPoll != null) {
@@ -321,18 +542,24 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             modelLabelWorker = null;
         }
         taskModelLabels.clear();
+        userEchoes.clear();
         // the policy is still reachable from a stopped session; leaving the bridge attached would
         // keep this model alive and paint onto a window that is closing
         permissions.detach();
-        host.close();
         closed = true;
         pending = null;
         if (session != null) {
             try {
-                session.stop();
+                if (session.isHibernateEligible()) {
+                    session.hibernate();
+                } else {
+                    session.stop();
+                }
             } catch (RuntimeException ignored) {
                 // already stopped; closing the window must not throw
             }
+        } else {
+            host.close();
         }
         statusText = "closed";
         // the poll timer has stopped, so this is the last chance to show real state: without it
@@ -355,12 +582,35 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         // list keeps them as a table that does not get trimmed away with the chat
         tools.apply(batch);
         for (TranscriptEvent e : batch) {
+            if (e instanceof TranscriptEvent.Chunk c && c.finalFragment() && isUserFacingError(c)) {
+                // Actionable failures are conversation content even when their source mode is
+                // hidden from the default activity view (for example, missing-model errors are
+                // emitted as AGENT_RESPONSE, while request failures can be PROGRESS).
+                transcript.apply(List.of(new TranscriptEvent.Message("user-error-" + c.blockId(),
+                        c.taskId(), Long.MAX_VALUE, NaruMessage.system(c.text().trim()))));
+            }
             if (e instanceof TranscriptEvent.InputRequested ir) {
                 pending = ir.request();
                 inputRequestsSeen++;
                 statusText = "waiting for input";
+                String question = ir.request().prompt() == null ? "Please provide input."
+                        : ir.request().prompt().toString();
+                // The ordinary readline prompt belongs to the terminal UI. Rendering it as an
+                // assistant message leaks the console's `naru›` prefix into the desktop chat.
+                // The console uses the localized brand as its readline prompt. It is not
+                // conversation content and must never be rendered as an assistant message.
+                if (!isConsolePrompt(question)) {
+                    NaruMessage promptMessage = NaruMessage.assistant(question);
+                    transcript.apply(List.of(new TranscriptEvent.Message(
+                            "input-request-" + ir.request().requestId() + "-" + System.nanoTime(),
+                            ir.request().task().id(), promptMessage)));
+                }
                 fireChanged();
-                if (inputListener != null) {
+                String queued = ir.request().task().pollQueuedMessage();
+                if (queued != null) {
+                    note("sending queued message for task #" + ir.request().task().id());
+                    echoAndDeliver(queued, ir.request());
+                } else if (inputListener != null) {
                     inputListener.onInputRequested(ir.request());
                 }
             } else if (e instanceof TranscriptEvent.HostClosed) {
@@ -373,6 +623,20 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                 fireChanged();
             }
         }
+    }
+
+    private static boolean isConsolePrompt(String text) {
+        return text != null && text.trim().matches("(?i)(?:naru|なる)\\s*[›>]");
+    }
+
+    private static boolean isUserFacingError(TranscriptEvent.Chunk c) {
+        if (c.text() == null || c.text().isBlank()) return false;
+        String text = c.text().stripLeading();
+        String upper = text.toUpperCase(java.util.Locale.ROOT);
+        return upper.startsWith("ERROR:")
+                || upper.startsWith("ERROR CALLING MODEL:")
+                || upper.startsWith("NO MODEL IS SELECTED.")
+                || upper.startsWith("SELECTED MODEL ") && upper.contains(" WAS NOT FOUND");
     }
 
     /** Separate hook because the dialog, not the transcript, owns the answer. */
@@ -395,7 +659,69 @@ public final class NaruSessionModel implements InteractionHost.Listener {
      * {@code BLOCKED_ON_INPUT}), so the field is disabled with a reason instead of lying.
      */
     public boolean canAcceptInput() {
-        return pending != null;
+        return pending != null || canStartNewConversation();
+    }
+
+    /**
+     * A restored session can legitimately have no live task: the previous process may have been
+     * killed before its interactive task checkpointed, or the task may have finished. The store
+     * still has the conversation, but the engine has nothing parked on input, so the composer
+     * would stay disabled forever. An idle session starts a new interactive task on the next
+     * submission; a session with a task that is actually working keeps the old rule.
+     */
+    private boolean canStartNewConversation() {
+        if (closed || !running) {
+            return false;
+        }
+        NaruSession current = session;
+        if (current == null) {
+            return false;
+        }
+        try {
+            return current.tasks().isEmpty();
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Creates the long-lived interactive task a restored, empty session needs. The first line is
+     * queued before the task is released, so it cannot park on input and miss the message that
+     * started the task in the first place.
+     */
+    private NaruTask startConversation(String firstLine) {
+        NaruSession current = session;
+        if (current == null || closed) {
+            return null;
+        }
+        NaruTask task = current.newTask(NaruTaskSpec.of().statements(new String[0]));
+        task.taskMode(NaruTaskMode.INTERACTIVE);
+        current.foregroundTaskId(task.id());
+        if (firstLine != null && !firstLine.isBlank()) {
+            task.queueMessage(firstLine);
+            // show it now, and remember it so the readline delivery does not draw a second copy
+            noteQueued(firstLine, task.id());
+        }
+        task.unhold();
+        return task;
+    }
+
+    /** Interrupt the foreground statement while leaving its interactive task alive. */
+    public String interruptForegroundStatement() {
+        EDT.check("NaruSessionModel.interruptForegroundStatement");
+        NaruSession current = session;
+        if (current == null || closed) return "no open session";
+        try {
+            long id = current.foregroundTaskId();
+            NaruTask task = current.findTask(id).orNull();
+            if (task == null || task.isCompleted()) return "there is no running statement to stop";
+            task.interrupt();
+            notifyUser("stopping the current statement");
+            refreshTasks();
+            return null;
+        } catch (RuntimeException ex) {
+            return "could not stop the current statement: " + ex.getMessage();
+        }
     }
 
     public String inputDisabledReason() {
@@ -408,22 +734,40 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         if (pending != null) {
             return null;
         }
+        if (canStartNewConversation()) {
+            return null;
+        }
         return "the agent is working — it accepts input only when it asks";
     }
 
     /**
-     * Answer the outstanding request. Never calls {@code session.deliverInput} directly: the
-     * request object is what the engine handed us, is guarded so the first answer wins, and
-     * survives a task that has already moved on.
+     * Answer the outstanding request, or start the conversation when a restored session has no
+     * live task to answer. Never calls {@code session.deliverInput} directly: the request object
+     * is what the engine handed us, is guarded so the first answer wins, and survives a task that
+     * has already moved on.
      */
     public void submit(String line) {
         EDT.check("NaruSessionModel.submit");
+        if (line == null) {
+            return;
+        }
         NaruInputRequest r = pending;
-        if (r == null || line == null) {
+        if (r == null) {
+            if (canStartNewConversation()) {
+                startConversation(line);
+                statusText = "starting…";
+                fireChanged();
+            }
             return;
         }
         pending = null;
         echoAndDeliver(line, r);
+    }
+
+    /** Deliver an inline choice/form submission to the currently parked input request. */
+    public void submitMessageAction(String value) {
+        EDT.check("NaruSessionModel.submitMessageAction");
+        if (pending != null && value != null) submit(value);
     }
 
     /**
@@ -440,23 +784,121 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             pending = null;
         }
         if (!line.isBlank()) {
-            inputHistory.add(line);
-            historyCursor = inputHistory.size();
+            rememberHistory(line);
         }
-        // the readline/ask_user path swallows the answer whole, so echoing it here is the only
-        // way the user sees their own line in the transcript
-        echoUser(line);
+        long taskId = request.task().id();
+        // A queued line was already shown when the user pressed Enqueue. When it finally drains,
+        // mark that echo as delivered instead of drawing a second copy of the same sentence.
+        if (!markEchoDelivered(taskId, line)) {
+            // the readline/ask_user path swallows the answer whole, so echoing it here is the only
+            // way the user sees their own line in the transcript
+            echoUser(line, taskId);
+        }
         statusText = "running";
         fireChanged();
         request.deliver(line);
     }
 
+    /**
+     * Show a line the user queued for the next prompt. It is part of the conversation now — it
+     * just has not reached the engine yet — so hiding it behind a "Queued · N" counter is wrong.
+     * The echo is remembered until the queue drains, which is what keeps the delivered copy from
+     * appearing twice.
+     */
+    public void noteQueued(String line, long taskId) {
+        EDT.check("NaruSessionModel.noteQueued");
+        if (line == null || line.isBlank()) {
+            return;
+        }
+        if (!line.isBlank()) {
+            rememberHistory(line);
+        }
+        String blockId = addUserEchoBlock(line, taskId);
+        rememberEcho(taskId, new UserEcho(line, blockId, true));
+        statusText = "queued for task #" + taskId;
+        fireChanged();
+    }
+
     /** Show the user's submission in the transcript before it disappears into the engine. */
-    private void echoUser(String line) {
-        String id = "u" + System.nanoTime();
-        transcript.apply(List.of(new TranscriptEvent.Opened(id, NaruLogMode.SCRIPT)));
-        transcript.apply(List.of(new TranscriptEvent.Chunk(id, NaruLogMode.SCRIPT,
-                "you> " + line + "\n", true)));
+    private void echoUser(String line, long taskId) {
+        String blockId = addUserEchoBlock(line, taskId);
+        rememberEcho(taskId, new UserEcho(line, blockId, false));
+    }
+
+    private String addUserEchoBlock(String line, long taskId) {
+        String id = "u" + taskId + "-" + System.nanoTime();
+        long seq = transcript.totalBlocks() + 1;
+        transcript.apply(List.of(new TranscriptEvent.Message(id, taskId, seq, NaruMessage.user(line))));
+        return id;
+    }
+
+    private void rememberHistory(String line) {
+        if (inputHistory.isEmpty() || !inputHistory.get(inputHistory.size() - 1).equals(line)) {
+            inputHistory.add(line);
+        }
+        historyCursor = inputHistory.size();
+    }
+
+    private void rememberEcho(long taskId, UserEcho echo) {
+        Deque<UserEcho> queue = userEchoes.computeIfAbsent(taskId, k -> new ArrayDeque<>());
+        queue.addLast(echo);
+        while (queue.size() > MAX_PENDING_ECHOES) {
+            queue.removeFirst();
+        }
+    }
+
+    /** True when this line was queued rather than sent immediately; it is now being delivered. */
+    private boolean markEchoDelivered(long taskId, String line) {
+        Deque<UserEcho> queue = userEchoes.get(taskId);
+        if (queue == null || line == null) return false;
+        String wanted = line.strip();
+        for (Iterator<UserEcho> it = queue.iterator(); it.hasNext(); ) {
+            UserEcho echo = it.next();
+            if (echo.awaitingDelivery && echo.text.strip().equals(wanted)) {
+                echo.awaitingDelivery = false;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Match a stored user message to the local echo that is already on screen. Consumes one echo,
+     * because two identical prompts are two messages and only one of them is this callback.
+     */
+    private boolean consumeUserEcho(long taskId, String content) {
+        Deque<UserEcho> queue = userEchoes.get(taskId);
+        if (queue == null || content == null) return false;
+        String wanted = content.strip();
+        for (Iterator<UserEcho> it = queue.iterator(); it.hasNext(); ) {
+            UserEcho echo = it.next();
+            if (echo.text.strip().equals(wanted)) {
+                it.remove();
+                if (queue.isEmpty()) userEchoes.remove(taskId);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * True when the stored assistant message is the durable copy of text already streamed into
+     * the transcript. The streamed block is the live presentation; the stored card would be the
+     * same answer twice.
+     */
+    private boolean isShownAsStreamedAnswer(long taskId, NaruMessage stored) {
+        String content = stored.getContent();
+        if (content == null || content.isBlank()) return false;
+        String wanted = content.strip();
+        for (TranscriptBlock block : transcript.blocks()) {
+            if (block.taskId() == taskId
+                    && !block.isChatMessage()
+                    && block.mode() == NaruLogMode.AGENT_RESPONSE
+                    && block.text().strip().equals(wanted)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void cancelPendingInput(String reason) {
@@ -708,6 +1150,54 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         return transcript;
     }
 
+    /** Search every conversation task through its durable message store, outside the EDT. */
+    public void searchMessages(String text, int limit, java.util.function.Consumer<MessageSearchResult> callback) {
+        searchMessages(text, limit, java.util.Map.of(), callback);
+    }
+
+    /** Continue a cross-task durable search from each task's opaque store cursor. */
+    public void searchMessages(String text, int limit, java.util.Map<Long, String> cursors,
+                               java.util.function.Consumer<MessageSearchResult> callback) {
+        final java.util.Map<Long, String> cursorSnapshot = cursors == null
+                ? java.util.Map.of() : java.util.Map.copyOf(cursors);
+        NaruSession current = session;
+        if (current == null) {
+            onEdt(() -> callback.accept(new MessageSearchResult(List.of(), java.util.Map.of(), false)));
+            return;
+        }
+        java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            List<MessageSearchHit> hits = new ArrayList<>();
+            java.util.Map<Long, String> nextCursors = new java.util.LinkedHashMap<>();
+            boolean more = false;
+            java.util.Map<Long, NaruTask> tasksToSearch = new java.util.TreeMap<>();
+            for (NaruTask task : current.tasks()) tasksToSearch.put(task.id(), task);
+            for (NaruTask task : current.conversationTasks()) tasksToSearch.put(task.id(), task);
+            for (NaruTask task : tasksToSearch.values()) {
+                try {
+                    String cursor = cursorSnapshot.get(task.id());
+                    if (!cursorSnapshot.isEmpty() && cursor == null) continue;
+                    net.thevpc.naru.api.store.NaruMessagePage page = task.messages().search(text,
+                            new net.thevpc.naru.api.store.NaruMessageQuery(cursor,
+                                    net.thevpc.naru.api.store.NaruMessageQueryDirection.BACKWARD,
+                                    Math.max(1, limit), java.util.Set.of(), null, null));
+                    for (var item : page.items()) hits.add(new MessageSearchHit(task.id(), item));
+                    if (page.hasMore()) {
+                        more = true;
+                        nextCursors.put(task.id(), page.nextCursor());
+                    }
+                } catch (UnsupportedOperationException ignored) {
+                    // Non-persistent host implementations can still display their live transcript.
+                } catch (RuntimeException ignored) {
+                    // A task may be deleted or its session closed while the search is in flight.
+                }
+            }
+            hits.sort(java.util.Comparator.comparingLong(MessageSearchHit::taskId)
+                    .thenComparingLong(h -> h.stored().creationSequence()));
+            return new MessageSearchResult(List.copyOf(hits), java.util.Map.copyOf(nextCursors), more);
+        }).whenComplete((result, failure) -> onEdt(() -> callback.accept(failure == null
+                ? result : new MessageSearchResult(List.of(), java.util.Map.of(), false))));
+    }
+
     /** The tool-call list behind the Tools tab, fed by the same batches as the transcript. */
     public ToolCallModel tools() {
         return tools;
@@ -953,6 +1443,11 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                 + " · " + promptTokens + " in · " + completionTokens + " out"
                 + (cacheReadTokens > 0 ? " · " + cacheReadTokens + " cache read" : "");
     }
+
+    public long latestPromptTokens() { return latestPromptTokens; }
+    public long latestContextWindow() { return latestContextWindow; }
+    public net.thevpc.naru.api.model.NaruModelKey latestUsageModel() { return latestUsageModel; }
+    public java.util.List<net.thevpc.naru.api.model.NaruProviderRateLimitInfo> providerRateLimits() { return java.util.List.copyOf(providerRateLimits.values()); }
 
     public NaruInputMode inputMode() {
         return inputMode;

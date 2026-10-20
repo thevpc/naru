@@ -38,6 +38,39 @@ import java.util.List;
  */
 public interface NaruSessionStore extends AutoCloseable {
 
+    /**
+     * Query one task's durable message records. Stores with separate message records should
+     * override this method to read only the requested page; the fallback keeps older store
+     * implementations source compatible.
+     */
+    default NaruMessagePage queryMessages(String uuid, NaruSessionScope scope, long taskId,
+                                           NaruMessageQuery query) {
+        NaruTaskState state = loadTask(uuid, scope, taskId).orNull();
+        if (state == null) return new NaruMessagePage(List.of(), null, null, false);
+        List<NaruStoredMessage> all = new java.util.ArrayList<>();
+        for (int i = 0; i < state.historyIds().size() && i < state.history().size(); i++) {
+            NaruMessage message = state.history().get(i);
+            if (!query.roles().isEmpty() && !query.roles().contains(message.getRole())) continue;
+            String id = state.historyIds().get(i);
+            all.add(new NaruStoredMessage(id, sequence(id), message));
+        }
+        all.sort(java.util.Comparator.comparingLong(NaruStoredMessage::creationSequence));
+        if (query.direction() == NaruMessageQueryDirection.BACKWARD) java.util.Collections.reverse(all);
+        long cursor = query.cursor() == null ? Long.MIN_VALUE : sequence(query.cursor());
+        List<NaruStoredMessage> selected = new java.util.ArrayList<>();
+        for (NaruStoredMessage item : all) {
+            if (query.cursor() != null && (query.direction() == NaruMessageQueryDirection.FORWARD
+                    ? item.creationSequence() <= cursor : item.creationSequence() >= cursor)) continue;
+            selected.add(item);
+            if (selected.size() > query.limit()) break;
+        }
+        boolean more = selected.size() > query.limit();
+        if (more) selected.remove(selected.size() - 1);
+        String next = selected.isEmpty() ? null : selected.get(selected.size() - 1).id();
+        String previous = selected.isEmpty() ? null : selected.get(0).id();
+        return new NaruMessagePage(selected, next, previous, more);
+    }
+
     /** Hierarchical view of this session's task records. Existing flat APIs remain supported. */
     default NaruTaskStore tasks(String uuid, NaruSessionScope scope) {
         NaruSessionStore owner = this;
@@ -93,31 +126,7 @@ public interface NaruSessionStore extends AutoCloseable {
                         return out;
                     }
                     public synchronized NaruMessagePage query(NaruMessageQuery query) {
-                        NaruTaskState s = state();
-                        java.util.List<NaruStoredMessage> all = new java.util.ArrayList<>();
-                        if (s != null) for (int i = 0; i < s.historyIds().size(); i++) {
-                            var msg = s.history().get(i);
-                            if (query.roles().isEmpty() || query.roles().contains(msg.getRole())) all.add(wrap(s.historyIds().get(i), msg));
-                        }
-                        all.sort(java.util.Comparator.comparingLong(NaruStoredMessage::creationSequence));
-                        long cursor = parseCursor(query.cursor());
-                        if (query.direction() == NaruMessageQueryDirection.BACKWARD) java.util.Collections.reverse(all);
-                        java.util.List<NaruStoredMessage> selected = new java.util.ArrayList<>();
-                        for (NaruStoredMessage item : all) {
-                            if (query.cursor() != null && (query.direction() == NaruMessageQueryDirection.FORWARD
-                                    ? item.creationSequence() <= cursor : item.creationSequence() >= cursor)) continue;
-                            if (selected.size() == query.limit()) break;
-                            selected.add(item);
-                        }
-                        boolean more = false;
-                        if (selected.size() == query.limit()) {
-                            long edge = selected.get(selected.size() - 1).creationSequence();
-                            more = all.stream().anyMatch(x -> query.direction() == NaruMessageQueryDirection.FORWARD
-                                    ? x.creationSequence() > edge : x.creationSequence() < edge);
-                        }
-                        String next = selected.isEmpty() ? null : selected.get(selected.size() - 1).id();
-                        String previous = selected.isEmpty() ? null : selected.get(0).id();
-                        return new NaruMessagePage(selected, next, previous, more);
+                        return owner.queryMessages(uuid, scope, id, query);
                     }
                 });
             }

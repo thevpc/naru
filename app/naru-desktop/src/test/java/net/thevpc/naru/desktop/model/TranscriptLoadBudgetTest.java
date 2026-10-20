@@ -58,7 +58,7 @@ class TranscriptLoadBudgetTest {
                 "the transcript grew past its trim budget: " + r.model.retainedChars() + " chars");
         assertTrue(r.model.totalBlocks() > 0, "the transcript stayed empty");
         // exact no-loss arithmetic: every published character is in the model, plus the newline
-        // TranscriptModel appends to close each whole-message fragment. If a single event were
+        // TranscriptModel appends to each whole-message fragment. If a single event were
         // dropped or merged away, this number is off by that line.
         assertEquals(r.publishedChars + LINES, r.model.retainedChars(),
                 "the transcript does not hold everything that was published: " + r.host.statsLine());

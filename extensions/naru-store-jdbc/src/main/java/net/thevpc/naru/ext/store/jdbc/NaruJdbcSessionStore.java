@@ -117,6 +117,36 @@ final class NaruJdbcSessionStore implements NaruSessionStore {
         for (String id : ids) { NElement e = get(msgPrefix(scope, uuid, taskId) + id).orNull(); if (e != null) history.add(NaruMessage.of(e)); }
         return NOptional.of(NaruTaskState.ofStored(taskId, task, history));
     }
+    @Override public NaruMessagePage queryMessages(String uuid, NaruSessionScope scope, long taskId,
+                                                   NaruMessageQuery query) {
+        NElement task = get(taskKey(scope, uuid, taskId)).orNull();
+        if (task == null) return new NaruMessagePage(List.of(), null, null, false);
+        List<String> messageIds = ids(task);
+        messageIds.sort(Comparator.comparingLong(NaruJdbcSessionStore::messageSequence));
+        if (query.direction() == NaruMessageQueryDirection.BACKWARD) Collections.reverse(messageIds);
+        long cursor = query.cursor() == null ? Long.MIN_VALUE : messageSequence(query.cursor());
+        List<NaruStoredMessage> selected = new ArrayList<>();
+        boolean more = false;
+        String prefix = msgPrefix(scope, uuid, taskId);
+        for (String id : messageIds) {
+            long sequence = messageSequence(id);
+            if (query.cursor() != null && (query.direction() == NaruMessageQueryDirection.FORWARD
+                    ? sequence <= cursor : sequence >= cursor)) continue;
+            NElement element = get(prefix + id).orNull();
+            if (element == null) continue;
+            NaruMessage message = NaruMessage.of(element);
+            if (message == null || (!query.roles().isEmpty() && !query.roles().contains(message.getRole()))) continue;
+            if (selected.size() == query.limit()) { more = true; break; }
+            selected.add(new NaruStoredMessage(id, sequence, message));
+        }
+        String next = selected.isEmpty() ? null : selected.get(selected.size() - 1).id();
+        String previous = selected.isEmpty() ? null : selected.get(0).id();
+        return new NaruMessagePage(selected, next, previous, more);
+    }
+    private static long messageSequence(String id) {
+        try { return Long.parseLong(id); }
+        catch (RuntimeException ignored) { return id.hashCode() & 0x7fffffffL; }
+    }
     @Override public List<Long> taskIds(String uuid, NaruSessionScope scope) {
         TreeSet<Long> out = new TreeSet<>(); String p = taskPrefix(scope, uuid);
         for (String k : records.keys(p)) { String rest = k.substring(p.length()); int slash = rest.indexOf('/'); if (slash >= 0) rest = rest.substring(0, slash); try { out.add(Long.parseLong(rest)); } catch (NumberFormatException ignored) { } }

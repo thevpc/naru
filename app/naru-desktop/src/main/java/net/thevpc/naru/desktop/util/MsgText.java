@@ -30,7 +30,11 @@ public final class MsgText {
      * @return plain text, or {@code raw} itself when no marker is present
      */
     public static String plain(String raw) {
-        if (raw == null || raw.indexOf('#') < 0) {
+        if (raw == null) {
+            return null;
+        }
+        raw = stripTerminalControls(raw);
+        if (raw.indexOf('#') < 0) {
             // the common case: model output almost never carries markup, and this keeps
             // the hot path a single scan instead of a regex
             return raw;
@@ -60,6 +64,37 @@ public final class MsgText {
             i++;
         }
         return sb == null ? raw : sb.toString();
+    }
+
+    /** Console streams can contain ANSI CSI/OSC sequences and other non-printing controls. */
+    private static String stripTerminalControls(String raw) {
+        StringBuilder out = null;
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (c == 0x1b) {
+                if (out == null) { out = new StringBuilder(raw.length()); out.append(raw, 0, i); }
+                if (i + 1 < raw.length() && raw.charAt(i + 1) == '[') {
+                    i += 2;
+                    while (i < raw.length()) {
+                        char end = raw.charAt(i);
+                        if (end >= 0x40 && end <= 0x7e) break;
+                        i++;
+                    }
+                } else if (i + 1 < raw.length() && raw.charAt(i + 1) == ']') {
+                    i += 2;
+                    while (i < raw.length() && raw.charAt(i) != 7
+                            && !(raw.charAt(i) == 0x1b && i + 1 < raw.length() && raw.charAt(i + 1) == '\\')) i++;
+                    if (i < raw.length() && raw.charAt(i) == 0x1b) i++;
+                } else if (i + 1 < raw.length()) i++;
+                continue;
+            }
+            if (out != null) {
+                if ((c >= 0x20 || c == '\n' || c == '\r' || c == '\t') && c != 0x7f) out.append(c);
+            } else if (c < 0x20 && c != '\n' && c != '\r' && c != '\t' || c == 0x7f) {
+                out = new StringBuilder(raw.length()); out.append(raw, 0, i);
+            }
+        }
+        return out == null ? raw : out.toString();
     }
 
     /** {@code style:text} or {@code text} — a token with no colon is pure text. */

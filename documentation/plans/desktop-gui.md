@@ -60,6 +60,15 @@ House patterns to copy: ndb (reflective dispatch via `NSearch`), kifkif (`-c/--c
 
 ## 4. Architecture
 
+### Navigation and keyboard access (design requirement)
+
+Every primary workflow must be reachable without a mouse. Focus order must be predictable, lists
+must support type-to-filter or a visible filter field as they grow, and commands for switching
+sessions, focusing the composer, and opening settings must have keyboard shortcuts. Mouse actions
+such as drag-to-move or double-click-to-maximize are conveniences and must have keyboard equivalents.
+Ctrl+Plus / Ctrl+Minus resize interface text, and Ctrl+0 restores the default size. The current
+scale is persisted and adjustable from Settings.
+
 ### 4.1 Layers
 
 ```
@@ -218,3 +227,11 @@ One small PR each, testable without a GUI, with unit tests in `core/naru-impl` a
 2. Then Phase 0 only. Report measurements, not impressions.
 3. At each gate, list what passed, what failed, what changed in the plan, and what you need decided.
 4. Prefer small, reviewable commits. Flag any place where this plan conflicts with the code instead of working around it.
+
+## 11. Conversation panel requirements
+
+- Render actual chat cards in a bounded moving window; do not use renderer-only `JList` cells for conversation messages.
+- Keep role attribution visible, support multiline markdown and selectable/copyable text, and allow typed message parts to supply interactive Swing components.
+- Store message parts as toolkit-neutral NARU elements. Hosts register renderers for choices, forms, downloads, attachments, and application-specific components.
+- Restore a recent keyset page per task; fetch older pages as the reader reaches the start of the loaded window. Release off-window components.
+- Search through each task's durable message store with opaque cursors. Do not implement conversation search by filtering only the currently rendered page.

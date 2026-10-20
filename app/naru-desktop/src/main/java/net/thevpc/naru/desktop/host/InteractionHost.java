@@ -140,9 +140,14 @@ public class InteractionHost implements NaruInteraction {
         long t0 = System.nanoTime();
         String text = MsgText.plain(message == null ? "" : message.toString());
         synchronized (publishLock) {
-            // a whole message closes any half-drawn streamed block first
-            String closing = blocks.close();
-            publish(closing == null ? null : new TranscriptEvent.Closed(closing));
+            // A whole message is a boundary only when the mode or task changed, or when it
+            // follows a stream. Consecutive whole messages of one mode/task belong to one
+            // block: directives log their help, listings and errors line by line, and closing
+            // on every write used to turn each of those lines into its own transcript card.
+            if (blocks.startsNewBlock(mode, taskId)) {
+                String closing = blocks.close();
+                publish(closing == null ? null : new TranscriptEvent.Closed(closing));
+            }
             String id = blocks.openForWhole(mode, taskId);
             publish(new TranscriptEvent.Chunk(id, mode, text, true, taskId));
         }

@@ -96,6 +96,19 @@ public interface NaruWorkspace {
      */
     List<NaruSession> sessions();
 
+    /**
+     * The saved catalog of this project: every session that exists on disk, running or not.
+     * <p>
+     * This is the companion to {@link #sessions()}, and the two are deliberately different
+     * views of the same thing. {@link #sessions()} is the live set and changes as sessions
+     * start and stop; the catalog is disk state that outlives the process, so a hibernated
+     * conversation is listed here long after nothing is running it. A host that shows a
+     * sidebar — the desktop does — reads this one, and never opens a store of its own: a
+     * second handle to the same folder is how the same session used to be listed once per
+     * handle and then fail to delete because the row and the handle disagreed.
+     */
+    NaruSessionStoreManager sessionCatalog();
+
     NClassLoader classLoader();
 
     /**

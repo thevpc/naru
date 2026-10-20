@@ -23,7 +23,6 @@ import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JList;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -226,11 +225,10 @@ public final class PermissionsPane extends JPanel implements PermissionsModel.Li
         if (row == null) {
             return;
         }
-        int yes = JOptionPane.showConfirmDialog(this,
-                "Remove " + row.id() + "?\n" + PermissionsText.describe(row.rule())
-                        + "\n\nThe change applies to the live policy immediately.",
-                "Remove permission rule", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
-        if (yes == JOptionPane.OK_OPTION) {
+        boolean yes = DesktopDialog.confirm(SwingUtilities.getWindowAncestor(this),
+                "Remove permission rule", "Remove " + row.id() + "?\n" + PermissionsText.describe(row.rule())
+                        + "\n\nThe change applies to the live policy immediately.","Remove");
+        if (yes) {
             model.removeRule(row.id());
         }
     }
@@ -282,12 +280,11 @@ public final class PermissionsPane extends JPanel implements PermissionsModel.Li
                 projectRules++;
             }
         }
-        int yes = JOptionPane.showConfirmDialog(this,
-                "Write " + projectRules + " project rule(s) to\n" + file
+        boolean yes = DesktopDialog.confirm(SwingUtilities.getWindowAncestor(this),
+                "Save project permissions", "Write " + projectRules + " project rule(s) to\n" + file
                         + "\n\nThis replaces a file the project commits, so it is versioned with the"
-                        + " code. Session rules are never written here.",
-                "Save project permissions", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
-        if (yes == JOptionPane.OK_OPTION) {
+                        + " code. Session rules are never written here.","Save");
+        if (yes) {
             note.setText(model.saveToProject());
         }
     }
@@ -396,10 +393,9 @@ public final class PermissionsPane extends JPanel implements PermissionsModel.Li
             NaruPermissionRule r = base == null ? new NaruPermissionRule() : base;
 
             JTextFieldHolder h = new JTextFieldHolder(r);
-            int choice = JOptionPane.showConfirmDialog(parent, h.panel(),
-                    isNew ? "New permission rule" : "Edit " + r.id(),
-                    JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-            return choice == JOptionPane.OK_OPTION ? h.build() : null;
+            boolean accepted=DesktopDialog.confirmComponent(SwingUtilities.getWindowAncestor(parent),
+                    isNew ? "New permission rule" : "Edit " + r.id(),h.panel());
+            return accepted ? h.build() : null;
         }
 
         /** Holds the widgets and turns them back into a rule. */

@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
+import net.thevpc.naru.api.model.NaruMessage;
 
 /**
  * The typed vocabulary a desktop host emits (plan §4.2).
@@ -29,8 +30,9 @@ public sealed interface TranscriptEvent {
 
     /**
      * Text appended to an open block. {@code finalFragment} marks the last fragment of a
-     * streamed block, which is when a renderer may do the expensive one-shot work
-     * (markdown parse, syntax highlight) instead of re-doing it per token.
+     * message, which is when a renderer may do the expensive one-shot work (markdown parse,
+     * syntax highlight) instead of re-doing it per token. It does not close the block: a run of
+     * whole messages of one mode/task shares one block until {@link Closed} arrives.
      * <p>
      * {@code taskId} is {@link NaruOutput#NO_TASK} unless the engine stamped the line, which since
      * E1 it does for anything a task emits.
@@ -57,6 +59,19 @@ public sealed interface TranscriptEvent {
      * leave the tools panel listing a call that looks like it is still running.
      */
     record ToolCall(NaruToolCallEvent call) implements TranscriptEvent {
+    }
+
+    /** A durable, structured conversation item; hosts may render its typed parts as components. */
+    record Message(String blockId, long taskId, long sequence, NaruMessage message) implements TranscriptEvent {
+        public Message {
+            message = message == null ? null : message.copy();
+        }
+
+        public Message(String blockId, long taskId, NaruMessage message) {
+            this(blockId, taskId, Long.MAX_VALUE, message);
+        }
+
+        @Override public NaruMessage message() { return message == null ? null : message.copy(); }
     }
 
     /**

@@ -36,6 +36,7 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
     private final JList<ToolCallModel.Row> list = new JList<>(rows);
     private final JTextArea detail = TextAreas.readOnly();
     private final JLabel note = new JLabel(" ");
+    private final javax.swing.JTextField search = new javax.swing.JTextField(14);
     private final javax.swing.JButton toPermissions = new javax.swing.JButton("Permission rule…");
     /** Opens the Permissions tab on the rule that denied this call, set by the window. */
     private java.util.function.Consumer<String> onJumpToPermissions;
@@ -68,6 +69,13 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
         });
         JPanel bar = new JPanel(new BorderLayout());
         bar.add(toPermissions, BorderLayout.WEST);
+        search.putClientProperty("JTextField.placeholderText", "Filter tool calls…");
+        search.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { toolCallsChanged(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { toolCallsChanged(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { toolCallsChanged(); }
+        });
+        bar.add(search, BorderLayout.CENTER);
         bar.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
         add(bar, BorderLayout.NORTH);
 
@@ -83,7 +91,9 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
     @Override
     public void toolCallsChanged() {
         java.util.List<ToolCallModel.Row> current = model.rows().stream()
-                .filter(r -> taskFilter >= 0 && r.taskId() == taskFilter).toList();
+                .filter(r -> taskFilter >= 0 && r.taskId() == taskFilter)
+                .filter(r -> search.getText().isBlank() || line(r).toLowerCase(java.util.Locale.ROOT)
+                        .contains(search.getText().trim().toLowerCase(java.util.Locale.ROOT))).toList();
         // rows are records replaced in place, so the object the user selected is the identity to
         // re-find after a reload — an index would jump to another call when a trim shifts the front
         ToolCallModel.Row wasSelected = list.getSelectedValue();

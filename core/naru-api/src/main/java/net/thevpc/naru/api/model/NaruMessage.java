@@ -37,6 +37,8 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
      * Tool calls requested by the assistant
      */
     private List<NaruToolCall> toolCalls;
+    /** Optional typed presentation parts, independent of provider-facing plain content. */
+    private List<NaruMessagePart> parts;
     /**
      * Model reasoning/thinking channel content (e.g. reasoning_content, <think> blocks),
      * kept separate from the user-visible content.
@@ -131,6 +133,7 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
                 toolName, toolCalls == null ? null : toolCalls.stream()
                         .map(NaruToolCall::copy).collect(Collectors.toList()));
         m.thinking = thinking;
+        m.parts = parts == null ? null : new ArrayList<>(parts);
         m.thinkingSegments = thinkingSegments == null ? null
                 : thinkingSegments.stream().map(NaruThinkingSegment::copy).collect(Collectors.toList());
         m.turnBoundary = turnBoundary;
@@ -175,6 +178,7 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
             if(e.toolCalls!=null){
                e.toolCalls=toolCalls.stream().map(x->x.copy()).collect(Collectors.toList());
             }
+            if (e.parts != null) e.parts = new ArrayList<>(parts);
             if (e.thinkingSegments != null) {
                 e.thinkingSegments = thinkingSegments.stream()
                         .map(NaruThinkingSegment::copy)
@@ -227,6 +231,14 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
                 toolCalls.add(new NaruToolCall(nElement));
             }
         }
+        NElement parts1 = o.get("parts").orNull();
+        if (parts1 != null && parts1.isAnyArray()) {
+            parts = new ArrayList<>();
+            for (NElement part : parts1.asArray().get()) {
+                NaruMessagePart value = NaruMessagePart.of(part);
+                if (value != null) parts.add(value);
+            }
+        }
         this.thinking = o.getStringValue("thinking").orNull();
         NElement thinkingSegments1 = o.get("thinkingSegments").orNull();
         if (thinkingSegments1 != null && thinkingSegments1.isAnyArray()) {
@@ -265,6 +277,11 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
                 _toolCalls.add(call.toElement());
             }
             o.set("toolCalls", _toolCalls.build());
+        }
+        if (parts != null && !parts.isEmpty()) {
+            NArrayElementBuilder _parts = NArrayElementBuilder.of();
+            for (NaruMessagePart part : parts) _parts.add(part.toElement());
+            o.set("parts", _parts.build());
         }
         if (thinkingSegments != null && !thinkingSegments.isEmpty()) {
             // structured form wins when present: writing both would store the
@@ -423,6 +440,24 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
 
     public void setToolCalls(List<NaruToolCall> toolCalls) {
         this.toolCalls = toolCalls;
+    }
+
+    /** Typed display content, such as markdown, choices, forms, or downloadable files. */
+    public List<NaruMessagePart> getParts() {
+        return parts == null ? List.of() : Collections.unmodifiableList(parts);
+    }
+
+    public NaruMessage setParts(List<NaruMessagePart> parts) {
+        this.parts = parts == null || parts.isEmpty() ? null : new ArrayList<>(parts);
+        return this;
+    }
+
+    public NaruMessage addPart(NaruMessagePart part) {
+        if (part != null) {
+            if (parts == null) parts = new ArrayList<>();
+            parts.add(part);
+        }
+        return this;
     }
 
     /**

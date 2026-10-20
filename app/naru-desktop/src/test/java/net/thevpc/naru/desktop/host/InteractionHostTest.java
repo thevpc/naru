@@ -179,9 +179,36 @@ class InteractionHostTest {
         assertEquals(threads * each, chunks.get(), "nothing lost at the default capacity");
         assertEquals(0, host.droppedEvents());
         assertEquals(0, host.queueDepth(), "and the queue drains");
-        // every whole message is its own closed block, which is what lets markdown render once
-        long closes = all.stream().filter(e -> e instanceof TranscriptEvent.Closed).count();
-        assertEquals(threads * each - 1, closes, "one close per block, none duplicated");
+        // one task and one mode: every whole message joins the same block rather than becoming
+        // a one-line card of its own
+        long distinctBlocks = all.stream()
+                .filter(e -> e instanceof TranscriptEvent.Chunk)
+                .map(e -> ((TranscriptEvent.Chunk) e).blockId())
+                .distinct().count();
+        assertEquals(1, distinctBlocks, "consecutive whole messages of one task share a block");
+    }
+
+    @Test
+    void consecutiveWholeMessagesShareOneBlockUntilTheModeChanges() throws Exception {
+        InteractionHost host = new InteractionHost("test", 1000, null);
+        List<TranscriptEvent> seen = new ArrayList<>();
+        host.setListener((batch, h) -> seen.addAll(batch));
+        onEdt(() -> {
+            host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("first line"), 4);
+            host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("second line"), 4);
+            host.write(NaruLogMode.PROGRESS, NMsg.ofC("a progress line"), 4);
+            host.flushOnce();
+        });
+        List<TranscriptEvent> chunks = seen.stream()
+                .filter(e -> e instanceof TranscriptEvent.Chunk).toList();
+        assertEquals(3, chunks.size());
+        String first = ((TranscriptEvent.Chunk) chunks.get(0)).blockId();
+        String second = ((TranscriptEvent.Chunk) chunks.get(1)).blockId();
+        String third = ((TranscriptEvent.Chunk) chunks.get(2)).blockId();
+        assertEquals(first, second, "same mode and task: one row, not one row per line");
+        assertTrue(!first.equals(third), "a mode change is still a block boundary");
+        assertEquals(1, seen.stream().filter(e -> e instanceof TranscriptEvent.Closed).count(),
+                "the previous block closes exactly once, at the boundary");
     }
 
     // ── E1: the typed tool-call lifecycle ─────────────────────────────────────

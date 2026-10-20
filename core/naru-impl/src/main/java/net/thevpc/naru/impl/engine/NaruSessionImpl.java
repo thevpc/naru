@@ -2016,20 +2016,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * private, and a project that wants its sessions shared says so in one line.
      */
     private NaruStoreConfig storeConfig() {
-        // a misspelled or absent scope key falls back to the default rather than failing:
-        // refusing to start over a typo in a config key is a poor trade
-        NaruSessionScope defaultScope = NaruSessionScope.parse(
-                getProjectEnv("session.defaultScope").flatMap(x -> x.asStringValue()).orNull());
-        if (defaultScope == null) {
-            defaultScope = NaruSessionScope.PRIVATE;
-        }
-        Map<String, String> jdbcProperties = new java.util.LinkedHashMap<>();
-        for (String key : List.of("naru.jdbc.url", "naru.jdbc.user", "naru.jdbc.password", "naru.jdbc.driver")) {
-            String value = System.getProperty(key);
-            if (value != null) jdbcProperties.put(key, value);
-        }
-        return new NaruStoreConfig(projectDir.normalize(),
-                projectDir.normalize().resolve(".naru"), defaultScope, jdbcProperties);
+        return NaruStoreConfigs.forProject(projectDir, workspace.env());
     }
 
     /**
@@ -2041,11 +2028,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * backend, which is exactly the case a config file is the wrong tool for.
      */
     private String storeName() {
-        String fromProperty = System.getProperty("naru.session.store");
-        if (fromProperty != null && !fromProperty.trim().isEmpty()) {
-            return fromProperty.trim();
-        }
-        return getProjectEnv("session.store").flatMap(x -> x.asStringValue()).orNull();
+        return NaruStoreConfigs.storeName(workspace.env());
     }
 
     @Override
@@ -2295,6 +2278,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return store;
     }
 
+    /** Message store for a task handle; scope is resolved each time in case visibility moved. */
+    public net.thevpc.naru.api.store.NaruMessageStore taskMessages(long taskId) {
+        NaruSessionScope scope = store.scopeOf(uuid()).orElseGet(this::scopeForNewState);
+        return store.tasks(uuid(), scope).messages(taskId);
+    }
+
     /**
      * This session's versions, with the scope resolved on every call rather than captured once.
      *
@@ -2443,6 +2432,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (resumedFromStore) {
             for (NaruToolset toolset : registry.toolsets()) toolset.onResume(this);
             for (NaruTool tool : registry.tools().values()) tool.onResume(this);
+            // The persisted task skeleton restores BLOCKED_ON_INPUT tasks and their request
+            // objects, but the previous interaction host is gone. Re-publish those requests
+            // to the new host so a resumed desktop session can accept input immediately.
+            for (NaruInputRequest request : pendingInputRequests.values()) {
+                interaction.requestInput(request);
+            }
         }
 
         notifySessionStart();

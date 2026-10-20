@@ -467,6 +467,12 @@ public interface NaruSession {
     boolean isHibernateEligible();
 
     /**
+     * Save a quiescent session and release its live resources while preserving input-blocked
+     * tasks for a later activation. Call only when {@link #isHibernateEligible()} is true.
+     */
+    void hibernate();
+
+    /**
      * True when the session still has tasks, whether or not any of them can make progress. This is
      * not "is anything running": a session with three parked tasks has live tasks and no work.
      */

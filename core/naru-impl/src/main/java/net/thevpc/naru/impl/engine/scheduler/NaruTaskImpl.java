@@ -80,6 +80,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private final Map<String, String> userLabels = new LinkedHashMap<>();
     private final List<Function<NaruTask, NaruMessage>> systemHistory = new ArrayList<>();
     private final List<NaruMessage> history = new ArrayList<>();
+    private final List<String> queuedMessages = new ArrayList<>();
     private java.util.function.Supplier<List<NaruMessage>> lazyHistoryLoader;
     private boolean historyLoaded = true;
     private String loadedHistoryHash;
@@ -228,6 +229,28 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public NaruTaskInbox inbox() {
         return inbox;
+    }
+
+    @Override public synchronized List<String> queuedMessages() { return List.copyOf(queuedMessages); }
+    @Override public synchronized NaruTask queueMessage(String message) {
+        if (message == null || message.isBlank()) throw new IllegalArgumentException("queued message must not be blank");
+        queuedMessages.add(message); fireChanged(); return this;
+    }
+    @Override public synchronized NaruTask editQueuedMessage(int index, String message) {
+        if (message == null || message.isBlank()) throw new IllegalArgumentException("queued message must not be blank");
+        queuedMessages.set(index, message); fireChanged(); return this;
+    }
+    @Override public synchronized NaruTask deleteQueuedMessage(int index) {
+        queuedMessages.remove(index); fireChanged(); return this;
+    }
+    @Override public synchronized NaruTask mergeQueuedMessages(int first, int last) {
+        if (first < 0 || last <= first || last >= queuedMessages.size()) throw new IndexOutOfBoundsException("select at least two queued messages");
+        String merged = String.join("\n\n", queuedMessages.subList(first, last + 1));
+        queuedMessages.subList(first, last + 1).clear(); queuedMessages.add(first, merged); fireChanged(); return this;
+    }
+    @Override public synchronized String pollQueuedMessage() {
+        if (queuedMessages.isEmpty()) return null;
+        String next = queuedMessages.remove(0); fireChanged(); return next;
     }
 
     @Override
@@ -1094,6 +1117,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         o.set("inputMode", inputMode.name());
         o.set("taskMode", taskMode.name());
         o.set("inputBuffer", inputBuffer);
+        NArrayElementBuilder queued = NArrayElementBuilder.of();
+        synchronized (this) { for (String message : queuedMessages) queued.add(message); }
+        o.set("queuedMessages", queued.build());
         NArrayElementBuilder _todos = NArrayElementBuilder.of();
         for (NaruTaskFrameImpl a : frames) {
             _todos.add(a.toElement());
@@ -1198,6 +1224,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         warnOnUnknownTaskToolTags();
         this.inputBuffer = "";
+        queuedMessages.clear();
+        NArrayElement queued = o.get("queuedMessages").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
+        if (queued != null) for (NElement item : queued) item.asStringValue().ifPresent(queuedMessages::add);
         NOptional<NElement> ibe = o.get("inputBuffer");
         if (ibe.isPresent() && ibe.get().isAnyStringOrName()) {
             this.inputBuffer = ibe.get().asStringValue().get();
@@ -1923,6 +1952,14 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public List<NaruMessage> history() {
         ensureHistoryLoaded();
         return Collections.unmodifiableList(new ArrayList<>(history));
+    }
+
+    @Override
+    public net.thevpc.naru.api.store.NaruMessageStore messages() {
+        if (session instanceof NaruSessionImpl) {
+            return ((NaruSessionImpl) session).taskMessages(id);
+        }
+        throw new UnsupportedOperationException("durable message store is unavailable for this session");
     }
 
     @Override

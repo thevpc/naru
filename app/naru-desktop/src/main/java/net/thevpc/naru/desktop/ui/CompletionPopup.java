@@ -310,15 +310,28 @@ final class CompletionPopup {
     private String labelOf(NaruLineCompletion.Candidate c, JList<?> l) {
         String kind = c.kind() == null ? "" : "  [" + c.kind().name().toLowerCase() + "]";
         String display = c.display();
+        String color = switch (c.kind() == null ? NaruLineCompletion.Kind.NONE : c.kind()) {
+            case DIRECTIVE -> "#7c4dff";
+            case SUBCOMMAND -> "#1976d2";
+            case DIRECTIVE_ARGUMENT -> "#00897b";
+            case FILE -> "#c77800";
+            case KEYWORD -> "#388e3c";
+            default -> "#3949ab";
+        };
+        String insert = "<span style='color:" + color + ";font-weight:bold'>" + html(c.insert()) + "</span>";
         if (display == null || display.isEmpty()) {
             // the kind only earns its space when the engine says the set is ambiguous
-            return c.insert() + (result.ambiguous() ? kind : "");
+            return "<html>" + insert + (result.ambiguous() ? " <font color='#777777'>" + kind + "</font>" : "") + "</html>";
         }
         // The engine's own directive descriptions already begin with the command — "/assert — assert
         // a condition" — so prefixing the insert again shows the user the same word twice.
         if (display.startsWith(c.insert())) {
-            return display + (result.ambiguous() ? kind : "");
+            return "<html>" + insert + " <font color='#777777'>" + html(display.substring(c.insert().length())) + (result.ambiguous() ? kind : "") + "</font></html>";
         }
-        return c.insert() + "  —  " + display + (result.ambiguous() ? kind : "");
+        return "<html>" + insert + "  <font color='#777777'>—  " + html(display) + (result.ambiguous() ? kind : "") + "</font></html>";
+    }
+
+    private static String html(String value) {
+        return value == null ? "" : value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 }

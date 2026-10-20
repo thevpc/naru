@@ -59,3 +59,5 @@ documentation/.naru
 /extensions/naru-compact/target/
 
 /app/naru-desktop/target/
+/.naru/stores/skills/trust/project/.lock
+/.naru/cache/compact.tson
