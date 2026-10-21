@@ -35,6 +35,20 @@ public final class TranscriptBlock {
     private NaruToolCallEvent toolCall;
     private NaruMessage message;
     private long messageSequence = Long.MAX_VALUE;
+    /**
+     * Output the host produced while running a {@code /}-directive for the user. It is conversation
+     * content — a reply to something typed — so the conversation view shows it even though it
+     * carries the same {@link NaruLogMode#AGENT_RESPONSE} the engine also uses for a plain error.
+     */
+    private boolean directiveResult;
+    /**
+     * Live narration that the next real message supersedes: "Model: gpt-4o…", "Tool: file_read",
+     * "⏹ Interrupted.". A transient block is shown while the turn runs and dropped from the
+     * conversation once a durable message lands; the Logs tab keeps it. An error is never
+     * transient, however it is logged, because a failure the user never saw is a failure they
+     * cannot act on.
+     */
+    private boolean transientBlock;
 
     private final StringBuilder text = new StringBuilder();
     private boolean closed;
@@ -97,6 +111,16 @@ public final class TranscriptBlock {
     public long messageSequence() { return messageSequence; }
 
     public boolean isChatMessage() { return message != null; }
+
+    /** True when this block is the result of a {@code /}-directive the user ran. */
+    public boolean isDirectiveResult() { return directiveResult; }
+
+    void setDirectiveResult(boolean value) { this.directiveResult = value; }
+
+    /** True for live narration the next real message supersedes. */
+    public boolean isTransient() { return transientBlock; }
+
+    void setTransient(boolean value) { this.transientBlock = value; }
 
     /** Position in the model at creation time; only used for stable sort/ordering hints. */
     public int index() {

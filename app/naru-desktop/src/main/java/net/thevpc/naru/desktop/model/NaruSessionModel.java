@@ -897,8 +897,10 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         // Close any block the previous turn left open, so the directive's output is its own card.
         // A failed prompt parks the task with its AGENT_RESPONSE block still open and no final
         // fragment; without this boundary the directive's result (same mode, same task) is merged
-        // into that error text and reads as "nothing happened".
-        host.beginBlock();
+        // into that error text and reads as "nothing happened". Marking it a directive result is
+        // what makes the conversation show it as a reply to what was typed, rather than as the raw
+        // AGENT_RESPONSE the engine also uses for a plain error.
+        host.beginDirectiveBlock();
         try {
             task.invokeDirective(line);
         } catch (RuntimeException ex) {
@@ -907,6 +909,8 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             refreshTasks();
             fireChanged();
             return why;
+        } finally {
+            host.endDirectiveBlock();
         }
         statusText = "ran " + line.strip();
         refreshTasks();

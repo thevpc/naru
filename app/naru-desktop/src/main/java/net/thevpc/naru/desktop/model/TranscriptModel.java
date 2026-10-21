@@ -92,6 +92,15 @@ public final class TranscriptModel {
                 boolean isNew = byId.get(c.blockId()) == null;
                 TranscriptBlock b = blockFor(c.blockId(), c.mode(), c.taskId());
                 structural |= isNew;
+                if (c.directiveResult()) {
+                    b.setDirectiveResult(true);
+                }
+                if (c.error()) {
+                    // A failure is never transient: it is the one thing in a noisy mode the user
+                    // has to be able to act on, so it survives the message that supersedes its
+                    // mode's narration.
+                    b.setTransient(false);
+                }
                 int before = b.length();
                 String add = MsgText.plain(c.text());
                 if (c.finalFragment() && !add.isEmpty() && !add.endsWith("\n")) {
@@ -106,7 +115,10 @@ public final class TranscriptModel {
                 text = true;
             } else if (e instanceof TranscriptEvent.Opened o) {
                 boolean isNew = byId.get(o.blockId()) == null;
-                blockFor(o.blockId(), o.mode(), o.taskId());
+                TranscriptBlock ob = blockFor(o.blockId(), o.mode(), o.taskId());
+                if (o.directiveResult()) {
+                    ob.setDirectiveResult(true);
+                }
                 structural |= isNew;
                 openBlockId = o.blockId();
             } else if (e instanceof TranscriptEvent.Closed cl) {
@@ -218,6 +230,7 @@ public final class TranscriptModel {
             return b;
         }
         b = new TranscriptBlock(id, mode, taskId, blocks.size());
+        b.setTransient(BlockStyle.of(mode).lifecycle() == BlockStyle.Lifecycle.TRANSIENT);
         blocks.add(b);
         byId.put(id, b);
         openBlockId = id;
@@ -411,12 +424,26 @@ public final class TranscriptModel {
 
     private boolean viewDirty = true;
 
-    /** The rows the transcript actually displays, after the verbose filter. */
+    /**
+     * The rows the transcript actually displays.
+     * <p>
+     * Two rules, from {@link BlockStyle}: a block whose audience is {@link
+     * BlockStyle.Audience#ENGINE_DETAIL} is kept only when the user asked for detail ({@code verbose});
+     * a {@link BlockStyle.Lifecycle#TRANSIENT} block — live narration such as "Model: gpt-4o…" or
+     * "Tool: file_read" — is dropped once a durable block lands after it, because the message it
+     * announced has arrived and supersedes it. Transient blocks are only ever hidden here in the
+     * conversation; {@link #blocks()} and the Logs tab keep them.
+     */
     public List<TranscriptBlock> visible() {
         if (viewDirty) {
             view.clear();
-            for (TranscriptBlock b : blocks) {
-                if (!verbose && BlockStyle.forBlock(b).verboseOnly()) {
+            for (int i = 0; i < blocks.size(); i++) {
+                TranscriptBlock b = blocks.get(i);
+                BlockStyle style = BlockStyle.forBlock(b);
+                if (!verbose && style.audience() == BlockStyle.Audience.ENGINE_DETAIL) {
+                    continue;
+                }
+                if (b.isTransient() && supersededByDurableAfter(i)) {
                     continue;
                 }
                 view.add(b);
@@ -424,6 +451,26 @@ public final class TranscriptModel {
             viewDirty = false;
         }
         return view;
+    }
+
+    /**
+     * Whether a durable block lands after {@code index} and so supersedes the narration before it.
+     * <p>
+     * "Durable" here means a real message, answer or tool card — the things a turn produces — not
+     * merely a block whose mode happens to be durable. A later transient line does not supersede an
+     * earlier one: a run of narration between two messages is one continuous "what the engine did",
+     * and hiding all but the last would make it flicker.
+     */
+    private boolean supersededByDurableAfter(int index) {
+        for (int i = index + 1; i < blocks.size(); i++) {
+            TranscriptBlock later = blocks.get(i);
+            if (later.isChatMessage() || later.isToolCard()
+                    || later.mode() == NaruLogMode.MODEL_RESPONSE
+                    || (later.mode() == NaruLogMode.AGENT_RESPONSE && !later.isTransient())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** All retained blocks before any pane-specific visibility filters. */

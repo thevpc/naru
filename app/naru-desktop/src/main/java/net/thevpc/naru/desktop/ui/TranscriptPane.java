@@ -260,11 +260,11 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     }
 
     private boolean shouldDisplay(TranscriptBlock block) {
+        BlockStyle style = BlockStyle.forBlock(block);
         if (showChatMessages) {
-            if (block.isChatMessage() || block.isToolCard()) {
-                return true;
-            }
-            return conversationsMode(block.mode()) || internalEvents.isSelected();
+            // The Conversation tab: everything written for the user, plus engine mechanics only
+            // when Activity is on. A directive result is conversation whatever mode carried it.
+            return style.audience() == BlockStyle.Audience.CONVERSATION || internalEvents.isSelected();
         }
         // The Logs tab is the whole record, so it keeps the stored conversation too: after a restart
         // only durable messages exist, and hiding them left the tab blank — the raw engine output
@@ -277,23 +277,6 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         }
         if (block.mode() == net.thevpc.naru.api.agent.NaruLogMode.DEBUG) return debugEvents.isSelected();
         return internalEvents.isSelected();
-    }
-
-    /**
-     * Whether a log mode is part of the conversation rather than engine noise.
-     * <p>
-     * {@code AGENT_RESPONSE}, {@code MODEL_THINKING} and {@code SCRIPT} always were.
-     * {@code MODEL_RESPONSE} is the raw model turn — the answer as the model wrote it — and it is
-     * exactly what the user is reading while it streams, so hiding it behind the Activity toggle
-     * was showing the answer only when it was already finished and stored. It belongs to the
-     * conversation; Activity keeps the remaining detail (progress notes, host events) behind an
-     * explicit opt-in.
-     */
-    private static boolean conversationsMode(net.thevpc.naru.api.agent.NaruLogMode mode) {
-        return mode == net.thevpc.naru.api.agent.NaruLogMode.AGENT_RESPONSE
-                || mode == net.thevpc.naru.api.agent.NaruLogMode.MODEL_RESPONSE
-                || mode == net.thevpc.naru.api.agent.NaruLogMode.MODEL_THINKING
-                || mode == net.thevpc.naru.api.agent.NaruLogMode.SCRIPT;
     }
 
     private void renderWindow(int anchorIndex) {

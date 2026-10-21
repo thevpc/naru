@@ -157,7 +157,8 @@ public class InteractionHost implements NaruInteraction {
             }
             String id = blocks.openForWhole(mode, taskId);
             boolean directive = directiveMark();
-            publish(new TranscriptEvent.Chunk(id, mode, text, true, taskId, directive));
+            publish(new TranscriptEvent.Chunk(id, mode, text, true, taskId, directive,
+                    message != null && message.isError()));
         }
         recordPublish(t0);
     }
@@ -422,8 +423,10 @@ public class InteractionHost implements NaruInteraction {
     private static void flushMerge(List<TranscriptEvent> batch, String mergeId, NaruLogMode mergeMode,
                                    StringBuilder mergeText, long mergeTaskId, boolean mergeDirective) {
         if (mergeText != null && mergeText.length() > 0) {
+            // a merged run is always streamed fragments, and the engine neither streams nor merges
+            // an error: text fragments carry no severity
             batch.add(new TranscriptEvent.Chunk(mergeId, mergeMode, mergeText.toString(), false, mergeTaskId,
-                    mergeDirective));
+                    mergeDirective, false));
         }
     }
 

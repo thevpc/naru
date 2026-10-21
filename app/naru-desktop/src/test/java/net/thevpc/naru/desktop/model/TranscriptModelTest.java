@@ -232,4 +232,99 @@ class TranscriptModelTest {
         }
         return out;
     }
+
+    // ── the three axes: audience, lifecycle, collapse ─────────────────────────
+
+    @Test
+    void progressNarrationIsSupersededByTheMessageItAnnounced() throws Exception {
+        // "Model: gpt-4o…" is worth seeing while the turn runs, and pointless afterwards. Once the
+        // real answer lands it drops from the conversation; the record still has it.
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(
+                    new TranscriptEvent.Chunk("p1", NaruLogMode.PROGRESS, "Model: gpt-4o…", true, 3),
+                    new TranscriptEvent.Closed("p1")));
+            assertEquals(1, m.visibleSize(), "narration shows while it is the only thing there");
+            m.apply(List.of(
+                    new TranscriptEvent.Chunk("a1", NaruLogMode.MODEL_RESPONSE, "the answer", true, 3),
+                    new TranscriptEvent.Closed("a1")));
+            assertEquals(1, m.visibleSize(), "the answer supersedes the narration that announced it");
+            assertEquals("a1", m.visible().get(0).id());
+            assertEquals(2, m.totalBlocks(), "the narration is retained, only hidden in the conversation");
+        });
+    }
+
+    @Test
+    void progressNarrationSurvivesWhileTheTurnIsStillRunning() throws Exception {
+        // Two narration lines in flight with no answer yet: the first must not hide behind the
+        // second, or the row would flicker as the engine works.
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(
+                    new TranscriptEvent.Chunk("p1", NaruLogMode.PROGRESS, "Model: gpt-4o…", true, 3),
+                    new TranscriptEvent.Chunk("p1", NaruLogMode.PROGRESS, "Tool: file_read", true, 3),
+                    new TranscriptEvent.Closed("p1")));
+            assertEquals(1, m.visibleSize());
+        });
+    }
+
+    @Test
+    void aTurnFatalErrorLoggedAsProgressStays() throws Exception {
+        // The engine logs "ERROR calling model" in the same mode as its narration. A failure the
+        // user never saw is a failure they cannot act on, so severity overrides the transient rule.
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(
+                    new TranscriptEvent.Chunk("p1", NaruLogMode.PROGRESS, "ERROR calling model", true, 3, false, true),
+                    new TranscriptEvent.Closed("p1"),
+                    new TranscriptEvent.Chunk("a1", NaruLogMode.MODEL_RESPONSE, "later answer", true, 3),
+                    new TranscriptEvent.Closed("a1")));
+            assertEquals(2, m.visibleSize(), "the error outlives the message that supersedes narration");
+            assertEquals("p1", m.visible().get(0).id());
+        });
+    }
+
+    @Test
+    void aDirectiveResultIsLabeledACommandAndKeptInTheConversation() throws Exception {
+        // A directive's output shares AGENT_RESPONSE with plain errors; the mark is what makes the
+        // conversation read it as a reply to what was typed.
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(
+                    new TranscriptEvent.Chunk("d1", NaruLogMode.AGENT_RESPONSE, "/home/user", true, 3, true),
+                    new TranscriptEvent.Closed("d1")));
+            TranscriptBlock b = m.visible().get(0);
+            assertTrue(b.isDirectiveResult());
+            assertEquals("Command", BlockStyle.forBlock(b).label());
+            assertEquals(BlockStyle.Audience.CONVERSATION, BlockStyle.forBlock(b).audience());
+        });
+    }
+
+    @Test
+    void thinkingIsConversationContentAndCollapsedByDefault() throws Exception {
+        // Thinking is long and the answer is the point, so it shows folded — not hidden, not open.
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(
+                    new TranscriptEvent.Chunk("t1", NaruLogMode.MODEL_THINKING, "let me think…", true, 3),
+                    new TranscriptEvent.Closed("t1")));
+            assertEquals(1, m.visibleSize(), "thinking is shown without Activity");
+            assertTrue(m.visible().get(0).isCollapsed(), "but folded, so it does not bury the answer");
+        });
+    }
+
+    @Test
+    void engineDetailIsHiddenUntilVerboseEvenThoughTheBlockIsDurable() throws Exception {
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(
+                    new TranscriptEvent.Chunk("s1", NaruLogMode.SCHEDULER, "fire", true, 3),
+                    new TranscriptEvent.Closed("s1")));
+            assertEquals(0, m.visibleSize());
+            m.setVerbose(true);
+            assertEquals(1, m.visibleSize());
+            assertFalse(BlockStyle.of(NaruLogMode.SCHEDULER).lifecycle() == BlockStyle.Lifecycle.TRANSIENT,
+                    "engine detail is a visibility question, not a retention one");
+        });
+    }
 }

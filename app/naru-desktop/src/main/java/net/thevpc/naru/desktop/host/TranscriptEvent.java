@@ -43,16 +43,25 @@ public sealed interface TranscriptEvent {
      * {@code taskId} is {@link NaruOutput#NO_TASK} unless the engine stamped the line, which since
      * E1 it does for anything a task emits. {@code directiveResult} is set on every fragment of a
      * block opened for a directive, so a fragment that arrives first can carry the mark too.
+     * <p>
+     * {@code error} is the engine's own severity ({@code NMsg.isError()}). It travels as a fact
+     * rather than being inferred from the text because it changes how the block is kept: narration
+     * logged in the same mode as a failure is transient, a failure is not.
      */
     record Chunk(String blockId, NaruLogMode mode, String text, boolean finalFragment, long taskId,
-                 boolean directiveResult) implements TranscriptEvent {
+                 boolean directiveResult, boolean error) implements TranscriptEvent {
+
+        public Chunk(String blockId, NaruLogMode mode, String text, boolean finalFragment, long taskId,
+                     boolean directiveResult) {
+            this(blockId, mode, text, finalFragment, taskId, directiveResult, false);
+        }
 
         public Chunk(String blockId, NaruLogMode mode, String text, boolean finalFragment, long taskId) {
-            this(blockId, mode, text, finalFragment, taskId, false);
+            this(blockId, mode, text, finalFragment, taskId, false, false);
         }
 
         public Chunk(String blockId, NaruLogMode mode, String text, boolean finalFragment) {
-            this(blockId, mode, text, finalFragment, NaruOutput.NO_TASK, false);
+            this(blockId, mode, text, finalFragment, NaruOutput.NO_TASK, false, false);
         }
     }
 

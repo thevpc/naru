@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -221,8 +222,9 @@ class InteractionHostTest {
         host.setListener((batch, h) -> seen.addAll(batch));
         onEdt(() -> {
             host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("No model is selected."), 4);
-            host.beginBlock();
+            host.beginDirectiveBlock();
             host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("/home/user/project"), 4);
+            host.endDirectiveBlock();
             host.flushOnce();
         });
         List<TranscriptEvent.Chunk> chunks = seen.stream()
@@ -231,6 +233,9 @@ class InteractionHostTest {
         assertEquals(2, chunks.size(), "both lines are still published");
         assertTrue(!chunks.get(0).blockId().equals(chunks.get(1).blockId()),
                 "the directive's output is its own card, not appended to the previous error");
+        assertFalse(chunks.get(0).directiveResult(), "the earlier error is not a directive result");
+        assertTrue(chunks.get(1).directiveResult(),
+                "the directive's output is marked as conversation content");
         assertEquals(1, seen.stream().filter(e -> e instanceof TranscriptEvent.Closed).count(),
                 "the forced boundary closes exactly once");
     }
@@ -243,11 +248,37 @@ class InteractionHostTest {
         List<TranscriptEvent> seen = new ArrayList<>();
         host.setListener((batch, h) -> seen.addAll(batch));
         onEdt(() -> {
-            host.beginBlock();
+            host.beginDirectiveBlock();
+            host.endDirectiveBlock();
             host.flushOnce();
         });
         assertTrue(seen.stream().noneMatch(e -> e instanceof TranscriptEvent.Closed),
                 "nothing was open, so nothing closed");
+    }
+
+    @Test
+    void anErrorMessageKeepsItsSeverityAndADirectiveMarkDoesNotLeakPastItsRun() throws Exception {
+        // Severity changes retention: narration logged like an error must not be treated as
+        // transient. And the directive mark is scoped to the run, so the next turn's output is not
+        // mislabelled as a command result.
+        InteractionHost host = new InteractionHost("test", 1000, null);
+        List<TranscriptEvent> seen = new ArrayList<>();
+        host.setListener((batch, h) -> seen.addAll(batch));
+        onEdt(() -> {
+            host.write(NaruLogMode.PROGRESS, NMsg.ofC("ERROR calling model").asError(), 7);
+            host.beginDirectiveBlock();
+            host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("/home/user"), 7);
+            host.endDirectiveBlock();
+            host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("just a message"), 7);
+            host.flushOnce();
+        });
+        List<TranscriptEvent.Chunk> chunks = seen.stream()
+                .filter(e -> e instanceof TranscriptEvent.Chunk)
+                .map(e -> (TranscriptEvent.Chunk) e).toList();
+        assertTrue(chunks.get(0).error(), "the engine's severity survives the host");
+        assertTrue(chunks.get(1).directiveResult(), "the directive result is marked");
+        assertFalse(chunks.get(2).directiveResult(),
+                "the mark ends with the directive run, so later output is not mislabelled");
     }
 
     // ── E1: the typed tool-call lifecycle ─────────────────────────────────────
