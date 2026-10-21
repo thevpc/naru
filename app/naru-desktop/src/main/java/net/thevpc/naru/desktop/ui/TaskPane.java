@@ -158,6 +158,10 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
             b.setFocusable(false);
             b.putClientProperty("JButton.buttonType", "toolBarButton");
             bar.add(b);
+            // The buttons carry a single glyph sized to a fixed 12pt square, so a larger interface
+            // size clips the glyph into "...". Re-derive the size whenever the font changes, not
+            // only when the TaskPane is first built — that is the cause of item 7.
+            b.addPropertyChangeListener("font", e -> reflowActionButtons());
         }
         // A fixed pixel size clips the glyph once the interface size grows: the button keeps its
         // 26px box while the font no longer fits. Size to the font instead — the buttons carry a

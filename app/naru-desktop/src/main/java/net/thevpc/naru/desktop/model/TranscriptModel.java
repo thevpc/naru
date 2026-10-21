@@ -443,7 +443,7 @@ public final class TranscriptModel {
                 if (!verbose && style.audience() == BlockStyle.Audience.ENGINE_DETAIL) {
                     continue;
                 }
-                if (b.isTransient() && supersededByDurableAfter(i)) {
+                if (!verbose && b.isTransient() && supersededByDurableAfter(i)) {
                     continue;
                 }
                 view.add(b);

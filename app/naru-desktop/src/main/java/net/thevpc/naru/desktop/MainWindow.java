@@ -736,7 +736,31 @@ public final class MainWindow extends JFrame {
         conversationAndComposer.setResizeWeight(1.0);
         conversationAndComposer.setContinuousLayout(true);
         conversationAndComposer.setOneTouchExpandable(false);
-        conversationAndComposer.setDividerLocation(composerDivider);
+        // Zero is not a divider location, it is the absence of one. Applying it collapsed the
+        // whole conversation column to nothing on the first session of a run, which read as
+        // "the window only shows the input area". A remembered value is applied only when there
+        // is one; otherwise the split is placed once it has a height, so the first activation
+        // shows the conversation above a composer with room to write.
+        if (composerDivider > 0) {
+            conversationAndComposer.setDividerLocation(composerDivider);
+        } else {
+            conversationAndComposer.addComponentListener(new java.awt.event.ComponentAdapter() {
+                private boolean placed;
+
+                @Override
+                public void componentResized(java.awt.event.ComponentEvent e) {
+                    if (placed || composerDivider > 0) {
+                        return;
+                    }
+                    int total = conversationAndComposer.getHeight();
+                    int composerHeight = Math.max(input.getPreferredSize().height, total / 3);
+                    if (total > 0 && composerHeight > 0) {
+                        placed = true;
+                        conversationAndComposer.setDividerLocation(Math.max(0, total - composerHeight));
+                    }
+                }
+            });
+        }
         conversationAndComposer.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, e -> {
             Object value = e.getNewValue();
             if (value instanceof Integer location && location > 0) composerDivider = location;

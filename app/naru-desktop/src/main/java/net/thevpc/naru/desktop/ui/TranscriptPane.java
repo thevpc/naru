@@ -133,6 +133,16 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         // Message cards always wrap at the panel width; horizontal overflow is hosted by the
         // message items themselves, and only those that explicitly ask for it.
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        // Track a deliberate scroll-away so followTail() can be suppressed even if a stale
+        // deferred runnable is still queued on the EDT.
+        scroll.getVerticalScrollBar().addAdjustmentListener(e -> {
+            if (e.getValueIsAdjusting()) {
+                // the user is dragging: decide from where they are
+                userScrolledAway = !isNearBottom();
+            } else if (isNearBottom() && !userScrolledAway) {
+                userScrolledAway = false;
+            }
+        });
         scroll.addMouseWheelListener(e -> {
             JScrollBar scrollBar = scroll.getVerticalScrollBar();
             if (e.getWheelRotation() < 0 && scrollBar.getValue() <= 4
@@ -237,7 +247,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         // bar's maximum, and once the new rows are added the maximum grows and the bar is no
         // longer near the bottom even though the user never moved. When the user has scrolled
         // up, the reveal below must not drag them back down.
-        boolean wasAtTail = resetToTail || initial || isNearBottom();
+        boolean wasAtTail = resetToTail || initial || (isNearBottom() && !userScrolledAway);
         matching.clear();
         String needle = query.toLowerCase(java.util.Locale.ROOT);
         for (TranscriptBlock b : model.allBlocks()) {
@@ -405,6 +415,14 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         return bar == null || bar.getValue() + bar.getVisibleAmount() >= bar.getMaximum() - STICK_MARGIN;
     }
 
+    /**
+     * True while the user has scrolled away from the tail on purpose. A deliberate scroll-up
+     * suppresses {@link #followTail()} even if a stale deferred runnable from an earlier stream
+     * is still queued on the EDT — that is the cause of the bar being yanked back to the bottom
+     * while the user is reading earlier content. Cleared again when the user returns to the tail.
+     */
+    private boolean userScrolledAway = false;
+
     private static Color blend(Color a, Color b, float mix) {
         if (a == null) a = Color.WHITE;
         return new Color((int) (a.getRed() * (1 - mix) + b.getRed() * mix),
@@ -447,7 +465,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         // The stick decision is taken before the rows are touched: streaming text makes the
         // column taller, and a pane the user left at the bottom has to keep following it, while
         // one the user scrolled up must be left where it is.
-        boolean wasAtTail = isNearBottom();
+        boolean wasAtTail = isNearBottom() && !userScrolledAway;
         boolean followed = false;
         for (TranscriptBlock block : model.lastTextChanged()) {
             if (refreshRow(block)) {
@@ -510,7 +528,15 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
      * re-validated and the scrollbar's maximum reflects the rows that were just added — setting
      * the value against the old maximum lands one card short of the bottom.
      */
-    public void followTail() { SwingUtilities.invokeLater(() -> scroll.getVerticalScrollBar().setValue(scroll.getVerticalScrollBar().getMaximum())); }
+    public void followTail() {
+        SwingUtilities.invokeLater(() -> {
+            JScrollBar bar = scroll.getVerticalScrollBar();
+            if (bar == null) return;
+            if (userScrolledAway) return;
+            if (bar.getValue() + bar.getVisibleAmount() < bar.getMaximum() - STICK_MARGIN) return;
+            bar.setValue(bar.getMaximum());
+        });
+    }
 
     // Harness-facing reads retained for existing transcript smoke diagnostics.
     public int rowCount() { return matching.size(); }
