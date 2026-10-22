@@ -1815,6 +1815,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (running) {
             return this;
         }
+        ((NaruRegistryImpl) registry).openToolsets();
         running = true;
         // The interaction owns whatever thread it needs, and starts none at all when it is
         // headless. Opening it before the scheduler means input can be accepted from the
@@ -1867,6 +1868,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         // close the interaction before announcing the stop: that cancels any input request
         // still waiting, so a worker is never left blocked on a question the host is gone
         // for. The terminal interaction also shuts down its readline thread here.
+        ((NaruRegistryImpl) registry).closeToolsets();
         interaction.close();
         if (sessionListener != null) {
             sessionListener.sessionStopped(this);

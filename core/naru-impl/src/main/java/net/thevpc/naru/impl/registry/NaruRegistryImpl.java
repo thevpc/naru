@@ -30,6 +30,7 @@ public class NaruRegistryImpl implements NaruRegistry {
     private final Map<String, NaruDirectiveProvider> directiveProviders = new LinkedHashMap<>();
     private final Map<String, NaruToolTagProvider> toolTagProviders = new LinkedHashMap<>();
     private final List<NaruToolset> activeToolsets = new ArrayList<>();
+    private final Set<NaruToolset> openedToolsets = Collections.newSetFromMap(new IdentityHashMap<>());
     //    private final Map<String, NaruTool> tools = new LinkedHashMap<>();
     private final Map<String, NaruDirective> availableDirectives = new LinkedHashMap<>();
     private final Map<String, NaruToolTag> availableToolTags = new LinkedHashMap<>();
@@ -144,9 +145,36 @@ public class NaruRegistryImpl implements NaruRegistry {
     public NaruRegistry registerToolset(NaruToolset toolset) {
         activeToolsets.add(toolset);
         if (session.isRunning()) {
-            toolset.open(session);
+            openToolset(toolset);
         }
         return this;
+    }
+
+    public void openToolsets() {
+        try {
+            for (NaruToolset toolset : activeToolsets) {
+                openToolset(toolset);
+            }
+        } catch (RuntimeException | Error ex) {
+            closeToolsets();
+            throw ex;
+        }
+    }
+
+    private void openToolset(NaruToolset toolset) {
+        if (openedToolsets.add(toolset)) {
+            try {
+                toolset.open(session);
+            } catch (RuntimeException | Error ex) {
+                openedToolsets.remove(toolset);
+                try {
+                    toolset.close();
+                } catch (Exception closeError) {
+                    ex.addSuppressed(closeError);
+                }
+                throw ex;
+            }
+        }
     }
 
     public NOptional<NaruTool> findTool(String name) {
@@ -436,6 +464,7 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public void close() {
+        closeToolsets();
         for (NaruSessionExtension e : sessionExtensions) {
             try {
                 e.close();
@@ -443,6 +472,19 @@ public class NaruRegistryImpl implements NaruRegistry {
                 // a misbehaving extension must not prevent the others from closing
                 session.log(NaruLogMode.SCRIPT, NMsg.ofC(
                         "session extension '%s' failed to close: %s", e.name(), ex.getMessage()).asError());
+            }
+        }
+    }
+
+    public void closeToolsets() {
+        for (NaruToolset toolset : activeToolsets) {
+            if (openedToolsets.remove(toolset)) {
+                try {
+                    toolset.close();
+                } catch (Exception ex) {
+                    session.log(NaruLogMode.SCRIPT, NMsg.ofC(
+                            "toolset '%s' failed to close: %s", toolset.id(), ex.getMessage()).asError());
+                }
             }
         }
     }
