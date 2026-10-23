@@ -9,9 +9,9 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.nuts.text.NText;
 
-public class SearchWebScriptTool extends DefaultNaruTool {
+public class WebSearchTool extends DefaultNaruTool {
 
-    public SearchWebScriptTool() {
+    public WebSearchTool() {
         super("web_search", new String[]{NaruToolTags.NETWORK});
     }
 

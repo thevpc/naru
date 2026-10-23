@@ -26,45 +26,145 @@ public class WebToolHelper {
     public static final String SEARCH_URL = "https://html.duckduckgo.com/html/";
 
     public static String searchWeb(NaruTask task, String query) {
-        if (query == null) {
+        if (NBlankable.isBlank(query)) {
             return "Error: query is required";
         }
-        String denied = deny(task, SEARCH_URL);
-        if (denied != null) {
-            return denied;
-        }
 
+        // Still use the API endpoint to avoid CAPTCHA
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(30));
-        NHttpResponse response = http.GET(SEARCH_URL)
+
+        NHttpResponse response = http.GET("https://api.duckduckgo.com/")
                 .parameter("q", query)
-                .header("User-Agent", "Mozilla/5.0")
+                .parameter("format", "json")
+                .parameter("no_html", "1")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                 .run();
-        String contentAsString = response.contentAsString();
-        String contentAsString2 = contentAsString.replaceAll("<[^>]*>", "").replace("&nbsp;", " ").replace("&amp;", "&")
-                .replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .replace("&#x27;", "'");
-        List<String> sb = new ArrayList<>();
-        int maxLines = 300;
-        boolean stripped = false;
-        for (String s : contentAsString2.split("\n")) {
-            s = s.trim();
-            if (!s.isEmpty()) {
-                if (stripped) {
-                    sb.add(s);
-                } else {
-                    if (sb.size() > 3 && s.equals("Past Year") && sb.get(sb.size() - 1).equals("Past Month") && sb.get(sb.size() - 2).equals("Past Week")) {
-                        sb.clear();
-                        stripped = true;
-                    } else {
-                        sb.add(s);
-                    }
+
+        String jsonContent = response.contentAsString();
+
+        // Parse and extract meaningful text from JSON
+        return extractTextFromDDGResponse(jsonContent);
+    }
+
+    private static String extractTextFromDDGResponse(String json) {
+        // Since you prefer avoiding Jackson, here's a simple approach
+        // You could also use a lightweight JSON parser
+
+        StringBuilder result = new StringBuilder();
+
+
+        //TODO replace with Nuts JSON PARSER
+
+        // Extract AbstractText field (main answer)
+        String abstractText = extractJsonField(json, "AbstractText");
+        if (abstractText != null && !abstractText.isEmpty()) {
+            result.append(abstractText).append("\n\n");
+        }
+
+        // Extract Heading
+        String heading = extractJsonField(json, "Heading");
+        if (heading != null && !heading.isEmpty()) {
+            result.insert(0, heading + "\n");
+        }
+
+        // Extract RelatedTopics
+        String relatedTopics = extractRelatedTopics(json);
+        if (!NBlankable.isBlank(relatedTopics)) {
+            result.append("\nRelated:\n").append(relatedTopics);
+        }
+
+        return result.toString().trim();
+    }
+
+    // Simple JSON field extractor (avoiding full JSON library)
+    private static String extractJsonField(String json, String fieldName) {
+        String pattern = "\"" + fieldName + "\":\"";
+        int start = json.indexOf(pattern);
+        if (start == -1) return null;
+
+        start += pattern.length();
+        int end = json.indexOf("\"", start);
+        if (end == -1) return null;
+
+        String value = json.substring(start, end);
+        // Unescape JSON strings
+        return value.replace("\\\"", "\"")
+                .replace("\\n", "\n")
+                .replace("\\\\", "\\");
+    }
+
+    private static String extractRelatedTopics(String json) {
+        // Simplified extraction - you might want a proper JSON parser for complex structures
+        StringBuilder topics = new StringBuilder();
+        int pos = 0;
+        int count = 0;
+
+        while ((pos = json.indexOf("\"FirstURL\"", pos)) != -1 && count < 5) {
+            int urlStart = pos + 11; // length of "FirstURL":"
+            int urlEnd = json.indexOf("\"", urlStart);
+            if (urlEnd == -1) break;
+
+            String url = json.substring(urlStart, urlEnd);
+
+            // Find corresponding Text
+            int textPos = json.indexOf("\"Text\":\"", urlEnd);
+            if (textPos != -1) {
+                int textStart = textPos + 8;
+                int textEnd = json.indexOf("\"", textStart);
+                if (textEnd != -1) {
+                    String text = json.substring(textStart, textEnd)
+                            .replace("\\\"", "\"")
+                            .replace("\\n", " ");
+                    topics.append("- ").append(text).append("\n  ").append(url).append("\n");
+                    count++;
                 }
             }
+            pos = urlEnd + 1;
         }
-        return sb.stream().limit(maxLines).collect(Collectors.joining("\n"));
+
+        return topics.toString();
     }
+//    public static String searchWeb(NaruTask task, String query) {
+//        if (query == null) {
+//            return "Error: query is required";
+//        }
+//        String denied = deny(task, SEARCH_URL);
+//        if (denied != null) {
+//            return denied;
+//        }
+//
+//        NHttpClient http = NHttpClient.of()
+//                .connectTimeout(NDuration.ofSeconds(30));
+//        NHttpResponse response = http.GET(SEARCH_URL)
+//                .parameter("q", query)
+//                .header("User-Agent", "Mozilla/5.0")
+//                .run();
+//        String contentAsString = response.contentAsString();
+//        String contentAsString2 = contentAsString.replaceAll("<[^>]*>", "").replace("&nbsp;", " ").replace("&amp;", "&")
+//                .replace("&lt;", "<")
+//                .replace("&gt;", ">")
+//                .replace("&#x27;", "'");
+//        List<String> sb = new ArrayList<>();
+//        int maxLines = 300;
+//        boolean stripped = false;
+//        for (String s : contentAsString2.split("\n")) {
+//            s = s.trim();
+//            if (!s.isEmpty()) {
+//                if (stripped) {
+//                    sb.add(s);
+//                } else {
+//                    if (sb.size() > 3 && s.equals("Past Year") && sb.get(sb.size() - 1).equals("Past Month") && sb.get(sb.size() - 2).equals("Past Week")) {
+//                        sb.clear();
+//                        stripped = true;
+//                    } else {
+//                        sb.add(s);
+//                    }
+//                }
+//            }
+//        }
+//        return sb.stream().limit(maxLines).collect(Collectors.joining("\n"));
+//    }
 
     public static String webFetch(NaruTask task, String urlStr, String format, Integer timeoutSec) {
         if (NBlankable.isBlank(urlStr)) {

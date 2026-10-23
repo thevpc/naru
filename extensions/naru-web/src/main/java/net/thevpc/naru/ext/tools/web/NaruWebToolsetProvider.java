@@ -38,7 +38,7 @@ public class NaruWebToolsetProvider implements NaruToolsetProvider {
     }
 
     private List<NaruTool> webTools() {
-        return List.of(new SearchWebScriptTool(), new WebFetchTool());
+        return List.of(new WebSearchTool(), new WebFetchTool());
     }
 
 }

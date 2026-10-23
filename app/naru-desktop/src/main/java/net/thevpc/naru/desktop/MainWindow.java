@@ -1050,7 +1050,7 @@ public final class MainWindow extends JFrame {
     private JTabbedPane sideTabs(TaskPane tasks, NaruSessionModel session) {
         JTabbedPane tabs = new JTabbedPane();
         tools = new ToolsPane(session.tools());
-        tabs.addTab("Task tools", tools);
+        tabs.addTab("Tools", tools);
         // moved from Phase 4 by the owner: §3.3 makes this the v1 answer to an approval prompt,
         // and §6 promises a jump into it from a permission denial
         JPanel taskPermissions = new JPanel(new BorderLayout());
@@ -1058,7 +1058,7 @@ public final class MainWindow extends JFrame {
         JLabel pendingPermissions = new JLabel("Per-task permissions and approvals will appear here.", JLabel.CENTER);
         pendingPermissions.setForeground(java.awt.Color.GRAY);
         taskPermissions.add(pendingPermissions, BorderLayout.CENTER);
-        tabs.addTab("Task permissions", taskPermissions);
+        tabs.addTab("Permissions", taskPermissions);
         tools.setJumpToPermissions(ruleId -> openPermissions(ruleId));
         inspector = new InspectorPane(session);
         tabs.addTab("Inspect", inspector);

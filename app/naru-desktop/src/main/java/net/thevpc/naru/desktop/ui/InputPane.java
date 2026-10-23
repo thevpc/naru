@@ -1,6 +1,7 @@
 package net.thevpc.naru.desktop.ui;
 
 import net.thevpc.naru.api.agent.NaruInputRequest;
+import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.registry.NaruLineCompletion;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.desktop.model.InputPrompt;
@@ -50,7 +51,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private final JButton queued = new JButton("⏳ 0");
     private final JButton model = new JButton("⚡");
     private final JComboBox<String> agentMode = new JComboBox<>();
-    /** True while {@link #refreshModes()} is writing the combo, so its listener can tell that from a click. */
+    /**
+     * True while {@link #refreshModes()} is writing the combo, so its listener can tell that from a click.
+     */
     private boolean modeSyncRunning;
     private final JCheckBox thinking = new JCheckBox("Thinking", true);
     private final JButton attach = new JButton("📎");
@@ -62,11 +65,17 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private java.util.List<net.thevpc.naru.api.model.NaruModelInfo> modelInfos = java.util.List.of();
     private net.thevpc.naru.api.agent.NaruSession modelCatalogSession;
     private boolean modelCatalogLoading;
-    private enum ComposerAction { RUN, SEND, ENQUEUE, STOP, DISABLED }
+
+    private enum ComposerAction {RUN, SEND, ENQUEUE, STOP, DISABLED}
+
     private ComposerAction composerAction = ComposerAction.DISABLED;
-    /** Fallback border for the composer card when the LAF defines no component border colour. */
+    /**
+     * Fallback border for the composer card when the LAF defines no component border colour.
+     */
     private static final Color COMPOSER_IDLE_BORDER = new Color(200, 205, 215);
-    /** Accent drawn around the composer card while the text area owns the keyboard focus. */
+    /**
+     * Accent drawn around the composer card while the text area owns the keyboard focus.
+     */
     private Color composerFocusBorder;
     private JPanel composerCard;
     private javax.swing.Timer focusBorderTimer;
@@ -198,9 +207,17 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         installKeys();
         installFocusBorder();
         area.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            public void insertUpdate(javax.swing.event.DocumentEvent e) { updateEnabledState(); }
-            public void removeUpdate(javax.swing.event.DocumentEvent e) { updateEnabledState(); }
-            public void changedUpdate(javax.swing.event.DocumentEvent e) { updateEnabledState(); }
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                updateEnabledState();
+            }
+
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                updateEnabledState();
+            }
+
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                updateEnabledState();
+            }
         });
         session.setInputListener(this::showPrompt);
         session.addListener(this);
@@ -224,8 +241,15 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
      */
     private void installFocusBorder() {
         java.awt.event.FocusAdapter focus = new java.awt.event.FocusAdapter() {
-            @Override public void focusGained(java.awt.event.FocusEvent e) { scheduleRefreshComposerFocus(); }
-            @Override public void focusLost(java.awt.event.FocusEvent e) { scheduleRefreshComposerFocus(); }
+            @Override
+            public void focusGained(java.awt.event.FocusEvent e) {
+                scheduleRefreshComposerFocus();
+            }
+
+            @Override
+            public void focusLost(java.awt.event.FocusEvent e) {
+                scheduleRefreshComposerFocus();
+            }
         };
         area.addFocusListener(focus);
     }
@@ -246,7 +270,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         }
     }
 
-    /** The accent a focused component draws: the LAF's own, or the one the Send button uses. */
+    /**
+     * The accent a focused component draws: the LAF's own, or the one the Send button uses.
+     */
     private Color focusAccent() {
         Color accent = javax.swing.UIManager.getColor("Component.focusColor");
         if (accent == null) accent = javax.swing.UIManager.getColor("Component.accentColor");
@@ -300,7 +326,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         });
     }
 
-    /** A choice click sends the number, exactly as the tool tells the user to. */
+    /**
+     * A choice click sends the number, exactly as the tool tells the user to.
+     */
     private void answer(String choice, int number) {
         if (shownFor == null) {
             return;
@@ -332,7 +360,8 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private void doSend(ActionEvent e) {
         if (composerAction == ComposerAction.STOP) {
             String failure = session.interruptForegroundStatement();
-            if (failure != null) DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Stop statement", failure);
+            if (failure != null)
+                DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Stop statement", failure);
             updateEnabledState();
             area.requestFocusInWindow();
             return;
@@ -433,32 +462,50 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         JButton merge = new JButton("Merge selected");
         JDialog dialog = DesktopDialog.create(SwingUtilities.getWindowAncestor(this), "Queued messages");
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        actions.add(edit); actions.add(merge); actions.add(remove);
+        actions.add(edit);
+        actions.add(merge);
+        actions.add(remove);
         edit.addActionListener(e -> {
-            int i = list.getSelectedIndex(); if (i < 0) return;
+            int i = list.getSelectedIndex();
+            if (i < 0) return;
             String value = DesktopDialog.promptText(SwingUtilities.getWindowAncestor(this), "Edit queued message", "Message", rows.get(i));
-            if (value != null && !value.isBlank()) { task.editQueuedMessage(i, value); rows.set(i, value); updateEnabledState(); }
+            if (value != null && !value.isBlank()) {
+                task.editQueuedMessage(i, value);
+                rows.set(i, value);
+                updateEnabledState();
+            }
         });
         remove.addActionListener(e -> {
             int[] selected = list.getSelectedIndices();
-            for (int i = selected.length - 1; i >= 0; i--) { task.deleteQueuedMessage(selected[i]); rows.remove(selected[i]); }
+            for (int i = selected.length - 1; i >= 0; i--) {
+                task.deleteQueuedMessage(selected[i]);
+                rows.remove(selected[i]);
+            }
             updateEnabledState();
         });
         merge.addActionListener(e -> {
             int[] selected = list.getSelectedIndices();
             if (selected.length < 2) return;
-            for (int i=1;i<selected.length;i++) if (selected[i] != selected[0] + i) {
-                DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Message queue", "Select adjacent messages to merge."); return;
-            }
+            for (int i = 1; i < selected.length; i++)
+                if (selected[i] != selected[0] + i) {
+                    DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Message queue", "Select adjacent messages to merge.");
+                    return;
+                }
             task.mergeQueuedMessages(selected[0], selected[selected.length - 1]);
             String merged = String.join("\n\n", java.util.Arrays.stream(selected).mapToObj(rows::get).toList());
-            for (int i=selected.length-1;i>=selected[0];i--) rows.remove(i);
-            rows.add(selected[0], merged); list.setSelectedIndex(selected[0]); updateEnabledState();
+            for (int i = selected.length - 1; i >= selected[0]; i--) rows.remove(i);
+            rows.add(selected[0], merged);
+            list.setSelectedIndex(selected[0]);
+            updateEnabledState();
         });
-        JPanel body=new JPanel(new BorderLayout(8,8)); body.setBorder(BorderFactory.createEmptyBorder(12,14,12,14));
-        JLabel hint=new JLabel("Queued messages are sent in order when this task next asks for input.");
-        body.add(hint,BorderLayout.NORTH);body.add(new JScrollPane(list),BorderLayout.CENTER);body.add(actions,BorderLayout.SOUTH);
-        DesktopDialog.setBody(dialog,body); DesktopDialog.showCentered(dialog,SwingUtilities.getWindowAncestor(this),560,360);
+        JPanel body = new JPanel(new BorderLayout(8, 8));
+        body.setBorder(BorderFactory.createEmptyBorder(12, 14, 12, 14));
+        JLabel hint = new JLabel("Queued messages are sent in order when this task next asks for input.");
+        body.add(hint, BorderLayout.NORTH);
+        body.add(new JScrollPane(list), BorderLayout.CENTER);
+        body.add(actions, BorderLayout.SOUTH);
+        DesktopDialog.setBody(dialog, body);
+        DesktopDialog.showCentered(dialog, SwingUtilities.getWindowAncestor(this), 560, 360);
     }
 
     private NaruTask selectedTask() {
@@ -476,8 +523,11 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private NaruTask foregroundTask() {
         var current = session.session();
         if (current == null) return null;
-        try { return current.findTask(current.foregroundTaskId()).orNull(); }
-        catch (RuntimeException ignored) { return null; }
+        try {
+            return current.findTask(current.foregroundTaskId()).orNull();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private NaruTask queueTargetTask() {
@@ -497,9 +547,11 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         boolean hasText = !area.composerText().isBlank();
         boolean directive = hasText && NaruSessionModel.isDirective(area.composerText());
         boolean busy = false;
-        try { busy = foreground != null && !foreground.isCompleted()
-                && foreground.status() == net.thevpc.naru.api.scheduler.NaruTaskStatus.RUNNING; }
-        catch (RuntimeException ignored) { }
+        try {
+            busy = foreground != null && !foreground.isCompleted()
+                    && foreground.status() == net.thevpc.naru.api.scheduler.NaruTaskStatus.RUNNING;
+        } catch (RuntimeException ignored) {
+        }
         // The engine's task state is polled, and a turn that is streaming tokens can sit in a
         // state the poll never reads as RUNNING — the worker parks between ticks, and the
         // foreground pointer is not always the task doing the work. The desktop sees the output
@@ -551,8 +603,10 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         if (can) {
             reason.setText(" ");
         } else {
-            if (canQueue) why = hasText ? "Agent is working. This message will be enqueued." : "Agent is working. Stop is available.";
-            else if (pending != null && !matchesTask) why = "Select task #" + pending.task().id() + " to answer its question";
+            if (canQueue)
+                why = hasText ? "Agent is working. This message will be enqueued." : "Agent is working. Stop is available.";
+            else if (pending != null && !matchesTask)
+                why = "Select task #" + pending.task().id() + " to answer its question";
             reason.setText("<html><i>" + escape(why) + "</i></html>");
             reason.setForeground(canQueue ? javax.swing.UIManager.getColor("Label.disabledForeground") : new Color(180, 95, 60));
         }
@@ -583,39 +637,55 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private void refreshModels() {
         if (session.session() == null) return;
         var task = selectedTaskId < 0 ? null : session.session().findTask(selectedTaskId).orNull();
-        var current = task == null || task.model() == null ? null : task.model().key();
+        new javax.swing.SwingWorker<NaruModelKey, Void>() {
+            NaruModelKey current;
+            protected NaruModelKey doInBackground() {
+                return current = task == null || task.model() == null ? null : task.model().key();
+            }
+
+            protected void done() {
+                model.setEnabled(true);
+                model.putClientProperty("selectedModel", current);
+                // The button names the model it will change. The header used to, and then the header went
+                // away; a bare glyph left the reader to open the picker just to ask which model is live. The
+                // key stays in the tooltip because a provider/model:tag is the longest text this row holds.
+                model.setText(ModelIcons.buttonLabel(current == null ? null : current.provider(),
+                        current == null ? null : current.model(), 22));
+                String absent = absentProvidersSummary();
+                model.setToolTipText((current == null ? "No model selected" : current.toString())
+                        + " · " + modelInfos.size() + " models exposed by providers registered for this session"
+                        + (absent == null ? "" : " · " + absent));
+            }
+        }.execute();
         if (modelCatalogSession != session.session()) {
             if (!modelCatalogLoading) {
                 modelCatalogLoading = true;
-                model.setEnabled(false); model.setText(ModelIcons.glyph(null) + " loading…");
+                model.setEnabled(false);
+                model.setText(ModelIcons.glyph(null) + " loading…");
                 model.setToolTipText("Loading the model list…");
                 var owner = session.session();
                 new javax.swing.SwingWorker<java.util.List<net.thevpc.naru.api.model.NaruModelInfo>, Void>() {
                     protected java.util.List<net.thevpc.naru.api.model.NaruModelInfo> doInBackground() {
                         return java.util.List.copyOf(owner.registry().modelsInfos(owner));
                     }
+
                     protected void done() {
                         modelCatalogLoading = false;
                         if (session.session() != owner) return;
-                        try { modelInfos = get(); modelCatalogSession = owner; }
-                        catch (Exception ignored) { modelInfos = java.util.List.of(); modelCatalogSession = owner; }
-                        model.setEnabled(true); refreshModels();
+                        try {
+                            modelInfos = get();
+                            modelCatalogSession = owner;
+                        } catch (Exception ignored) {
+                            modelInfos = java.util.List.of();
+                            modelCatalogSession = owner;
+                        }
+                        model.setEnabled(true);
+                        refreshModels();
                     }
                 }.execute();
             }
             return;
         }
-        model.setEnabled(true);
-        model.putClientProperty("selectedModel", current);
-        // The button names the model it will change. The header used to, and then the header went
-        // away; a bare glyph left the reader to open the picker just to ask which model is live. The
-        // key stays in the tooltip because a provider/model:tag is the longest text this row holds.
-        model.setText(ModelIcons.buttonLabel(current == null ? null : current.provider(),
-                current == null ? null : current.model(), 22));
-        String absent = absentProvidersSummary();
-        model.setToolTipText((current == null ? "No model selected" : current.toString())
-                + " · " + modelInfos.size() + " models exposed by providers registered for this session"
-                + (absent == null ? "" : " · " + absent));
     }
 
     /**
@@ -678,7 +748,10 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         if (modelCatalogLoading) return;
         DefaultListModel<net.thevpc.naru.api.model.NaruModelInfo> rows = new DefaultListModel<>();
         DefaultListModel<net.thevpc.naru.api.model.NaruModelInfo> all = new DefaultListModel<>();
-        modelInfos.forEach(info -> { rows.addElement(info); all.addElement(info); });
+        modelInfos.forEach(info -> {
+            rows.addElement(info);
+            all.addElement(info);
+        });
         JList<net.thevpc.naru.api.model.NaruModelInfo> list = new JList<>(rows);
         list.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
         list.setCellRenderer((l, value, index, selected, focus) -> {
@@ -687,14 +760,17 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             String context = cap == null || cap.contextLength() <= 0 ? "Context unknown" : String.format(java.util.Locale.ROOT, "%,d tokens", cap.contextLength());
             String meta = String.join(" · ", java.util.stream.Stream.of(value.quantization(), value.parameterSize(), context, features, rateStatus(value.provider())).filter(s -> s != null && !s.isBlank()).toList());
             JLabel label = new JLabel("<html><b>" + ModelIcons.glyph(value.provider()) + "  "
-                    + value.provider() + "/" + value.model() + "</b><br><small>" + meta + "</small></html>"); label.setOpaque(true);
+                    + value.provider() + "/" + value.model() + "</b><br><small>" + meta + "</small></html>");
+            label.setOpaque(true);
             label.setBackground(selected ? l.getSelectionBackground() : l.getBackground());
             label.setForeground(selected ? l.getSelectionForeground() : l.getForeground());
-            label.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8)); return label;
+            label.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8));
+            return label;
         });
         javax.swing.JTextField filter = new javax.swing.JTextField();
         filter.putClientProperty("JTextField.placeholderText", "Filter models available in this session…");
-        javax.swing.JComboBox<String> provider = new javax.swing.JComboBox<>(); provider.addItem("All providers");
+        javax.swing.JComboBox<String> provider = new javax.swing.JComboBox<>();
+        provider.addItem("All providers");
         modelInfos.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).distinct().sorted(String.CASE_INSENSITIVE_ORDER).forEach(provider::addItem);
         javax.swing.JComboBox<String> sort = new javax.swing.JComboBox<>(new String[]{"Name", "Context size"});
         javax.swing.JComboBox<String> source = new javax.swing.JComboBox<>(new String[]{"All sources", "Local", "Remote", "Free (declared)"});
@@ -702,28 +778,76 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         JDialog dialog = DesktopDialog.create(SwingUtilities.getWindowAncestor(this), "Choose model");
         filter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             private void apply() {
-                String q = filter.getText().trim().toLowerCase(java.util.Locale.ROOT); rows.clear();
+                String q = filter.getText().trim().toLowerCase(java.util.Locale.ROOT);
+                rows.clear();
                 java.util.List<net.thevpc.naru.api.model.NaruModelInfo> matches = new java.util.ArrayList<>();
-                for (int i=0;i<all.size();i++) { var x=all.get(i); String hay=x.toString()+" "+x.quantization()+" "+x.parameterSize()+" "+x.family()+" "+(x.capabilities()==null?"":x.capabilities().keys()); boolean providerMatch="All providers".equals(provider.getSelectedItem()) || java.util.Objects.equals(provider.getSelectedItem(),x.provider()); boolean sourceMatch=switch(String.valueOf(source.getSelectedItem())){case "Local"->isLocal(x);case "Remote"->!isLocal(x);case "Free (declared)"->isDeclaredFree(x);default->true;}; String cap=String.valueOf(capability.getSelectedItem()); boolean capMatch=switch(cap){case "Vision"->x.capabilities()!=null&&x.capabilities().isVision();case "Tools"->x.capabilities()!=null&&x.capabilities().isTools();case "Reasoning"->x.capabilities()!=null&&x.capabilities().isThinking();case "Embeddings"->x.capabilities()!=null&&x.capabilities().isEmbedding();default->true;}; if(providerMatch&&sourceMatch&&capMatch&&hay.toLowerCase(java.util.Locale.ROOT).contains(q)) matches.add(x); }
-                if ("Context size".equals(sort.getSelectedItem())) matches.sort(java.util.Comparator.comparingLong((net.thevpc.naru.api.model.NaruModelInfo x)->x.capabilities()==null?0:x.capabilities().contextLength()).reversed()); else matches.sort(java.util.Comparator.comparing(x->x.provider()+"/"+x.model(),String.CASE_INSENSITIVE_ORDER));
+                for (int i = 0; i < all.size(); i++) {
+                    var x = all.get(i);
+                    String hay = x.toString() + " " + x.quantization() + " " + x.parameterSize() + " " + x.family() + " " + (x.capabilities() == null ? "" : x.capabilities().keys());
+                    boolean providerMatch = "All providers".equals(provider.getSelectedItem()) || java.util.Objects.equals(provider.getSelectedItem(), x.provider());
+                    boolean sourceMatch = switch (String.valueOf(source.getSelectedItem())) {
+                        case "Local" -> isLocal(x);
+                        case "Remote" -> !isLocal(x);
+                        case "Free (declared)" -> isDeclaredFree(x);
+                        default -> true;
+                    };
+                    String cap = String.valueOf(capability.getSelectedItem());
+                    boolean capMatch = switch (cap) {
+                        case "Vision" -> x.capabilities() != null && x.capabilities().isVision();
+                        case "Tools" -> x.capabilities() != null && x.capabilities().isTools();
+                        case "Reasoning" -> x.capabilities() != null && x.capabilities().isThinking();
+                        case "Embeddings" -> x.capabilities() != null && x.capabilities().isEmbedding();
+                        default -> true;
+                    };
+                    if (providerMatch && sourceMatch && capMatch && hay.toLowerCase(java.util.Locale.ROOT).contains(q))
+                        matches.add(x);
+                }
+                if ("Context size".equals(sort.getSelectedItem()))
+                    matches.sort(java.util.Comparator.comparingLong((net.thevpc.naru.api.model.NaruModelInfo x) -> x.capabilities() == null ? 0 : x.capabilities().contextLength()).reversed());
+                else
+                    matches.sort(java.util.Comparator.comparing(x -> x.provider() + "/" + x.model(), String.CASE_INSENSITIVE_ORDER));
                 matches.forEach(rows::addElement);
             }
-            public void insertUpdate(javax.swing.event.DocumentEvent e) { apply(); }
-            public void removeUpdate(javax.swing.event.DocumentEvent e) { apply(); }
-            public void changedUpdate(javax.swing.event.DocumentEvent e) { apply(); }
+
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                apply();
+            }
+
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                apply();
+            }
+
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                apply();
+            }
         });
         JButton select = new JButton("Use model");
         select.addActionListener(e -> {
             var value = list.getSelectedValue();
-            if (value != null) { model.putClientProperty("selectedModel", value.key()); applySelectedModel(); }
+            if (value != null) {
+                model.putClientProperty("selectedModel", value.key());
+                applySelectedModel();
+            }
             dialog.dispose();
         });
-        list.addMouseListener(new java.awt.event.MouseAdapter() { public void mouseClicked(java.awt.event.MouseEvent e) { if (e.getClickCount() == 2) select.doClick(); } });
-        JPanel body = new JPanel(new BorderLayout(6, 6)); body.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        list.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() == 2) select.doClick();
+            }
+        });
+        JPanel body = new JPanel(new BorderLayout(6, 6));
+        body.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         JPanel top = new JPanel(new BorderLayout(0, 6));
-        JPanel filters = new JPanel(new BorderLayout(5,5)); filters.add(filter,BorderLayout.NORTH);
-        JPanel facets=new JPanel(new FlowLayout(FlowLayout.LEFT,5,0)); facets.add(provider);facets.add(source);facets.add(capability);filters.add(facets,BorderLayout.SOUTH);
-        JPanel titleAndSort = new JPanel(new BorderLayout(5,0)); titleAndSort.add(new JLabel("Models available in this session"),BorderLayout.CENTER); titleAndSort.add(sort,BorderLayout.EAST);
+        JPanel filters = new JPanel(new BorderLayout(5, 5));
+        filters.add(filter, BorderLayout.NORTH);
+        JPanel facets = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        facets.add(provider);
+        facets.add(source);
+        facets.add(capability);
+        filters.add(facets, BorderLayout.SOUTH);
+        JPanel titleAndSort = new JPanel(new BorderLayout(5, 0));
+        titleAndSort.add(new JLabel("Models available in this session"), BorderLayout.CENTER);
+        titleAndSort.add(sort, BorderLayout.EAST);
         top.add(titleAndSort, BorderLayout.NORTH);
         String absent = absentProvidersSummary();
         if (absent != null) {
@@ -739,17 +863,29 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             top.add(north, BorderLayout.NORTH);
         }
         top.add(filters, BorderLayout.SOUTH);
-        java.awt.event.ActionListener refilter=e->{String q=filter.getText();filter.setText(q+" ");filter.setText(q);};
-        provider.addActionListener(refilter);source.addActionListener(refilter);capability.addActionListener(refilter);sort.addActionListener(refilter);
-        body.add(top, BorderLayout.NORTH); body.add(new JScrollPane(list), BorderLayout.CENTER); body.add(select, BorderLayout.SOUTH);
+        java.awt.event.ActionListener refilter = e -> {
+            String q = filter.getText();
+            filter.setText(q + " ");
+            filter.setText(q);
+        };
+        provider.addActionListener(refilter);
+        source.addActionListener(refilter);
+        capability.addActionListener(refilter);
+        sort.addActionListener(refilter);
+        body.add(top, BorderLayout.NORTH);
+        body.add(new JScrollPane(list), BorderLayout.CENTER);
+        body.add(select, BorderLayout.SOUTH);
         DesktopDialog.setBody(dialog, body);
         DesktopDialog.showCentered(dialog, SwingUtilities.getWindowAncestor(this), 560, 480);
     }
 
     private boolean isDeclaredFree(net.thevpc.naru.api.model.NaruModelInfo info) {
-        var registration=registration(info.provider());
-        try { return registration!=null && Boolean.TRUE.equals(registration.booleanValue("free").orNull()); }
-        catch(RuntimeException ignored) { return false; }
+        var registration = registration(info.provider());
+        try {
+            return registration != null && Boolean.TRUE.equals(registration.booleanValue("free").orNull());
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     /**
@@ -785,37 +921,55 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     }
 
     private boolean isLocal(net.thevpc.naru.api.model.NaruModelInfo info) {
-        String p=String.valueOf(info.provider()).toLowerCase(java.util.Locale.ROOT);
-        if(p.contains("ollama")||p.contains("local")||p.contains("lmstudio")||p.contains("llamacpp")) return true;
-        var r=registration(info.provider()); if(r==null) return false;
-        try { if(Boolean.TRUE.equals(r.booleanValue("local").orNull())) return true; } catch(RuntimeException ignored) {}
-        for(String key:new String[]{"url","baseUrl","endpoint","host"}) try {
-            String v=r.stringValue(key).orNull(); if(v!=null){String x=v.toLowerCase(java.util.Locale.ROOT);if(x.contains("localhost")||x.contains("127.0.0.1")||x.contains("::1"))return true;}
-        } catch(RuntimeException ignored) {}
+        String p = String.valueOf(info.provider()).toLowerCase(java.util.Locale.ROOT);
+        if (p.contains("ollama") || p.contains("local") || p.contains("lmstudio") || p.contains("llamacpp"))
+            return true;
+        var r = registration(info.provider());
+        if (r == null) return false;
+        try {
+            if (Boolean.TRUE.equals(r.booleanValue("local").orNull())) return true;
+        } catch (RuntimeException ignored) {
+        }
+        for (String key : new String[]{"url", "baseUrl", "endpoint", "host"})
+            try {
+                String v = r.stringValue(key).orNull();
+                if (v != null) {
+                    String x = v.toLowerCase(java.util.Locale.ROOT);
+                    if (x.contains("localhost") || x.contains("127.0.0.1") || x.contains("::1")) return true;
+                }
+            } catch (RuntimeException ignored) {
+            }
         return false;
     }
 
     private net.thevpc.naru.api.model.NaruModelRegistration registration(String provider) {
-        try { return session.session()==null?null:session.session().registrations().get(provider); }
-        catch(RuntimeException ignored) { return null; }
+        try {
+            return session.session() == null ? null : session.session().registrations().get(provider);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private String rateStatus(String provider) {
-        for(var info:session.providerRateLimits()) if(java.util.Objects.equals(info.providerName(),provider)) {
-            for(var bucket:info.tokenBuckets()) {
-                Integer limit=bucket.getLimit().orNull(), remaining=bucket.getRemaining().orNull();
-                if(limit!=null&&remaining!=null&&limit>0) {
-                    if(remaining==0) return "Rate limited";
-                    int used=100-(int)Math.round(100d*remaining/limit);
-                    return "Quota "+used+"% used";
+        for (var info : session.providerRateLimits())
+            if (java.util.Objects.equals(info.providerName(), provider)) {
+                for (var bucket : info.tokenBuckets()) {
+                    Integer limit = bucket.getLimit().orNull(), remaining = bucket.getRemaining().orNull();
+                    if (limit != null && remaining != null && limit > 0) {
+                        if (remaining == 0) return "Rate limited";
+                        int used = 100 - (int) Math.round(100d * remaining / limit);
+                        return "Quota " + used + "% used";
+                    }
                 }
+                var retry = info.retryAfter().orNull();
+                if (retry != null) return "Retry after " + retry;
             }
-            var retry=info.retryAfter().orNull(); if(retry!=null) return "Retry after "+retry;
-        }
         return "";
     }
 
-    /** Prompt the user to look at the transcript when output stops mid-turn. */
+    /**
+     * Prompt the user to look at the transcript when output stops mid-turn.
+     */
     public void focusInput() {
         area.requestFocusInWindow();
     }
@@ -823,26 +977,40 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     public void refreshThemePalette() {
         java.awt.Color accent = javax.swing.UIManager.getColor("Component.accentColor");
         if (accent == null) accent = new java.awt.Color(45, 115, 205);
-        send.setBackground(accent); send.setForeground(contrast(accent)); send.setOpaque(true);
+        send.setBackground(accent);
+        send.setForeground(contrast(accent));
+        send.setOpaque(true);
         send.putClientProperty("JButton.buttonType", "roundRect");
         for (JButton b : new JButton[]{queued, attach}) b.putClientProperty("JButton.buttonType", "toolBarButton");
         refreshComposerFocus();
-        revalidate(); repaint();
+        revalidate();
+        repaint();
     }
 
-    /** Whether the composer card is drawing its focus ring, for a gate run that has to see it. */
-    public boolean composerFocusRingVisible() { return composerFocusBorder != null; }
+    /**
+     * Whether the composer card is drawing its focus ring, for a gate run that has to see it.
+     */
+    public boolean composerFocusRingVisible() {
+        return composerFocusBorder != null;
+    }
 
-    @Override public void addNotify() {
+    @Override
+    public void addNotify() {
         super.addNotify();
-        SwingUtilities.invokeLater(() -> { javax.swing.JRootPane root=SwingUtilities.getRootPane(this); if(root!=null) root.setDefaultButton(send); scheduleRefreshComposerFocus(); });
+        SwingUtilities.invokeLater(() -> {
+            javax.swing.JRootPane root = SwingUtilities.getRootPane(this);
+            if (root != null) root.setDefaultButton(send);
+            scheduleRefreshComposerFocus();
+        });
     }
 
     private static java.awt.Color contrast(java.awt.Color c) {
-        return c.getRed()*299+c.getGreen()*587+c.getBlue()*114 > 145000 ? java.awt.Color.BLACK : java.awt.Color.WHITE;
+        return c.getRed() * 299 + c.getGreen() * 587 + c.getBlue() * 114 > 145000 ? java.awt.Color.BLACK : java.awt.Color.WHITE;
     }
 
-    public ComposerArea composer() { return area; }
+    public ComposerArea composer() {
+        return area;
+    }
 
     public void setSelectedTaskId(long taskId) {
         selectedTaskId = taskId;
@@ -872,7 +1040,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         return syntax.mode();
     }
 
-    /** Lines the engine could not be asked about, and the first reason. Meant for a gate run to read. */
+    /**
+     * Lines the engine could not be asked about, and the first reason. Meant for a gate run to read.
+     */
     public String composerSyntaxFailure() {
         return syntax.describeFailure();
     }
