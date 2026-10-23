@@ -109,6 +109,14 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private volatile NaruInputRequest pending;
     private volatile boolean booting;
     /**
+     * id of the task the engine poll saw parked on input, or -1. A session restored from the store
+     * comes back with its conversation task already in {@code BLOCKED_ON_INPUT} and never re-emits
+     * the request, so {@code pending} is null while the engine is genuinely waiting. Without this,
+     * the composer decides that nothing can accept a line and the user watches their message
+     * disappear into a disabled button. Kept by the 2 Hz poll so the keystroke path stays cheap.
+     */
+    private volatile long parkedOnInputId = -1;
+    /**
      * How many input requests the host has delivered, ever. A reader needs this because
      * {@code pending} is cleared the moment it answers: without a generation counter there is no
      * way to tell "the prompt parked again" from "the prompt I already answered is still there",
@@ -433,6 +441,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             taskPoll.start();
             startModelLabelWorker();
             refreshTasks();
+            refreshModelLabel();
             fireChanged();
         });
         } catch (Throwable t) {
@@ -560,6 +569,11 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             modelLabelWorker.shutdownNow();
             modelLabelWorker = null;
         }
+        if (directiveWorker != null) {
+            directiveWorker.shutdownNow();
+            directiveWorker = null;
+        }
+        directiveRunning.set(false);
         taskModelLabels.clear();
         userEchoes.clear();
         // the policy is still reachable from a stopped session; leaving the bridge attached would
@@ -567,6 +581,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         permissions.detach();
         closed = true;
         pending = null;
+        parkedOnInputId = -1;
         statusText = "closed";
         if (session == null) {
             host.close();
@@ -667,6 +682,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                 }
             } else if (e instanceof TranscriptEvent.HostClosed) {
                 pending = null;
+                parkedOnInputId = -1;
                 running = false;
                 statusText = "closed";
                 fireChanged();
@@ -730,7 +746,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
      * {@code BLOCKED_ON_INPUT}), so the field is disabled with a reason instead of lying.
      */
     public boolean canAcceptInput() {
-        return pending != null || canStartNewConversation();
+        return pending != null || parkedOnInputId >= 0 || canStartNewConversation();
     }
 
     /**
@@ -830,6 +846,9 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         if (pending != null) {
             return null;
         }
+        if (parkedOnInputId >= 0) {
+            return null;
+        }
         if (canStartNewConversation()) {
             return null;
         }
@@ -848,16 +867,59 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             return;
         }
         NaruInputRequest r = pending;
-        if (r == null) {
-            if (canStartNewConversation()) {
-                startConversation(line);
-                statusText = "starting…";
-                fireChanged();
-            }
+        if (r != null) {
+            pending = null;
+            echoAndDeliver(line, r);
             return;
         }
-        pending = null;
-        echoAndDeliver(line, r);
+        long parked = parkedOnInputId;
+        if (parked >= 0) {
+            deliverToParkedTask(line, parked);
+            return;
+        }
+        if (canStartNewConversation()) {
+            startConversation(line);
+            statusText = "starting…";
+            fireChanged();
+        }
+    }
+
+    /**
+     * Answer a task that is waiting on input but never handed us a request — the state a restored
+     * session comes back in. {@code NaruSession.deliverInput} resumes the foreground task by id, so
+     * the line is shown first: if the engine refuses it, the transcript still says so instead of
+     * letting the sentence vanish.
+     */
+    private void deliverToParkedTask(String line, long taskId) {
+        NaruSession current = session;
+        if (current == null || closed) {
+            notifyUser("session is gone — the line was not sent");
+            return;
+        }
+        if (!line.isBlank()) {
+            rememberHistory(line);
+        }
+        if (!markEchoDelivered(taskId, line)) {
+            echoUser(line, taskId);
+        }
+        statusText = "running";
+        fireChanged();
+        String failure = null;
+        try {
+            if (current.foregroundTaskId() != taskId) {
+                current.foregroundTaskId(taskId);
+            }
+            current.deliverInput(line);
+        } catch (RuntimeException ex) {
+            failure = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+        }
+        if (failure != null) {
+            notifyUser("could not send this line: " + failure);
+            statusText = "not sent";
+        }
+        parkedOnInputId = -1;
+        refreshTasks();
+        fireChanged();
     }
 
     /** Deliver an inline choice/form submission to the currently parked input request. */
@@ -875,9 +937,17 @@ public final class NaruSessionModel implements InteractionHost.Listener {
      * desktop has to do the same. Queuing it as a task message — which is what used to happen when
      * no prompt was pending — deferred it to the next readline, so the agent answered the
      * directive text as if it were a prompt. This runs it immediately whether or not the agent is
-     * mid-turn, and returns a failure description for the caller to show, or null on success.
+     * mid-turn.
+     * <p>
+     * The engine call happens on a worker, never here: {@code /model ollama} asks every provider
+     * to enumerate its catalog and Ollama answers with an HTTP GET that can sit on its connect
+     * timeout for tens of seconds. Run inline, that froze the whole window until the listing came
+     * back. {@code onFinished} reports the outcome on the EDT once the directive has returned.
+     *
+     * @return a rejection message when the directive could not even be dispatched — nothing ran,
+     *         and {@code onFinished} is not called — or null once it was accepted.
      */
-    public String submitDirective(String line) {
+    public String submitDirective(String line, java.util.function.Consumer<String> onFinished) {
         EDT.check("NaruSessionModel.submitDirective");
         if (line == null || line.isBlank() || !isDirective(line)) {
             return null;
@@ -890,32 +960,67 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         if (task == null) {
             return "no task is available to run " + line.strip();
         }
+        // One directive at a time: the host marks the block it is currently emitting as a
+        // directive result with a single flag, so two overlapping runs would claim each other's
+        // output. The worker is single-threaded, so the queue never overtakes itself either.
+        if (!directiveRunning.compareAndSet(false, true)) {
+            return "a directive is still running; wait for its result";
+        }
         if (!line.isBlank()) {
             rememberHistory(line);
         }
         echoUser(line, task.id());
-        // Close any block the previous turn left open, so the directive's output is its own card.
-        // A failed prompt parks the task with its AGENT_RESPONSE block still open and no final
-        // fragment; without this boundary the directive's result (same mode, same task) is merged
-        // into that error text and reads as "nothing happened". Marking it a directive result is
-        // what makes the conversation show it as a reply to what was typed, rather than as the raw
-        // AGENT_RESPONSE the engine also uses for a plain error.
-        host.beginDirectiveBlock();
-        try {
-            task.invokeDirective(line);
-        } catch (RuntimeException ex) {
-            String why = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
-            notifyUser("directive failed: " + why);
-            refreshTasks();
-            fireChanged();
-            return why;
-        } finally {
-            host.endDirectiveBlock();
-        }
-        statusText = "ran " + line.strip();
-        refreshTasks();
+        statusText = "running " + line.strip();
         fireChanged();
+        directiveWorker().execute(() -> {
+            // Close any block the previous turn left open, so the directive's output is its own
+            // card. A failed prompt parks the task with its AGENT_RESPONSE block still open and no
+            // final fragment; without this boundary the directive's result (same mode, same task)
+            // is merged into that error text and reads as "nothing happened".
+            host.beginDirectiveBlock();
+            String why = null;
+            try {
+                task.invokeDirective(line);
+            } catch (RuntimeException ex) {
+                why = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+            } finally {
+                host.endDirectiveBlock();
+                directiveRunning.set(false);
+            }
+            String failure = why;
+            onEdt(() -> {
+                if (failure != null) {
+                    notifyUser("directive failed: " + failure);
+                    statusText = "directive failed";
+                } else {
+                    statusText = "ran " + line.strip();
+                }
+                refreshTasks();
+                // any directive may have been /model use, and the engine announces no change for
+                // it, so this is the point where the status bar's model has to be asked again
+                refreshModelLabel();
+                fireChanged();
+                onFinished.accept(failure);
+            });
+        });
         return null;
+    }
+
+    private volatile java.util.concurrent.ExecutorService directiveWorker;
+    private final java.util.concurrent.atomic.AtomicBoolean directiveRunning =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    private java.util.concurrent.ExecutorService directiveWorker() {
+        java.util.concurrent.ExecutorService worker = directiveWorker;
+        if (worker == null || worker.isShutdown()) {
+            worker = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "naru-directive");
+                t.setDaemon(true);
+                return t;
+            });
+            directiveWorker = worker;
+        }
+        return worker;
     }
 
     /** True for a line the engine would parse as a directive rather than a model turn. */
@@ -958,6 +1063,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         if (request == pending) {
             pending = null;
         }
+        parkedOnInputId = -1;
         if (!line.isBlank()) {
             rememberHistory(line);
         }
@@ -1089,6 +1195,21 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         return pending;
     }
 
+    /**
+     * Which task an answer belongs to: the request the host handed us, or — for a session restored
+     * with its conversation still parked — the task the poll saw waiting on input. -1 when nothing
+     * can take an answer. The composer needs this rather than {@link #pendingRequest()} alone,
+     * because a parked-without-a-request task is exactly the case where a queued line would sit
+     * undrained and the user's sentence would look like it was never sent.
+     */
+    public long answerTargetTaskId() {
+        NaruInputRequest r = pending;
+        if (r != null) {
+            try { return r.task().id(); } catch (RuntimeException ignored) { return -1; }
+        }
+        return parkedOnInputId;
+    }
+
     /** Monotonic count of requests seen; compare with a previously read value to spot a new park. */
     public long inputRequestsSeen() {
         return inputRequestsSeen;
@@ -1195,6 +1316,54 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         return MODEL_LABEL_PENDING.equals(taskModelLabels.get(id));
     }
 
+    /**
+     * Re-read the status bar's model label from the task the next turn will use. The engine has no
+     * model-changed event — {@code NaruTask.setModel} only persists the change and logs it — so
+     * every route that can pick a model ({@code /model use}, the composer's picker, a task
+     * selection) has to ask again, and asking means a worker: resolving a configured name against
+     * the provider catalog can be a round-trip, which must not happen on the EDT.
+     */
+    public void refreshModelLabel() {
+        NaruSession s = session;
+        java.util.concurrent.ExecutorService worker = modelLabelWorker;
+        if (s == null || closed || worker == null || worker.isShutdown()) {
+            return;
+        }
+        long targetId;
+        try {
+            NaruTask target = directiveTargetTask(s);
+            targetId = target == null ? -1 : target.id();
+        } catch (RuntimeException e) {
+            return;
+        }
+        worker.execute(() -> {
+            String label = "—";
+            try {
+                NaruTask t = targetId < 0 ? null : s.findTask(targetId).orNull();
+                net.thevpc.naru.api.model.NaruModelKey key =
+                        t == null || t.model() == null ? null : t.model().key();
+                if (key != null) {
+                    label = key.provider() + "/" + key.model();
+                }
+            } catch (RuntimeException | LinkageError e) {
+                // a session that stopped mid-read leaves the last known label standing
+                return;
+            }
+            String found = label;
+            onEdt(() -> {
+                // The detail pane's per-task cache answers from a first lookup that a later
+                // selection may have made stale, so a refresh drops the entry and it is read again.
+                if (targetId >= 0) {
+                    taskModelLabels.remove(targetId);
+                }
+                if (!found.equals(model)) {
+                    model = found;
+                    fireChanged();
+                }
+            });
+        });
+    }
+
     private void resolveModelLabel(long id) {
         java.util.concurrent.ExecutorService worker = modelLabelWorker;
         NaruSession s = session;
@@ -1242,6 +1411,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             permissions.refresh();
         }
         if (session == null) {
+            parkedOnInputId = -1;
             return;
         }
         List<NaruTask> live;
@@ -1250,6 +1420,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         } catch (RuntimeException e) {
             // the session stopped between the poll and the read: a normal state, not an error
             running = false;
+            parkedOnInputId = -1;
             tasks = List.of();
             fireChanged();
             return;
@@ -1261,12 +1432,16 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         } catch (RuntimeException ignored) {
             // no foreground task
         }
+        long parked = -1;
         for (NaruTask t : live) {
             NaruTaskStatus st;
             try {
                 st = t.status();
             } catch (RuntimeException e) {
                 continue;
+            }
+            if (st == NaruTaskStatus.BLOCKED_ON_INPUT && (parked < 0 || t.id() == fg)) {
+                parked = t.id();
             }
             String err = null;
             try {
@@ -1291,6 +1466,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             out.add(new TaskRow(t.id(), t.name(), st, t.id() == fg, safeConversation(t), parentId, held, pc, created,
                     err, 0));
         }
+        parkedOnInputId = parked;
         // engine order is a registry's iteration order; the monitor shows a tree, so the
         // arrangement happens here rather than in a widget that would redo it on every repaint
         List<TaskRow> arranged = TaskTree.arrange(out);
@@ -1598,13 +1774,14 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         }
     }
 
+    /** When the record was last written, as a {@code LocalDateTime} — the row that shows it localizes it. */
     public String saveState() {
-        if (session == null) {
+        if (session == null || session.modificationInstant() == null) {
             return "—";
         }
         try {
-            return session.modificationInstant() == null ? "—"
-                    : String.valueOf(session.modificationInstant()).substring(0, 19);
+            return java.time.LocalDateTime.ofInstant(session.modificationInstant(),
+                    java.time.ZoneId.systemDefault()).withNano(0).toString();
         } catch (RuntimeException e) {
             return "—";
         }

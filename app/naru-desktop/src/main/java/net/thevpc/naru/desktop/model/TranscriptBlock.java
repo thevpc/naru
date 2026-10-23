@@ -53,6 +53,7 @@ public final class TranscriptBlock {
     private final StringBuilder text = new StringBuilder();
     private boolean closed;
     private boolean collapsed;
+    private boolean expanded;
     private Instant startedAt;
     private Instant endedAt;
 
@@ -159,6 +160,19 @@ public final class TranscriptBlock {
 
     public void setCollapsed(boolean value) {
         this.collapsed = value;
+    }
+
+    /**
+     * True once the user unfolded this block's body. A body longer than the fold is always shown
+     * as its head — measuring every line of it is what makes a layout pass take seconds — so the
+     * only way to see the rest is to ask, and that answer has to outlive the card it was given to.
+     */
+    public boolean isExpanded() {
+        return expanded;
+    }
+
+    public void setExpanded(boolean value) {
+        this.expanded = value;
     }
 
     public Instant startedAt() {

@@ -130,9 +130,9 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
         add(split, BorderLayout.CENTER);
         add(buttons(), BorderLayout.SOUTH);
 
-        note.setFont(note.getFont().deriveFont(Font.PLAIN, 11f));
+        UiFonts.apply(note, UiFonts.CAPTION, Font.PLAIN);
         note.setForeground(Color.GRAY);
-        actionNote.setFont(actionNote.getFont().deriveFont(Font.PLAIN, 11f));
+        UiFonts.apply(actionNote, UiFonts.CAPTION, Font.PLAIN);
         actionNote.setForeground(new Color(150, 110, 60));
         session.addListener(this);
         sessionModelChanged();
@@ -153,21 +153,18 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
         fgButton.addActionListener(e -> act(foregroundSelected()
                 ? NaruSessionModel.TaskAction.BACKGROUND : NaruSessionModel.TaskAction.FOREGROUND));
         for (JButton b : List.of(holdButton, interruptButton, killButton, fgButton)) {
-            b.setFont(b.getFont().deriveFont(Font.PLAIN, 12f));
-            b.setMargin(new java.awt.Insets(2, 5, 2, 5));
+            UiFonts.apply(b, UiFonts.BODY, Font.PLAIN);
             b.setFocusable(false);
             b.putClientProperty("JButton.buttonType", "toolBarButton");
             bar.add(b);
-            // The buttons carry a single glyph sized to a fixed 12pt square, so a larger interface
-            // size clips the glyph into "...". Re-derive the size whenever the font changes, not
-            // only when the TaskPane is first built — that is the cause of item 7.
-            b.addPropertyChangeListener("font", e -> reflowActionButtons());
         }
-        // A fixed pixel size clips the glyph once the interface size grows: the button keeps its
-        // 26px box while the font no longer fits. Size to the font instead — the buttons carry a
-        // single glyph, so the text dimension is exactly the square that shows it.
-        reflowActionButtons();
+        // one glyph each, so a square taken from the font height always shows it — a width measured
+        // from the glyph is not, because it is drawn from a fallback font
+        ActionButtons.glyphSized(holdButton, interruptButton, killButton, fgButton);
         holdButton.setToolTipText("Hold / resume selected task");
+        // the tooltip is rewritten with the held flag (see updateButtons), so the name a screen
+        // reader — or a test — holds on to has to be the stable one
+        holdButton.getAccessibleContext().setAccessibleName("Hold / resume selected task");
         interruptButton.setToolTipText("Interrupt selected task");
         killButton.setToolTipText("Stop selected task");
         fgButton.setToolTipText("Toggle foreground task");
@@ -175,22 +172,6 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
         panel.add(note, BorderLayout.CENTER);
         panel.add(actionNote, BorderLayout.SOUTH);
         return panel;
-    }
-
-    /**
-     * Size the single-glyph action buttons to the font they currently carry, so the glyph is never
-     * clipped when the interface size changes. Called once when the bar is built; a fixed pixel
-     * square would keep its 26px box while the font grows past it, which is how the buttons turned
-     * invisible. The size is derived from live metrics, not a constant.
-     */
-    private void reflowActionButtons() {
-        for (JButton b : List.of(holdButton, interruptButton, killButton, fgButton)) {
-            java.awt.FontMetrics fm = b.getFontMetrics(b.getFont());
-            int side = Math.max(fm.getHeight(), fm.stringWidth(b.getText()) + 8) + 6;
-            java.awt.Dimension d = new java.awt.Dimension(side, fm.getHeight() + 6);
-            b.setPreferredSize(d);
-            b.setMinimumSize(d);
-        }
     }
 
     private void act(NaruSessionModel.TaskAction action) {
@@ -304,9 +285,8 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
         killButton.setEnabled(live);
         interruptButton.setEnabled(live);
         fgButton.setEnabled(r != null);
-        // the glyph and the font both move — hold flips its text, and the interface size can change
-        // while the window is open — so the square is re-derived whenever the buttons change
-        reflowActionButtons();
+        // hold flips its glyph between two shapes of different width, so the square is re-derived
+        ActionButtons.fit(holdButton);
     }
 
     /**

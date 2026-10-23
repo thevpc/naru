@@ -45,17 +45,34 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     private final CardsPanel cards = new CardsPanel();
     private final JScrollPane scroll = new JScrollPane(cards);
     private final JLabel counter = new JLabel(" ");
-    private final javax.swing.JTextField search = new javax.swing.JTextField(18);
+    // ten columns is a command and a half to type and still leaves the filter row room for the
+    // message counter beside it; eighteen pushed the counter out of the panel at a normal width
+    private final javax.swing.JTextField search = new javax.swing.JTextField(10);
     private Timer searchTimer;
     private final javax.swing.JToggleButton internalEvents;
     private final javax.swing.JToggleButton traceEvents;
     private final javax.swing.JToggleButton debugEvents;
-    private final JButton older = new JButton("↑ Earlier");
-    private final JButton newer = new JButton("Later ↓");
+    private final JButton older = new JButton("↑");
+    private final JButton newer = new JButton("↓");
     private final JButton moreResults = new JButton("More results");
     private final ChatPartRenderers partRenderers = new ChatPartRenderers();
     private final MarkdownRenderer markdown;
     private final List<TranscriptBlock> matching = new ArrayList<>();
+    /** The blocks the card column currently shows, in window order; see {@link #renderWindow}. */
+    private final List<TranscriptBlock> rendered = new ArrayList<>();
+    /**
+     * One card per block, reused when the column is rebuilt. Building a row hands a fresh HTML
+     * document to Swing's renderer, and a tool-calling turn makes the column structural on every
+     * round: rebuilt whole, a window of those documents was parsed on each flush and the
+     * interface stopped responding for seconds at a time.
+     */
+    private final java.util.Map<TranscriptBlock, JPanel> cardCache =
+            new java.util.LinkedHashMap<TranscriptBlock, JPanel>(64, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<TranscriptBlock, JPanel> eldest) {
+                    return size() > WINDOW_SIZE * 2;
+                }
+            };
     private final java.util.Map<Long, String> engineCursors = new java.util.LinkedHashMap<>();
     private final java.util.Map<TranscriptBlock, Long> searchSequences = new java.util.IdentityHashMap<>();
     private int first;
@@ -85,7 +102,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         debugEvents = showChatMessages ? null : new javax.swing.JToggleButton("Debug", false);
         this.markdown = new MarkdownRenderer(this::htmlArrived);
         cards.setLayout(new BoxLayout(cards, BoxLayout.Y_AXIS));
-        cards.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
+        cards.setBorder(BorderFactory.createEmptyBorder(6, 8, 2, 8));
         cards.setBackground(javax.swing.UIManager.getColor("List.background"));
         internalEvents.setToolTipText(showChatMessages
                 ? "Show engine activity between messages (progress notes, host events). Answers and tool calls are always shown."
@@ -111,6 +128,11 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         });
         older.setFocusable(false);
         newer.setFocusable(false);
+        older.setToolTipText("Load the messages before this window");
+        older.getAccessibleContext().setAccessibleName("Earlier messages");
+        newer.setToolTipText("Load the messages after this window");
+        newer.getAccessibleContext().setAccessibleName("Later messages");
+        ActionButtons.glyphSized(older, newer);
         older.addActionListener(e -> loadEarlier());
         newer.addActionListener(e -> loadLater());
         moreResults.setVisible(false);
@@ -125,6 +147,8 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         controls.add(moreResults);
         JPanel bar = new JPanel(new BorderLayout());
         bar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+        // the count is a readout, not a headline: it should recede behind the filters
+        counter.setForeground(UiPalette.muted());
         bar.add(controls, BorderLayout.WEST);
         bar.add(counter, BorderLayout.EAST);
         add(bar, BorderLayout.NORTH);
@@ -137,14 +161,19 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         // deferred runnable is still queued on the EDT.
         scroll.getVerticalScrollBar().addAdjustmentListener(e -> {
             if (e.getValueIsAdjusting()) {
-                // the user is dragging: decide from where they are
+                // the user is dragging the thumb: decide from where they are
                 userScrolledAway = !isNearBottom();
-            } else if (isNearBottom() && !userScrolledAway) {
+            } else if (isNearBottom()) {
+                // any way back to the tail resumes following, including a wheel-down or a click
                 userScrolledAway = false;
             }
         });
         scroll.addMouseWheelListener(e -> {
             JScrollBar scrollBar = scroll.getVerticalScrollBar();
+            // The viewport's own handler already moved the bar before this listener runs, so the
+            // wheel never shows up as a drag (valueIsAdjusting stays false). Without this, a
+            // reader scrolling up mid-stream is pulled back to the bottom by the next flush.
+            userScrolledAway = !isNearBottom();
             if (e.getWheelRotation() < 0 && scrollBar.getValue() <= 4
                     && (first > 0 || (!engineSearch && sessionModel.hasOlderTranscript()))) loadEarlier();
             else if (e.getWheelRotation() > 0
@@ -265,6 +294,12 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         } else {
             first = Math.min(first, Math.max(0, matching.size() - 1));
             last = Math.min(matching.size(), Math.max(first, last));
+            // A window that holds no rows is not a position the user chose — there is nothing there
+            // to read. Once content matches again it has to come back, or a transcript that was
+            // filtered to empty stays blank for the rest of the session.
+            if (first == last && !matching.isEmpty()) {
+                last = Math.min(matching.size(), first + WINDOW_SIZE);
+            }
             renderWindow(-1);
         }
     }
@@ -291,15 +326,24 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
 
     private void renderWindow(int anchorIndex) {
         adjustingWindow = true;
-        cards.removeAll();
-        for (int i = first; i < last; i++) {
-            TranscriptBlock block = matching.get(i);
-            JPanel card = createCard(block);
-            card.putClientProperty("transcript.index", i);
-            cards.add(card);
-            cards.add(Box.createVerticalStrut(8));
+        List<TranscriptBlock> want = new ArrayList<>(matching.subList(first, last));
+        // A structural batch often changes nothing about which rows are on screen — a card closed,
+        // or a block trimmed above the window — and rebuilding the column for it used to re-add
+        // every row and re-measure every HTML body.
+        boolean sameRows = anchorIndex < 0 && want.equals(rendered);
+        if (!sameRows) {
+            cards.removeAll();
+            for (int i = 0; i < want.size(); i++) {
+                TranscriptBlock block = want.get(i);
+                JPanel card = cachedCard(block);
+                card.putClientProperty("transcript.index", first + i);
+                cards.add(card);
+                cards.add(Box.createVerticalStrut(TranscriptLayer.GAP));
+            }
+            cards.add(Box.createVerticalGlue());
+            rendered.clear();
+            rendered.addAll(want);
         }
-        cards.add(Box.createVerticalGlue());
         int total = matching.size();
         older.setEnabled(first > 0 || (!engineSearch && sessionModel.hasOlderTranscript()));
         newer.setEnabled(last < total);
@@ -308,8 +352,10 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         counter.setText(matching.size() + " messages"
                 + (model.trimmedBlocks() > 0 ? " · " + model.trimmedBlocks() + " earlier trimmed" : "")
                 + " · " + chars + " chars" + (engineHasMore ? " · more results available" : ""));
-        cards.revalidate();
-        cards.repaint();
+        if (!sameRows) {
+            cards.revalidate();
+            cards.repaint();
+        }
         requestRenderedBlocks();
         SwingUtilities.invokeLater(() -> {
             if (anchorIndex >= 0 && anchorIndex < cards.getComponentCount()) {
@@ -322,10 +368,30 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
 
     private JPanel createCard(TranscriptBlock block) {
         JPanel card = buildCard(block);
-        // A card built now is not in the tree the last scale pass walked, so it would keep the
-        // absolute font it was constructed with and ignore the interface size. Join it to the same
-        // base/scale scheme the rest of the window uses.
-        net.thevpc.naru.desktop.NaruDesktop.scaleNewComponent(card);
+        // the row the pointer is on glows and thickens its gutter, so a reader scanning a long
+        // transcript can see which one they are on
+        HoverFader.install(card);
+        return card;
+    }
+
+    /** The row for a block: built once, then re-texted in place whenever its body grew. */
+    private JPanel cachedCard(TranscriptBlock block) {
+        JPanel card = cardCache.get(block);
+        int textLength = block.text().length();
+        if (card != null && Integer.valueOf(textLength).equals(card.getClientProperty("transcript.textLength"))) {
+            return card;
+        }
+        // A chat card owns its body layout (parts, forms, a scroller of its own), so it is rebuilt
+        // rather than re-texted; an engine row is a single HTML pane and can just be refilled.
+        boolean rebuild = card == null || block.isChatMessage()
+                || block.mode() == net.thevpc.naru.api.agent.NaruLogMode.AGENT_RESPONSE;
+        if (rebuild) {
+            card = createCard(block);
+            cardCache.put(block, card);
+        } else {
+            applyBody(card, block);
+        }
+        card.putClientProperty("transcript.textLength", textLength);
         return card;
     }
 
@@ -333,6 +399,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         if (block.isChatMessage()) {
             ChatMessageCard card = new ChatMessageCard(block.message(), partRenderers, onMessageAction,
                     block.htmlIsCurrent() ? block.html() : null);
+            keepFold(card, block);
             card.putClientProperty("transcript.block", block);
             card.setAlignmentX(Component.LEFT_ALIGNMENT);
             return card;
@@ -342,6 +409,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
                     net.thevpc.naru.api.model.NaruMessage.assistant(block.text()),
                     partRenderers, onMessageAction,
                     block.htmlIsCurrent() ? block.html() : null);
+            keepFold(card, block);
             card.putClientProperty("transcript.block", block);
             card.setAlignmentX(Component.LEFT_ALIGNMENT);
             return card;
@@ -349,44 +417,57 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         return engineCard(block);
     }
 
-    /** A non-message block: a tool card, thinking, or one of the verbose log modes. */
+    /**
+     * A chat card is rebuilt whenever its row is re-rendered, so whether the user unfolded it lives
+     * on the block; the length rule in {@link #folded} decides the default.
+     */
+    private void keepFold(ChatMessageCard card, TranscriptBlock block) {
+        card.setOnFolded(value -> block.setExpanded(!value));
+        card.setFolded(folded(block));
+    }
+
+    /** A non-message row: a tool card, thinking, or one of the verbose log modes. */
     private JPanel engineCard(TranscriptBlock block) {
         BlockStyle style = BlockStyle.forBlock(block);
-        Color baseBg = javax.swing.UIManager.getColor("Panel.background");
-        Color accent = style.foreground();
-        Color bg = blend(baseBg, accent, 0.05f);
-        Color border = blend(baseBg, accent, 0.35f);
+        // Engine mechanics get no hue of their own: nine mode colours on the rows behind Activity
+        // turn the detail column into a rainbow, and none of them carries state the reader acts on.
+        boolean detail = style.audience() == BlockStyle.Audience.ENGINE_DETAIL;
+        Color stripe = detail ? UiPalette.IDLE : style.gutter();
+        // A fixed-width body is data, not prose; the faint wash keeps one long dump readable as
+        // one stretch against the rows around it.
+        boolean tinted = !detail && style.monospace();
 
-        JPanel card = new JPanel(new BorderLayout(6, 4)) {
+        JPanel card = new JPanel(new BorderLayout(0, 4)) {
             @Override
             protected void paintComponent(java.awt.Graphics g) {
-                java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
-                g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(bg);
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
-                g2.setColor(border);
-                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
-                g2.dispose();
+                TranscriptLayer.paint(this, g, stripe, tinted);
                 super.paintComponent(g);
             }
         };
         card.setAlignmentX(Component.LEFT_ALIGNMENT);
         card.setOpaque(false);
-        card.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+        card.setBorder(TranscriptLayer.border());
 
-        String labelText = (block.mode() == net.thevpc.naru.api.agent.NaruLogMode.MODEL_THINKING ? "🧠 "
-                : block.mode() == net.thevpc.naru.api.agent.NaruLogMode.MODEL_RESPONSE ? "✨ "
-                : block.isToolCard() ? "🔧 " : "⚡ ") + style.label() + (block.isToolCard() ? " · Tool" : "");
+        String labelText = style.label().toUpperCase(java.util.Locale.ROOT);
         JLabel title = new JLabel(labelText);
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 12f));
-        title.setForeground(accent);
-        card.add(title, BorderLayout.NORTH);
+        UiFonts.apply(title, UiFonts.CAPTION, Font.BOLD);
+        title.setForeground(detail ? UiPalette.muted() : UiPalette.readable(style.gutter()));
+        JPanel heading = new JPanel(new BorderLayout());
+        heading.setOpaque(false);
+        heading.add(title, BorderLayout.WEST);
+        // an engine row is often the only place a tool's output exists; without the control the
+        // reader selects it off the screen, and a folded row cannot be selected whole at all
+        heading.add(CopyButton.create(block::text, style.label() + " output"), BorderLayout.EAST);
+        card.add(heading, BorderLayout.NORTH);
 
-        JEditorPane body = HtmlPanes.create(bodyHtml(block), 13f, 0);
+        String initial = shownHtml(block, folded(block));
+        JEditorPane body = HtmlPanes.create(initial, UiFonts.BODY, 0);
         card.putClientProperty("transcript.block", block);
         // the body is what a streaming row refreshes in place; see refreshRow
         card.putClientProperty("transcript.body", body);
         card.add(body, BorderLayout.CENTER);
+        card.add(showMoreButton(card), BorderLayout.SOUTH);
+        applyBody(card, block);
         if (block.isToolCard() && PermissionsText.isDenial(block.text())) {
             card.setComponentPopupMenu(denialPopup(block.text()));
         }
@@ -397,6 +478,66 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         return "<html><body>"
                 + (block.htmlIsCurrent() ? block.html() : TextHtml.codeBlock(block.text()))
                 + "</body></html>";
+    }
+
+    /**
+     * Lines a body shows before the rest is folded away. Swing's HTML renderer measures every line
+     * of a body on each layout pass, so a four-thousand-line tool log costs seconds per interface
+     * size change; a folded head keeps that cost bounded whatever the session accumulates.
+     */
+    private static final int INLINE_BODY_LINES = HtmlPanes.FOLD_AFTER_LINES;
+
+    /**
+     * A body is shown as its head whenever it has lines to hide. This is not a preference the user
+     * can lose: a long block is folded from the moment it turns long, streaming included, and the
+     * only override is the show-all control on the card itself.
+     */
+    private static boolean folded(TranscriptBlock block) {
+        return HtmlPanes.hiddenLines(block.text(), INLINE_BODY_LINES) > 0 && !block.isExpanded();
+    }
+
+    /** The control that unfolds a folded body, or folds it back. Hidden while the body fits. */
+    private JButton showMoreButton(JPanel card) {
+        JButton more = new JButton();
+        more.setBorderPainted(false);
+        more.setContentAreaFilled(false);
+        more.setForeground(UiPalette.muted());
+        more.setFocusable(false);
+        more.setMargin(new java.awt.Insets(4, 0, 0, 0));
+        more.setHorizontalAlignment(javax.swing.SwingConstants.LEFT);
+        more.addActionListener(e -> {
+            if (!(card.getClientProperty("transcript.block") instanceof TranscriptBlock block)) {
+                return;
+            }
+            block.setExpanded(!block.isExpanded());
+            applyBody(card, block);
+            card.revalidate();
+            card.repaint();
+        });
+        card.putClientProperty("transcript.more", more);
+        return more;
+    }
+
+    /** Re-text a card's body from its block, honouring whether the user unfolded a long one. */
+    private static void applyBody(JPanel card, TranscriptBlock block) {
+        if (!(card.getClientProperty("transcript.body") instanceof JEditorPane body)) {
+            return;
+        }
+        boolean folded = folded(block);
+        body.setText(shownHtml(block, folded));
+        if (card.getClientProperty("transcript.more") instanceof JButton more) {
+            int hidden = HtmlPanes.hiddenLines(block.text(), INLINE_BODY_LINES);
+            more.setVisible(hidden > 0);
+            more.setText(folded ? "⌄ show all " + hidden + " more lines" : "⌃ show less");
+        }
+    }
+
+    private static String shownHtml(TranscriptBlock block, boolean folded) {
+        String text = block.text();
+        if (!folded || HtmlPanes.hiddenLines(text, INLINE_BODY_LINES) == 0) {
+            return bodyHtml(block);
+        }
+        return "<html><body>" + TextHtml.codeBlock(HtmlPanes.head(text, INLINE_BODY_LINES)) + "</body></html>";
     }
 
     private javax.swing.JPopupMenu denialPopup(String text) {
@@ -412,7 +553,18 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
 
     private boolean isNearBottom() {
         JScrollBar bar = scroll.getVerticalScrollBar();
-        return bar == null || bar.getValue() + bar.getVisibleAmount() >= bar.getMaximum() - STICK_MARGIN;
+        if (bar == null) {
+            return true;
+        }
+        // Before the first layout the scrollbar still carries Swing's default model (0–100), so the
+        // arithmetic below reads a pane nobody could have scrolled as sitting far above its tail —
+        // and the tail it is pointing at is empty. A viewport that has not been given a height yet
+        // is the same thing measured directly: nothing has been laid out, so there is no tail to
+        // have left, and the pane follows the newest row by definition.
+        if (scroll.getViewport().getExtentSize().height <= 0) {
+            return true;
+        }
+        return bar.getValue() + bar.getVisibleAmount() >= bar.getMaximum() - STICK_MARGIN;
     }
 
     /**
@@ -422,13 +574,6 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
      * while the user is reading earlier content. Cleared again when the user returns to the tail.
      */
     private boolean userScrolledAway = false;
-
-    private static Color blend(Color a, Color b, float mix) {
-        if (a == null) a = Color.WHITE;
-        return new Color((int) (a.getRed() * (1 - mix) + b.getRed() * mix),
-                (int) (a.getGreen() * (1 - mix) + b.getGreen() * mix),
-                (int) (a.getBlue() * (1 - mix) + b.getBlue() * mix));
-    }
 
     private void requestRenderedBlocks() {
         for (int i = first; i < last; i++) {
@@ -443,8 +588,13 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             if (index >= first && index < last) {
                 int componentIndex = (index - first) * 2;
                 if (componentIndex < cards.getComponentCount()) {
+                    // the rendered text is the same length as before, only the markup changed, so
+                    // the cache is dropped for this row and the card rebuilt from the new html
+                    cardCache.remove(block);
+                    JPanel replacement = cachedCard(block);
+                    replacement.putClientProperty("transcript.index", index);
                     cards.remove(componentIndex);
-                    cards.add(createCard(block), componentIndex);
+                    cards.add(replacement, componentIndex);
                 }
             }
         }
@@ -489,22 +639,14 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             return false;
         }
         Component current = cards.getComponent(componentIndex);
-        if (current instanceof JPanel card && block == card.getClientProperty("transcript.block")
-                && card.getClientProperty("transcript.body") instanceof JEditorPane body) {
-            // same block, same card, only more text: re-set it in place. Destroying and
-            // re-creating the card per tick re-laid out (and re-painted) the whole column.
-            body.setText(bodyHtml(block));
-            cards.revalidate();
-            cards.repaint();
-            return true;
+        // the cached card re-texts an engine row where it stands and rebuilds a chat row, so the
+        // only component work here is swapping in the card when that rebuild made a new one
+        JPanel fresh = cachedCard(block);
+        if (fresh != current) {
+            cards.remove(componentIndex);
+            fresh.putClientProperty("transcript.index", index);
+            cards.add(fresh, componentIndex);
         }
-        // A chat card owns its body layout (parts, forms, a scroller), so it is rebuilt rather
-        // than re-texted; that is the same work createCard did when the row first appeared, and
-        // it only happens for the rows whose text actually changed in this batch.
-        cards.remove(componentIndex);
-        JPanel replacement = createCard(block);
-        replacement.putClientProperty("transcript.index", index);
-        cards.add(replacement, componentIndex);
         cards.revalidate();
         cards.repaint();
         return true;
@@ -531,9 +673,10 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     public void followTail() {
         SwingUtilities.invokeLater(() -> {
             JScrollBar bar = scroll.getVerticalScrollBar();
-            if (bar == null) return;
-            if (userScrolledAway) return;
-            if (bar.getValue() + bar.getVisibleAmount() < bar.getMaximum() - STICK_MARGIN) return;
+            if (bar == null || userScrolledAway) return;
+            // The caller already decided this pane was sitting at the tail before the content
+            // changed; re-checking the geometry here measures it against the NEW maximum, which a
+            // stream always grew, so the check failed and the view never followed at all.
             bar.setValue(bar.getMaximum());
         });
     }

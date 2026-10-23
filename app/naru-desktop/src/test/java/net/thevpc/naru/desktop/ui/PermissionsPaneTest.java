@@ -126,7 +126,8 @@ class PermissionsPaneTest {
     private static String noteText(PermissionsPane pane) {
         javax.swing.JLabel[] found = new javax.swing.JLabel[1];
         walk(pane, c -> {
-            if (found[0] == null && c instanceof javax.swing.JLabel l && l.getFont().getSize() < 12) {
+            if (found[0] == null && c instanceof javax.swing.JLabel l
+                    && "Policy note".equals(l.getAccessibleContext().getAccessibleName())) {
                 found[0] = l;
             }
         });

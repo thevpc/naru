@@ -5,9 +5,11 @@ import net.thevpc.naru.desktop.host.InteractionHost;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.ui.InputPane;
 import net.thevpc.naru.desktop.ui.StatusBar;
+import net.thevpc.naru.desktop.ui.StatusDot;
 import net.thevpc.naru.desktop.ui.TaskPane;
 import net.thevpc.naru.desktop.ui.ToolsPane;
 import net.thevpc.naru.desktop.ui.TranscriptPane;
+import net.thevpc.naru.desktop.ui.UiPalette;
 import net.thevpc.naru.desktop.ui.WorkbenchPane;
 import net.thevpc.naru.desktop.ui.SettingsPane;
 import net.thevpc.naru.desktop.ui.InspectorPane;
@@ -97,7 +99,6 @@ public final class MainWindow extends JFrame {
     private InspectorPane inspector;
     private NaruSessionModel session;
     private InteractionHost host;
-    private final JLabel activeSessionLabel = new JLabel("No session");
     private Point dragOffset;
     private boolean maximized;
     private int nextSessionNumber = 1;
@@ -246,34 +247,14 @@ public final class MainWindow extends JFrame {
         menus.add(file); menus.add(view); menus.add(sessionMenu); menus.add(help);
         shell.add(menus, BorderLayout.WEST);
 
-        JPanel bar = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 4));
-        JPanel sessionPill = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 2)) {
-            @Override
-            protected void paintComponent(java.awt.Graphics g) {
-                java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
-                g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-                Color bg = javax.swing.UIManager.getColor("TextField.background");
-                if (bg == null) bg = getBackground();
-                g2.setColor(bg);
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
-                Color border = javax.swing.UIManager.getColor("Component.borderColor");
-                if (border != null) {
-                    g2.setColor(border);
-                    g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
-                }
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        sessionPill.setOpaque(false);
-        sessionPill.setBorder(BorderFactory.createEmptyBorder(2, 10, 2, 10));
-        activeSessionLabel.setFont(activeSessionLabel.getFont().deriveFont(java.awt.Font.BOLD, 11.5f));
-        sessionPill.add(activeSessionLabel);
-        bar.add(sessionPill);
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 5));
+        bar.setOpaque(false);
+        // Left empty: it is the drag handle for the window. The session it used to name is stated in
+        // the status footer, where the reader looks after a turn ends, and in the taskbar title.
 
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 2));
         JButton settings = new JButton("⚙"); settings.setToolTipText("Settings"); settings.getAccessibleContext().setAccessibleName("Settings");
-        settings.setFocusable(false); settings.setMargin(new java.awt.Insets(2, 7, 2, 7)); settings.putClientProperty("JButton.buttonType", "toolBarButton");
+        settings.setFocusable(false); settings.putClientProperty("JButton.buttonType", "toolBarButton");
         settings.addActionListener(e -> showSettings()); controls.add(settings);
 
         JButton min = new JButton("—"); min.setToolTipText("Minimize"); min.addActionListener(e -> setState(ICONIFIED));
@@ -282,9 +263,11 @@ public final class MainWindow extends JFrame {
         for (JButton b : new JButton[]{min, max, quit}) {
             b.setFocusable(false);
             b.putClientProperty("JButton.buttonType", "toolBarButton");
-            b.setMargin(new java.awt.Insets(2, 8, 2, 8));
             controls.add(b);
         }
+        // the four controls carry one glyph each: a margin-sized box is wide enough at the font the
+        // window was built with and elides the glyph to "…" once the interface size grows
+        net.thevpc.naru.desktop.ui.ActionButtons.glyphSized(settings, min, max, quit);
 
         shell.add(bar, BorderLayout.CENTER); shell.add(controls, BorderLayout.EAST);
         java.awt.Color separator = javax.swing.UIManager.getColor("Component.borderColor");
@@ -298,6 +281,22 @@ public final class MainWindow extends JFrame {
         };
         installDrag(shell, drag);
         return shell;
+    }
+
+    /**
+     * Name the session the reader is in and paint its state next to it — in the status footer, the
+     * row under the composer.
+     * <p>
+     * Every place that follows the active session — it opens, it is renamed, another one takes its
+     * place — goes through here, so the dot can never be left showing the state of the session the
+     * label stopped naming.
+     */
+    private void showActiveSession(String name, SessionEntry entry) {
+        setTitle("NARU — " + name);
+        if (statusBar != null) {
+            statusBar.setSessionIdentity(name, entry == null ? null : entry.stateColor(),
+                    entry != null && entry.isOpening());
+        }
     }
 
     private void installLoadingOverlay() {
@@ -326,7 +325,7 @@ public final class MainWindow extends JFrame {
         java.awt.Font f = sessionList.getFont();
         if (f == null) return;
         int line = sessionList.getFontMetrics(f).getHeight();
-        sessionList.setFixedCellHeight(Math.max(38, (int) Math.round(line * 2.7)));
+        sessionList.setFixedCellHeight(Math.max(line + 12, (int) Math.round(line * 2.7)));
         if (sessionRailPanel != null) {
             // the "＋ New" button sits on the same row as the "Sessions" title; a fixed 220px rail
             // clips it once the interface size grows, so the rail keeps pace with the font too
@@ -344,7 +343,7 @@ public final class MainWindow extends JFrame {
                 ? sessionList.getFontMetrics(f)
                 : getFontMetrics(f);
         if (fm == null) return 220;
-        return Math.max(180, (int) Math.round(fm.stringWidth("Sessions") * 2.6) + 40);
+        return Math.max(fm.getHeight() * 11, (int) Math.round(fm.stringWidth("Sessions") * 2.6) + 40);
     }
 
     /** Reapply the active look-and-feel to UI pieces that use custom renderers or a glass pane. */
@@ -413,7 +412,7 @@ public final class MainWindow extends JFrame {
         String newName=value.trim(); showLoading("Saving session name…");
             new javax.swing.SwingWorker<Void,Void>() {
                 protected Void doInBackground(){entry.model.session().name(newName).save();return null;}
-                protected void done(){hideLoading();try{get();rebuildSessionList();sessionList.repaint();activeSessionLabel.setText(newName);}catch(Exception ex){Throwable c=ex.getCause()==null?ex:ex.getCause();net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this,"Rename session",String.valueOf(c.getMessage()));}}
+                protected void done(){hideLoading();try{get();rebuildSessionList();sessionList.repaint();showActiveSession(newName, entry);}catch(Exception ex){Throwable c=ex.getCause()==null?ex:ex.getCause();net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this,"Rename session",String.valueOf(c.getMessage()));}}
             }.execute();
     }
 
@@ -456,7 +455,7 @@ public final class MainWindow extends JFrame {
                     }
                     rebuildSessionList();
                     if (sessions.isEmpty()) {
-                        activeSessionLabel.setText("No session");
+                        showActiveSession("No session", null);
                         addWelcome();
                     } else {
                         sessionList.setSelectedIndex(0);
@@ -519,24 +518,30 @@ public final class MainWindow extends JFrame {
         };
         card.setOpaque(false);
         card.setBorder(BorderFactory.createEmptyBorder(28, 36, 28, 36));
-        card.setPreferredSize(new java.awt.Dimension(540, 240));
 
+        // The card sizes from its content instead of a fixed box: a hard-coded preferred size
+        // clipped this text as soon as a HiDPI laptop or a font scale above 100% made it taller
+        // than the box. Swing's HTML engine only wraps a block that declares a width, so the
+        // paragraphs say how wide they are and the card grows around them.
+        int textWidth = 380;
+        JLabel desc = new JLabel("<html><div style='width:" + textWidth + "px;line-height:1.5;color:#6B7280;'>"
+                + "A high-performance desktop and terminal environment for agentic coding, "
+                + "multi-agent coordination, and local &amp; cloud AI workflows.<br><br>"
+                + "Get started by launching a new interactive session or choosing an existing one from the sidebar."
+                + "</div></html>");
+        net.thevpc.naru.desktop.ui.UiFonts.apply(desc, net.thevpc.naru.desktop.ui.UiFonts.BODY,
+                java.awt.Font.PLAIN);
         JLabel title = new JLabel("✨ Welcome to NARU");
-        title.setFont(title.getFont().deriveFont(java.awt.Font.BOLD, 18f));
+        net.thevpc.naru.desktop.ui.UiFonts.apply(title, net.thevpc.naru.desktop.ui.UiFonts.SUBTITLE,
+                java.awt.Font.BOLD);
         Color accent = javax.swing.UIManager.getColor("Component.accentColor");
         if (accent != null) title.setForeground(accent);
-
-        JLabel desc = new JLabel("<html><p style='line-height:1.5;color:#6B7280;'>"
-                + "A high-performance desktop and terminal environment for agentic coding, "
-                + "multi-agent coordination, and local & cloud AI workflows.<br><br>"
-                + "Get started by launching a new interactive session or choosing an existing one from the sidebar."
-                + "</p></html>");
-        desc.setFont(desc.getFont().deriveFont(13f));
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         actions.setOpaque(false);
         JButton create = new JButton("＋ New Session");
-        create.setFont(create.getFont().deriveFont(java.awt.Font.BOLD, 12.5f));
+        net.thevpc.naru.desktop.ui.UiFonts.apply(create, net.thevpc.naru.desktop.ui.UiFonts.BODY,
+                java.awt.Font.BOLD);
         create.putClientProperty("JButton.buttonType", "roundRect");
         create.addActionListener(e -> createSession());
 
@@ -547,7 +552,9 @@ public final class MainWindow extends JFrame {
         actions.add(create);
         actions.add(settings);
 
-        JLabel tip = new JLabel("<html><span style='font-size:9pt;color:#9CA3AF;'>Shortcuts: <b>Ctrl+L</b> Focus input · <b>Ctrl+,</b> Settings · <b>F6</b> Cycle panes</span></html>");
+        JLabel tip = new JLabel("<html><div style='width:" + textWidth + "px;font-size:"
+                + net.thevpc.naru.desktop.ui.UiFonts.pointSize(net.thevpc.naru.desktop.ui.UiFonts.CAPTION)
+                + "pt;color:#9CA3AF;'>Shortcuts: <b>Ctrl+L</b> Focus input · <b>Ctrl+,</b> Settings · <b>F6</b> Cycle panes</div></html>");
 
         JPanel bottom = new JPanel(new BorderLayout(0, 12));
         bottom.setOpaque(false);
@@ -684,7 +691,7 @@ public final class MainWindow extends JFrame {
         host = selected.host;
         loadingListener = () -> {
             if (selected.model.isBooting()) showLoading("Opening " + selected.toString() + "…");
-            else { hideLoading(); if (selected.model == session) activeSessionLabel.setText(selected.toString()); }
+            else { hideLoading(); if (selected.model == session) showActiveSession(selected.toString(), selected); }
             if (selected.model.session() != null) {
                 selected.id = selected.model.session().uuid();
             }
@@ -770,10 +777,12 @@ public final class MainWindow extends JFrame {
         whole.setMinimumSize(new java.awt.Dimension(120, 80));
         JPanel body = new JPanel(new BorderLayout());
         body.add(conversationAndComposer, BorderLayout.CENTER);
-        body.add(statusBar, BorderLayout.NORTH);
+        // the footer, not a header: the reader's eye is on the composer above this row, and the
+        // session, the model and the turn state belong where that eye already lands
+        body.add(statusBar, BorderLayout.SOUTH);
         center.removeAll(); center.setLayout(new BorderLayout()); center.add(body, BorderLayout.CENTER);
         center.revalidate(); center.repaint();
-        activeSessionLabel.setText(selected.toString());
+        showActiveSession(selected.toString(), selected);
         tasks.sessionModelChanged();
         sessionList.repaint();
         if (selected.model.isBooting()) showLoading("Opening " + selected.toString() + "…"); else hideLoading();
@@ -803,22 +812,27 @@ public final class MainWindow extends JFrame {
         rail.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, borderColor != null ? borderColor : new Color(210, 215, 225)));
         JPanel sessionHeader = new JPanel(new BorderLayout());
         JLabel sessionTitle = new JLabel("Sessions");
-        sessionTitle.setFont(sessionTitle.getFont().deriveFont(java.awt.Font.BOLD, 13f));
+        net.thevpc.naru.desktop.ui.UiFonts.apply(sessionTitle, net.thevpc.naru.desktop.ui.UiFonts.HEADING,
+                java.awt.Font.BOLD);
         sessionTitle.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 0));
         sessionHeader.add(sessionTitle, BorderLayout.WEST);
         JPanel sessionActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-        JButton open = new JButton("↗");
-        open.setMargin(new java.awt.Insets(2, 6, 2, 6));
+        // Two glyph buttons of one kind. They used to be a flat tool-bar arrow beside a rounded
+        // pill, which read as two different classes of control for two actions of the same class;
+        // "▶" is also the glyph the closed-session preview already uses for opening.
+        JButton open = new JButton("▶");
         open.setFocusable(false);
-        open.setToolTipText("Open selected closed session");
+        open.setToolTipText("Open the selected session");
         open.getAccessibleContext().setAccessibleName("Open selected session");
         open.putClientProperty("JButton.buttonType", "toolBarButton");
+        net.thevpc.naru.desktop.ui.ActionButtons.glyphSized(open);
         open.addActionListener(e -> { SessionEntry selected = sessionList.getSelectedValue(); if (selected != null) activateSession(selected); });
-        JButton add = new JButton("＋ New");
-        add.setMargin(new java.awt.Insets(2, 8, 2, 8));
+        JButton add = new JButton("＋");
         add.setFocusable(false);
         add.setToolTipText("Create a session");
-        add.putClientProperty("JButton.buttonType", "roundRect");
+        add.getAccessibleContext().setAccessibleName("New session");
+        add.putClientProperty("JButton.buttonType", "toolBarButton");
+        net.thevpc.naru.desktop.ui.ActionButtons.glyphSized(add);
         add.addActionListener(e -> createSession());
         sessionActions.add(open);
         sessionActions.add(add);
@@ -834,23 +848,45 @@ public final class MainWindow extends JFrame {
         }
         sessionList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
         applySessionRowHeight();
+        installSessionHover();
         sessionList.setCellRenderer((list, value, index, selected, focus) -> {
             String dates = value.dateSummary();
             String state = value.stateLabel();
-            String mark = value.isOpen() ? "●" : value.isOpening() ? "◌" : value.needsAttention() ? "!" : "○";
-            String stateColor = value.isOpen() ? "#10B981" : value.isOpening() ? "#F59E0B"
-                    : value.needsAttention() ? "#EF4444" : "#9CA3AF";
+            // one dot in the state's hue, the same hue the title row uses for the session being read:
+            // the mark glyph used to change shape per state, which was a second vocabulary for the
+            // thing the word beside it already spelled out
+            String mark = "●";
             // The date and the state pill are painted with fixed colours, which a selected row
             // replaces with the LAF's selection background. On a light LAF that selection is a
             // saturated blue, and a grey "Created …" on it disappears; selected rows therefore
             // take the selection foreground for both the name and the metadata.
-            String metaColor = selected ? css(list.getSelectionForeground()) : "#6B7280";
-            String pillColor = selected ? css(list.getSelectionForeground()) : stateColor;
-            JLabel label = new JLabel("<html><div style='padding:2px 4px;'><b><span style='color:" + pillColor + ";'>" + mark + "</span>  " + value.toString()
-                    + "</b><br><span style='font-size:9pt;color:" + pillColor + "'><b>" + state
-                    + "</b></span><span style='font-size:9pt;color:" + metaColor + ";'> · " + dates + "</span></div></html>");
+            String metaColor = selected ? UiPalette.css(list.getSelectionForeground()) : UiPalette.css(UiPalette.muted());
+            String stateColor = selected ? UiPalette.css(list.getSelectionForeground()) : UiPalette.css(value.stateColor());
+            // The dot answers "is this session live?", the selection answers "is this the row I
+            // picked?", and one row can be either, both, or neither. The selection hue therefore
+            // never paints over the state hue — a closed session the reader has clicked on keeps its
+            // grey dot instead of borrowing the green of the one that is actually running.
+            String dotColor = UiPalette.css(value.stateColor());
+            // Bold is spent on the single thing the list cannot show another way: the session this
+            // window is reading. Selected-but-closed and open-but-unselected both used to be bold,
+            // which made every row bold and so none of them one.
+            boolean active = value.model != null && value.model == session;
+            String name = active ? "<b>" + value + "</b>" : value.toString();
+            float meta = net.thevpc.naru.desktop.ui.UiFonts.pointSize(net.thevpc.naru.desktop.ui.UiFonts.CAPTION);
+            JLabel label = new JLabel("<html><div style='padding:2px 4px;'>"
+                    + "<span style='color:" + dotColor + ";'>" + mark + "</span>  " + name
+                    + "<br><span style='font-size:" + meta + "pt;color:" + stateColor + "'>" + state
+                    + "</span><span style='font-size:" + meta + "pt;color:" + metaColor + ";'> · " + dates + "</span></div></html>");
             label.setOpaque(true);
-            label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
+            // A row the pointer rests on warms towards its own state hue. The selection already
+            // says "this one is picked"; hover only says "this one is next", so it borrows the
+            // colour the row carries instead of inventing a second highlight.
+            Color surface = list.getBackground();
+            if (!selected && Integer.valueOf(index).equals(list.getClientProperty("naru.hoverRow"))) {
+                surface = UiPalette.mix(surface, value.stateColor(),
+                        0.18f * net.thevpc.naru.desktop.ui.HoverFader.level(list));
+            }
+            label.setBackground(selected ? list.getSelectionBackground() : surface);
             label.setForeground(selected ? list.getSelectionForeground() : javax.swing.UIManager.getColor("List.foreground"));
             label.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
             return label;
@@ -868,6 +904,42 @@ public final class MainWindow extends JFrame {
         return rail;
     }
 
+    /**
+     * The fade under the pointer in the session list. The level lives on the list, not on a row,
+     * because a {@code JList} owns one component for many cells: the renderer asks the list which
+     * row the pointer is on and how far in the fade has come, and paints that one.
+     */
+    private void installSessionHover() {
+        net.thevpc.naru.desktop.ui.HoverFader.install(sessionList);
+        sessionList.addMouseMotionListener(new MouseAdapter() {
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                setSessionHover(sessionList.locationToIndex(e.getPoint()));
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                setSessionHover(-1);
+            }
+        });
+        sessionList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseExited(MouseEvent e) {
+                setSessionHover(-1);
+            }
+        });
+    }
+
+    private void setSessionHover(int index) {
+        int size = sessionList.getModel().getSize();
+        int row = index >= 0 && index < size ? index : -1;
+        if (Integer.valueOf(row).equals(sessionList.getClientProperty("naru.hoverRow"))) {
+            return;
+        }
+        sessionList.putClientProperty("naru.hoverRow", row);
+        sessionList.repaint();
+    }
+
     private void showHibernatedSession(SessionEntry entry) {
         disposeSessionViews();
         // The engine may still be open in the background. This preview is only the active
@@ -878,13 +950,20 @@ public final class MainWindow extends JFrame {
         JPanel preview = new JPanel(new BorderLayout(12, 12));
         preview.setBorder(BorderFactory.createEmptyBorder(28, 32, 28, 32));
         JLabel title = new JLabel("Session is closed");
-        title.setFont(title.getFont().deriveFont(java.awt.Font.BOLD, 20f));
+        net.thevpc.naru.desktop.ui.UiFonts.apply(title,
+                net.thevpc.naru.desktop.ui.UiFonts.SUBTITLE, java.awt.Font.BOLD);
         JLabel details = new JLabel("<html><b>" + entry.toString() + "</b><br>" + entry.dateSummary()
                 + "<br><br>This session is closed. Open it to load its conversation, tasks, and workspace.</html>");
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        JButton open = new JButton("Open session");
+        // glyph and tooltip, like every other action button: the words are the first thing this row
+        // loses when the interface size grows, and the card already says what the session is
+        JButton open = new JButton("▶");
+        open.setToolTipText("Open this session");
+        open.getAccessibleContext().setAccessibleName("Open session");
         open.addActionListener(e -> activateSession(entry));
-        JButton delete = new JButton("Delete session…");
+        JButton delete = new JButton("🗑");
+        delete.setToolTipText("Delete this session…");
+        delete.getAccessibleContext().setAccessibleName("Delete session");
         delete.addActionListener(e -> deleteSession(entry));
         actions.add(open); actions.add(delete);
         JPanel content = new JPanel(new BorderLayout(0, 14));
@@ -895,19 +974,9 @@ public final class MainWindow extends JFrame {
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sessionRail(null), preview);
         split.setResizeWeight(0.24);
         center.removeAll(); center.setLayout(new BorderLayout()); center.add(split, BorderLayout.CENTER);
-        activeSessionLabel.setText(entry.toString() + " · Closed");
+        showActiveSession(entry.toString(), entry);
         center.revalidate(); center.repaint();
         hideLoading();
-    }
-
-    /**
-     * A {@code java.awt.Color} as a CSS {@code #rrggbb} literal for the session renderer's HTML.
-     * The selection foreground is whatever the LAF says it is, so the metadata line stays legible
-     * on every theme rather than only on the dark one.
-     */
-    private static String css(Color color) {
-        if (color == null) return "#000000";
-        return String.format(java.util.Locale.ROOT, "#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
     }
 
     private static final class SessionEntry {
@@ -942,6 +1011,14 @@ public final class MainWindow extends JFrame {
             if (isOpen()) return "Open";
             if (needsAttention()) return "Needs attention";
             return "Closed";
+        }
+
+        /** The hue of that label, shared by the session row and the dot in the title row. */
+        Color stateColor() {
+            if (isOpening()) return UiPalette.PENDING;
+            if (isOpen()) return UiPalette.LIVE;
+            if (needsAttention()) return UiPalette.ATTENTION;
+            return UiPalette.IDLE;
         }
 
         @Override public String toString(){
@@ -1086,7 +1163,7 @@ public final class MainWindow extends JFrame {
         if (wasActive) { session = null; host = null; }
         rebuildSessionList();
         if (!sessions.isEmpty()) showHibernatedSession(active);
-        else { activeSessionLabel.setText("No session"); addWelcome(); }
+        else { showActiveSession("No session", null); addWelcome(); }
     }
 
     private void deleteSession(SessionEntry entry) {
@@ -1123,7 +1200,7 @@ public final class MainWindow extends JFrame {
                     sessions.remove(entry);
                     rebuildSessionList();
                     if (sessions.isEmpty()) {
-                        activeSessionLabel.setText("No session");
+                        showActiveSession("No session", null);
                         addWelcome();
                     } else {
                         SessionEntry selected = sessionList.getSelectedValue();

@@ -33,8 +33,10 @@ public final class SettingsPane extends JPanel {
         super(new BorderLayout());
         setBorder(BorderFactory.createEmptyBorder(22, 26, 24, 26));
         JPanel header = new JPanel(new BorderLayout(24, 0));
-        JLabel title = new JLabel("Settings"); title.setFont(title.getFont().deriveFont(Font.BOLD, 24f));
-        javax.swing.JButton close = new javax.swing.JButton("←  Back to workspace"); close.setMargin(new java.awt.Insets(7,14,7,14)); close.setMinimumSize(new java.awt.Dimension(190,36)); close.addActionListener(e -> back.run());
+        JLabel title = new JLabel("Settings"); UiFonts.apply(title, UiFonts.TITLE, Font.BOLD);
+        // Glyph only, and no fixed pixel box: a 190x36 minimum outlives every interface size the
+        // slider allows, so the button either clips the words or floats in empty space.
+        javax.swing.JButton close = new javax.swing.JButton("←"); close.setMargin(new java.awt.Insets(7,12,7,12)); close.setToolTipText("Back to workspace"); close.getAccessibleContext().setAccessibleName("Back to workspace"); close.addActionListener(e -> back.run());
         header.add(title, BorderLayout.WEST); header.add(close, BorderLayout.EAST);
         // the page already has its own padding; the header sits apart from the section card so the
         // back button never reads as one of the appearance controls
@@ -45,17 +47,27 @@ public final class SettingsPane extends JPanel {
 
         JPanel navigation = new JPanel(new BorderLayout());
         JList<String> sections = new JList<>(new String[]{"Appearance", "Input & shortcuts", "Workspace"});
-        sections.setSelectedIndex(0); sections.setFixedCellHeight(38); sections.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-        navigation.add(sections, BorderLayout.NORTH); navigation.setPreferredSize(new java.awt.Dimension(210, 100));
+        UiFonts.apply(sections, UiFonts.BODY, Font.PLAIN);
+        // a row and a rail measured in pixels survive one interface size; both come from this list's
+        // own font so the settings navigation grows with the words it holds
+        sections.setSelectedIndex(0);
+        sections.setFixedCellHeight(sections.getFontMetrics(sections.getFont()).getHeight() + 14);
+        sections.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+        navigation.add(sections, BorderLayout.NORTH);
+        navigation.setPreferredSize(new java.awt.Dimension(
+                Math.max(180, sections.getFontMetrics(sections.getFont())
+                        .stringWidth("Input & shortcuts") + 56), 100));
 
         JPanel appearance = new JPanel(new BorderLayout(10, 12));
         Color borderColor = javax.swing.UIManager.getColor("Component.borderColor");
         appearance.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(borderColor == null ? new Color(120,120,120) : borderColor),
                 BorderFactory.createEmptyBorder(20, 22, 22, 22)));
-        JLabel heading = new JLabel("Appearance"); heading.setFont(heading.getFont().deriveFont(Font.BOLD, 18f));
+        JLabel heading = new JLabel("Appearance"); UiFonts.apply(heading, UiFonts.SUBTITLE, Font.BOLD);
         JLabel copy = new JLabel("Choose a comfortable theme. NARU remembers your choice for the next launch.");
         JComboBox<Theme> theme = new JComboBox<>(THEMES.toArray(Theme[]::new));
-        theme.setEditable(false); theme.setPreferredSize(new java.awt.Dimension(310, 36));
+        // no pixel box: the row stretches the combo to its width anyway, and a fixed height clips
+        // the theme name as soon as the interface size grows past one setting
+        theme.setEditable(false);
         theme.setRenderer(new DefaultListCellRenderer() {
             @Override public java.awt.Component getListCellRendererComponent(JList<?> list, Object value, int index,
                     boolean selected, boolean focus) {

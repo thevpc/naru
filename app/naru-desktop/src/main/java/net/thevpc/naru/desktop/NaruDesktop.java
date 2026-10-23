@@ -84,17 +84,44 @@ public final class NaruDesktop {
         return Math.max(MIN_FONT_SCALE, Math.min(MAX_FONT_SCALE, percent));
     }
 
+    /**
+     * Ask for a new interface size. The pass that applies one is the most expensive thing this app
+     * does — every HTML body in the conversation is measured again — so presses and slider drags are
+     * collected and run as one pass once the input goes quiet. The preference is written straight
+     * away, which is what lets the shortcut keep stepping up and down while a pass is pending.
+     */
     public static void setFontScale(int percent) {
-        int value=clampFontScale(percent); if(value==fontScale()) return; preferences().putInt(FONT_SCALE_KEY,value);
-        if(themeBaseFont==null) themeBaseFont=UIManager.getFont("defaultFont");
-        applyScaledFontDefaults(100);
-        for(java.awt.Window window:java.awt.Window.getWindows()) {
-            SwingUtilities.updateComponentTreeUI(window); scaleComponentFonts(window,value);
-            syncFontScaleControl(window,value);
-            if(window instanceof MainWindow main) main.refreshThemePalette();
-            window.invalidate();window.validate();window.repaint();
+        int value = clampFontScale(percent);
+        if (value == fontScale()) return;
+        preferences().putInt(FONT_SCALE_KEY, value);
+        if (fontScaleBatch == null) {
+            fontScaleBatch = new javax.swing.Timer(200, e -> applyFontScale());
+            fontScaleBatch.setRepeats(false);
         }
+        fontScaleBatch.restart();
+    }
+
+    /** The size the windows on screen were last laid out for, or -1 before the first pass. */
+    private static int appliedFontScale = -1;
+    private static javax.swing.Timer fontScaleBatch;
+
+    private static void applyFontScale() {
+        int value = fontScale();
+        if (value == appliedFontScale) return;
+        appliedFontScale = value;
+        if (themeBaseFont == null) themeBaseFont = UIManager.getFont("defaultFont");
+        // One write to the defaults: every write makes the look-and-feel refresh the whole tree.
         applyScaledFontDefaults(value);
+        for (java.awt.Window window : java.awt.Window.getWindows()) {
+            SwingUtilities.updateComponentTreeUI(window);
+            applyLadderFonts(window);
+            syncFontScaleControl(window, value);
+            if (window instanceof MainWindow main) main.refreshThemePalette();
+            // No validate() here: laying out now would measure the bodies at the widths this pass is
+            // halfway through. Invalidating lets the paint that follows do it once, at the final size.
+            window.invalidate();
+            window.repaint();
+        }
     }
 
     public static void applyTheme(String className) { applyTheme(className, true); }
@@ -112,11 +139,12 @@ public final class NaruDesktop {
             if (persist) preferences().put(THEME_KEY, className);
             if (persist) for (java.awt.Window window : java.awt.Window.getWindows()) {
                 SwingUtilities.updateComponentTreeUI(window);
-                clearFontBases(window); scaleComponentFonts(window,fontScale());
+                applyLadderFonts(window);
                 if (window instanceof MainWindow main) main.refreshThemePalette();
                 window.invalidate(); window.validate(); window.repaint();
             }
             applyScaledFontDefaults(fontScale());
+            appliedFontScale = fontScale();
         } catch (Exception ex) {
             throw new IllegalArgumentException("Could not apply theme " + className + ": " + ex.getMessage(), ex);
         }
@@ -125,30 +153,30 @@ public final class NaruDesktop {
     private static void applyScaledFontDefaults(int percent) {
         if(themeBaseFont!=null) UIManager.put("defaultFont",themeBaseFont.deriveFont(themeBaseFont.getSize2D()*percent/100f));
     }
-    private static void clearFontBases(java.awt.Component c) {
-        if(c instanceof javax.swing.JComponent j) j.putClientProperty("naru.baseFont",null);
-        if(c instanceof java.awt.Container p) for(java.awt.Component child:p.getComponents()) clearFontBases(child);
+
+    /** The theme's own font, before any interface size is applied to it. */
+    public static java.awt.Font themeBaseFont() { return themeBaseFont; }
+
+    public static void initializeFontScale(java.awt.Component c) {
+        appliedFontScale = fontScale();
+        applyLadderFonts(c);
     }
-    public static void initializeFontScale(java.awt.Component c) { clearFontBases(c); scaleComponentFonts(c,fontScale()); }
 
     /**
-     * Apply the current interface size to a component built after the last scale pass.
+     * Re-resolve every component on the font ladder in this subtree.
      * <p>
-     * Scaling walks the tree once, when the size changes, and captures each component's font as its
-     * base. A card, a button or an HTML body created later is not in that tree yet, so it keeps the
-     * absolute size it was built with — which is why a streamed answer used to ignore the interface
-     * size until Ctrl+| ran the walk again. Callers that create components at runtime hand them here
-     * so they join the same base/scale scheme.
+     * Only ladder components are touched. Everything else takes its font from
+     * {@code UIManager.defaultFont}, which {@link #applyScaledFontDefaults} has already rewritten,
+     * so scaling it here as well would multiply the interface size into it a second time — which is
+     * exactly how the conversation used to grow faster than the rest of the window on every press of
+     * Ctrl+-.
      */
-    public static void scaleNewComponent(java.awt.Component c) { scaleComponentFonts(c, fontScale()); }
-
-    private static void scaleComponentFonts(java.awt.Component c,int percent) {
-        if(c instanceof javax.swing.JComponent j && j.getFont()!=null) {
-            java.awt.Font base=(java.awt.Font)j.getClientProperty("naru.baseFont");
-            if(base==null){base=j.getFont();j.putClientProperty("naru.baseFont",base);}
-            j.setFont(base.deriveFont(base.getSize2D()*percent/100f));
+    public static void applyLadderFonts(java.awt.Component c) {
+        if (c instanceof javax.swing.JComponent j
+                && net.thevpc.naru.desktop.ui.UiFonts.isManaged(j)) {
+            j.setFont(net.thevpc.naru.desktop.ui.UiFonts.resolved(j));
         }
-        if(c instanceof java.awt.Container p) for(java.awt.Component child:p.getComponents()) scaleComponentFonts(child,percent);
+        if(c instanceof java.awt.Container p) for(java.awt.Component child:p.getComponents()) applyLadderFonts(child);
     }
     private static void syncFontScaleControl(java.awt.Component c,int percent) {
         if(c instanceof javax.swing.JSlider s && "naru-font-scale".equals(s.getName()) && s.getValue()!=percent) s.setValue(percent);

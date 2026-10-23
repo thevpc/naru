@@ -287,13 +287,17 @@ class TaskMonitorTest {
         });
 
         // selecting by id is the path another pane takes, and the tree has to open for it
+        onEdt(() -> assertTrue(pane.selectTask(firstChild.id()), "a live id is selectable"));
+        // the frames are fetched off the EDT, so the detail lands a turn after the selection
+        awaitTrue(() -> detailTextNow().contains("probe-child-1"),
+                "the detail pane filled in for the task that was selected");
+        String shown = onEdtReturn(() -> pane.detailText());
         onEdt(() -> {
-            assertTrue(pane.selectTask(firstChild.id()), "a live id is selectable");
-            assertTrue(pane.detailText().contains("Task #" + firstChild.id()), pane.detailText());
             assertFalse(pane.selectTask(999_999L), "a stale id must not fake a selection");
-            assertEquals(pane.detailText(), pane.detailText(), "and it leaves the detail alone");
             assertTrue(pane.monitorNote().contains("task"), pane.monitorNote());
         });
+        assertEquals(shown, onEdtReturn(() -> pane.detailText()),
+                "and a rejected selection leaves the detail alone");
 
         assertTrue(selections.contains(firstChild.id()),
                 "the window's panes were told which task is on screen: " + selections);
@@ -311,8 +315,8 @@ class TaskMonitorTest {
     /**
      * The hold control, pressed rather than called.
      * <p>
-     * Hold and resume share one button whose word flips, and the defect this covers is exactly the
-     * pair coming apart: with {@code setEnabled(… && !held)} the button read "Resume" and could not
+     * Hold and resume share one button whose glyph flips, and the defect this covers is exactly the
+     * pair coming apart: with {@code setEnabled(… && !held)} the button said "Resume" and could not
      * be pressed, so a held task had no way back from the mouse. A test that goes through
      * {@code taskAction} cannot see it — only the widget has a label and an enabled flag at the same
      * time. Found by the §6 gate run, pinned here so it stays found.
@@ -332,17 +336,17 @@ class TaskMonitorTest {
         assertNotNull(main, "the session's own task is on the scheduler");
         assertFalse(main.isHeld(), "premise: the foreground task runs free");
 
-        // free and live → the holdable direction: the word is Hold and the button can be pressed
-        assertEquals("Hold/enabled", selectAndRead(mainId));
+        // free and live → the holdable direction: the pause glyph, and the button can be pressed
+        assertEquals("Ⅱ/enabled", selectAndRead(mainId));
         press(mainId);
         awaitTrue(main::isHeld, "the press reached hold()");
         // held and live → the resumable direction, and the pair the bug got wrong: with
-        // setEnabled(… && !held) the word said "Resume" while the button was disabled, so a held
+        // setEnabled(… && !held) the button said "Resume" while it was disabled, so a held
         // task had no way back from the mouse
-        assertEquals("Resume/enabled", selectAndRead(mainId));
+        assertEquals("▶/enabled", selectAndRead(mainId));
         press(mainId);
         awaitTrue(() -> !main.isHeld(), "and the same press reaches unhold()");
-        assertEquals("Hold/enabled", selectAndRead(mainId), "the word and the flag agree again");
+        assertEquals("Ⅱ/enabled", selectAndRead(mainId), "the glyph and the flag agree again");
 
         // A task that can no longer answer must not offer a pressable action. Which of the two the
         // monitor shows depends on the engine: a killed task is deregistered, and the row leaves as
@@ -446,9 +450,17 @@ class TaskMonitorTest {
         });
     }
 
+    /** Read the detail pane from the test thread, so a poll can ask it between EDT turns. */
+    private static String detailTextNow() {
+        try {
+            return onEdtReturn(pane::detailText);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     /** Poll from the test thread, which is what lets the EDT keep running while the click lands. */
-    private static void awaitTrue(java.util.function.BooleanSupplier want, String what)
-            throws Exception {
+    private static void awaitTrue(java.util.function.BooleanSupplier want, String what)            throws Exception {
         long until = System.currentTimeMillis() + 3000;
         while (!want.getAsBoolean() && System.currentTimeMillis() < until) {
             Thread.sleep(50);
@@ -471,9 +483,14 @@ class TaskMonitorTest {
         b.doClick();
     }
 
+    /**
+     * The rail's buttons carry a glyph and nothing else, so they are found by what the tooltip says
+     * they do — which is also how a reader with no icon font finds them.
+     */
     private static javax.swing.JToggleButton allTasksButton(java.awt.Container c) {
         for (java.awt.Component x : c.getComponents()) {
-            if (x instanceof javax.swing.JToggleButton b && "All tasks".equals(b.getText())) {
+            if (x instanceof javax.swing.JToggleButton b && b.getAccessibleContext() != null
+                    && "Show all tasks as a tree".equals(b.getAccessibleContext().getAccessibleName())) {
                 return b;
             }
             if (x instanceof java.awt.Container inner) {
@@ -488,8 +505,8 @@ class TaskMonitorTest {
 
     private static javax.swing.JButton holdButton(java.awt.Container c) {
         for (java.awt.Component x : c.getComponents()) {
-            if (x instanceof javax.swing.JButton b
-                    && ("Hold".equals(b.getText()) || "Resume".equals(b.getText()))) {
+            if (x instanceof javax.swing.JButton b && b.getAccessibleContext() != null
+                    && "Hold / resume selected task".equals(b.getAccessibleContext().getAccessibleName())) {
                 return b;
             }
             if (x instanceof java.awt.Container inner) {

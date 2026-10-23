@@ -46,12 +46,14 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private final ComposerArea area;
     private final ComposerSyntax syntax;
     private final JLabel reason = new JLabel(" ");
-    private final JButton send = new JButton("➤ Send");
-    private final JButton queued = new JButton("Queued · 0");
-    private final JButton model = new JButton("⚡ Choose model…");
-    private final JComboBox<String> agentMode = new JComboBox<>(new String[]{"Agent", "Ask", "Plan"});
-    private final JCheckBox thinking = new JCheckBox("🧠 Thinking", true);
-    private final JButton attach = new JButton("📎 Attach");
+    private final JButton send = new JButton("➤");
+    private final JButton queued = new JButton("⏳ 0");
+    private final JButton model = new JButton("⚡");
+    private final JComboBox<String> agentMode = new JComboBox<>();
+    /** True while {@link #refreshModes()} is writing the combo, so its listener can tell that from a click. */
+    private boolean modeSyncRunning;
+    private final JCheckBox thinking = new JCheckBox("Thinking", true);
+    private final JButton attach = new JButton("📎");
     private final JPanel promptPanel = new JPanel(new BorderLayout());
     private final JLabel promptQuestion = new JLabel(" ");
     private final JPanel promptChoices = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
@@ -76,12 +78,13 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         this.syntax = ComposerSyntax.install(area, session::session);
         setBorder(BorderFactory.createEmptyBorder(6, 10, 8, 10));
 
-        send.setFont(send.getFont().deriveFont(Font.BOLD, 12f));
+        UiFonts.apply(send, UiFonts.BODY, Font.BOLD);
         send.putClientProperty("JButton.buttonType", "roundRect");
-        send.setMargin(new java.awt.Insets(4, 14, 4, 14));
+        send.setMargin(new java.awt.Insets(4, 10, 4, 10));
+        send.getAccessibleContext().setAccessibleName("Send");
 
         queued.setMargin(new java.awt.Insets(2, 6, 2, 6));
-        queued.setFont(queued.getFont().deriveFont(Font.PLAIN, 11f));
+        UiFonts.apply(queued, UiFonts.CAPTION, Font.PLAIN);
         queued.putClientProperty("JButton.buttonType", "toolBarButton");
         queued.setVisible(false);
 
@@ -89,6 +92,8 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         model.setMargin(new java.awt.Insets(2, 8, 2, 8));
         attach.putClientProperty("JButton.buttonType", "toolBarButton");
         attach.setMargin(new java.awt.Insets(2, 6, 2, 6));
+        attach.setToolTipText("Attach a file to the message");
+        attach.getAccessibleContext().setAccessibleName("Attach");
 
         JPanel composerCard = new JPanel(new BorderLayout(0, 4)) {
             @Override
@@ -138,7 +143,22 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         left.setOpaque(false);
         model.setToolTipText("Choose the model for the selected task");
-        agentMode.setToolTipText("Conversation mode · mode actions will be connected here");
+        agentMode.setToolTipText("Prompt mode: the engine's own list, for the task in the header");
+        agentMode.addActionListener(e -> {
+            if (modeSyncRunning) return;
+            NaruTask task = selectedTask();
+            String name = String.valueOf(agentMode.getSelectedItem());
+            if (task == null || name.isBlank() || task.session() == null) return;
+            var mode = task.session().registry().mode(name).orNull();
+            if (mode == null) return;
+            try {
+                task.promptMode(mode);
+            } catch (RuntimeException ex) {
+                DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Mode",
+                        String.valueOf(ex.getMessage()));
+                refreshModes();
+            }
+        });
         attach.setToolTipText("Attach files to this task conversation");
         thinking.setToolTipText("Enable or disable thinking for the selected task");
         thinking.setOpaque(false);
@@ -262,7 +282,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             }
             if (p.trailingHint() != null) {
                 promptChoices.add(new JLabel(
-                        "<html><font size=2 color=gray>" + escape(p.trailingHint()) + "</font></html>"));
+                        "<html><div style='font-size:" + UiFonts.pointSize(UiFonts.CAPTION)
+                                + "pt;color:" + UiPalette.css(UiPalette.muted()) + "'>"
+                                + escape(p.trailingHint()) + "</div></html>"));
             }
             JButton skip = new JButton("Cancel");
             skip.setToolTipText("Abandons the question; the task fails rather than parking forever");
@@ -324,9 +346,16 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         // the agent is mid-turn — instead of letting it fall through to the queue, where it would
         // be delivered as a prompt and answered by the model (the "/model read as a prompt" bug).
         if (NaruSessionModel.isDirective(line)) {
-            String failure = session.submitDirective(line);
-            if (failure != null) {
-                DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Directive", failure);
+            // The engine call runs on a worker, so the result — and any failure dialog — only
+            // arrives later. The draft is cleared now because the line has been handed over.
+            String rejection = session.submitDirective(line, failure -> {
+                if (failure != null) {
+                    DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Directive", failure);
+                }
+                updateEnabledState();
+            });
+            if (rejection != null) {
+                DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Directive", rejection);
             } else {
                 area.clearForSend();
             }
@@ -338,12 +367,16 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             return;
         }
         boolean accepted;
+        // ask submit() where the line belongs: a restored session parks its conversation task on
+        // input without ever handing us a request, and a queue nobody drains looks like a dropped
+        // message. answerTargetTaskId() covers both the request and that park.
+        long answerTarget = session.answerTargetTaskId();
         if (r != null) {
             clearPrompt();
             session.echoAndDeliver(line, r);
             accepted = true;
-        } else if (session.canAcceptInput() && session.pendingRequest() != null
-                && (selectedTaskId <= 0 || session.pendingRequest().task().id() == selectedTaskId)) {
+        } else if (session.canAcceptInput()
+                && (answerTarget < 0 || selectedTaskId <= 0 || selectedTaskId == answerTarget)) {
             session.submit(line);
             accepted = true;
         } else {
@@ -481,12 +514,22 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         else if (canQueue && hasText) composerAction = ComposerAction.ENQUEUE;
         else composerAction = ComposerAction.DISABLED;
         send.setEnabled(composerAction != ComposerAction.DISABLED);
+        // Glyph only, never a word: the tools row has to survive an interface size that doubles the
+        // text width, and a button elided to "S…" says less than an icon with a tooltip does. The
+        // tooltip below is what carries the meaning, so the two switches must stay in step.
         send.setText(switch (composerAction) {
-            case RUN -> "▶ Run";
-            case SEND -> "➤ Send";
+            case RUN -> "▶";
+            case SEND -> "➤";
+            case ENQUEUE -> "⤵";
+            case STOP -> "■";
+            case DISABLED -> "➤";
+        });
+        send.getAccessibleContext().setAccessibleName(switch (composerAction) {
+            case RUN -> "Run directive";
+            case SEND -> "Send";
             case ENQUEUE -> "Enqueue";
-            case STOP -> "■ Stop";
-            case DISABLED -> "➤ Send";
+            case STOP -> "Stop";
+            case DISABLED -> "Send";
         });
         send.setToolTipText(switch (composerAction) {
             case RUN -> "Run this directive on the conversation now";
@@ -500,7 +543,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         if (composerAction == ComposerAction.STOP) send.setBackground(new Color(190, 68, 68));
         else refreshThemePalette();
         int queueSize = task == null ? 0 : task.queuedMessages().size();
-        queued.setText("Queued · " + queueSize);
+        // the count is the whole message; the words are what an interface size grows past first
+        queued.setText("⏳ " + queueSize);
+        queued.setToolTipText(queueSize + " queued message(s) — click to review them");
         queued.setVisible(queueSize > 0);
         queued.setEnabled(task != null);
         if (can) {
@@ -520,6 +565,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         if (task == null) return;
         try {
             task.setModel(new net.thevpc.naru.api.model.NaruModelConfig(key));
+            // setModel is silent: the status bar's model label only knows what a finished call
+            // reported, so the picker has to ask for a re-read.
+            session.refreshModelLabel();
         } catch (RuntimeException ex) {
             DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Model", String.valueOf(ex.getMessage()));
         }
@@ -528,6 +576,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     @Override
     public void sessionModelChanged() {
         refreshModels();
+        refreshModes();
         updateEnabledState();
     }
 
@@ -538,7 +587,8 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         if (modelCatalogSession != session.session()) {
             if (!modelCatalogLoading) {
                 modelCatalogLoading = true;
-                model.setEnabled(false); model.setText("Loading models…");
+                model.setEnabled(false); model.setText(ModelIcons.glyph(null) + " loading…");
+                model.setToolTipText("Loading the model list…");
                 var owner = session.session();
                 new javax.swing.SwingWorker<java.util.List<net.thevpc.naru.api.model.NaruModelInfo>, Void>() {
                     protected java.util.List<net.thevpc.naru.api.model.NaruModelInfo> doInBackground() {
@@ -557,10 +607,71 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         }
         model.setEnabled(true);
         model.putClientProperty("selectedModel", current);
-        model.setText(current == null ? "Choose model…" : current.toString());
+        // The button names the model it will change. The header used to, and then the header went
+        // away; a bare glyph left the reader to open the picker just to ask which model is live. The
+        // key stays in the tooltip because a provider/model:tag is the longest text this row holds.
+        model.setText(ModelIcons.buttonLabel(current == null ? null : current.provider(),
+                current == null ? null : current.model(), 22));
         String absent = absentProvidersSummary();
-        model.setToolTipText(modelInfos.size() + " models exposed by providers registered for this session"
+        model.setToolTipText((current == null ? "No model selected" : current.toString())
+                + " · " + modelInfos.size() + " models exposed by providers registered for this session"
                 + (absent == null ? "" : " · " + absent));
+    }
+
+    /**
+     * Fill the mode combo from the registry and show the selected task's mode.
+     *
+     * <p>The list is the engine's own — modes are declared by extensions and by the project, so a
+     * hard-coded trio of names silently disagreed with any session that had others. Refilling only
+     * when the set changed keeps the popup from collapsing under the reader's cursor.
+     */
+    private void refreshModes() {
+        NaruTask task = null;
+        try {
+            task = selectedTask();
+        } catch (RuntimeException stopped) {
+            task = null;
+        }
+        String current = null;
+        try {
+            current = task == null || task.promptMode() == null ? null : task.promptMode().name();
+        } catch (RuntimeException stopped) {
+            current = null;
+        }
+        java.util.List<String> names = new java.util.ArrayList<>();
+        var owner = session.session();
+        if (owner != null) {
+            try {
+                names.addAll(owner.registry().modeNames());
+            } catch (RuntimeException ignored) {
+                // a registry that cannot answer keeps whatever the combo already holds
+            }
+        }
+        if (names.isEmpty()) {
+            names.add(net.thevpc.naru.api.mode.NaruPromptMode.DEFAULT);
+        }
+        modeSyncRunning = true;
+        try {
+            java.util.List<String> shown = new java.util.ArrayList<>();
+            for (int i = 0; i < agentMode.getItemCount(); i++) {
+                shown.add(agentMode.getItemAt(i));
+            }
+            if (!shown.equals(names)) {
+                agentMode.removeAllItems();
+                for (String n : names) {
+                    agentMode.addItem(n);
+                }
+            }
+            if (current != null && names.contains(current)) {
+                agentMode.setSelectedItem(current);
+            } else if (agentMode.getSelectedItem() == null) {
+                agentMode.setSelectedIndex(0);
+            }
+        } finally {
+            modeSyncRunning = false;
+        }
+        // A mode belongs to a task; with none selected there is nothing for the choice to mean.
+        agentMode.setEnabled(task != null && owner != null);
     }
 
     private void chooseModel() {
@@ -575,7 +686,8 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             String features = cap == null ? "" : String.join(" · ", java.util.stream.Stream.of(cap.isVision() ? "Vision" : null, cap.isTools() ? "Tools" : null, cap.isThinking() ? "Reasoning" : null).filter(java.util.Objects::nonNull).toList());
             String context = cap == null || cap.contextLength() <= 0 ? "Context unknown" : String.format(java.util.Locale.ROOT, "%,d tokens", cap.contextLength());
             String meta = String.join(" · ", java.util.stream.Stream.of(value.quantization(), value.parameterSize(), context, features, rateStatus(value.provider())).filter(s -> s != null && !s.isBlank()).toList());
-            JLabel label = new JLabel("<html><b>" + value.provider() + "/" + value.model() + "</b><br><small>" + meta + "</small></html>"); label.setOpaque(true);
+            JLabel label = new JLabel("<html><b>" + ModelIcons.glyph(value.provider()) + "  "
+                    + value.provider() + "/" + value.model() + "</b><br><small>" + meta + "</small></html>"); label.setOpaque(true);
             label.setBackground(selected ? l.getSelectionBackground() : l.getBackground());
             label.setForeground(selected ? l.getSelectionForeground() : l.getForeground());
             label.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8)); return label;
@@ -603,7 +715,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         JButton select = new JButton("Use model");
         select.addActionListener(e -> {
             var value = list.getSelectedValue();
-            if (value != null) { model.putClientProperty("selectedModel", value.key()); model.setText(value.key().toString()); applySelectedModel(); }
+            if (value != null) { model.putClientProperty("selectedModel", value.key()); applySelectedModel(); }
             dialog.dispose();
         });
         list.addMouseListener(new java.awt.event.MouseAdapter() { public void mouseClicked(java.awt.event.MouseEvent e) { if (e.getClickCount() == 2) select.doClick(); } });
@@ -739,6 +851,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         thinking.setSelected(task == null || net.thevpc.naru.api.model.NaruThinkingConfig.find(task)
                 .orElse(Boolean.TRUE));
         refreshModels();
+        refreshModes();
         NaruInputRequest pending = session.pendingRequest();
         if (pending != null && (taskId <= 0 || pending.task().id() == taskId)) showPrompt(pending);
         else if (shownFor != null) clearPrompt();

@@ -49,10 +49,10 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
         this.model = model;
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setCellRenderer(new RowRenderer());
-        list.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        UiFonts.applyMono(list, UiFonts.BODY, Font.PLAIN);
         list.addListSelectionListener(e -> showDetail());
         detail.setText("Select a call to see its arguments and its full result.");
-        note.setFont(note.getFont().deriveFont(Font.PLAIN, 11f));
+        UiFonts.apply(note, UiFonts.CAPTION, Font.PLAIN);
         note.setForeground(Color.GRAY);
         note.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
 
@@ -201,7 +201,7 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
                                                       boolean selected, boolean focus) {
             JLabel label = (JLabel) super.getListCellRendererComponent(l, line((ToolCallModel.Row) value),
                     index, selected, focus);
-            label.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            UiFonts.applyMono(label, UiFonts.BODY, Font.PLAIN);
             label.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
             if (!selected) {
                 label.setForeground(colour((ToolCallModel.Row) value, l));

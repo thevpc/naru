@@ -131,6 +131,15 @@ class ComposerAreaTest {
     }
 
     /**
+     * A candidate row as plain text. The list paints its rows with markup — the insert coloured, the
+     * engine's description greyed — so an assertion about <i>which</i> row is selected has to look
+     * past the styling it is not about.
+     */
+    private static String plain(String label) {
+        return label == null ? null : label.replaceAll("<[^>]*>", "").replace("&amp;", "&").trim();
+    }
+
+    /**
      * Swing focus is asynchronous, and a WHEN_FOCUSED binding only fires for the component that
      * actually owns it — so "wait until it does" is part of the test, not a convenience. Without a
      * window manager (Xvfb here) the request can take a cycle or two to land.
@@ -222,12 +231,12 @@ class ComposerAreaTest {
                 new Candidate("second", null, Kind.SUBCOMMAND),
                 new Candidate("third", null, Kind.SUBCOMMAND))));
         onEdt(area::requestCompletion);
-        assertEquals("first", onEdtReturn(area::selectedCompletionLabel), "the list opens on the first row");
+        assertEquals("first", plain(onEdtReturn(area::selectedCompletionLabel)), "the list opens on the first row");
         press(area, KeyEvent.VK_DOWN, 0);
         press(area, KeyEvent.VK_DOWN, 0);
-        assertEquals("third", onEdtReturn(area::selectedCompletionLabel));
+        assertEquals("third", plain(onEdtReturn(area::selectedCompletionLabel)));
         press(area, KeyEvent.VK_DOWN, 0);
-        assertEquals("third", onEdtReturn(area::selectedCompletionLabel),
+        assertEquals("third", plain(onEdtReturn(area::selectedCompletionLabel)),
                 "at the end of the list Down holds rather than wrapping out from under the user");
         press(area, KeyEvent.VK_ENTER, 0);
         assertEquals("third", onEdtReturn(area::getText),
@@ -510,7 +519,7 @@ class ComposerAreaTest {
             List<String> labels = new ArrayList<>();
             onEdt(() -> {
                 for (int i = 0; i < area.completionCount(); i++) {
-                    labels.add(area.completionLabelAt(i));
+                    labels.add(plain(area.completionLabelAt(i)));
                 }
             });
             assertTrue(labels.stream().anyMatch(l -> l.startsWith("/model")),

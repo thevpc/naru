@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.engine.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
@@ -136,6 +137,19 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         task.addHistory(assistantMsg);
         // ── Case 1: model wants to call tools ─────────────────────────────
         if (assistantMsg.hasToolCalls()) {
+            // A stalled loop costs a provider request and a transcript card per round. Bounding it
+            // by round count alone lets a model spend the whole budget re-asking for the same call.
+            if (repeatsLastToolRound(task)) {
+                task.log(NaruLogMode.PROGRESS, NMsg.ofC(
+                        "%s The model repeated its previous tool call unchanged; ending this turn.",
+                        NMsg.ofStyledPrimary8("⏹")));
+                reportAnswer(task, assistantMsg);
+                reportSilentTurn(task, assistantMsg);
+                task.setLastResult(assistantMsg);
+                task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
+                task.defaultAdvance(this);
+                return;
+            }
             // Guarantee termination: the agent loop must stop after maxSteps
             // tool-call rounds regardless of the model behaviour, otherwise a model
             // that keeps returning tool_calls would loop forever and the session
@@ -157,6 +171,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                 task.log(NaruLogMode.PROGRESS, NMsg.ofC(
                         "Reached max tool-call rounds (%s); ending agent loop.", maxSteps));
                 reportAnswer(task, assistantMsg);
+                reportSilentTurn(task, assistantMsg);
                 task.setLastResult(assistantMsg);
                 task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
                 task.defaultAdvance(this);
@@ -227,5 +242,63 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         if (!NBlankable.isBlank(assistantMsg.getContent())) {
             task.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
         }
+    }
+
+    /**
+     * Say so when a turn ends with the model having asked for tools instead of answering.
+     *
+     * <p>Without this the user's last visible line is whatever the transcript held before they
+     * typed, which reads as though the message was never delivered — the usual complaint against
+     * a small local model that only emits {@code tool_calls} and no text at all.
+     */
+    private static void reportSilentTurn(NaruTask task, NaruMessage assistantMsg) {
+        if (!NBlankable.isBlank(assistantMsg.getContent()) || task.isResponseStreamed()) {
+            return;
+        }
+        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+                "%s This turn ended in tool calls without an answer. Ask again, or turn off the"
+                        + " tools the model keeps calling (/tools, /tag).",
+                NMsg.ofStyledPrimary8("⚠")));
+    }
+
+    /**
+     * True when the round about to run repeats the previous assistant tool round exactly.
+     *
+     * <p>A small local model can call {@code think}, read the {@code ok} that comes back and ask
+     * for the same call again, unchanged, until the round budget runs out — every round costing a
+     * provider request. Nothing in a tool result persuades it to stop, so the loop is bounded by
+     * noticing the repetition instead. Text is part of the comparison: a model that repeats a call
+     * while saying something new is still working, not stalled.
+     */
+    private static boolean repeatsLastToolRound(NaruTask task) {
+        List<NaruMessage> h = task.history();
+        String previous = null;
+        for (int i = h.size() - 1; i >= 0 && i >= h.size() - 24; i--) {
+            NaruMessage m = h.get(i);
+            if (m.getRole() == NaruRole.user) {
+                // the prompt that started this turn: earlier rounds belong to another turn, where
+                // the same call with the same arguments is not a stall but a repeat request.
+                return false;
+            }
+            if (m.getRole() != NaruRole.assistant || !m.hasToolCalls()) {
+                continue;
+            }
+            String s = roundSignature(m);
+            if (previous == null) {
+                previous = s;
+                continue;
+            }
+            return previous.equals(s);
+        }
+        return false;
+    }
+
+    /** Call ids are provider-generated and not stable between rounds, so they are left out. */
+    private static String roundSignature(NaruMessage m) {
+        StringBuilder sb = new StringBuilder(String.valueOf(m.getContent()));
+        for (NaruToolCall c : m.getToolCalls()) {
+            sb.append('|').append(c.getName()).append('=').append(c.getArguments());
+        }
+        return sb.toString();
     }
 }

@@ -82,9 +82,10 @@ public final class PermissionsPane extends JPanel implements PermissionsModel.Li
         this.model = session.permissions();
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setCellRenderer(new RowRenderer());
-        list.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        UiFonts.applyMono(list, UiFonts.BODY, Font.PLAIN);
         list.addListSelectionListener(e -> showDetail());
-        note.setFont(note.getFont().deriveFont(Font.PLAIN, 11f));
+        UiFonts.apply(note, UiFonts.CAPTION, Font.PLAIN);
+        note.getAccessibleContext().setAccessibleName("Policy note");
         note.setForeground(Color.GRAY);
         note.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
 
@@ -356,7 +357,7 @@ public final class PermissionsPane extends JPanel implements PermissionsModel.Li
             PermissionsModel.Row r = (PermissionsModel.Row) value;
             JLabel label = (JLabel) super.getListCellRendererComponent(l,
                     (index + 1) + ". " + PermissionsText.describe(r.rule()), index, selected, focus);
-            label.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            UiFonts.applyMono(label, UiFonts.BODY, Font.PLAIN);
             label.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
             if (!selected) {
                 Color base = r.rule().effect() == NaruAccessEffect.DENY

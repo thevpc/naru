@@ -22,6 +22,7 @@ import java.util.regex.Pattern;
 public final class WorkbenchPane extends JPanel {
     private final NaruSessionModel model;
     private final JTabbedPane tabs = new JTabbedPane();
+    private final TagsPane tags;
     private final JTree tree = new JTree(new DefaultMutableTreeNode("Project"));
     private final JTextField fileSearch = new JTextField();
     private Path displayedRoot;
@@ -36,10 +37,11 @@ public final class WorkbenchPane extends JPanel {
 
     public WorkbenchPane(NaruSessionModel model) {
         super(new BorderLayout()); this.model = model;
-        tabs.addTab("Explorer", explorer()); tabs.addTab("Changes", changes()); tabs.addTab("Routines", routineEditor());
+        tags = new TagsPane(model);
+        tabs.addTab("Explorer", explorer()); tabs.addTab("Changes", changes()); tabs.addTab("Routines", routineEditor()); tabs.addTab("Tool tags", tags);
         add(tabs, BorderLayout.CENTER); refresh();
     }
-    public void setSelectedTaskId(long id) { taskId = id; refresh(); }
+    public void setSelectedTaskId(long id) { taskId = id; tags.setSelectedTaskId(id); refresh(); }
     private Path projectRoot() { NaruTask t = selectedTask(); return path(t == null ? model.projectDir() : t.projectDir()); }
 
     private JSplitPane explorer() {
@@ -62,7 +64,7 @@ public final class WorkbenchPane extends JPanel {
             public void treeWillCollapse(javax.swing.event.TreeExpansionEvent e) { }
         });
         tree.addTreeSelectionListener(e -> { Object node = tree.getLastSelectedPathComponent(); Object value = node instanceof DefaultMutableTreeNode ? ((DefaultMutableTreeNode) node).getUserObject() : null; if (value instanceof Path p && Files.isRegularFile(p)) openFile(p); });
-        fileView.setEditable(false); fileView.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        fileView.setEditable(false); UiFonts.applyMono(fileView, UiFonts.BODY, Font.PLAIN);
         JScrollPane preview = new JScrollPane(fileView); preview.setBorder(BorderFactory.createTitledBorder("File preview"));
         JPanel navigation = new JPanel(new BorderLayout(0, 4));
         fileSearch.putClientProperty("JTextField.placeholderText", "Filter workspace files…");

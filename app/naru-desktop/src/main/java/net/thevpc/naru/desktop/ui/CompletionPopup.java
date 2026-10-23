@@ -55,7 +55,15 @@ final class CompletionPopup {
 
     /** One cell is enough to read a candidate and stay inside the window; more needs scrolling. */
     private static final int VISIBLE_ROWS = 10;
-    private static final int CELL_HEIGHT = 20;
+
+    /**
+     * A candidate row: one line of the list's own font plus the renderer's padding. A constant here
+     * reads well at one interface size and clips the command name at every larger one.
+     */
+    private int cellHeight() {
+        Font f = list.getFont() == null ? UiFonts.base() : list.getFont();
+        return list.getFontMetrics(f).getHeight() + 4;
+    }
 
     private final JPanel card = new JPanel(new BorderLayout());
     private final DefaultListModel<NaruLineCompletion.Candidate> entries = new DefaultListModel<>();
@@ -75,8 +83,7 @@ final class CompletionPopup {
 
     CompletionPopup() {
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        list.setFixedCellHeight(CELL_HEIGHT);
-        list.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        UiFonts.applyMono(list, UiFonts.SECONDARY, Font.PLAIN);
         list.setCellRenderer((l, value, index, selected, focus) -> {
             javax.swing.JLabel label = new javax.swing.JLabel(labelOf(value, l));
             label.setOpaque(true);
@@ -186,8 +193,11 @@ final class CompletionPopup {
             entries.addElement(c);
         }
         list.setSelectedIndex(0);
+        // the row height is taken here, not once at construction: the interface size can change
+        // between building the popup and opening it over the composer
+        list.setFixedCellHeight(cellHeight());
         int rows = Math.min(candidates.size(), VISIBLE_ROWS);
-        int height = rows * CELL_HEIGHT + 4;
+        int height = rows * cellHeight() + 4;
         // wide enough for the longest candidate: a completion list the user has to scroll sideways
         // to read hides the row they were about to pick, and the rows are single-line by construction
         int widest = list.getPreferredSize().width + 24;

@@ -4,9 +4,12 @@ import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 
 import javax.swing.BorderFactory;
+import javax.swing.JComponent;
+import javax.swing.KeyStroke;
 import javax.swing.UIManager;
 import java.awt.Color;
 import java.awt.Font;
+import java.awt.event.KeyEvent;
 
 /**
  * The desktop's one text-widget factory, so the composer and every detail pane wrap, scroll and
@@ -36,7 +39,7 @@ public final class TextAreas {
     /** Fixed-width text: the shape every engine dump, diff and log line in this app wants. */
     public static RSyntaxTextArea monospace(int rows, int columns) {
         RSyntaxTextArea a = plain(rows, columns);
-        a.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        UiFonts.applyMono(a, UiFonts.BODY, Font.PLAIN);
         return a;
     }
 
@@ -56,6 +59,14 @@ public final class TextAreas {
         a.setLineWrap(true);
         a.setWrapStyleWord(true);
         a.setCodeFoldingEnabled(false);
+        // The library still binds ctrl+ADD and ctrl+SUBTRACT on the numeric keypad to expand/collapse
+        // a fold, and a focused text component is consulted before the window, so those dead bindings
+        // would swallow the interface-size shortcut whenever the composer or a detail pane has focus.
+        // A child map only shadows a parent by mapping the key, not by removing it, so each keystroke
+        // is pointed at a no-op action and falls through to the window binding.
+        javax.swing.InputMap keys = a.getInputMap(JComponent.WHEN_FOCUSED);
+        keys.put(KeyStroke.getKeyStroke(KeyEvent.VK_ADD, KeyEvent.CTRL_DOWN_MASK), "empty");
+        keys.put(KeyStroke.getKeyStroke(KeyEvent.VK_SUBTRACT, KeyEvent.CTRL_DOWN_MASK), "empty");
         a.setHighlightCurrentLine(false);
         a.setPaintTabLines(false);
         a.setAntiAliasingEnabled(true);

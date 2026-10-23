@@ -6,6 +6,7 @@ import net.thevpc.naru.api.model.NaruMessagePart;
 import net.thevpc.naru.desktop.render.TextHtml;
 
 import javax.swing.BorderFactory;
+import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JEditorPane;
 import javax.swing.JLabel;
@@ -17,11 +18,16 @@ import java.awt.Component;
 import java.awt.FlowLayout;
 import java.util.function.Consumer;
 
-/** A selectable, role-aware chat card capable of hosting typed interactive message parts. */
+/** A selectable, role-aware chat row capable of hosting typed interactive message parts. */
 public final class ChatMessageCard extends JPanel {
     private final NaruMessage message;
-    private final Color cardBg;
-    private final Color cardBorder;
+    private final Color stripe;
+    private final boolean tinted;
+    private final String preparedHtml;
+    private JEditorPane contentBody;
+    private javax.swing.JButton fold;
+    private boolean folded;
+    private Consumer<Boolean> onFolded;
 
     public ChatMessageCard(NaruMessage message, ChatPartRenderers renderers,
                            Consumer<String> actionHandler) {
@@ -30,55 +36,41 @@ public final class ChatMessageCard extends JPanel {
 
     public ChatMessageCard(NaruMessage message, ChatPartRenderers renderers,
                            Consumer<String> actionHandler, String preparedHtml) {
-        super(new BorderLayout(8, 6));
+        super(new BorderLayout(0, 5));
+        this.preparedHtml = preparedHtml;
         this.message = message == null ? NaruMessage.assistant("") : message.copy();
         NaruRole role = this.message.getRole();
-        String speaker = role == NaruRole.user ? "👤 You"
-                : role == NaruRole.tool ? "🔧 " + nonBlank(this.message.getToolName(), "Tool")
-                : role == NaruRole.summary ? "📑 Conversation summary"
-                : role == NaruRole.system ? "ℹ️ NARU · Notice" : "✨ NARU";
+        // No emoji in the caption: it is a label, and the gutter stripe already says who is
+        // speaking by the hue it borrows from that caption.
+        String speaker = role == NaruRole.user ? "YOU"
+                : role == NaruRole.tool ? "TOOL · " + nonBlank(this.message.getToolName(), "call")
+                : role == NaruRole.summary ? "SUMMARY"
+                : role == NaruRole.system ? "NOTICE" : "NARU";
         Color accent = role == NaruRole.user ? new Color(59, 130, 246)
                 : role == NaruRole.tool ? new Color(139, 92, 246)
-                : role == NaruRole.system ? new Color(245, 158, 11) : new Color(16, 185, 129);
-
-        Color baseBg = UIManagerColor.panel(this);
-        if (role == NaruRole.user) {
-            this.cardBg = blend(baseBg, accent, 0.08f);
-            this.cardBorder = blend(baseBg, accent, 0.28f);
-        } else {
-            Color textBg = javax.swing.UIManager.getColor("TextArea.background");
-            this.cardBg = textBg != null ? blend(baseBg, textBg, 0.5f) : baseBg;
-            Color border = javax.swing.UIManager.getColor("Component.borderColor");
-            this.cardBorder = border != null ? border : blend(baseBg, Color.GRAY, 0.25f);
-        }
+                : role == NaruRole.system ? new Color(245, 158, 11) : UiPalette.LIVE;
+        this.stripe = accent;
+        // Only a tool transcript is a wall of fixed-width data worth setting off from the prose.
+        this.tinted = role == NaruRole.tool;
 
         setOpaque(false);
-        setBorder(BorderFactory.createEmptyBorder(10, 14, 10, 14));
+        setBorder(TranscriptLayer.border());
 
         JPanel heading = new JPanel(new BorderLayout());
         heading.setOpaque(false);
 
         JLabel who = new JLabel(speaker);
-        who.setFont(who.getFont().deriveFont(java.awt.Font.BOLD, 12.5f));
-        who.setForeground(accent);
+        UiFonts.apply(who, UiFonts.CAPTION, java.awt.Font.BOLD);
+        who.setForeground(UiPalette.readable(accent));
         heading.add(who, BorderLayout.WEST);
 
         String textToCopy = this.message.getContent();
-        if (textToCopy != null && !textToCopy.isBlank()) {
-            javax.swing.JButton copy = new javax.swing.JButton("📋");
-            copy.setToolTipText("Copy message text");
-            copy.setMargin(new java.awt.Insets(1, 5, 1, 5));
-            copy.setFocusable(false);
-            copy.putClientProperty("JButton.buttonType", "toolBarButton");
-            copy.addActionListener(e -> {
-                try {
-                    java.awt.datatransfer.StringSelection sel = new java.awt.datatransfer.StringSelection(textToCopy);
-                    java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(sel, sel);
-                    copy.setText("✓");
-                    new javax.swing.Timer(1500, ev -> copy.setText("📋")).start();
-                } catch (Exception ignored) {
-                }
-            });
+        boolean hasParts = !this.message.getParts().isEmpty();
+        if (textToCopy != null && !textToCopy.isBlank() || hasParts) {
+            // A row with only parts — a form, an image — still holds text worth taking, and a card
+            // without the control looks like an answer the reader cannot copy.
+            JButton copy = CopyButton.create(() -> copyableText(this.message),
+                    hasParts ? "message and attachments" : "message text");
             heading.add(copy, BorderLayout.EAST);
         }
         add(heading, BorderLayout.NORTH);
@@ -87,8 +79,7 @@ public final class ChatMessageCard extends JPanel {
         body.setOpaque(false);
         body.setLayout(new javax.swing.BoxLayout(body, javax.swing.BoxLayout.Y_AXIS));
         if (this.message.getContent() != null && !this.message.getContent().isBlank()) {
-            body.add(preparedHtml == null ? selectableText(this.message.getContent())
-                    : selectableHtml(preparedHtml));
+            body.add(foldableBody());
         }
         if (!this.message.getParts().isEmpty()) {
             for (NaruMessagePart part : this.message.getParts()) {
@@ -114,20 +105,78 @@ public final class ChatMessageCard extends JPanel {
 
     @Override
     protected void paintComponent(java.awt.Graphics g) {
-        java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
-        g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-        g2.setColor(cardBg);
-        g2.fillRoundRect(0, 0, getWidth(), getHeight(), 14, 14);
-        g2.setColor(cardBorder);
-        g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 14, 14);
-        g2.dispose();
+        TranscriptLayer.paint(this, g, stripe, tinted);
         super.paintComponent(g);
     }
 
     public NaruMessage message() { return message.copy(); }
 
-    private static JEditorPane selectableHtml(String html) {
-        return HtmlPanes.create("<html><body>" + html + "</body></html>", -1f, 2);
+    /**
+     * The message text, with everything past the first {@code HtmlPanes.FOLD_AFTER_LINES} lines
+     * folded behind a control. A directive result or a tool dump is thousands of lines, and Swing's
+     * HTML renderer measures every one of them on each layout pass — see the fold in the engine
+     * cards, which exists for the same reason.
+     */
+    private JPanel foldableBody() {
+        JPanel stack = new JPanel(new BorderLayout());
+        stack.setOpaque(false);
+        stack.setAlignmentX(Component.LEFT_ALIGNMENT);
+        contentBody = HtmlPanes.create(contentHtml(), -1f, 2);
+        stack.add(contentBody, BorderLayout.CENTER);
+        fold = new javax.swing.JButton();
+        fold.setBorderPainted(false);
+        fold.setContentAreaFilled(false);
+        fold.setForeground(UiPalette.muted());
+        fold.setFocusable(false);
+        fold.setMargin(new java.awt.Insets(4, 0, 0, 0));
+        fold.setHorizontalAlignment(javax.swing.SwingConstants.LEFT);
+        fold.addActionListener(e -> setFolded(!folded));
+        stack.add(fold, BorderLayout.SOUTH);
+        updateFold();
+        return stack;
+    }
+
+    private String contentHtml() {
+        String content = message.getContent();
+        if (!folded || HtmlPanes.hiddenLines(content, HtmlPanes.FOLD_AFTER_LINES) == 0) {
+            return "<html><body>" + (preparedHtml == null ? TextHtml.paragraphs(content) : preparedHtml)
+                    + "</body></html>";
+        }
+        return "<html><body>" + TextHtml.paragraphs(
+                HtmlPanes.head(content, HtmlPanes.FOLD_AFTER_LINES)) + "</body></html>";
+    }
+
+    private void updateFold() {
+        int hidden = HtmlPanes.hiddenLines(message.getContent(), HtmlPanes.FOLD_AFTER_LINES);
+        fold.setVisible(hidden > 0);
+        fold.setText(folded ? "⌄ show all " + hidden + " more lines" : "⌃ show less");
+    }
+
+    /** Fold a long body to its head, or show all of it. The owner keeps this on its block. */
+    public void setFolded(boolean value) {
+        if (contentBody == null || folded == value) {
+            return;
+        }
+        folded = value;
+        contentBody.setText(contentHtml());
+        updateFold();
+        if (onFolded != null) {
+            onFolded.accept(value);
+        }
+    }
+
+    public void setOnFolded(Consumer<Boolean> listener) {
+        this.onFolded = listener;
+    }
+
+    /** True while part of the body is folded away behind the show-all control. */
+    public boolean isFolded() {
+        return folded && fold != null && fold.isVisible();
+    }
+
+    /** The text the body is showing: the head of a long message while it is folded. */
+    public String bodyText() {
+        return contentBody == null ? "" : contentBody.getText();
     }
 
     private static JEditorPane selectableText(String text) {
@@ -152,18 +201,18 @@ public final class ChatMessageCard extends JPanel {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    private static Color blend(Color a, Color b, float mix) {
-        if (a == null) a = Color.WHITE;
-        if (b == null) b = Color.GRAY;
-        return new Color((int) (a.getRed() * (1 - mix) + b.getRed() * mix),
-                (int) (a.getGreen() * (1 - mix) + b.getGreen() * mix),
-                (int) (a.getBlue() * (1 - mix) + b.getBlue() * mix));
-    }
-
-    private static final class UIManagerColor {
-        static Color panel(java.awt.Component c) {
-            Color background = javax.swing.UIManager.getColor("Panel.background");
-            return background == null ? c.getBackground() : background;
+    /** What the copy control takes: the message text, then any attachment on a line of its own. */
+    private static String copyableText(NaruMessage message) {
+        StringBuilder sb = new StringBuilder();
+        if (message.getContent() != null) {
+            sb.append(message.getContent());
         }
+        for (NaruMessagePart part : message.getParts()) {
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(part.type()).append(": ").append(part.payload());
+        }
+        return sb.toString();
     }
 }

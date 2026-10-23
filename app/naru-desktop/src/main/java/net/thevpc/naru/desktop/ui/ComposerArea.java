@@ -49,7 +49,7 @@ public final class ComposerArea extends RSyntaxTextArea {
         super(3, 40);
         this.source = source;
         TextAreas.apply(this);
-        setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+        UiFonts.apply(this, UiFonts.BODY, Font.PLAIN);
         setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 6, 4, 6));
         popup.setOnPick(this::insertCandidate);
         getDocument().addUndoableEditListener(undo);
@@ -70,6 +70,19 @@ public final class ComposerArea extends RSyntaxTextArea {
             @Override
             public void changedUpdate(javax.swing.event.DocumentEvent e) {
                 popup.hide();
+            }
+        });
+        // the hint is painted only while the field is empty and unowned by the keyboard, so both of
+        // those edges have to redraw it: Swing repaints for the edits but not for losing focus
+        addFocusListener(new java.awt.event.FocusAdapter() {
+            @Override
+            public void focusGained(java.awt.event.FocusEvent e) {
+                repaint();
+            }
+
+            @Override
+            public void focusLost(java.awt.event.FocusEvent e) {
+                repaint();
             }
         });
         // Only a caret that actually MOVED makes the span stale. Swing also fires this listener when
@@ -261,6 +274,28 @@ public final class ComposerArea extends RSyntaxTextArea {
     public void setHistory(Supplier<String> prev, Supplier<String> next) {
         this.historyPrev = prev;
         this.historyNext = next;
+    }
+
+    /**
+     * The hint the empty field shows. FlatLaf's placeholder support is wired to {@code JTextField}
+     * and {@code JTextArea}, and this is neither, so the word is painted here.
+     */
+    private static final String PLACEHOLDER = "Ask anything — / for commands";
+
+    @Override
+    protected void paintComponent(java.awt.Graphics g) {
+        super.paintComponent(g);
+        if (!getText().isEmpty() || isFocusOwner()) {
+            // while the field has the keyboard the caret is the only hint it needs
+            return;
+        }
+        java.awt.Font f = UiFonts.font(UiFonts.BODY, java.awt.Font.PLAIN);
+        java.awt.Insets in = getInsets();
+        g.setColor(UiPalette.muted());
+        g.setFont(f);
+        java.awt.FontMetrics fm = g.getFontMetrics();
+        int y = in.top + fm.getAscent();
+        g.drawString(PLACEHOLDER, in.left + 1, y);
     }
 
     /** The line the user means to send, trimmed the way the composer always has. */
