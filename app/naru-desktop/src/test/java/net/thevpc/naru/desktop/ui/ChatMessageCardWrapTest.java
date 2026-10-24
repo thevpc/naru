@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.swing.JEditorPane;
 import javax.swing.JScrollPane;
+import javax.swing.SwingUtilities;
 import java.awt.Component;
 import java.awt.Container;
 import java.util.ArrayList;
@@ -23,31 +24,54 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ChatMessageCardWrapTest {
 
+    /**
+     * Laying a card out reads its HTML document, and a markdown part hands its converted text to
+     * the event thread, which writes that same document. Doing the layout here on the test thread
+     * therefore deadlocks the two: the test thread holds the Swing tree lock and waits for the
+     * document, the event thread holds the document and waits for the tree lock. The whole test
+     * runs on the event thread instead, so the two never meet.
+     */
+    private static void onEdt(Runnable body) {
+        try {
+            SwingUtilities.invokeAndWait(body);
+        } catch (Exception ex) {
+            Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+            if (cause instanceof AssertionError error) throw error;
+            if (cause instanceof RuntimeException runtime) throw runtime;
+            if (cause instanceof Error error) throw error;
+            throw new IllegalStateException(cause);
+        }
+    }
+
     @Test
     void aBodyWrapsAtItsWidthAndRemeasuresWhenResized() {
-        String longText = "word ".repeat(40) + "https://example.invalid/" + "x".repeat(200);
-        ChatMessageCard card = new ChatMessageCard(NaruMessage.assistant(longText),
-                new ChatPartRenderers(), null);
-        layout(card, 360);
-        JEditorPane body = findBody(card);
-        assertNotNull(body, "the message text host");
-        int heightAtNarrow = body.getPreferredSize().height;
-        assertTrue(heightAtNarrow > 100, "a long message must wrap over several lines, got " + heightAtNarrow);
+        onEdt(() -> {
+            String longText = "word ".repeat(40) + "https://example.invalid/" + "x".repeat(200);
+            ChatMessageCard card = new ChatMessageCard(NaruMessage.assistant(longText),
+                    new ChatPartRenderers(), null);
+            layout(card, 360);
+            JEditorPane body = findBody(card);
+            assertNotNull(body, "the message text host");
+            int heightAtNarrow = body.getPreferredSize().height;
+            assertTrue(heightAtNarrow > 100, "a long message must wrap over several lines, got " + heightAtNarrow);
 
-        // Widening the conversation re-wraps the same text: fewer lines, same content.
-        layout(card, 900);
-        assertEquals(body.getWidth(), body.getPreferredSize().width, "body must measure at its real width");
-        int heightAtWide = body.getPreferredSize().height;
-        assertTrue(heightAtWide < heightAtNarrow,
-                "resizing wider must recompute the wrap: " + heightAtWide + " !< " + heightAtNarrow);
+            // Widening the conversation re-wraps the same text: fewer lines, same content.
+            layout(card, 900);
+            assertEquals(body.getWidth(), body.getPreferredSize().width, "body must measure at its real width");
+            int heightAtWide = body.getPreferredSize().height;
+            assertTrue(heightAtWide < heightAtNarrow,
+                    "resizing wider must recompute the wrap: " + heightAtWide + " !< " + heightAtNarrow);
+        });
     }
 
     @Test
     void plainTextNeverAsksForHorizontalScroll() {
-        ChatMessageCard card = new ChatMessageCard(NaruMessage.assistant("x".repeat(5000)),
-                new ChatPartRenderers(), null);
-        layout(card, 400);
-        assertEquals(0, countClass(card, JScrollPane.class), "text-only cards must wrap, never scroll sideways");
+        onEdt(() -> {
+            ChatMessageCard card = new ChatMessageCard(NaruMessage.assistant("x".repeat(5000)),
+                    new ChatPartRenderers(), null);
+            layout(card, 400);
+            assertEquals(0, countClass(card, JScrollPane.class), "text-only cards must wrap, never scroll sideways");
+        });
     }
 
     @Test
@@ -59,10 +83,12 @@ class ChatMessageCardWrapTest {
                 .build();
         NaruMessage message = NaruMessage.assistant("filler")
                 .setParts(List.of(new NaruMessagePart("form", payload)));
-        ChatMessageCard card = new ChatMessageCard(message, new ChatPartRenderers(), null);
-        layout(card, 300);
-        assertEquals(1, countClass(card, JScrollPane.class),
-                "a form part must be hosted in its own horizontal scroller");
+        onEdt(() -> {
+            ChatMessageCard card = new ChatMessageCard(message, new ChatPartRenderers(), null);
+            layout(card, 300);
+            assertEquals(1, countClass(card, JScrollPane.class),
+                    "a form part must be hosted in its own horizontal scroller");
+        });
     }
 
     /** Size the card and lay its whole tree out, the way the conversation panel would. */

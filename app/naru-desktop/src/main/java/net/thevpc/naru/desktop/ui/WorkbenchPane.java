@@ -27,7 +27,7 @@ public final class WorkbenchPane extends JPanel {
     private final JTextField fileSearch = new JTextField();
     private Path displayedRoot;
     private final JTextPane fileView = new JTextPane();
-    private final JTextArea diffView = TextAreas.readOnly();
+    private final DiffPanel diffs = new DiffPanel();
     private final JTextField diffSearch = new JTextField(18);
     private final DefaultListModel<String> routineRows = new DefaultListModel<>();
     private final JList<String> routines = new JList<>(routineRows);
@@ -76,21 +76,21 @@ public final class WorkbenchPane extends JPanel {
             public void changedUpdate(javax.swing.event.DocumentEvent e) { searchFiles(); }
         });
         navigation.add(fileSearch, BorderLayout.NORTH); navigation.add(new JScrollPane(tree), BorderLayout.CENTER);
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, navigation, preview); split.setResizeWeight(.30); return split;
+        JSplitPane split = SplitPanes.horizontal(navigation, preview); split.setResizeWeight(.30); split.setDividerLocation(.30); return split;
     }
     private JPanel changes() {
         JPanel p = new JPanel(new BorderLayout());
         JButton refresh = new JButton("↻"); refresh.setToolTipText("Refresh Git changes"); refresh.addActionListener(e -> loadDiff());
         diffSearch.putClientProperty("JTextField.placeholderText", "Find in diff…");
-        diffSearch.getDocument().addDocumentListener(new javax.swing.event.DocumentListener(){ public void insertUpdate(javax.swing.event.DocumentEvent e){highlightDiff();} public void removeUpdate(javax.swing.event.DocumentEvent e){highlightDiff();} public void changedUpdate(javax.swing.event.DocumentEvent e){highlightDiff();} });
-        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4)); bar.add(refresh); bar.add(diffSearch); p.add(bar, BorderLayout.NORTH); p.add(new JScrollPane(diffView), BorderLayout.CENTER); return p;
+        diffSearch.getDocument().addDocumentListener(new javax.swing.event.DocumentListener(){ public void insertUpdate(javax.swing.event.DocumentEvent e){diffs.setQuery(diffSearch.getText());} public void removeUpdate(javax.swing.event.DocumentEvent e){diffs.setQuery(diffSearch.getText());} public void changedUpdate(javax.swing.event.DocumentEvent e){diffs.setQuery(diffSearch.getText());} });
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4)); bar.add(refresh); bar.add(diffSearch); p.add(bar, BorderLayout.NORTH); p.add(diffs, BorderLayout.CENTER); return p;
     }
     private JPanel routineEditor() {
         JPanel p = new JPanel(new BorderLayout()); routines.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         routines.addListSelectionListener(e -> { if (!e.getValueIsAdjusting()) loadRoutine(); });
         JButton save = new JButton("Save routine"); save.addActionListener(e -> saveRoutine());
         JPanel editor = new JPanel(new BorderLayout()); editor.add(new JScrollPane(routineEditor), BorderLayout.CENTER); editor.add(save, BorderLayout.SOUTH);
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(routines), editor); split.setResizeWeight(.30); p.add(split); return p;
+        JSplitPane split = SplitPanes.horizontal(new JScrollPane(routines), editor); split.setResizeWeight(.30); split.setDividerLocation(.30); p.add(split); return p;
     }
     private void refresh() {
         NaruSession s = model.session(); if (s == null) return;
@@ -163,38 +163,37 @@ public final class WorkbenchPane extends JPanel {
     }
     private void apply(StyledDocument d, String text, String regex, Style style) { Matcher m = Pattern.compile(regex).matcher(text); while (m.find()) d.setCharacterAttributes(m.start(), m.end() - m.start(), style, false); }
     private void loadDiff() {
-        Path root = projectRoot(); if (root == null) { diffView.setText("Select a task or project directory to inspect its Git diff."); return; }
-        diffView.setText("Loading project diff…");
-        new SwingWorker<String, Void>() {
-            protected String doInBackground() throws Exception {
+        Path root = projectRoot(); if (root == null) { diffs.clearAll(); return; }
+        diffs.clearAll();
+        new SwingWorker<Object, Object[]>() {
+            protected Object doInBackground() throws Exception {
                 Set<Path> candidates = new TreeSet<>(Comparator.comparing(Path::toString));
                 candidates.add(root);
                 try (var paths = Files.walk(root, 10)) {
                     paths.filter(p -> p.getFileName()!=null && ".git".equals(p.getFileName().toString())).forEach(p -> candidates.add(p.getParent()));
                 } catch (Exception ignored) { }
-                StringBuilder all = new StringBuilder();
                 Set<Path> repos = new TreeSet<>(Comparator.comparing(Path::toString));
                 for (Path repo : candidates) {
                     Process probe = new ProcessBuilder("git", "-C", repo.toString(), "rev-parse", "--show-toplevel").redirectErrorStream(true).start();
                     String top = new String(probe.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim(); if (probe.waitFor()!=0 || top.isBlank()) continue;
                     Path canonical = Paths.get(top).toAbsolutePath().normalize(); if (!repos.add(canonical)) continue;
-                    String stats = git(canonical,"diff","--stat","HEAD","--");
-                    String diff = git(canonical,"diff","--no-ext-diff","--no-color","--unified=3","HEAD","--");
-                    String stagedStats=git(canonical,"diff","--cached","--stat"); String staged=git(canonical,"diff","--cached","--no-ext-diff","--no-color","--unified=3");
-                    all.append("\n▶ ").append(canonical).append("\n").append(stats.isBlank()?"Working tree clean\n":stats).append(stagedStats.isBlank()?"":"Staged changes:\n"+stagedStats+"\n");
-                    if (!diff.isBlank()) all.append(diff).append('\n'); if (!staged.isBlank()) all.append(staged).append('\n');
+                    String unstaged = git(canonical,"diff","--no-ext-diff","--no-color","--unified=3","--");
+                    String staged  = git(canonical,"diff","--cached","--no-ext-diff","--no-color","--unified=3");
+                    String out = git(canonical,"status","--porcelain");
+                    if (unstaged.isBlank() && staged.isBlank() && out.isBlank()) continue;
+                    publish(new Object[]{canonical, unstaged, staged});
                 }
-                return all.isEmpty()?"No Git repositories with changes found under "+root:all.toString();
+                return null;
             }
             private String git(Path repo,String... args) throws Exception { java.util.ArrayList<String> command=new java.util.ArrayList<>(List.of("git","-C",repo.toString())); command.addAll(List.of(args)); Process p=new ProcessBuilder(command).redirectErrorStream(true).start(); String out=new String(p.getInputStream().readAllBytes(),StandardCharsets.UTF_8); p.waitFor(); return out; }
-            protected void done() { try { diffView.setText(get()); diffView.setCaretPosition(0); highlightDiff(); } catch (Exception e) { diffView.setText("Git diff unavailable: " + e.getMessage()); } }
+            protected void process(List<Object[]> chunks) {
+                for (Object[] c : chunks) diffs.load((Path) c[0], (String) c[1], (String) c[2]);
+            }
+            protected void done() {
+                try { if (get() == null && !diffs.hasFiles()) diffs.load(root, "", ""); }
+                catch (Exception ex) { diffs.clearAll(); }
+            }
         }.execute();
-    }
-    private void highlightDiff() {
-        diffView.getHighlighter().removeAllHighlights();
-        String q=diffSearch.getText().trim(); if(q.isEmpty()) return;
-        String text=diffView.getText(); int start=0; int i;
-        while((i=text.toLowerCase(Locale.ROOT).indexOf(q.toLowerCase(Locale.ROOT),start))>=0){ try { diffView.getHighlighter().addHighlight(i,Math.min(text.length(),i+q.length()),new javax.swing.text.DefaultHighlighter.DefaultHighlightPainter(new Color(255,220,100))); } catch (javax.swing.text.BadLocationException ignored) { return; } start=i+q.length(); }
     }
     private void loadRoutine() {
         String name = routines.getSelectedValue(); NaruTask task = selectedTask(); NaruSession s = model.session();

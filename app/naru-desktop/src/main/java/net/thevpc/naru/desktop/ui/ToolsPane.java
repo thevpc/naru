@@ -79,9 +79,10 @@ public final class ToolsPane extends JPanel implements ToolCallModel.Listener {
         bar.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
         add(bar, BorderLayout.NORTH);
 
-        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
+        JSplitPane split = SplitPanes.vertical(
                 new javax.swing.JScrollPane(list), new javax.swing.JScrollPane(detail));
         split.setResizeWeight(0.45);
+        split.setDividerLocation(0.45);
         add(split, BorderLayout.CENTER);
         add(note, BorderLayout.SOUTH);
         model.addListener(this);

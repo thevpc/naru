@@ -90,11 +90,7 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
 
         detail.setText("select a task to see its frames");
         JScrollPane listScroll = new JScrollPane(list);
-        // the same lesson as the transcript: a JList is as wide as its widest cell, and a long task
-        // name or an error string would otherwise push the detail pane and the buttons off screen
-        listScroll.setMinimumSize(new java.awt.Dimension(240, 120));
         JScrollPane detailScroll = new JScrollPane(detail);
-        detailScroll.setMinimumSize(new java.awt.Dimension(240, 80));
         empty.setHorizontalAlignment(SwingConstants.CENTER);
         empty.setForeground(Color.GRAY);
         taskView.add(listScroll, "list"); taskView.add(new JScrollPane(taskTree), "tree");
@@ -125,8 +121,9 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
         listHeader.add(heading, BorderLayout.SOUTH);
         add(listHeader, BorderLayout.NORTH);
         JPanel upper = new JPanel(new BorderLayout()); upper.add(taskView,BorderLayout.CENTER); upper.add(empty,BorderLayout.SOUTH);
-        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, upper, detailScroll);
-        split.setResizeWeight(0.55); split.setDividerLocation(220);
+        JSplitPane split = SplitPanes.vertical(upper, detailScroll);
+        // A ratio, not a pixel: 220 was clamped against the panel's still-zero height at startup.
+        split.setResizeWeight(0.55); split.setDividerLocation(0.55);
         add(split, BorderLayout.CENTER);
         add(buttons(), BorderLayout.SOUTH);
 

@@ -12,6 +12,7 @@ import net.thevpc.naru.desktop.ui.TranscriptPane;
 import net.thevpc.naru.desktop.ui.UiPalette;
 import net.thevpc.naru.desktop.ui.WorkbenchPane;
 import net.thevpc.naru.desktop.ui.SettingsPane;
+import net.thevpc.naru.desktop.ui.SplitPanes;
 import net.thevpc.naru.desktop.ui.InspectorPane;
 import net.thevpc.naru.desktop.ui.TextAreas;
 import net.thevpc.nuts.io.NPath;
@@ -73,6 +74,12 @@ public final class MainWindow extends JFrame {
      */
     private static final long REOPEN_TEARDOWN_WAIT_MS = 30000;
 
+    /** How wide a band along the window edge grabs a resize drag. */
+    private static final int EDGE = 6;
+    /** The smallest window the layout can be dragged to: below this the panes have nothing left to show. */
+    private static final int MIN_WIDTH = 720;
+    private static final int MIN_HEIGHT = 480;
+
 
     private final JPanel center = new JPanel(new BorderLayout());
     private DefaultListModel<SessionEntry> sessionRows = new DefaultListModel<>();
@@ -101,6 +108,10 @@ public final class MainWindow extends JFrame {
     private InteractionHost host;
     private Point dragOffset;
     private boolean maximized;
+    /** Where the window was before it went full screen, for the restore half of {@link #toggleMaximize()}. */
+    private java.awt.Rectangle restoredBounds;
+    /** The frame cursor already asked for, so hovering an edge does not re-send the same request. */
+    private Cursor appliedCursor;
     private int nextSessionNumber = 1;
     private final JLabel taskScopeHeader = new JLabel("No task selected");
     private NaruSessionModel.Listener selectionSync;
@@ -274,10 +285,23 @@ public final class MainWindow extends JFrame {
         if (separator == null) separator = javax.swing.UIManager.getColor("Separator.foreground");
         shell.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, separator == null ? new Color(210, 215, 225) : separator));
         MouseAdapter drag = new MouseAdapter() {
+            private MouseEvent handled;
             @Override public void mousePressed(MouseEvent e) { if (e.getButton()==MouseEvent.BUTTON1 && !maximized) { dragOffset=e.getLocationOnScreen(); Point p=getLocation(); dragOffset.translate(-p.x,-p.y); } }
             @Override public void mouseDragged(MouseEvent e) { if (dragOffset!=null && !maximized) { Point p=e.getLocationOnScreen(); setLocation(p.x-dragOffset.x,p.y-dragOffset.y); } }
             @Override public void mouseReleased(MouseEvent e) { dragOffset=null; }
-            @Override public void mouseClicked(MouseEvent e) { if (e.getClickCount() == 2 && e.getButton() == MouseEvent.BUTTON1) toggleMaximize(); }
+            @Override public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() != 2 || e.getButton() != MouseEvent.BUTTON1) return;
+                // This adapter sits on the bar and on every child of it that is not a control, and one
+                // real double-click travels up from the child under the pointer: the same event object
+                // is offered once to each of them. Answering twice would toggle twice and look dead.
+                if (handled == e) return;
+                handled = e;
+                // Events from the control buttons arrive here by propagation, too; a double-click on
+                // the maximize button has to stay the button's own single press.
+                for (java.awt.Component c = e.getComponent(); c != null && c != shell; c = c.getParent())
+                    if (c instanceof javax.swing.AbstractButton) return;
+                toggleMaximize();
+            }
         };
         installDrag(shell, drag);
         return shell;
@@ -423,7 +447,39 @@ public final class MainWindow extends JFrame {
         if (c instanceof java.awt.Container container) for (java.awt.Component child : container.getComponents()) installDrag(child, drag);
     }
 
-    private void toggleMaximize() { if (maximized) { setExtendedState(NORMAL); maximized=false; } else { setExtendedState(MAXIMIZED_BOTH); maximized=true; } }
+    /**
+     * Put the window at full screen, or back where it was.
+     * <p>
+     * Done by moving the bounds rather than through {@code setExtendedState(MAXIMIZED_BOTH)}: this
+     * window is undecorated and draws its own chrome, and a maximize request is a favour from the
+     * window manager — X11 asks it to set {@code _NET_WM_STATE} and XWayland, or any session with no
+     * compliant manager, simply never answers. The frame then keeps reporting the state it was
+     * given while its bounds stay exactly as they were, which reads as a dead button.
+     */
+    private void toggleMaximize() {
+        if (maximized) {
+            maximized = false;
+            if (restoredBounds != null) setBounds(restoredBounds);
+            return;
+        }
+        restoredBounds = getBounds();
+        maximized = true;
+        setBounds(screenWorkArea());
+    }
+
+    /** The screen this window is on, minus the strips the desktop reserves for its own panels. */
+    private java.awt.Rectangle screenWorkArea() {
+        java.awt.GraphicsConfiguration gc = getGraphicsConfiguration();
+        java.awt.Rectangle screen = gc != null ? gc.getBounds()
+                : new java.awt.Rectangle(java.awt.Toolkit.getDefaultToolkit().getScreenSize());
+        if (gc == null) return screen;
+        java.awt.Insets reserved = java.awt.Toolkit.getDefaultToolkit().getScreenInsets(gc);
+        screen.x += reserved.left;
+        screen.y += reserved.top;
+        screen.width = Math.max(1, screen.width - reserved.left - reserved.right);
+        screen.height = Math.max(1, screen.height - reserved.top - reserved.bottom);
+        return screen;
+    }
 
     private void createSession() {
         NPath dir = projectDirectory == null
@@ -481,20 +537,114 @@ public final class MainWindow extends JFrame {
         return NaruDesktop.workspace(dir).sessionCatalog();
     }
 
+    /**
+     * Resize by dragging the window's own edges, since an undecorated window has no native frame to
+     * grab. The listener sits on the frame, so it sees every mouse event the children propagate up
+     * and must never claim one that belongs to a child: the edge is measured from the event's
+     * component into this window's coordinates rather than trusting its raw point, and a press on a
+     * divider is left to that divider.
+     */
     private void installResizeSupport() {
-        final int edge=6;
-        MouseAdapter resize=new MouseAdapter() {
-            private int direction; private Point origin; private java.awt.Rectangle bounds;
-            @Override public void mouseMoved(MouseEvent e) { direction=resizeDirection(e.getPoint(),edge); setCursor(Cursor.getPredefinedCursor(cursorFor(direction))); }
-            @Override public void mouseExited(MouseEvent e) { if(direction==0)setCursor(Cursor.getDefaultCursor()); }
-            @Override public void mousePressed(MouseEvent e) { if(e.getButton()==MouseEvent.BUTTON1&&direction!=0){origin=e.getLocationOnScreen();bounds=getBounds();} }
-            @Override public void mouseDragged(MouseEvent e) { if(origin==null)return; Point now=e.getLocationOnScreen(); int dx=now.x-origin.x,dy=now.y-origin.y; java.awt.Rectangle b=new java.awt.Rectangle(bounds); if((direction&1)!=0){b.x+=dx;b.width-=dx;} if((direction&2)!=0)b.width+=dx; if((direction&4)!=0){b.y+=dy;b.height-=dy;} if((direction&8)!=0)b.height+=dy; if(b.width>=720&&b.height>=480)setBounds(b); }
-            @Override public void mouseReleased(MouseEvent e) { origin=null; }
+        MouseAdapter resize = new MouseAdapter() {
+            private int direction;
+            private Point origin;
+            private java.awt.Rectangle bounds;
+
+            @Override public void mouseMoved(MouseEvent e) { hover(e); }
+
+            @Override public void mouseExited(MouseEvent e) {
+                // Unconditionally: leaving from an edge used to keep the resize shape, and the frame
+                // cursor then painted over every component the pointer rested on.
+                direction = 0;
+                applyResizeCursor(0);
+            }
+
+            @Override public void mousePressed(MouseEvent e) {
+                Point where = inside(e);
+                direction = e.getButton() == MouseEvent.BUTTON1 && where != null && !onDivider(where)
+                        ? resizeDirection(where) : 0;
+                origin = direction == 0 ? null : e.getLocationOnScreen();
+                bounds = direction == 0 ? null : getBounds();
+            }
+
+            @Override public void mouseDragged(MouseEvent e) {
+                if (origin == null) return;
+                Point now = e.getLocationOnScreen();
+                int dx = now.x - origin.x, dy = now.y - origin.y;
+                java.awt.Rectangle b = new java.awt.Rectangle(bounds);
+                if ((direction & 1) != 0) { b.x += dx; b.width -= dx; }
+                if ((direction & 2) != 0) b.width += dx;
+                if ((direction & 4) != 0) { b.y += dy; b.height -= dy; }
+                if ((direction & 8) != 0) b.height += dy;
+                if (b.width < MIN_WIDTH) b.width = MIN_WIDTH;
+                if (b.height < MIN_HEIGHT) b.height = MIN_HEIGHT;
+                setBounds(b);
+                // Taking the window out of the full-screen shape is a resize, not a maximize.
+                if (maximized && !b.equals(screenWorkArea())) maximized = false;
+            }
+
+            @Override public void mouseReleased(MouseEvent e) {
+                origin = null;
+                hover(e);
+            }
+
+            private void hover(MouseEvent e) {
+                Point where = inside(e);
+                direction = where == null ? 0 : resizeDirection(where);
+                applyResizeCursor(direction);
+            }
+
+            /**
+             * Where the pointer is inside this window, or null when the window is no longer on screen.
+             * <p>
+             * The event's own point cannot be used: a mouse event travels up from the component under
+             * the pointer, and AWT leaves its x/y in that component's coordinates while it travels. A
+             * split divider is eight pixels wide, so read this way every press on a divider looks like
+             * a press on the window's west edge — and the resize then steals the divider's own drag.
+             * The event's absolute position is the one number that survives the trip.
+             */
+            private Point inside(MouseEvent e) {
+                if (!isShowing()) return null;
+                Point onScreen = e.getLocationOnScreen();
+                Point here = getLocationOnScreen();
+                return new Point(onScreen.x - here.x, onScreen.y - here.y);
+            }
+
+            /** True when the split pane under that point has its divider there, which needs the drag. */
+            private boolean onDivider(Point where) {
+                return findComponentAt(where.x, where.y) instanceof javax.swing.plaf.basic.BasicSplitPaneDivider;
+            }
         };
-        addMouseListener(resize); addMouseMotionListener(resize);
+        addMouseListener(resize);
+        addMouseMotionListener(resize);
     }
-    private int resizeDirection(Point p,int edge){int d=0;if(p.x<edge)d|=1;else if(p.x>getWidth()-edge)d|=2;if(p.y<edge)d|=4;else if(p.y>getHeight()-edge)d|=8;return d;}
-    private int cursorFor(int d){return switch(d){case 1->Cursor.W_RESIZE_CURSOR;case 2->Cursor.E_RESIZE_CURSOR;case 4->Cursor.N_RESIZE_CURSOR;case 8->Cursor.S_RESIZE_CURSOR;case 5->Cursor.NW_RESIZE_CURSOR;case 6->Cursor.NE_RESIZE_CURSOR;case 9->Cursor.SW_RESIZE_CURSOR;case 10->Cursor.SE_RESIZE_CURSOR;default->Cursor.DEFAULT_CURSOR;};}
+
+    /** The edge the pointer is on, as the bits {@code 1}=west {@code 2}=east {@code 4}=north {@code 8}=south. */
+    private int resizeDirection(java.awt.Point p) {
+        int d = 0;
+        if (p.x < EDGE) d |= 1; else if (p.x > getWidth() - EDGE) d |= 2;
+        if (p.y < EDGE) d |= 4; else if (p.y > getHeight() - EDGE) d |= 8;
+        return d;
+    }
+
+    private void applyResizeCursor(int d) {
+        Cursor cursor = Cursor.getPredefinedCursor(switch (d) {
+            case 1 -> Cursor.W_RESIZE_CURSOR;
+            case 2 -> Cursor.E_RESIZE_CURSOR;
+            case 4 -> Cursor.N_RESIZE_CURSOR;
+            case 8 -> Cursor.S_RESIZE_CURSOR;
+            case 5 -> Cursor.NW_RESIZE_CURSOR;
+            case 6 -> Cursor.NE_RESIZE_CURSOR;
+            case 9 -> Cursor.SW_RESIZE_CURSOR;
+            case 10 -> Cursor.SE_RESIZE_CURSOR;
+            default -> Cursor.DEFAULT_CURSOR;
+        });
+        // Setting a frame cursor is a request to the display every time, so only ask when it changes.
+        if (!cursor.equals(appliedCursor)) {
+            appliedCursor = cursor;
+            setCursor(cursor);
+        }
+    }
 
     private void addWelcome() {
         JPanel p = new JPanel(new java.awt.GridBagLayout());
@@ -730,19 +880,16 @@ public final class MainWindow extends JFrame {
             if (pending != null) tasks.selectTask(pending.task().id());
         };
         session.addListener(selectionSync);
-        JSplitPane sessionAndConversation = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
-                sessionRail(tasks), conversationViews);
+        JSplitPane sessionAndConversation = SplitPanes.horizontal(sessionRail(tasks), conversationViews);
         sessionAndConversation.setResizeWeight(0.33);
-        JSplitPane whole = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sessionAndConversation, taskTools);
+        JSplitPane whole = SplitPanes.horizontal(sessionAndConversation, taskTools);
         whole.setResizeWeight(0.78);
         // The transcript and the composer share the middle column through a draggable divider, so
         // the user can give the composer room for a long prompt (or hide it) instead of living
         // with whatever fixed height the layout picked. The divider is remembered for the next
         // session/relaunch; resizeWeight keeps the transcript growing when the window does.
-        JSplitPane conversationAndComposer = new JSplitPane(JSplitPane.VERTICAL_SPLIT, whole, input);
+        JSplitPane conversationAndComposer = SplitPanes.vertical(whole, input);
         conversationAndComposer.setResizeWeight(1.0);
-        conversationAndComposer.setContinuousLayout(true);
-        conversationAndComposer.setOneTouchExpandable(false);
         // Zero is not a divider location, it is the absence of one. Applying it collapsed the
         // whole conversation column to nothing on the first session of a run, which read as
         // "the window only shows the input area". A remembered value is applied only when there
@@ -773,8 +920,6 @@ public final class MainWindow extends JFrame {
             if (value instanceof Integer location && location > 0) composerDivider = location;
         });
         composerSplit = conversationAndComposer;
-        input.setMinimumSize(new java.awt.Dimension(180, 96));
-        whole.setMinimumSize(new java.awt.Dimension(120, 80));
         JPanel body = new JPanel(new BorderLayout());
         body.add(conversationAndComposer, BorderLayout.CENTER);
         // the footer, not a header: the reader's eye is on the composer above this row, and the
@@ -898,8 +1043,12 @@ public final class MainWindow extends JFrame {
         if (tasks == null) {
             rail.add(top, BorderLayout.CENTER);
         } else {
-            JSplitPane left=new JSplitPane(JSplitPane.VERTICAL_SPLIT,top,tasks); left.setResizeWeight(.25); left.setDividerLocation(205);
-            rail.add(left,BorderLayout.CENTER);
+            // A ratio, not a pixel: a pixel location set here is clamped against the rail's
+            // still-zero height and the divider lands on top of the list.
+            JSplitPane left = SplitPanes.vertical(top, tasks);
+            left.setResizeWeight(.25);
+            left.setDividerLocation(0.45);
+            rail.add(left, BorderLayout.CENTER);
         }
         return rail;
     }
@@ -971,7 +1120,7 @@ public final class MainWindow extends JFrame {
         content.add(details, BorderLayout.CENTER);
         content.add(actions, BorderLayout.SOUTH);
         preview.add(content, BorderLayout.NORTH);
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sessionRail(null), preview);
+        JSplitPane split = SplitPanes.horizontal(sessionRail(null), preview);
         split.setResizeWeight(0.24);
         center.removeAll(); center.setLayout(new BorderLayout()); center.add(split, BorderLayout.CENTER);
         showActiveSession(entry.toString(), entry);

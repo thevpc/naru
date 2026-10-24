@@ -127,9 +127,9 @@ public final class PermissionsPane extends JPanel implements PermissionsModel.Li
         down.addActionListener(e -> moveSelected(1));
         toggle.addActionListener(e -> toggleSelected());
 
-        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
-                new JScrollPane(list), new JScrollPane(detail));
+        JSplitPane split = SplitPanes.vertical(new JScrollPane(list), new JScrollPane(detail));
         split.setResizeWeight(0.55);
+        split.setDividerLocation(0.55);
 
         add(bar, BorderLayout.NORTH);
         add(split, BorderLayout.CENTER);
