@@ -38,10 +38,11 @@ public final class WorkbenchPane extends JPanel {
     public WorkbenchPane(NaruSessionModel model) {
         super(new BorderLayout()); this.model = model;
         tags = new TagsPane(model);
-        tabs.addTab("Explorer", explorer()); tabs.addTab("Changes", changes()); tabs.addTab("Routines", routineEditor()); tabs.addTab("Tool tags", tags);
+        tabs.addTab("Explorer", explorer()); tabs.addTab("Changes", changes()); tabs.addTab("Routines", routineEditor()); tabs.addTab("Tools & tags", tags);
         add(tabs, BorderLayout.CENTER); refresh();
     }
     public void setSelectedTaskId(long id) { taskId = id; tags.setSelectedTaskId(id); refresh(); }
+    public void showToolTagsTab() { tabs.setSelectedComponent(tags); }
     private Path projectRoot() { NaruTask t = selectedTask(); return path(t == null ? model.projectDir() : t.projectDir()); }
 
     private JSplitPane explorer() {

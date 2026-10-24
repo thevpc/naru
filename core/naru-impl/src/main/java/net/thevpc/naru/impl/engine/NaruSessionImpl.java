@@ -2688,6 +2688,47 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
     }
 
+    /**
+     * Dispatches a granted-tool-tag change to session listeners — see
+     * {@link NaruSessionListener#onToolTagsChanged(NaruTask)}. A throwing listener is logged, not
+     * propagated: the grant has already happened and must not be failed by its mirror.
+     */
+    public void fireToolTagsChanged(NaruTask task) {
+        fireTaskPermissionChange(task, false);
+    }
+
+    /** See {@link NaruSessionListener#onToolExclusionsChanged(NaruTask)}. */
+    public void fireToolExclusionsChanged(NaruTask task) {
+        fireTaskPermissionChange(task, true);
+    }
+
+    private void fireTaskPermissionChange(NaruTask task, boolean exclusions) {
+        try {
+            if (sessionListener != null) {
+                if (exclusions) {
+                    sessionListener.onToolExclusionsChanged(task);
+                } else {
+                    sessionListener.onToolTagsChanged(task);
+                }
+            }
+        } catch (Throwable error) {
+            log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] session listener failed on the %s of task %s",
+                    error, exclusions ? "tool exclusions" : "tool tags", task.id()).asError());
+        }
+        for (NaruSessionListener listener : sessionListeners) {
+            try {
+                if (exclusions) {
+                    listener.onToolExclusionsChanged(task);
+                } else {
+                    listener.onToolTagsChanged(task);
+                }
+            } catch (Throwable error) {
+                log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] session listener failed on the %s of task %s",
+                        error, exclusions ? "tool exclusions" : "tool tags", task.id()).asError());
+            }
+        }
+    }
+
     @Override
     public NaruSessionEventLog eventLog() {
         // Deliberately not guarded by ensureNotStopped(). Stopping does not wait for the

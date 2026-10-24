@@ -1,101 +1,168 @@
 package net.thevpc.naru.desktop.ui;
 
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
 
 import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
+import javax.swing.DefaultListModel;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JPanel;
-import javax.swing.JToggleButton;
+import javax.swing.ListSelectionModel;
+import javax.swing.ScrollPaneConstants;
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
- * The tags a task may use, shown as the switches they are.
+ * What the selected task is actually offered: every registered tool, its tags, and why it is or
+ * is not on the model's tool list.
  *
- * <p>A tag is what decides which tools the model is offered, and until now the only way to change
- * one was to type {@code /tag add write} at the composer. That gap cost real trust: a reader who
- * had turned every tag off watched the desktop call tools anyway, because the core tools — the
- * private think, the permission read and check — are declared tag-less and essential and are
- * therefore always offered. Saying so on the panel is the fix for the surprise; the switches are
- * the fix for the discovery.
+ * <p>The tag chips live in the composer's strip — this panel deliberately does not repeat them.
+ * Its job is the consequence: {@code findTools()} is the engine's single answer, but it only
+ * names the survivors. Here every tool of the registry is listed with the gate that stopped it —
+ * no granted tag, the prompt mode's veto, the task's own exclusion, its own relevance veto — so
+ * "I disabled the tag and the tool is still there" has an on-screen answer.
+ *
+ * <p>The checkbox is {@code /tools exclude}: a per-task ban by name, the second gate, one that
+ * tags can never express because it targets a single tool rather than a capability. Toggling it
+ * fires the engine's exclusion event, which re-reads this list and relights the strip's count.
  */
-public final class TagsPane extends JPanel {
+public final class TagsPane extends JPanel implements NaruSessionModel.Listener {
+
+    /** One registry tool with the gate that decides its visibility on the selected task. */
+    private static final class Row {
+        final NaruTool tool;
+        final boolean visible;
+        final boolean excluded;
+        final String why;
+
+        Row(NaruTool tool, boolean visible, boolean excluded, String why) {
+            this.tool = tool;
+            this.visible = visible;
+            this.excluded = excluded;
+            this.why = why;
+        }
+
+        /** Visible first, then excluded, then everything the gates stopped; alphabetical inside. */
+        int rank() {
+            if (visible) {
+                return 0;
+            }
+            if (excluded) {
+                return 1;
+            }
+            return why.startsWith("prompt mode") ? 2 : 3;
+        }
+
+        /**
+         * The row's full story. The tag set lives here and in the composer's strip, not in the row
+         * label: printing it in both places made the same vocabulary read twice on one screen.
+         */
+        String tip() {
+            String tags = tool.tags().isEmpty() ? "none" : String.join(", ", new TreeSet<>(tool.tags()));
+            return "<html><b>" + tool.name() + "</b><br>tags: " + tags + "<br>" + why
+                    + "<br>" + (excluded ? "click to restore" : "click to exclude") + "</html>";
+        }
+    }
 
     private final NaruSessionModel model;
-    private final JPanel chips = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+    private final DefaultListModel<Row> rows = new DefaultListModel<>();
+    // a JList paints one shared renderer, so the tooltip has to be resolved from the row under the
+    // cursor here — a tooltip set on the renderer component is never shown
+    private final JList<Row> list = new JList<>(rows) {
+        {
+            setToolTipText("");
+        }
+
+        @Override
+        public String getToolTipText(java.awt.event.MouseEvent e) {
+            int index = locationToIndex(e.getPoint());
+            if (index < 0) {
+                return null;
+            }
+            Rectangle cell = getCellBounds(index, index);
+            return cell != null && cell.contains(e.getPoint()) ? rows.get(index).tip() : null;
+        }
+    };
     private final JLabel note = new JLabel(" ");
     private long taskId = -1;
-    /** Guards the programmatic side of a chip change so setting state does not write state back. */
-    private boolean syncing;
 
     public TagsPane(NaruSessionModel model) {
         super(new BorderLayout(0, 6));
         this.model = model;
         setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
-        chips.setOpaque(false);
+
+        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        list.setCellRenderer(new RowRenderer());
+        UiFonts.applyMono(list, UiFonts.SECONDARY, Font.PLAIN);
+        // the toggle lives on the list, not on the renderer: a renderer component is shared and
+        // always wears the last painted row's state, so an action attached to it can fire on the
+        // wrong tool. A click resolves the row from its location instead.
+        list.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                int index = list.locationToIndex(e.getPoint());
+                if (index < 0) {
+                    return;
+                }
+                Rectangle cell = list.getCellBounds(index, index);
+                if (cell == null || !cell.contains(e.getPoint())) {
+                    return;
+                }
+                list.setSelectedIndex(index);
+                toggle(rows.get(index));
+            }
+        });
+
+        JPanel top = new JPanel(new BorderLayout());
+        top.setOpaque(false);
+        JLabel title = new JLabel("Tools offered to the model, by gate");
+        top.add(title, BorderLayout.WEST);
+        JPanel quick = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        quick.setOpaque(false);
+        JButton row = new JButton("↻");
+        row.setToolTipText("Re-read the task's tool list and exclusions");
+        row.getAccessibleContext().setAccessibleName("Refresh tool list");
+        row.setFocusable(false);
+        row.addActionListener(e -> refresh());
+        ActionButtons.glyphSized(row);
+        quick.add(row);
+        top.add(quick, BorderLayout.EAST);
+        add(top, BorderLayout.NORTH);
 
         UiFonts.apply(note, UiFonts.CAPTION, Font.PLAIN);
         note.setForeground(UiPalette.muted());
         note.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 2));
-
         JPanel south = new JPanel(new BorderLayout());
         south.setOpaque(false);
         south.add(note, BorderLayout.NORTH);
         add(south, BorderLayout.SOUTH);
 
-        JPanel scrollHost = new JPanel();
-        scrollHost.setLayout(new BoxLayout(scrollHost, BoxLayout.Y_AXIS));
-        scrollHost.setOpaque(false);
-        scrollHost.add(chips);
-        scrollHost.add(Box.createVerticalGlue());
-        // the constructor takes the vertical policy first; the horizontal one second
-        add(new javax.swing.JScrollPane(scrollHost, javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER), BorderLayout.CENTER);
+        add(new javax.swing.JScrollPane(list, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED), BorderLayout.CENTER);
 
-        javax.swing.JButton row = new javax.swing.JButton("↻");
-        row.setToolTipText("Re-read the task's tags and the registry's catalog");
-        row.getAccessibleContext().setAccessibleName("Refresh tags");
-        ActionButtons.glyphSized(row);
-        row.addActionListener(e -> refresh());
-        JPanel top = new JPanel(new BorderLayout());
-        top.setOpaque(false);
-        top.add(new JLabel("Tools the model may be offered, by tag"), BorderLayout.WEST);
-        JPanel quick = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        quick.setOpaque(false);
-        // glyphs, like every other action: the words are the first thing this row loses when the
-        // interface size grows and the tooltip already says what each one does
-        javax.swing.JButton none = new javax.swing.JButton("⊘");
-        none.setToolTipText("Withdraw every tag from this task");
-        none.getAccessibleContext().setAccessibleName("Withdraw all tool tags");
-        javax.swing.JButton all = new javax.swing.JButton("⊕");
-        all.setToolTipText("Grant every tag the registry knows");
-        all.getAccessibleContext().setAccessibleName("Grant all tool tags");
-        for (javax.swing.AbstractButton b : new javax.swing.AbstractButton[]{none, all}) {
-            b.setFocusable(false);
-            b.putClientProperty("JButton.buttonType", "roundRect");
-            b.addActionListener(e -> setAll(b == all));
-            quick.add(b);
-        }
-        ActionButtons.glyphSized(none, all);
-        quick.add(row);
-        top.add(quick, BorderLayout.EAST);
-        add(top, BorderLayout.NORTH);
-
+        model.addListener(this);
         refresh();
     }
 
     public void setSelectedTaskId(long id) {
         taskId = id;
+        refresh();
+    }
+
+    @Override
+    public void sessionModelChanged() {
         refresh();
     }
 
@@ -111,104 +178,135 @@ public final class TagsPane extends JPanel {
         }
     }
 
-    private void setAll(boolean grant) {
+    /**
+     * Rebuild the rows from the live task. The visible set is the engine's own
+     * {@code findTools()} answer — this panel never re-implements the gate, it only explains the
+     * tools the gate dropped, in the order the gate consults them.
+     */
+    private void refresh() {
+        rows.clear();
+        NaruTask t = task();
+        if (t == null) {
+            note.setText("Select a task to read the tools it is offered.");
+            return;
+        }
+        Set<String> visibleNames = new TreeSet<>();
+        try {
+            t.findTools().forEach(d -> visibleNames.add(d.getName()));
+        } catch (RuntimeException ignored) {
+            // a task mid-teardown answers nothing; every row then reads as stopped
+        }
+        Set<String> excluded = t.findToolExclusions();
+        Set<String> granted;
+        try {
+            granted = t.findToolTagNames();
+        } catch (RuntimeException ignored) {
+            granted = Set.of();
+        }
+        List<NaruTool> tools = new ArrayList<>();
+        try {
+            tools.addAll(t.session().registry().tools().values());
+        } catch (RuntimeException ignored) {
+            note.setText("The registry is not answering; the tool list is empty for now.");
+            return;
+        }
+        List<Row> next = new ArrayList<>();
+        for (NaruTool tool : tools) {
+            boolean isVisible = visibleNames.contains(tool.name());
+            boolean isExcluded = excluded.contains(tool.name());
+            next.add(new Row(tool, isVisible, isExcluded, isVisible ? "visible" : why(t, tool, isExcluded, granted)));
+        }
+        next.sort((a, b) -> a.rank() != b.rank() ? Integer.compare(a.rank(), b.rank())
+                : a.tool.name().compareToIgnoreCase(b.tool.name()));
+        next.forEach(rows::addElement);
+        long shown = next.stream().filter(r -> r.visible).count();
+        note.setText("<html>" + shown + " of " + next.size() + " registered tools are offered to this task."
+                + " The checkbox is the per-task exclusion gate (/tools exclude): a named ban that"
+                + " outranks any tag grant.</html>");
+    }
+
+    /** Ban or un-ban one tool by name on the selected task; the engine event redraws the list. */
+    private void toggle(Row row) {
         NaruTask t = task();
         if (t == null) {
             return;
         }
-        if (!grant) {
-            for (String name : new ArrayList<>(t.findToolTagNames())) {
-                t.removeToolTag(name);
+        try {
+            if (row.excluded) {
+                t.removeToolExclusion(row.tool.name());
+            } else {
+                t.addToolExclusion(row.tool.name());
             }
-        } else {
-            for (NaruToolTag tag : available(t)) {
-                t.addToolTag(tag.name());
-            }
+        } catch (RuntimeException ex) {
+            DesktopDialog.showMessage(javax.swing.SwingUtilities.getWindowAncestor(this),
+                    "Tool exclusions", String.valueOf(ex.getMessage()));
         }
         refresh();
     }
 
-    private List<NaruToolTag> available(NaruTask t) {
-        List<NaruToolTag> tags = new ArrayList<>();
+    /** The first gate that stopped this tool, in the order findTools() consults them. */
+    private static String why(NaruTask t, NaruTool tool, boolean isExcluded, Set<String> granted) {
         try {
-            for (NaruToolTag tag : t.session().registry().availableTags().values()) {
-                tags.add(tag);
+            if (!t.promptMode().acceptToolTags(tool.tags())) {
+                return "prompt mode " + t.promptMode().name() + " vetoes its tags";
             }
         } catch (RuntimeException ignored) {
-            // a registry that cannot answer leaves the panel with the task's own names below
         }
-        tags.sort((a, b) -> a.name().compareToIgnoreCase(b.name()));
-        return tags;
-    }
-
-    /**
-     * Rebuild the chips. The catalog and the granted set are read every time: a directive run in
-     * the composer can change either, and a panel that kept its own idea of the grant would be a
-     * second truth about what the model may call.
-     */
-    public void refresh() {
-        syncing = true;
         try {
-            chips.removeAll();
-            NaruTask t = task();
-            if (t == null) {
-                note.setText("Select a task to read or change its tool tags.");
-                chips.revalidate();
-                chips.repaint();
-                return;
+            if (!tool.isRelevant(t)) {
+                return "the tool's own relevance veto";
             }
-            Set<String> granted = t.findToolTagNames();
-            List<String> names = new ArrayList<>();
-            for (NaruToolTag tag : available(t)) {
-                names.add(tag.name());
-            }
-            // a granted name the registry has no definition for is still a grant, and still has to
-            // be visible — otherwise a tag inherited from a spawn looks like it was never set
-            for (String name : granted) {
-                if (!names.contains(name)) {
-                    names.add(name);
-                }
-            }
-            for (String name : names) {
-                JToggleButton chip = new JToggleButton(name, granted.contains(name));
-                chip.setFocusable(false);
-                chip.putClientProperty("JButton.buttonType", "roundRect");
-                chip.setToolTipText((name + " — " + description(t, name)).trim());
-                chip.addActionListener(e -> {
-                    if (syncing) {
-                        return;
-                    }
-                    try {
-                        if (chip.isSelected()) {
-                            t.addToolTag(name);
-                        } else {
-                            t.removeToolTag(name);
-                        }
-                    } catch (RuntimeException ex) {
-                        DesktopDialog.showMessage(javax.swing.SwingUtilities.getWindowAncestor(this),
-                                "Tool tags", String.valueOf(ex.getMessage()));
-                    }
-                    refresh();
-                });
-                chips.add(chip);
-            }
-            int offered = granted.size();
-            note.setText("<html>" + offered + " of " + names.size() + " tags granted to this task."
-                    + " Tag-less core tools (the private think, the permission read and check) are always"
-                    + " offered, whatever is selected here.</html>");
-            chips.revalidate();
-            chips.repaint();
-        } finally {
-            syncing = false;
-        }
-    }
-
-    private static String description(NaruTask t, String name) {
-        try {
-            NaruToolTag tag = t.session().registry().findAvailableTag(name).orNull();
-            return tag == null ? "declared by a provider that is not installed" : tag.description();
         } catch (RuntimeException ignored) {
-            return "";
+        }
+        if (isExcluded) {
+            return "excluded by name on this task";
+        }
+        Set<String> tt = tool.tags();
+        if (tt.isEmpty()) {
+            return "tag-less and not declared essential";
+        }
+        for (String tag : tt) {
+            if (granted.contains(tag)) {
+                return "stopped by another gate";
+            }
+        }
+        return "no granted tag matches " + tt;
+    }
+
+    private final class RowRenderer extends JPanel implements javax.swing.ListCellRenderer<Row> {
+        private final JCheckBox check = new JCheckBox();
+        private final JLabel label = new JLabel();
+
+        RowRenderer() {
+            super(new BorderLayout());
+            check.setOpaque(false);
+            check.setFocusable(false);
+            // the renderer's checkbox is a painted state, never a target: the list's mouse
+            // listener owns the click, so a recycled renderer can no longer fire on the wrong row
+            check.setCursor(java.awt.Cursor.getDefaultCursor());
+            label.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 0));
+            add(check, BorderLayout.WEST);
+            add(label, BorderLayout.CENTER);
+            setOpaque(true);
+        }
+
+        @Override
+        public Component getListCellRendererComponent(JList<? extends Row> l, Row value, int index,
+                                                      boolean isSelected, boolean cellHasFocus) {
+            check.setSelected(value.excluded);
+            label.setText(value.tool.name() + "  ·  " + value.why);
+            java.awt.Color ink = value.visible ? UiPalette.LIVE : value.excluded
+                    ? UiPalette.PENDING : UiPalette.muted();
+            if (isSelected) {
+                setBackground(l.getSelectionBackground());
+                setForeground(l.getSelectionForeground());
+                label.setForeground(l.getSelectionForeground());
+            } else {
+                setBackground(l.getBackground());
+                setForeground(l.getForeground());
+                label.setForeground(ink);
+            }
+            return this;
         }
     }
 }

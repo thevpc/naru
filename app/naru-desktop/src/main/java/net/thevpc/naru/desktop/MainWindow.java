@@ -707,7 +707,7 @@ public final class MainWindow extends JFrame {
         sessionLogPane = new TranscriptPane(session, false);
         sessionLogPane.setTaskFilter(Long.MIN_VALUE);
         transcript.setJumpToPermissions(ruleId -> openPermissions(ruleId));
-        input = new InputPane(session);
+        input = new InputPane(session, this::showToolTags);
         statusBar = new StatusBar(session);
         TaskPane tasks = new TaskPane(session);
         taskPane = tasks;
@@ -1076,6 +1076,13 @@ public final class MainWindow extends JFrame {
     public void openPermissions(String ruleId) {
         if (!selectSideTab("Task permissions")) {
             return;
+        }
+    }
+
+    /** Jump from the composer's tag strip to the full catalog: the Workspace tab's Tool tags pane. */
+    public void showToolTags() {
+        if (selectSideTab("Workspace") && workbench != null) {
+            workbench.showToolTagsTab();
         }
     }
 

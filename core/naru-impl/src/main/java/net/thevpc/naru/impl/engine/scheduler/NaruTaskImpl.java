@@ -1465,7 +1465,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     public NaruTask addToolTag(String toolTag) {
         NaruToolTag tag = session().registry().findAvailableTag(toolTag).get();
-        taskToolTags.add(NNameFormat.LOWER_KEBAB_CASE.format(tag.name()));
+        if (taskToolTags.add(NNameFormat.LOWER_KEBAB_CASE.format(tag.name()))) {
+            fireToolTagsChanged();
+        }
         return this;
     }
 
@@ -1486,8 +1488,28 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     public NaruTask removeToolTag(String toolTag) {
         String normalized = NNameFormat.LOWER_KEBAB_CASE.format(NStringUtils.strip(toolTag));
-        taskToolTags.remove(normalized);
+        if (taskToolTags.remove(normalized)) {
+            fireToolTagsChanged();
+        }
         return this;
+    }
+
+    /**
+     * Tells the session's listeners the permission floor moved. The grant is the only standing
+     * decision a task can change without an event or a status transition, and a UI that mirrors
+     * it — the composer's tag strip, the tags panel — goes stale within one model call without
+     * this edge. A listener that throws must not undo the grant, so the dispatch is guarded.
+     */
+    private void fireToolTagsChanged() {
+        NaruSession s = session;
+        if (!(s instanceof NaruSessionImpl)) {
+            return;
+        }
+        try {
+            ((NaruSessionImpl) s).fireToolTagsChanged(this);
+        } catch (RuntimeException ignored) {
+            // the grant stands; a broken listener is the listener's problem
+        }
     }
 
     /**
@@ -1507,13 +1529,34 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     public NaruTask addToolExclusion(String toolName) {
-        excludedTools.add(toolName);
+        if (excludedTools.add(toolName)) {
+            fireToolExclusionsChanged();
+        }
         return this;
     }
 
     public NaruTask removeToolExclusion(String toolName) {
-        excludedTools.remove(toolName);
+        if (excludedTools.remove(toolName)) {
+            fireToolExclusionsChanged();
+        }
         return this;
+    }
+
+    /**
+     * Tells the session's listeners the exclusion set moved. Same contract as
+     * {@link #fireToolTagsChanged()}: only a real change fires, and the dispatch cannot fail
+     * the caller.
+     */
+    private void fireToolExclusionsChanged() {
+        NaruSession s = session;
+        if (!(s instanceof NaruSessionImpl)) {
+            return;
+        }
+        try {
+            ((NaruSessionImpl) s).fireToolExclusionsChanged(this);
+        } catch (RuntimeException ignored) {
+            // the exclusion stands; a broken listener is the listener's problem
+        }
     }
 
     public Set<String> findToolExclusions() {
@@ -2056,7 +2099,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             model = session.findModel(requestedKey).orNull();
         }
         if (model == null) {
-            log(NaruLogMode.SCRIPT, NMsg.ofC("Selected model %s was not found. Choose an available model with /model list, then select it with /model use <key>.", requestedModel));
+            log(NaruLogMode.SCRIPT, NMsg.ofC("Selected model %s was not found. Choose an available model with /model list, then select it with /model use <key>.", requestedModel).asError());
         }
         return model;
     }

@@ -57,6 +57,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private boolean modeSyncRunning;
     private final JCheckBox thinking = new JCheckBox("Thinking", true);
     private final JButton attach = new JButton("📎");
+    private final TagStrip tagStrip;
     private final JPanel promptPanel = new JPanel(new BorderLayout());
     private final JLabel promptQuestion = new JLabel(" ");
     private final JPanel promptChoices = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
@@ -80,9 +81,10 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private JPanel composerCard;
     private javax.swing.Timer focusBorderTimer;
 
-    public InputPane(NaruSessionModel session) {
+    public InputPane(NaruSessionModel session, Runnable showAllTags) {
         super(new BorderLayout(6, 4));
         this.session = session;
+        this.tagStrip = new TagStrip(session, showAllTags);
         this.area = new ComposerArea(session::complete);
         this.syntax = ComposerSyntax.install(area, session::session);
         setBorder(BorderFactory.createEmptyBorder(6, 10, 8, 10));
@@ -202,7 +204,13 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         composerCard.add(promptPanel, BorderLayout.NORTH);
         composerCard.add(scroller, BorderLayout.CENTER);
         composerCard.add(tools, BorderLayout.SOUTH);
-        add(composerCard, BorderLayout.CENTER);
+        // the tag strip rides above the card, not inside it: the rounded card is the keyboard's
+        // frame and the strip is task state, which survives a composer resize
+        JPanel composerAndTags = new JPanel(new BorderLayout());
+        composerAndTags.setOpaque(false);
+        composerAndTags.add(tagStrip, BorderLayout.NORTH);
+        composerAndTags.add(composerCard, BorderLayout.CENTER);
+        add(composerAndTags, BorderLayout.CENTER);
 
         installKeys();
         installFocusBorder();
@@ -1014,6 +1022,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
 
     public void setSelectedTaskId(long taskId) {
         selectedTaskId = taskId;
+        tagStrip.setSelectedTaskId(taskId);
         NaruTask task = selectedTask();
         thinking.setEnabled(task != null);
         thinking.setSelected(task == null || net.thevpc.naru.api.model.NaruThinkingConfig.find(task)

@@ -565,6 +565,39 @@ behaviour are referenced so the delta is easy to audit.
 - **The resolution was invisible.** `task-spawn` and `/start --explain` now carry
   per-item provenance; the payload has no grant channel.
 
+### Added with the desktop tag strip
+
+- **A grant moved the floor without telling anyone.** Nothing fired on an
+  `addToolTag`/`removeToolTag` or an exclusion edge, so every mirror of the grant
+  (the composer's strip, the Workspace tool list) went stale within one mutation.
+  `NaruSessionListener` now has `onToolTagsChanged(task)` and
+  `onToolExclusionsChanged(task)`, fired by `NaruTaskImpl` only when the set
+  actually changes (a no-op revoke stays silent), dispatched by `NaruSessionImpl`
+  through the same guarded path as a status transition. `NaruSessionListenerDelegate`
+  forwards them — and, having silently dropped `onTaskStatusChanged`/`onMessageComplete`
+  before that, forwards those too.
+- **The floor was only visible behind a tab.** `TagStrip` (above the composer) shows
+  the selected task's tags as switches at all times: the catalog and the grant are
+  re-read on every model event, and a chip whose tag the current prompt mode vetoes
+  says so in its tooltip — granted is not the same as visible. The chip marks its
+  grant with colour alone: an ungranted chip keeps the button's own face, a granted
+  one the accent walked into that face with ink picked to read on it. Nothing is
+  added to the label — no glyph, no bold, no reserved icon — because any marker
+  that changes the text resizes the chip and reflowed the row under the cursor. It
+  is a `JButton` with the grant held as its own flag rather than a `JToggleButton`:
+  FlatLaf paints a selected button in the accent itself and ignores the background
+  installed here, which turned a granted chip into accent-on-accent text. The `⊞`
+  glyph jumps to the tool list, which now listens to the same model events.
+- **The consequence of the floor was not visible at all.** `TagsPane` (the
+  Workspace "Tools & tags" tab) is the effective tool list: every registered tool
+  and the first gate that stopped it — mode veto, relevance veto, per-task
+  exclusion, an ungranted tag — with the visible set read straight from
+  `findTools()` so the panel cannot disagree with the engine. Each row is also the
+  `/tools exclude` switch; toggling it fires the exclusion event, which re-reads
+  the list and relights the strip's count. The strip owns the tag vocabulary: the
+  rows carry no chips and no `{tags}` braces, only the gate reason (which names the
+  tag when the tag is the answer), and a tool's own tag set is in the row tooltip.
+
 ## 11. Where the code lives
 
 | Concern | Location |
@@ -583,5 +616,6 @@ behaviour are referenced so the delta is easy to audit.
 | `/start` spawn flags + `--explain`, `/spawn-policy` | `extensions/naru-tools-tasks/.../NaruStartDirective.java`, `extensions/naru-tools-tasks/.../NaruSpawnPolicyDirective.java` |
 | Model-path spawn (narrowing only) | `extensions/naru-tools-llm/.../ModelDelegateTool.java` |
 | `tag_add` / `tag_remove` tools + `tags` tag + toolset | `extensions/naru-tools-tags/` |
+| Desktop tag surfaces | `app/naru-desktop/.../ui/TagStrip.java` (composer strip, the only chip surface), `ui/TagsPane.java` (Workspace tool list + `/tools exclude` toggles), event hop in `model/NaruSessionModel.java` |
 | Per-extension tag providers | one `*ToolTagProvider` per feature extension (§3) |
 | Behavioural pin | `test/naru-agent-test/.../NaruTagGateTest.java`, `test/naru-agent-test/.../NaruTagRegistryLintTest.java`, `test/naru-agent-test/.../NaruPlanModeToolGateTest.java`, `test/naru-agent-test/.../NaruTaskStatePersistenceTest.java`, `test/naru-agent-test/.../NaruSpawnTest.java`, `test/naru-agent-test/.../NaruDelegateSpawnTest.java`, `extensions/naru-tools-tasks/src/test/.../NaruSpawnDirectiveTest.java`, `core/naru-impl/src/test/.../TaskSpawnConfigTest.java` |

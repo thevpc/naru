@@ -314,6 +314,18 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                     }
 
                     @Override
+                    public void onToolTagsChanged(NaruTask t) {
+                        // the grant can move from a worker thread (tag_add) as easily as from the
+                        // EDT (a directive or a strip toggle); the tag surfaces re-read on the EDT
+                        onEdt(NaruSessionModel.this::fireChanged);
+                    }
+
+                    @Override
+                    public void onToolExclusionsChanged(NaruTask t) {
+                        onEdt(NaruSessionModel.this::fireChanged);
+                    }
+
+                    @Override
                     public void onMessageComplete(long taskId, String cursor) {
                         NaruSession s = session;
                         if (s == null) return;
@@ -650,6 +662,11 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         tools.apply(batch);
         for (TranscriptEvent e : batch) {
             if (e instanceof TranscriptEvent.Chunk c && c.finalFragment() && isUserFacingError(c)) {
+                // Avoid duplicating errors that are already surfaced as conversation blocks
+                if (c.mode() == NaruLogMode.SCRIPT || c.mode() == NaruLogMode.AGENT_RESPONSE
+                        || c.mode() == NaruLogMode.MODEL_RESPONSE) {
+                    continue;
+                }
                 // Actionable failures are conversation content even when their source mode is
                 // hidden from the default activity view (for example, missing-model errors are
                 // emitted as AGENT_RESPONSE, while request failures can be PROGRESS).
@@ -718,6 +735,9 @@ public final class NaruSessionModel implements InteractionHost.Listener {
 
     private static boolean isUserFacingError(TranscriptEvent.Chunk c) {
         if (c.text() == null || c.text().isBlank()) return false;
+        if (c.error()) {
+            return true;
+        }
         String text = c.text().stripLeading();
         String upper = text.toUpperCase(java.util.Locale.ROOT);
         return upper.startsWith("ERROR:")
