@@ -9,6 +9,7 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Consumer;
 
 /**
@@ -55,12 +56,12 @@ public final class LlamaCppInstaller {
 
         try {
             LlamaCppDownloader.download(release.getAssetUrl(), mainArchive, logger);
-            NUncompress.of().source(mainArchive).target(extractDir).run();
+            extractArchive(mainArchive, extractDir);
 
             if (!NBlankable.isBlank(release.getCudartAssetUrl())) {
                 NPath cudartArchive = staging.resolve(release.getCudartAssetName());
                 LlamaCppDownloader.download(release.getCudartAssetUrl(), cudartArchive, logger);
-                NUncompress.of().source(cudartArchive).target(extractDir).run();
+                extractArchive(cudartArchive, extractDir);
             }
 
             NPath server = findServer(extractDir);
@@ -72,7 +73,9 @@ public final class LlamaCppInstaller {
             }
 
             NPath binDir = LlamaCppPaths.binDir(session);
-            binDir.deleteTree();
+            if (binDir.exists()) {
+                binDir.deleteTree();
+            }
             binDir.mkdirs();
             copyTreeFlattened(extractDir, binDir);
 
@@ -152,6 +155,41 @@ public final class LlamaCppInstaller {
         } catch (Exception ignored) {
         }
         return removed;
+    }
+
+    /**
+     * Unpack one downloaded release asset into {@code target}.
+     *
+     * <p>The format must be selected explicitly: {@link NUncompress} defaults
+     * to zip and does not sniff the source. The base runtime only ships zip
+     * and gzip support, so the tar-family implementations come from the
+     * {@code nuts-compression} extension (a compile dependency of this
+     * module). Using the extension rather than a system {@code tar} command
+     * keeps installation working on Windows too.
+     */
+    static void extractArchive(NPath archive, NPath target) {
+        NUncompress.of()
+                .packaging(packagingOf(archive))
+                .source(archive)
+                .target(target)
+                .run();
+    }
+
+    static String packagingOf(NPath archive) {
+        String name = archive.name().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".zip")) {
+            return "zip";
+        }
+        if (name.endsWith(".tar.gz") || name.endsWith(".tgz")) {
+            return "tar.gz";
+        }
+        if (name.endsWith(".tar.xz") || name.endsWith(".txz")) {
+            return "tar.xz";
+        }
+        if (name.endsWith(".tar")) {
+            return "tar";
+        }
+        throw new RuntimeException(NMsg.ofC("unsupported archive format: %s", archive.name()).toString());
     }
 
     static NPath findServer(NPath root) {

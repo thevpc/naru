@@ -4,8 +4,10 @@ import net.thevpc.naru.api.model.NaruModelPsResult;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.command.NExec;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.platform.NEnv;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import org.junit.jupiter.api.Assertions;
@@ -175,6 +177,35 @@ public class LlamaCppServiceTest {
         Assertions.assertThrows(NIllegalArgumentException.class, () -> LlamaCppModelResolver.resolve(""));
         Assertions.assertThrows(NIllegalArgumentException.class, () -> LlamaCppModelResolver.resolve("not-a-repo"));
         Assertions.assertThrows(NIllegalArgumentException.class, () -> LlamaCppModelResolver.resolve("https://example.com/model.bin"));
+    }
+
+    @Test
+    public void testRemoteModelSpecIsNotResolvedAsLocalFile() {
+        // NPath understands http(s), so without an explicit guard exists() is
+        // true for a remote .gguf and pullModel() would skip the download.
+        Assertions.assertNull(LlamaCppService.of().resolveLocalModelPath(null,
+                "https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf"));
+        Assertions.assertNull(LlamaCppService.of().resolveLocalModelPath(null,
+                "hf.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M"));
+    }
+
+    @Test
+    public void testExtractTarGz() {
+        org.junit.jupiter.api.Assumptions.assumeFalse(NEnv.of().osFamily().isWindow(),
+                "tar.gz bundles are used on Linux and macOS");
+        NPath work = NPath.ofTempFolder("naru-llamacpp-extract-test");
+        NPath src = work.resolve("src");
+        src.mkdirs();
+        src.resolve("llama-server").writeString("binary");
+        NPath archive = work.resolve("bundle.tar.gz");
+        NExec.ofSystem("tar", "-czf", archive.toString(), "-C", src.toString(), "llama-server")
+                .failFast(true).run();
+
+        NPath out = work.resolve("out");
+        out.mkdirs();
+        LlamaCppInstaller.extractArchive(archive, out);
+
+        Assertions.assertTrue(out.resolve("llama-server").isRegularFile());
     }
 
     @Test

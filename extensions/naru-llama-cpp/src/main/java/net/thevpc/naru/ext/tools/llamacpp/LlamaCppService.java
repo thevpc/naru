@@ -257,6 +257,14 @@ public class LlamaCppService {
             return null;
         }
         String s = idOrName.trim();
+        // A URL is never a local model. NPath supports HTTP paths, so an
+        // unguarded NPath.exists() would resolve a remote .gguf to a
+        // "readable" path and make pullModel() believe it was already
+        // provisioned -- downloading nothing.
+        String lower = s.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("hf.co/")) {
+            return null;
+        }
         NPath direct = NPath.of(s);
         if (direct.exists() && direct.isRegularFile()) {
             return direct;

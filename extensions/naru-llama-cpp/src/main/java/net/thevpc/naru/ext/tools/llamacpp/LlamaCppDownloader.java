@@ -67,6 +67,11 @@ public final class LlamaCppDownloader {
         } catch (java.io.IOException e) {
             throw new RuntimeException(NMsg.ofC("Download failed for %s: %s", url, e.getMessage()).toString(), e);
         }
+        if (total > 0 && done != total) {
+            throw new RuntimeException(NMsg.ofC(
+                    "Download incomplete for %s: received %s of %s bytes",
+                    url, done, total).toString());
+        }
         if (logger != null) {
             logger.accept(NMsg.ofC("  saved %s to %s",
                     NMsg.ofStyledNumber(formatBytes(done)),
