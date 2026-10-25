@@ -2,6 +2,9 @@ package net.thevpc.naru.desktop.ui;
 
 import javax.swing.BorderFactory;
 import javax.swing.JEditorPane;
+import javax.swing.JScrollBar;
+import javax.swing.JScrollPane;
+import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.plaf.basic.BasicTextUI;
 import javax.swing.text.Document;
@@ -26,8 +29,20 @@ final class HtmlPanes {
      * Lines a transcript body shows before the rest is folded away. Swing's HTML renderer measures
      * every line of a body on each layout pass, so a four-thousand-line tool log costs seconds per
      * interface size change; a folded head keeps that cost bounded whatever the session accumulates.
+     * <p>
+     * Forty, not a hundred and twenty: a body the reader has to scroll for three screens is already
+     * an item they want to put away, and the disclosure control makes the rest one click away.
      */
-    static final int FOLD_AFTER_LINES = 120;
+    static final int FOLD_AFTER_LINES = 40;
+
+    /** Lines a collapsed item shows when the reader has explicitly put it away. */
+    static final int PREVIEW_LINES = 6;
+
+    /** An expanded body longer than this gets its own vertical scroll instead of the whole column. */
+    static final int SCROLL_AFTER_LINES = 24;
+
+    /** The height cap for an expanded body's own scrollport, in pixels. */
+    static final int SCROLL_HEIGHT = 300;
 
     private HtmlPanes() {
     }
@@ -47,7 +62,11 @@ final class HtmlPanes {
         return text;
     }
 
-    private static int lineCount(String text) {
+    /** Logical line count; a body that fits on one line is never worth a scrollbar of its own. */
+    static int lineCount(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
         int lines = 1;
         for (int i = 0; i < text.length(); i++) {
             if (text.charAt(i) == '\n') {
@@ -55,6 +74,63 @@ final class HtmlPanes {
             }
         }
         return lines;
+    }
+
+    /**
+     * Host {@code body} in a capped vertical scroller. The viewport keeps the HTML pane at the width
+     * of the card, so lines still wrap; only the height is bounded. The scroller is transparent so
+     * the card's own tint and gutter show through.
+     */
+    static JScrollPane scroller(JEditorPane body) {
+        JScrollPane scroller = new JScrollPane(body,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroller.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
+        scroller.setViewportBorder(BorderFactory.createEmptyBorder());
+        scroller.setOpaque(false);
+        scroller.getViewport().setOpaque(false);
+        scroller.getVerticalScrollBar().setUnitIncrement(16);
+        scroller.setPreferredSize(new Dimension(120, SCROLL_HEIGHT));
+        scroller.putClientProperty("naru.body.scroller", Boolean.TRUE);
+        forwardWheelAtEdges(scroller);
+        return scroller;
+    }
+
+    /**
+     * A wheel over a nested scroller has to keep moving the column once that scroller reaches its
+     * end; otherwise the gesture is trapped in the 300 px body and the reader has to find the
+     * outer scrollbar to continue. The nearest enclosing scroll pane is the transcript column.
+     */
+    private static void forwardWheelAtEdges(JScrollPane inner) {
+        inner.addMouseWheelListener(e -> {
+            JScrollBar body = inner.getVerticalScrollBar();
+            boolean up = e.getWheelRotation() < 0;
+            boolean atTop = body.getValue() <= body.getMinimum();
+            boolean atBottom = body.getValue() + body.getVisibleAmount() >= body.getMaximum();
+            if (!((up && atTop) || (!up && atBottom))) {
+                return;
+            }
+            Container parent = inner.getParent();
+            while (parent != null && !(parent instanceof JScrollPane)) {
+                parent = parent.getParent();
+            }
+            if (!(parent instanceof JScrollPane outer) || outer == inner) {
+                return;
+            }
+            JScrollBar column = outer.getVerticalScrollBar();
+            if (!column.isVisible()) {
+                return;
+            }
+            int before = column.getValue();
+            int steps = Math.max(1, e.getScrollAmount());
+            column.setValue(before + e.getWheelRotation() * steps * column.getUnitIncrement());
+            // At the column's own end, leave the event alone: the transcript's wheel listener
+            // still has to load the next page when the gesture asks for one.
+            if (column.getValue() == before) {
+                return;
+            }
+            e.consume();
+        });
     }
 
     /**

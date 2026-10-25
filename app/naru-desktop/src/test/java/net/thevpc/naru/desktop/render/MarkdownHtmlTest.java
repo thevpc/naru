@@ -1,5 +1,6 @@
 package net.thevpc.naru.desktop.render;
 
+import net.thevpc.naru.desktop.ui.Typefaces;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -16,13 +17,14 @@ class MarkdownHtmlTest {
     void rendersACodeFenceAsPreformattedText() {
         String html = MarkdownHtml.toHtml("```java\nint x = 1;\n```\n");
         // a <pre> would never wrap in Swing, so the fence is a monospace paragraph
-        assertTrue(html.contains("<p style='font-family:monospace;margin:2px 0'>int x = 1;<br></p>"), html);
+        assertTrue(html.contains("<p style='font-family:" + Typefaces.MONO
+                + ";margin:2px 0'>int x = 1;<br></p>"), html);
     }
 
     @Test
     void rendersInlineCodeBoldAndLists() {
         String html = MarkdownHtml.toHtml("Use `naru --task` now.\n- first\n- second\n");
-        assertTrue(html.contains("<tt><b>naru --task</b></tt>"), html);
+        assertTrue(html.contains("<tt style=\"font-family:" + Typefaces.MONO + "\"><b>naru --task</b></tt>"), html);
         assertTrue(html.contains("<ul"), html);
         assertTrue(html.contains("<li>first</li>"), html);
         assertTrue(html.contains("<li>second</li>"), html);

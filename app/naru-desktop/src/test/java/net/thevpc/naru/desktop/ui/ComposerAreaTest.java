@@ -491,6 +491,103 @@ class ComposerAreaTest {
         });
     }
 
+    /**
+     * A source that narrows its own candidate set to the word before the caret, which is the shape
+     * {@code NaruLineCompletion} answers with. The auto-open tests need a source whose answer depends
+     * on the text: a constant answer cannot show the list getting smaller as the line grows.
+     */
+    private static ComposerArea.Source narrowing(String... commands) {
+        return (rawLine, caret) -> {
+            String before = rawLine.substring(0, Math.min(caret, rawLine.length()));
+            int start = before.lastIndexOf(' ') + 1;
+            String token = before.substring(start);
+            List<Candidate> out = new ArrayList<>();
+            for (String c : commands) {
+                if (c.startsWith(token)) {
+                    out.add(new Candidate(c, null, Kind.DIRECTIVE));
+                }
+            }
+            return new Result(out, token, start, before.length(), false);
+        };
+    }
+
+    @Test
+    @Order(12)
+    void typingASlashOpensTheCommandListAndEachKeystrokeNarrowsIt() throws Exception {
+        ComposerArea area = inAFrame(narrowing("/model", "/map", "/settings"));
+        type(area, '/');
+        assertTrue(onEdtReturn(area::isCompletionVisible), "the slash alone opens the command list");
+        assertEquals(3, onEdtReturn(area::completionCount));
+        type(area, 'm');
+        assertEquals(2, onEdtReturn(area::completionCount),
+                "the list filtered to what the line still matches instead of closing on the edit");
+        type(area, 'o');
+        assertEquals(1, onEdtReturn(area::completionCount), "one row left, and the list stayed up");
+        assertEquals("/model", plain(onEdtReturn(area::selectedCompletionLabel)));
+        press(area, KeyEvent.VK_ENTER, 0);
+        assertEquals("/model", onEdtReturn(area::getText), "Enter took the row, it did not send the line");
+        assertFalse(onEdtReturn(area::isCompletionVisible),
+                "committing closes the list — the word is finished, and a row that repeats what is"
+                        + " already on the line is noise");
+    }
+
+    @Test
+    @Order(13)
+    void anEmptyFieldStaysQuietUntilTheUserAsks() throws Exception {
+        ComposerArea area = inAFrame(narrowing("/model", "/map"));
+        assertFalse(onEdtReturn(area::isCompletionVisible),
+                "a fresh composer must not paint every command the engine knows just because it"
+                        + " gained focus — an empty field is the engine's whole directive list");
+        press(area, KeyEvent.VK_SPACE, KeyEvent.CTRL_DOWN_MASK);
+        assertTrue(onEdtReturn(area::isCompletionVisible),
+                "Ctrl+Space is the explicit ask, and it is not gated on the line looking like a command");
+        assertEquals(2, onEdtReturn(area::completionCount));
+    }
+
+    /**
+     * A source with a candidate for whatever word sits under the caret, prose included. The auto-open
+     * gate reads the engine's token, so a source that answers with a constant token cannot show the
+     * difference between a slash and a letter.
+     */
+    private static ComposerArea.Source alwaysAnswering() {
+        return (rawLine, caret) -> {
+            String before = rawLine.substring(0, Math.min(caret, rawLine.length()));
+            int start = before.lastIndexOf(' ') + 1;
+            String token = before.substring(start);
+            return new Result(List.of(new Candidate(token + "-x", null, Kind.FILE)),
+                    token, start, before.length(), false);
+        };
+    }
+
+    @Test
+    @Order(14)
+    void proseNeverOpensTheListEvenWhenTheSourceHasACandidate() throws Exception {
+        ComposerArea area = inAFrame(alwaysAnswering());
+        type(area, 'h');
+        type(area, 'i');
+        assertFalse(onEdtReturn(area::isCompletionVisible),
+                "the engine had a row to offer but the line is prose for the model, so nothing opened");
+        onEdt(() -> {
+            area.setText("");
+            area.setCaretPosition(0);
+        });
+        type(area, '/');
+        assertTrue(onEdtReturn(area::isCompletionVisible), "the slash is what turns it on");
+    }
+
+    @Test
+    @Order(15)
+    void escapeSilencesTheWordUntilTheNextKeystroke() throws Exception {
+        ComposerArea area = inAFrame(narrowing("/model", "/map"));
+        type(area, '/');
+        assertTrue(onEdtReturn(area::isCompletionVisible));
+        press(area, KeyEvent.VK_ESCAPE, 0);
+        assertFalse(onEdtReturn(area::isCompletionVisible), "Escape closes the list");
+        type(area, 'm');
+        assertTrue(onEdtReturn(area::isCompletionVisible),
+                "Escape dismisses this word, it does not switch completion off for the session");
+    }
+
     @Test
     @Order(11)
     void theRealEngineAnswersForTheRealComposer() throws Exception {

@@ -54,6 +54,8 @@ public final class TranscriptBlock {
     private boolean closed;
     private boolean collapsed;
     private boolean expanded;
+    /** True when {@link #expanded} was reached from the short preview, not the folded head. */
+    private boolean previewReturn;
     private Instant startedAt;
     private Instant endedAt;
 
@@ -173,6 +175,19 @@ public final class TranscriptBlock {
 
     public void setExpanded(boolean value) {
         this.expanded = value;
+    }
+
+    /**
+     * Whether "view less" should return to the six-line preview because that is where the reader
+     * expanded from. Kept on the block rather than the card: a long row may be rebuilt when the
+     * transcript window moves, and the baseline the reader chose should not move with it.
+     */
+    public boolean isPreviewReturn() {
+        return previewReturn;
+    }
+
+    public void setPreviewReturn(boolean value) {
+        this.previewReturn = value;
     }
 
     public Instant startedAt() {

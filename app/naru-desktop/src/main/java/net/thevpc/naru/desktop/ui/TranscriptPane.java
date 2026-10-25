@@ -37,13 +37,24 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     // history-page updates responsive even when a session contains many rich messages.
     private static final int WINDOW_SIZE = 40;
     private static final int WINDOW_STEP = 20;
+    /**
+     * How close to the end still counts as auto-following the stream. A generous margin bridges
+     * the moment between content growth and the deferred scroll that lands on the new maximum.
+     */
     private static final int STICK_MARGIN = 48;
+    /**
+     * How close to the end counts as "at the end" for the reader. This is deliberately small: the
+     * down button must appear as soon as the reader is off the tail, but a couple of pixels of
+     * layout rounding should not make a pane sitting at the bottom look scrolled away.
+     */
+    private static final int BOTTOM_MARGIN = 4;
 
     private final TranscriptModel model;
     private final NaruSessionModel sessionModel;
     private final boolean showChatMessages;
     private final CardsPanel cards = new CardsPanel();
-    private final JScrollPane scroll = new JScrollPane(cards);
+    private final TailScrollPane scroll = new TailScrollPane(cards, this::jumpToLatest);
+    private final TurnActivityBar activityBar;
     private final JLabel counter = new JLabel(" ");
     // ten columns is a command and a half to type and still leaves the filter row room for the
     // message counter beside it; eighteen pushed the counter out of the panel at a normal width
@@ -153,6 +164,12 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         bar.add(counter, BorderLayout.EAST);
         add(bar, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);
+        // The live turn line belongs to the conversation, not the raw Logs tab. It sits below the
+        // scrolling cards so a reader who is deep in history still sees that work is happening.
+        activityBar = showChatMessages ? new TurnActivityBar(session) : null;
+        if (activityBar != null) {
+            add(activityBar, BorderLayout.SOUTH);
+        }
         scroll.setMinimumSize(new Dimension(240, 120));
         // Message cards always wrap at the panel width; horizontal overflow is hosted by the
         // message items themselves, and only those that explicitly ask for it.
@@ -162,18 +179,20 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         scroll.getVerticalScrollBar().addAdjustmentListener(e -> {
             if (e.getValueIsAdjusting()) {
                 // the user is dragging the thumb: decide from where they are
-                userScrolledAway = !isNearBottom();
-            } else if (isNearBottom()) {
+                userScrolledAway = !isAtBottom();
+            } else if (isAtBottom()) {
                 // any way back to the tail resumes following, including a wheel-down or a click
                 userScrolledAway = false;
             }
+            updateTailButton();
         });
         scroll.addMouseWheelListener(e -> {
             JScrollBar scrollBar = scroll.getVerticalScrollBar();
             // The viewport's own handler already moved the bar before this listener runs, so the
             // wheel never shows up as a drag (valueIsAdjusting stays false). Without this, a
             // reader scrolling up mid-stream is pulled back to the bottom by the next flush.
-            userScrolledAway = !isNearBottom();
+            userScrolledAway = !isAtBottom();
+            updateTailButton();
             if (e.getWheelRotation() < 0 && scrollBar.getValue() <= 4
                     && (first > 0 || (!engineSearch && sessionModel.hasOlderTranscript()))) loadEarlier();
             else if (e.getWheelRotation() > 0
@@ -363,6 +382,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
                 scroll.getViewport().setViewPosition(new java.awt.Point(0, Math.max(0, c.getY())));
             }
             adjustingWindow = false;
+            updateTailButton();
         });
     }
 
@@ -449,23 +469,54 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         card.setBorder(TranscriptLayer.border());
 
         String labelText = style.label().toUpperCase(java.util.Locale.ROOT);
+        String toolName = block.isToolCard() && block.toolCall() != null
+                ? block.toolCall().toolName() : null;
+        if (toolName != null && !toolName.isBlank()) {
+            labelText += " · " + toolName;
+        }
         JLabel title = new JLabel(labelText);
         UiFonts.apply(title, UiFonts.CAPTION, Font.BOLD);
         title.setForeground(detail ? UiPalette.muted() : UiPalette.readable(style.gutter()));
+        // The meta label carries the facts a collapsed row still owes the reader: how big it is
+        // and how long it took. It is not part of the copyable body.
+        JLabel meta = new JLabel(" ");
+        UiFonts.apply(meta, UiFonts.CAPTION, Font.PLAIN);
+        meta.setForeground(UiPalette.muted());
+        JPanel titleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        titleRow.setOpaque(false);
+        titleRow.add(title);
+        titleRow.add(meta);
+
         JPanel heading = new JPanel(new BorderLayout());
         heading.setOpaque(false);
-        heading.add(title, BorderLayout.WEST);
+        heading.add(titleRow, BorderLayout.WEST);
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        actions.setOpaque(false);
+        actions.add(disclosureButton(card));
         // an engine row is often the only place a tool's output exists; without the control the
         // reader selects it off the screen, and a folded row cannot be selected whole at all
-        heading.add(CopyButton.create(block::text, style.label() + " output"), BorderLayout.EAST);
+        actions.add(CopyButton.create(block::text, style.label() + " output"));
+        heading.add(actions, BorderLayout.EAST);
         card.add(heading, BorderLayout.NORTH);
+        card.putClientProperty("transcript.meta", meta);
 
-        String initial = shownHtml(block, folded(block));
-        JEditorPane body = HtmlPanes.create(initial, UiFonts.BODY, 0);
+        // The body may be inline or inside its own capped scroller. The host keeps the card's
+        // outer layout stable while the reader moves between the two.
+        JPanel bodyHost = new JPanel(new BorderLayout());
+        bodyHost.setOpaque(false);
+        bodyHost.putClientProperty("transcript.scrolled", Boolean.FALSE);
+        card.putClientProperty("transcript.bodyHost", bodyHost);
+
+        float ratio = style.monospace() ? UiFonts.CAPTION : UiFonts.SECONDARY;
+        JEditorPane body = HtmlPanes.create("", ratio, 0);
+        if (style.monospace()) {
+            UiFonts.applyMono(body, ratio, Font.PLAIN);
+        }
+        bodyHost.add(body, BorderLayout.CENTER);
         card.putClientProperty("transcript.block", block);
         // the body is what a streaming row refreshes in place; see refreshRow
         card.putClientProperty("transcript.body", body);
-        card.add(body, BorderLayout.CENTER);
+        card.add(bodyHost, BorderLayout.CENTER);
         card.add(showMoreButton(card), BorderLayout.SOUTH);
         applyBody(card, block);
         if (block.isToolCard() && PermissionsText.isDenial(block.text())) {
@@ -474,10 +525,35 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         return card;
     }
 
-    private static String bodyHtml(TranscriptBlock block) {
-        return "<html><body>"
-                + (block.htmlIsCurrent() ? block.html() : TextHtml.codeBlock(block.text()))
-                + "</body></html>";
+    /** The chevron that puts an item away, independent of how much of its body is unfolded. */
+    private JButton disclosureButton(JPanel card) {
+        JButton disclosure = new JButton("▾");
+        disclosure.setBorderPainted(false);
+        disclosure.setContentAreaFilled(false);
+        disclosure.setForeground(UiPalette.muted());
+        disclosure.setFocusable(false);
+        disclosure.setMargin(new java.awt.Insets(0, 2, 0, 0));
+        disclosure.setToolTipText("Collapse this item");
+        disclosure.getAccessibleContext().setAccessibleName("Collapse this item");
+        disclosure.addActionListener(e -> {
+            if (!(card.getClientProperty("transcript.block") instanceof TranscriptBlock block)) {
+                return;
+            }
+            boolean collapse = !block.isCollapsed();
+            block.setCollapsed(collapse);
+            if (!collapse) {
+                // Reopening shows the block's normal head, not a full-body request from earlier.
+                block.setExpanded(false);
+                // The reader has moved the item's baseline from the short preview to the head;
+                // a later "view less" should return here rather than to the preview.
+                block.setPreviewReturn(false);
+            }
+            applyBody(card, block);
+            card.revalidate();
+            card.repaint();
+        });
+        card.putClientProperty("transcript.disclosure", disclosure);
+        return disclosure;
     }
 
     /**
@@ -509,7 +585,25 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             if (!(card.getClientProperty("transcript.block") instanceof TranscriptBlock block)) {
                 return;
             }
-            block.setExpanded(!block.isExpanded());
+            if (block.isCollapsed()) {
+                // "view more" from the short preview goes all the way to the body. Remember that
+                // this item's normal state was the preview, because a tool card is collapsed for
+                // its size rather than because its log mode defaults to collapsed.
+                block.setPreviewReturn(true);
+                block.setCollapsed(false);
+                block.setExpanded(true);
+            } else if (!block.isExpanded()) {
+                // Expanding from the folded head makes the head the baseline, not the preview.
+                block.setPreviewReturn(false);
+                block.setExpanded(true);
+            } else {
+                block.setExpanded(false);
+                // Return to the preview the reader expanded from; otherwise to the head they saw.
+                if (block.isPreviewReturn() || BlockStyle.forBlock(block).collapsedByDefault()) {
+                    block.setCollapsed(true);
+                }
+                block.setPreviewReturn(false);
+            }
             applyBody(card, block);
             card.revalidate();
             card.repaint();
@@ -518,26 +612,112 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         return more;
     }
 
-    /** Re-text a card's body from its block, honouring whether the user unfolded a long one. */
+    /** Re-text a card's body from its block, honouring collapse, fold and the item's own scroll. */
     private static void applyBody(JPanel card, TranscriptBlock block) {
-        if (!(card.getClientProperty("transcript.body") instanceof JEditorPane body)) {
+        if (!(card.getClientProperty("transcript.body") instanceof JEditorPane body)
+                || !(card.getClientProperty("transcript.bodyHost") instanceof JPanel host)) {
             return;
         }
-        boolean folded = folded(block);
-        body.setText(shownHtml(block, folded));
+        BlockStyle style = BlockStyle.forBlock(block);
+        int lines = HtmlPanes.lineCount(block.text());
+        int previewHidden = HtmlPanes.hiddenLines(block.text(), HtmlPanes.PREVIEW_LINES);
+        boolean collapsed = block.isCollapsed() && previewHidden > 0;
+        boolean folded = !collapsed
+                && HtmlPanes.hiddenLines(block.text(), INLINE_BODY_LINES) > 0
+                && !block.isExpanded();
+        // A full body longer than a comfortable column gets its own scroll, so the conversation
+        // still scrolls as one column and one expanded dump cannot push everything else away. A
+        // body that merely crossed the scroll threshold is not "expanded" yet: it stays inline
+        // until the reader asks for a folded tail, otherwise every 25-line card becomes a second
+        // scrollbar.
+        boolean scrolled = !collapsed && !folded && block.isExpanded()
+                && lines > HtmlPanes.SCROLL_AFTER_LINES;
+
+        String text = block.text();
+        boolean sliced = collapsed || folded;
+        if (collapsed) {
+            text = HtmlPanes.head(text, HtmlPanes.PREVIEW_LINES);
+        } else if (folded) {
+            text = HtmlPanes.head(text, INLINE_BODY_LINES);
+        }
+        // A streaming expanded body re-texts on every batch. setText resets the document's carets
+        // and the scrollbar model, so remember where the reader had scrolled to before replacing
+        // it; otherwise the inner viewport snaps back to the first line eight times a second.
+        int innerOffset = -1;
+        if (host.getComponentCount() == 1 && host.getComponent(0) instanceof JScrollPane innerScroller) {
+            innerOffset = innerScroller.getVerticalScrollBar().getValue();
+        }
+        body.setText(shownHtml(block, text, sliced));
+        if (innerOffset >= 0 && host.getComponentCount() == 1
+                && host.getComponent(0) instanceof JScrollPane innerScroller) {
+            JScrollBar innerBar = innerScroller.getVerticalScrollBar();
+            innerBar.setValue(Math.min(innerOffset, innerBar.getMaximum()));
+        }
+        // Data lives on the caption rung, prose on secondary; a body the reader has opened into its
+        // own scrollport is inspection material, so prose drops to the caption rung too.
+        float ratio = scrolled || style.monospace() ? UiFonts.CAPTION : UiFonts.SECONDARY;
+        if (style.monospace()) {
+            UiFonts.applyMono(body, ratio, Font.PLAIN);
+        } else {
+            UiFonts.apply(body, ratio, Font.PLAIN);
+        }
+        boolean wasScrolled = Boolean.TRUE.equals(host.getClientProperty("transcript.scrolled"));
+        if (scrolled != wasScrolled) {
+            host.removeAll();
+            host.add(scrolled ? HtmlPanes.scroller(body) : body, BorderLayout.CENTER);
+            host.putClientProperty("transcript.scrolled", scrolled);
+            host.revalidate();
+            host.repaint();
+        }
+
         if (card.getClientProperty("transcript.more") instanceof JButton more) {
-            int hidden = HtmlPanes.hiddenLines(block.text(), INLINE_BODY_LINES);
-            more.setVisible(hidden > 0);
-            more.setText(folded ? "⌄ show all " + hidden + " more lines" : "⌃ show less");
+            // Any expanded item has a way back: the footer is the labelled control, the chevron is
+            // the quick one. Hiding the footer on a 30-line item that was expanded from its preview
+            // left "view less" nowhere but the unlabelled chevron.
+            boolean show = collapsed || folded || block.isExpanded();
+            more.setVisible(show);
+            if (collapsed) {
+                more.setText("⌄ view more · " + previewHidden + " more lines");
+            } else if (folded) {
+                more.setText("⌄ view more · " + (lines - INLINE_BODY_LINES) + " more lines");
+            } else {
+                more.setText("⌃ view less");
+            }
+        }
+        if (card.getClientProperty("transcript.disclosure") instanceof JButton disclosure) {
+            boolean shownCollapsed = block.isCollapsed() && previewHidden > 0;
+            // A one-line row has no hidden preview to put away; a chevron that changes nothing is
+            // worse than no chevron at all.
+            disclosure.setVisible(previewHidden > 0);
+            disclosure.setText(shownCollapsed ? "▸" : "▾");
+            disclosure.setToolTipText(shownCollapsed ? "Expand this item" : "Collapse this item");
+            disclosure.getAccessibleContext().setAccessibleName(
+                    shownCollapsed ? "Expand this item" : "Collapse this item");
+        }
+        if (card.getClientProperty("transcript.meta") instanceof JLabel meta) {
+            StringBuilder summary = new StringBuilder(" ");
+            if (lines > 1 && style.monospace()) {
+                summary.append("· ").append(lines).append(" lines");
+            }
+            String elapsed = block.elapsedLabel();
+            if (elapsed != null) {
+                summary.append(summary.length() > 1 ? " · " : "· ").append(elapsed);
+            }
+            meta.setText(summary.toString());
         }
     }
 
-    private static String shownHtml(TranscriptBlock block, boolean folded) {
-        String text = block.text();
-        if (!folded || HtmlPanes.hiddenLines(text, INLINE_BODY_LINES) == 0) {
-            return bodyHtml(block);
+    private static String shownHtml(TranscriptBlock block, String text, boolean sliced) {
+        String fragment;
+        if (!sliced && block.htmlIsCurrent()) {
+            fragment = block.html();
+        } else {
+            BlockStyle style = BlockStyle.forBlock(block);
+            // Markdown only exists for the whole closed body; a preview is escaped plain text in
+            // the same face, never a half-parsed document.
+            fragment = style.monospace() ? TextHtml.codeBlock(text) : TextHtml.paragraphs(text);
         }
-        return "<html><body>" + TextHtml.codeBlock(HtmlPanes.head(text, INLINE_BODY_LINES)) + "</body></html>";
+        return "<html><body>" + fragment + "</body></html>";
     }
 
     private javax.swing.JPopupMenu denialPopup(String text) {
@@ -551,7 +731,19 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         return popup;
     }
 
+    private boolean isAtBottom() {
+        return isWithinBottom(BOTTOM_MARGIN);
+    }
+
+    /**
+     * Auto-follow is more forgiving than the button: a stream that grows the column by a line or
+     * two before the deferred scroll runs must not count as the reader having left the tail.
+     */
     private boolean isNearBottom() {
+        return isWithinBottom(STICK_MARGIN);
+    }
+
+    private boolean isWithinBottom(int margin) {
         JScrollBar bar = scroll.getVerticalScrollBar();
         if (bar == null) {
             return true;
@@ -564,7 +756,35 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         if (scroll.getViewport().getExtentSize().height <= 0) {
             return true;
         }
-        return bar.getValue() + bar.getVisibleAmount() >= bar.getMaximum() - STICK_MARGIN;
+        return bar.getValue() + bar.getVisibleAmount() >= bar.getMaximum() - margin;
+    }
+
+    /**
+     * The down button is a readout of the reader's actual position: it appears as soon as they are
+     * off the tail, with only a few pixels of tolerance. It never changes scroll position by
+     * itself.
+     */
+    private void updateTailButton() {
+        scroll.setTailButtonVisible(!isAtBottom());
+    }
+
+    /** True while the floating "jump to latest" button is on screen; package-visible for tests. */
+    boolean isJumpToLatestVisible() {
+        return scroll.isTailButtonVisible();
+    }
+
+    /** The floating button, so a headless test can click the real control. */
+    JButton jumpToLatestButton() {
+        return scroll.tailButton();
+    }
+
+    /** Return to the newest message and resume following the stream. */
+    public void jumpToLatest() {
+        userScrolledAway = false;
+        // Hide immediately; followTail() re-checks after the column has been laid out and will
+        // put the button back if the jump could not reach the end.
+        scroll.setTailButtonVisible(false);
+        followTail();
     }
 
     /**
@@ -600,6 +820,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         }
         cards.revalidate();
         cards.repaint();
+        updateTailButton();
     }
 
     @Override
@@ -623,7 +844,12 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             }
         }
         if (followed && wasAtTail) {
+            // followTail() updates the button after the deferred scroll lands. Checking here would
+            // measure the old maximum against the grown column and flash the button for one frame
+            // on every streamed batch.
             followTail();
+        } else {
+            updateTailButton();
         }
     }
 
@@ -654,6 +880,9 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
 
     public void dispose() {
         model.removeListener(this);
+        if (activityBar != null) {
+            activityBar.dispose();
+        }
         searchTimer.stop();
         markdown.shutdown();
         partRenderers.close();
@@ -678,6 +907,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             // changed; re-checking the geometry here measures it against the NEW maximum, which a
             // stream always grew, so the check failed and the view never followed at all.
             bar.setValue(bar.getMaximum());
+            updateTailButton();
         });
     }
 
@@ -689,7 +919,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     }
     public String visibleRange() { return matching.isEmpty() ? "none" : first + "-" + (last - 1); }
     public String scrollState() { JScrollBar b = scroll.getVerticalScrollBar(); return b.getValue() + "/" + b.getMaximum(); }
-    public boolean isStuckToTail() { return isNearBottom(); }
+    public boolean isStuckToTail() { return isAtBottom(); }
 
     /**
      * The card column always takes the viewport's width, whatever the cards' natural width is.

@@ -1,5 +1,7 @@
 package net.thevpc.naru.desktop.render;
 
+import net.thevpc.naru.desktop.ui.Typefaces;
+
 /**
  * Plain text as the HTML the transcript uses, under two hard constraints of Swing's HTML engine:
  * <ul>
@@ -30,9 +32,9 @@ public final class TextHtml {
         return block(text, "margin:0");
     }
 
-    /** The same, in a fixed-width font — what a code block or a log line wants. */
+    /** The same, in the bundled fixed-width face — what a code block or a log line wants. */
     public static String codeBlock(String text) {
-        return block(text, "font-family:monospace;margin:2px 0");
+        return block(text, "font-family:" + Typefaces.MONO + ";margin:2px 0");
     }
 
     /**

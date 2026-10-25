@@ -1,5 +1,7 @@
 package net.thevpc.naru.desktop.render;
 
+import net.thevpc.naru.desktop.ui.Typefaces;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -168,7 +170,10 @@ public final class MarkdownHtml {
                 int end = s.indexOf('`', i + 1);
                 if (end > i) {
                     flushPlain(plain, out);
-                    out.append("<tt><b>").append(TextHtml.escapeWrap(s.substring(i + 1, end))).append("</b></tt>");
+                    // Inline code is data too: name the bundled mono face explicitly instead of
+                    // relying on the renderer's default <tt> face, which is the host's.
+                    out.append("<tt style=\"font-family:").append(Typefaces.MONO).append("\"><b>")
+                            .append(TextHtml.escapeWrap(s.substring(i + 1, end))).append("</b></tt>");
                     i = end + 1;
                     continue;
                 }

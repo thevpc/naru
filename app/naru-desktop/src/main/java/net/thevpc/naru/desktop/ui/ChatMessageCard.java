@@ -25,8 +25,10 @@ public final class ChatMessageCard extends JPanel {
     private final boolean tinted;
     private final String preparedHtml;
     private JEditorPane contentBody;
+    private JPanel contentHost;
     private javax.swing.JButton fold;
     private boolean folded;
+    private boolean scrolled;
     private Consumer<Boolean> onFolded;
 
     public ChatMessageCard(NaruMessage message, ChatPartRenderers renderers,
@@ -97,7 +99,7 @@ public final class ChatMessageCard extends JPanel {
             }
         }
         if (this.message.getToolCalls() != null) {
-            this.message.getToolCalls().forEach(call -> body.add(selectableText("Tool · " + call.getName()
+            this.message.getToolCalls().forEach(call -> body.add(selectableMonoText("Tool · " + call.getName()
                     + "\n" + String.valueOf(call.getArguments()))));
         }
         add(body, BorderLayout.CENTER);
@@ -121,8 +123,13 @@ public final class ChatMessageCard extends JPanel {
         JPanel stack = new JPanel(new BorderLayout());
         stack.setOpaque(false);
         stack.setAlignmentX(Component.LEFT_ALIGNMENT);
-        contentBody = HtmlPanes.create(contentHtml(), -1f, 2);
-        stack.add(contentBody, BorderLayout.CENTER);
+        contentBody = HtmlPanes.create(contentHtml(), UiFonts.BODY, 2);
+        // The body may live inline or inside its own capped scrollport. A host panel lets the card
+        // switch between the two without rebuilding the HTML document when the reader unfolds it.
+        contentHost = new JPanel(new BorderLayout());
+        contentHost.setOpaque(false);
+        contentHost.add(contentBody, BorderLayout.CENTER);
+        stack.add(contentHost, BorderLayout.CENTER);
         fold = new javax.swing.JButton();
         fold.setBorderPainted(false);
         fold.setContentAreaFilled(false);
@@ -132,7 +139,7 @@ public final class ChatMessageCard extends JPanel {
         fold.setHorizontalAlignment(javax.swing.SwingConstants.LEFT);
         fold.addActionListener(e -> setFolded(!folded));
         stack.add(fold, BorderLayout.SOUTH);
-        updateFold();
+        refreshBody();
         return stack;
     }
 
@@ -149,20 +156,49 @@ public final class ChatMessageCard extends JPanel {
     private void updateFold() {
         int hidden = HtmlPanes.hiddenLines(message.getContent(), HtmlPanes.FOLD_AFTER_LINES);
         fold.setVisible(hidden > 0);
-        fold.setText(folded ? "⌄ show all " + hidden + " more lines" : "⌃ show less");
+        fold.setText(folded ? "⌄ view more · " + hidden + " more lines" : "⌃ view less");
     }
 
-    /** Fold a long body to its head, or show all of it. The owner keeps this on its block. */
+    /**
+     * Fold a long body to its head, or show all of it. An unfolded body that is still taller than
+     * one comfortable column gets its own capped scroll region, so one long answer cannot push the
+     * rest of the conversation off the screen.
+     */
     public void setFolded(boolean value) {
         if (contentBody == null || folded == value) {
             return;
         }
         folded = value;
-        contentBody.setText(contentHtml());
-        updateFold();
+        refreshBody();
         if (onFolded != null) {
             onFolded.accept(value);
         }
+    }
+
+    private void refreshBody() {
+        if (contentBody == null) {
+            return;
+        }
+        contentBody.setText(contentHtml());
+        // A body that needs its own scroll is a document the reader is inspecting, not the flow of
+        // the conversation; one step down the ladder keeps it visible without competing with prose.
+        // Only a body past the fold threshold can be "unfolded" into this state, so a merely long
+        // message stays inline instead of opening a second scrollbar unasked.
+        boolean longExpanded = !folded
+                && HtmlPanes.lineCount(message.getContent()) > HtmlPanes.FOLD_AFTER_LINES;
+        UiFonts.apply(contentBody, longExpanded ? UiFonts.SECONDARY : UiFonts.BODY, java.awt.Font.PLAIN);
+        if (longExpanded != scrolled) {
+            scrolled = longExpanded;
+            contentHost.removeAll();
+            if (scrolled) {
+                contentHost.add(HtmlPanes.scroller(contentBody), BorderLayout.CENTER);
+            } else {
+                contentHost.add(contentBody, BorderLayout.CENTER);
+            }
+            contentHost.revalidate();
+            contentHost.repaint();
+        }
+        updateFold();
     }
 
     public void setOnFolded(Consumer<Boolean> listener) {
@@ -182,6 +218,12 @@ public final class ChatMessageCard extends JPanel {
     private static JEditorPane selectableText(String text) {
         return HtmlPanes.create("<html><body>" + TextHtml.paragraphs(text)
                 + "</body></html>", -1f, 4);
+    }
+
+    /** A selectable body for data: a tool call's arguments are JSON, not prose. */
+    private static JEditorPane selectableMonoText(String text) {
+        return HtmlPanes.create("<html><body>" + TextHtml.codeBlock(text)
+                + "</body></html>", UiFonts.BODY, 4);
     }
 
     /** Hosts a natural-width part so wide content scrolls inside the card instead of widening it. */

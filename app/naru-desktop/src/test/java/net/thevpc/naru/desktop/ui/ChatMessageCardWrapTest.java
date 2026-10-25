@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -88,6 +89,37 @@ class ChatMessageCardWrapTest {
             layout(card, 300);
             assertEquals(1, countClass(card, JScrollPane.class),
                     "a form part must be hosted in its own horizontal scroller");
+        });
+    }
+
+    @Test
+    void aLongMessageFoldsThenGetsItsOwnVerticalScrollerWhenUnfolded() {
+        onEdt(() -> {
+            StringBuilder text = new StringBuilder();
+            for (int i = 0; i < 60; i++) {
+                if (i > 0) text.append('\n');
+                text.append("line ").append(i);
+            }
+            ChatMessageCard card = new ChatMessageCard(NaruMessage.assistant(text.toString()),
+                    new ChatPartRenderers(), null);
+            // The transcript applies the default fold when it seats the card; do the same here.
+            card.setFolded(true);
+            layout(card, 400);
+            assertTrue(card.isFolded(), "60 lines start behind the fold control");
+            assertFalse(card.bodyText().contains("line 59"), "the tail is measured only on request");
+            assertEquals(0, countClass(card, JScrollPane.class), "the folded head stays inline");
+
+            card.setFolded(false);
+            layout(card, 400);
+            assertTrue(card.bodyText().contains("line 59"), "the whole answer is now in the document");
+            assertEquals(1, countClass(card, JScrollPane.class),
+                    "an unfolded long body is capped in its own vertical scroller");
+            JScrollPane scroller = (JScrollPane) all(card).stream()
+                    .filter(c -> c instanceof JScrollPane).findFirst().orElseThrow();
+            JEditorPane body = findBody(card);
+            assertNotNull(body);
+            assertEquals(scroller.getViewport().getWidth(), body.getWidth(),
+                    "the scrolled body must wrap at the viewport width, not at its natural width");
         });
     }
 

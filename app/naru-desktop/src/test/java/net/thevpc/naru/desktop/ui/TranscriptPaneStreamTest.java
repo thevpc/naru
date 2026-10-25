@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import javax.swing.JButton;
 import javax.swing.JEditorPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.SwingUtilities;
 import java.awt.Component;
@@ -23,6 +24,7 @@ import java.awt.Container;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -164,7 +166,7 @@ class TranscriptPaneStreamTest {
     }
 
     @Test
-    void aLongAnswerIsFoldedToItsHeadUntilTheUserAsksForTheRest() throws Exception {
+    void aLongThinkingItemStartsCollapsedAndTheUserCanSeeItAll() throws Exception {
         buildPane();
         onEdt(() -> {
             model.onBatch(List.of(new TranscriptEvent.Chunk("t1",
@@ -177,16 +179,19 @@ class TranscriptPaneStreamTest {
                     NaruLogMode.MODEL_THINKING, rest.toString(), false)), host);
             JPanel card = bodyCard();
             JEditorPane body = (JEditorPane) card.getClientProperty("transcript.body");
-            assertTrue(body.getText().contains("line 119"), "the head of the answer is on screen");
-            assertTrue(!body.getText().contains("line 200"),
-                    "the rest is folded away: measuring it is what freezes the layout pass");
+            assertTrue(body.getText().contains("line 5"), "the short preview is on screen");
+            assertFalse(body.getText().contains("line 6"),
+                    "thinking is collapsed by default: only the preview is measured");
             JButton more = (JButton) card.getClientProperty("transcript.more");
             assertTrue(more.isVisible());
-            assertTrue(more.getText().contains("180 more lines"), more.getText());
+            assertTrue(more.getText().contains("294 more lines"), more.getText());
             more.doClick();
             assertTrue(body.getText().contains("line 299"), "the control unfolds the whole answer");
+            assertTrue(scrollsBody(card),
+                    "a body this long is hosted in its own capped scrollport");
             more.doClick();
-            assertTrue(!body.getText().contains("line 200"), "and folds it back");
+            assertFalse(body.getText().contains("line 6"), "and folds it back to the preview");
+            assertFalse(scrollsBody(card));
         });
     }
 
@@ -199,6 +204,90 @@ class TranscriptPaneStreamTest {
             JButton more = (JButton) bodyCard().getClientProperty("transcript.more");
             assertTrue(!more.isVisible(), "a short body has nothing to unfold");
         });
+    }
+
+    @Test
+    void anOutputItemFoldsAtFortyLinesAndScrollsOnlyWhenExpanded() throws Exception {
+        buildPane();
+        onEdt(() -> {
+            model.onBatch(List.of(new TranscriptEvent.Chunk("s1",
+                    NaruLogMode.SCRIPT, lines(60), false)), host);
+            JPanel card = bodyCard();
+            JEditorPane body = (JEditorPane) card.getClientProperty("transcript.body");
+            assertTrue(body.getText().contains("line 39"), "the folded head is on screen");
+            assertFalse(body.getText().contains("line 40"), "the tail is measured only on request");
+            JButton more = (JButton) card.getClientProperty("transcript.more");
+            assertTrue(more.getText().contains("20 more lines"), more.getText());
+            assertFalse(scrollsBody(card), "a folded head is small enough to stay inline");
+
+            more.doClick();
+            assertTrue(body.getText().contains("line 59"));
+            assertTrue(scrollsBody(card), "the full 60-line body gets its own scrollport");
+            more.doClick();
+            assertFalse(body.getText().contains("line 40"), "and folds back to the head");
+        });
+    }
+
+    @Test
+    void aWheelOverAnExpandedBodyContinuesInTheColumnAtItsEnd() throws Exception {
+        buildPane();
+        onEdt(() -> {
+            model.onBatch(List.of(new TranscriptEvent.Chunk("s1",
+                    NaruLogMode.SCRIPT, lines(60), false)), host);
+            JPanel card = bodyCard();
+            ((JButton) card.getClientProperty("transcript.more")).doClick();
+            assertTrue(scrollsBody(card));
+            JScrollPane inner = (JScrollPane) ((JPanel) card
+                    .getClientProperty("transcript.bodyHost")).getComponent(0);
+            JScrollBar bodyBar = inner.getVerticalScrollBar();
+            // The scroller is laid out by a real window; here its bar has no extent yet, so give
+            // it a stable model that puts the end of the body at the cursor.
+            bodyBar.setModel(new javax.swing.DefaultBoundedRangeModel(90, 10, 0, 100));
+            JScrollBar columnBar = ((JScrollPane) pane.getComponent(1)).getVerticalScrollBar();
+            columnBar.setModel(new javax.swing.DefaultBoundedRangeModel(0, 10, 0, 100));
+            // The pane is laid out by hand in these tests, so the scroll pane has not decided
+            // yet that its bar is needed; in a real window it is visible by the time a wheel runs.
+            columnBar.setVisible(true);
+            int step = 3 * columnBar.getUnitIncrement();
+            assertTrue(step > 0, "the column's wheel step must be positive");
+            inner.dispatchEvent(new java.awt.event.MouseWheelEvent(
+                    inner, java.awt.event.MouseEvent.MOUSE_WHEEL, System.currentTimeMillis(),
+                    0, 10, 10, 1, false, 0, 3, 1));
+
+            assertEquals(step, columnBar.getValue(),
+                    "a wheel at the body's end moves the transcript column instead of stopping");
+        });
+    }
+
+    @Test
+    void aCollapsedItemThatFitsWhenExpandedStillOffersViewLess() throws Exception {
+        buildPane();
+        onEdt(() -> {
+            model.onBatch(List.of(new TranscriptEvent.Chunk("t1",
+                    NaruLogMode.MODEL_THINKING, lines(30), false)), host);
+            JPanel card = bodyCard();
+            JEditorPane body = (JEditorPane) card.getClientProperty("transcript.body");
+            JButton more = (JButton) card.getClientProperty("transcript.more");
+            assertTrue(more.isVisible());
+            assertTrue(more.getText().contains("24 more lines"), more.getText());
+
+            more.doClick();
+            assertTrue(body.getText().contains("line 29"), "all 30 lines fit once unfolded");
+            assertTrue(more.isVisible(), "a 30-line item still needs a labelled way back");
+            assertTrue(more.getText().contains("view less"), more.getText());
+
+            more.doClick();
+            assertFalse(body.getText().contains("line 6"), "and it returns to the short preview");
+        });
+    }
+
+    private static String lines(int count) {
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            if (i > 0) text.append('\n');
+            text.append("line ").append(i);
+        }
+        return text.toString();
     }
 
     /** The one card in the column that owns a foldable transcript body. */
@@ -216,6 +305,15 @@ class TranscriptPaneStreamTest {
         }
         throw new AssertionError("no transcript card with a body was built; rows="
                 + pane.rowCount() + " window=" + pane.visibleRange() + " components=" + seen);
+    }
+
+    /** True while the card hosts its body in the capped vertical scroller. */
+    private static boolean scrollsBody(JPanel card) {
+        if (card.getClientProperty("transcript.bodyHost") instanceof JPanel host
+                && host.getComponentCount() == 1) {
+            return host.getComponent(0) instanceof JScrollPane;
+        }
+        return false;
     }
 
     private void onEdt(ThrowingRunnable body) throws Exception {

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.JButton;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.Scrollable;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -41,10 +43,11 @@ class TranscriptPaneScrollTest {
     private static final int SCROLL_UP = 12;
 
     /**
-     * A thinking block tall enough to overflow the viewport but short enough to stay unfolded: a
-     * folded card stops growing, and growth is what the follow-tail rule is about.
+     * A block tall enough to overflow the viewport but short enough to stay unfolded: a folded
+     * card stops growing, and growth is what the follow-tail rule is about. {@code SCRIPT} is
+     * ordinary conversation output, not one of the modes that starts collapsed.
      */
-    private static final int LINES = 90;
+    private static final int LINES = 30;
 
     @BeforeAll
     static void requireNuts() {
@@ -115,10 +118,10 @@ class TranscriptPaneScrollTest {
         }
     }
 
-    /** One tall thinking block: unfolded, and far taller than the viewport. */
+    /** One tall output block: unfolded, and far taller than the viewport. */
     private void fillTranscript() throws Exception {
         onEdt(() -> model.onBatch(List.of(new TranscriptEvent.Chunk("t1",
-                NaruLogMode.MODEL_THINKING, lines(LINES), false)), host));
+                NaruLogMode.SCRIPT, lines(LINES), false)), host));
         onEdt(this::relayout);
     }
 
@@ -143,6 +146,12 @@ class TranscriptPaneScrollTest {
     private boolean atTail() throws Exception {
         boolean[] out = new boolean[1];
         onEdt(() -> out[0] = pane.isStuckToTail());
+        return out[0];
+    }
+
+    private boolean jumpVisible() throws Exception {
+        boolean[] out = new boolean[1];
+        onEdt(() -> out[0] = pane.isJumpToLatestVisible());
         return out[0];
     }
 
@@ -183,7 +192,69 @@ class TranscriptPaneScrollTest {
     void theTranscriptIsTallerThanTheViewport() throws Exception {
         buildPane();
         fillTranscript();
-        assertTrue(barMaximum() > 400, "a 90-line transcript overflows a 320px viewport");
+        assertTrue(barMaximum() > barExtent(),
+                "a 30-line transcript overflows the 320px viewport: maximum=" + barMaximum()
+                        + " extent=" + barExtent());
+    }
+
+    @Test
+    void theDownButtonAppearsOnlyWhenTheReaderIsAwayFromTheTail() throws Exception {
+        buildPane();
+        fillTranscript();
+        followToTail();
+        assertFalse(jumpVisible(), "no floating button while the newest row is on screen");
+
+        wheel(-SCROLL_UP);
+        assertFalse(atTail(), "the wheel moved the reader away");
+        assertTrue(jumpVisible(), "the button appears as soon as the tail is out of view");
+        onEdt(() -> {
+            JButton tail = pane.jumpToLatestButton();
+            JScrollBar vertical = scroll.getVerticalScrollBar();
+            assertTrue(tail.getX() >= 0 && tail.getY() >= 0,
+                    "the button is inside the scroll pane: " + tail.getBounds());
+            assertTrue(tail.getX() + tail.getWidth() <= scroll.getWidth(),
+                    "the button is not clipped on the right: " + tail.getBounds());
+            assertTrue(tail.getY() + tail.getHeight() <= scroll.getHeight(),
+                    "the button is not clipped at the bottom: " + tail.getBounds());
+            if (vertical.isVisible()) {
+                assertTrue(tail.getX() + tail.getWidth() <= vertical.getX(),
+                        "the button sits left of the vertical scrollbar: " + tail.getBounds());
+            }
+        });
+
+        onEdt(() -> pane.jumpToLatestButton().doClick());
+        for (int i = 0; i < 10 && !atTail(); i++) {
+            onEdt(this::relayout);
+        }
+        assertTrue(atTail(), "the button returns the reader to the tail");
+        assertFalse(jumpVisible(), "and hides itself once the tail is back in view");
+    }
+
+    @Test
+    void oneWheelNotchAwayFromTheTailShowsTheDownButton() throws Exception {
+        buildPane();
+        fillTranscript();
+        followToTail();
+        assertTrue(atTail(), "starts at the tail");
+
+        wheel(-1);
+        assertFalse(atTail(), "a single notch is still away from the end");
+        assertTrue(jumpVisible(),
+                "the button must not wait for a wide dead zone before appearing");
+    }
+
+    @Test
+    void oneNotchUpAlsoCountsAsLeavingTheTailForFollowing() throws Exception {
+        buildPane();
+        fillTranscript();
+        followToTail();
+        int start = barValue();
+        wheel(-1);
+        int parked = barValue();
+        assertTrue(parked < start, "the wheel moved the view up");
+        write(6);
+        assertEquals(parked, barValue(),
+                "a small deliberate scroll must not be undone by the next streamed batch");
     }
 
     @Test
@@ -245,7 +316,7 @@ class TranscriptPaneScrollTest {
         List<TranscriptEvent> batch = new ArrayList<>();
         for (int i = 0; i < turns; i++) {
             batch.add(new TranscriptEvent.Chunk("turn-" + (blocks++),
-                    NaruLogMode.MODEL_THINKING, lines(20), false));
+                    NaruLogMode.SCRIPT, lines(20), false));
         }
         // The layout happens in the same EDT turn as the batch: a shown pane revalidates while the
         // cards are added, so the deferred follow-tail runnable measures the grown column, not the

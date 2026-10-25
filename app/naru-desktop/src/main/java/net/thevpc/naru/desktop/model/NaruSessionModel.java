@@ -77,6 +77,8 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private final InteractionHost host;
     private final TranscriptModel transcript = new TranscriptModel();
     private final ToolCallModel tools = new ToolCallModel();
+    /** What the current turn is doing, fed by the same batches as the transcript. */
+    private final TurnActivity turnActivity = new TurnActivity();
     /** The permissions editor's view-model, bound to the session policy once the session exists. */
     private final PermissionsModel permissions = new PermissionsModel();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
@@ -246,6 +248,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         }
         booting = true;
         statusText = "starting…";
+        turnActivity.starting();
         fireChanged();
         Thread t = new Thread(this::boot, "naru-session-boot");
         t.setDaemon(true);
@@ -273,6 +276,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                         onEdt(() -> {
                             running = true;
                             statusText = "running";
+                            turnActivity.idle();
                             fireChanged();
                         });
                     }
@@ -282,6 +286,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                         onEdt(() -> {
                             running = false;
                             statusText = "stopped";
+                            turnActivity.idle();
                             fireChanged();
                         });
                     }
@@ -293,6 +298,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                             transcriptHistoryCursors.clear();
                             tools.clear();
                             userEchoes.clear();
+                            turnActivity.idle();
                             // a reload rewrote the rule set wholesale; the old ids and their counts
                             // describe rules that no longer exist, so both go
                             permissions.resetCounts();
@@ -463,6 +469,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                 booting = false;
                 running = false;
                 statusText = "failed to start";
+                turnActivity.idle();
                 note("session failed to start: " + message);
                 fireChanged();
             });
@@ -588,6 +595,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         directiveRunning.set(false);
         taskModelLabels.clear();
         userEchoes.clear();
+        turnActivity.idle();
         // the policy is still reachable from a stopped session; leaving the bridge attached would
         // keep this model alive and paint onto a window that is closing
         permissions.detach();
@@ -656,6 +664,10 @@ public final class NaruSessionModel implements InteractionHost.Listener {
 
     @Override
     public void onBatch(List<TranscriptEvent> batch, InteractionHost from) {
+        // The activity model sees the batch before the transcript listener runs: the strip uses the
+        // same batch to decide whether to appear, and a tool that starts while the task poll is
+        // between ticks must not wait for the next poll to be visible.
+        turnActivity.accept(batch);
         transcript.apply(batch);
         // the same events drive two views: the transcript reads them in order as output, the tools
         // list keeps them as a table that does not get trimmed away with the chat
@@ -729,6 +741,84 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         return streamingOutput;
     }
 
+    /** The current turn's internal counters and kind; read-only and cheap. */
+    public TurnActivity turnActivity() {
+        return turnActivity;
+    }
+
+    /** True while work is actually running: tokens, a directive, or a READY/RUNNING task. */
+    public boolean isWorking() {
+        if (closed || !running) {
+            return false;
+        }
+        // A question or an external wait is the end of "working" for this strip's purpose, even
+        // when a model block is still open or the last event was a moment ago. The composer shows
+        // Send in the same state; an animated verb beside it would claim work the reader cannot
+        // start.
+        if (isWaitingForInput() || isWaitingOnEvent()) {
+            return false;
+        }
+        if (streamingOutput || directiveRunning.get()) {
+            return true;
+        }
+        // A line was just sent and the 2 Hz task poll has not seen its task yet. Bridge that gap
+        // with the turn's own start time; after that, a recent event keeps the strip up between
+        // chunks and polls. Both checks age out, so a turn that ended cannot leave the strip on for
+        // the rest of the session.
+        TurnActivity.Snapshot activity = turnActivity.snapshot();
+        if (activity.active() && activity.kind() != TurnActivity.Kind.WAITING
+                && (activity.elapsedMillis() < 2_000
+                    || System.currentTimeMillis() - turnActivity.lastEventAtMillis() < 800)) {
+            return true;
+        }
+        for (TaskRow row : tasks) {
+            NaruTaskStatus status = row.status();
+            if (status == NaruTaskStatus.READY || status == NaruTaskStatus.RUNNING) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True when the engine is parked on a question for the reader. */
+    public boolean isWaitingForInput() {
+        if (closed || !running) {
+            return false;
+        }
+        // A parked task is a reader wait even if an output block is still open or the event grace
+        // window has not expired. The composer uses the same parked state to offer Send.
+        return pending != null || parkedOnInputId >= 0;
+    }
+
+    /** True when a task is blocked on an external event rather than on the reader. */
+    public boolean isWaitingOnEvent() {
+        if (closed || !running) {
+            return false;
+        }
+        for (TaskRow row : tasks) {
+            if (row.status() == NaruTaskStatus.BLOCKED_ON_EVENT
+                    && (row.foreground() || row.conversation())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * True while the boot worker is still resolving the workspace. The session's status text also
+     * says "starting…" for a moment after a new line is submitted, but that is a turn starting,
+     * not a window that has nothing to show: the task poll or the first chunk will turn the
+     * activity strip on, and treating that text as boot state would leave the strip up forever.
+     */
+    public boolean isStarting() {
+        return !closed && booting;
+    }
+
+    /** Whether the live activity strip has anything to say right now. */
+    public boolean isActivityVisible() {
+        return isStarting() || isWorking() || isWaitingForInput() || isWaitingOnEvent();
+    }
+
     private static boolean isConsolePrompt(String text) {
         return text != null && text.trim().matches("(?i)(?:naru|なる)\\s*[›>]");
     }
@@ -800,6 +890,9 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         NaruSession current = session;
         if (current == null || closed) {
             return null;
+        }
+        if (firstLine != null && !firstLine.isBlank()) {
+            turnActivity.beginTurn();
         }
         NaruTask task = current.newTask(NaruTaskSpec.of().statements(new String[0]));
         task.taskMode(NaruTaskMode.INTERACTIVE);
@@ -919,6 +1012,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         if (!line.isBlank()) {
             rememberHistory(line);
         }
+        turnActivity.beginTurn();
         if (!markEchoDelivered(taskId, line)) {
             echoUser(line, taskId);
         }
@@ -989,6 +1083,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         if (!line.isBlank()) {
             rememberHistory(line);
         }
+        turnActivity.beginTurn();
         echoUser(line, task.id());
         statusText = "running " + line.strip();
         fireChanged();
@@ -1088,6 +1183,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             rememberHistory(line);
         }
         long taskId = request.task().id();
+        turnActivity.beginTurn();
         // A queued line was already shown when the user pressed Enqueue. When it finally drains,
         // mark that echo as delivered instead of drawing a second copy of the same sentence.
         if (!markEchoDelivered(taskId, line)) {

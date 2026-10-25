@@ -1,5 +1,6 @@
 package net.thevpc.naru.desktop.render;
 
+import net.thevpc.naru.desktop.ui.Typefaces;
 import org.junit.jupiter.api.Test;
 
 import java.util.regex.Matcher;
@@ -65,8 +66,9 @@ class TextHtmlTest {
     }
 
     @Test
-    void codeBlockIsTheSameShapeInAMonospaceFont() {
-        assertEquals("<p style='font-family:monospace;margin:2px 0'>a</p>", TextHtml.codeBlock("a"));
+    void codeBlockIsTheSameShapeInTheBundledMonospaceFace() {
+        assertEquals("<p style='font-family:" + Typefaces.MONO + ";margin:2px 0'>a</p>",
+                TextHtml.codeBlock("a"));
     }
 
     @Test

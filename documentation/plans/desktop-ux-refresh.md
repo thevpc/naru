@@ -216,8 +216,11 @@ Rules:
 
 ### 4.2 Type scale
 
-Use the system UI face (`SansSerif` / Segoe UI / SF / Inter if bundled) and a mono face
-(`JetBrains Mono` if present, else `Monospaced`) for code and tool output.
+Use the bundled **Inter** for the UI and conversation prose and the bundled **JetBrains Mono**
+for code, the composer and every data surface. Both are shipped with the app (SIL OFL 1.1, loaded
+through FlatLaf's `flatlaf-fonts-*` packs and registered by `Typefaces`) — never rely on a face
+being installed on the host. Both are composite fonts, so emoji, CJK and Arabic fall back to the
+platform instead of drawing boxes.
 
 | Token | Size / line | Weight | Use |
 | --- | --- | --- | --- |
@@ -496,7 +499,7 @@ Acceptance: the checklist below, plus all focused transcript tests and a clean b
 | Theme switch leaves stale colours in custom-painted components | Central `UiTheme` listener + `refreshThemePalette` on every pane; audit all `paintComponent` overrides. |
 | Undecorated window feels worse on Linux/Wayland | Keep the custom bar but add resize cursors, snap hints, and native-like hit targets; test on X11 and Wayland. |
 | Icon set adds a dependency or licensing burden | Draw the ~24 glyphs as simple `Icon`s first; text labels are an acceptable fallback. |
-| Font availability differs per platform | Resolve UI/mono faces through a small fallback chain; never bundle a font without a licence. |
+| Font availability differs per platform | Bundle the two faces as declared dependencies (`flatlaf-fonts-inter`, `flatlaf-fonts-jetbrains-mono`); resolve them through `Typefaces` composite fonts so missing glyphs come from the platform. |
 | Scope creep into new features | This plan changes presentation only. New behaviour goes to a separate plan. |
 
 ---

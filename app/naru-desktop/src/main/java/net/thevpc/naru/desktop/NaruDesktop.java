@@ -3,8 +3,10 @@ package net.thevpc.naru.desktop;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruWorkspaceBuilder;
+import net.thevpc.naru.desktop.ui.Typefaces;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.swing.NSwingUtils;
+import com.formdev.flatlaf.FlatLaf;
 
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -128,6 +130,12 @@ public final class NaruDesktop {
 
     private static void applyTheme(String className, boolean persist) {
         try {
+            // The app owns its typefaces: both are bundled, and FlatLaf must know the families
+            // *before* the look-and-feel is installed, because that is the pass that resolves the
+            // default UI font. This also covers a theme switch at runtime, not just startup.
+            Typefaces.install();
+            FlatLaf.setPreferredFontFamily(Typefaces.UI);
+            FlatLaf.setPreferredMonospacedFontFamily(Typefaces.MONO);
             UIManager.setLookAndFeel(className);
             themeBaseFont=UIManager.getFont("defaultFont"); if(themeBaseFont==null) themeBaseFont=UIManager.getFont("Label.font");
             UIManager.put("Button.arc", 12);
@@ -151,7 +159,13 @@ public final class NaruDesktop {
     }
 
     private static void applyScaledFontDefaults(int percent) {
-        if(themeBaseFont!=null) UIManager.put("defaultFont",themeBaseFont.deriveFont(themeBaseFont.getSize2D()*percent/100f));
+        if (themeBaseFont != null) {
+            // Rebuild from the bundled UI face rather than deriving the font the previous scale
+            // pass left in UIManager: deriving would also carry a stale family if a theme ever
+            // hands us one we do not ship.
+            UIManager.put("defaultFont", Typefaces.ui(themeBaseFont.getStyle(),
+                    themeBaseFont.getSize2D() * percent / 100f));
+        }
     }
 
     /** The theme's own font, before any interface size is applied to it. */

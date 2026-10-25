@@ -25,6 +25,11 @@ import java.util.function.Supplier;
  * Keys: Ctrl+Space or Tab ask for candidates; with the list open, Up/Down move through it and Enter
  * takes the highlighted row, so the whole interaction stays on the keyboard. With the list closed,
  * Up/Down are input history and Enter sends. Shift+Enter is always a newline.
+ * <p>
+ * A directive line drives the list by itself: every keystroke re-asks the engine, so {@code /mod}
+ * opens the command list and {@code /model use qw} narrows it the way an IDE does. Prose does not,
+ * and neither does an empty field — the engine answers an empty field with every command it knows,
+ * which is a list for a keystroke rather than for a click.
  */
 public final class ComposerArea extends RSyntaxTextArea {
 
@@ -49,7 +54,7 @@ public final class ComposerArea extends RSyntaxTextArea {
         super(3, 40);
         this.source = source;
         TextAreas.apply(this);
-        UiFonts.apply(this, UiFonts.BODY, Font.PLAIN);
+        UiFonts.applyMono(this, UiFonts.BODY, Font.PLAIN);
         setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 6, 4, 6));
         popup.setOnPick(this::insertCandidate);
         getDocument().addUndoableEditListener(undo);
@@ -59,17 +64,17 @@ public final class ComposerArea extends RSyntaxTextArea {
         getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             @Override
             public void insertUpdate(javax.swing.event.DocumentEvent e) {
-                popup.hide();
+                onUserEdited();
             }
 
             @Override
             public void removeUpdate(javax.swing.event.DocumentEvent e) {
-                popup.hide();
+                onUserEdited();
             }
 
             @Override
             public void changedUpdate(javax.swing.event.DocumentEvent e) {
-                popup.hide();
+                refreshCompletion();
             }
         });
         // the hint is painted only while the field is empty and unowned by the keyboard, so both of
@@ -85,14 +90,14 @@ public final class ComposerArea extends RSyntaxTextArea {
                 repaint();
             }
         });
-        // Only a caret that actually MOVED makes the span stale. Swing also fires this listener when
-        // focus arrives or leaves, and a list that vanishes because the window noticed a focus event
-        // is a list the user cannot click: the row they aimed at is gone before the press lands.
+        // Only a caret that actually MOVED re-asks. Swing also fires this listener when focus arrives
+        // or leaves, and a list that vanishes because the window noticed a focus event is a list the
+        // user cannot click: the row they aimed at is gone before the press lands.
         addCaretListener(e -> {
             if (e.getDot() != lastCaretDot || e.getMark() != lastCaretMark) {
                 lastCaretDot = e.getDot();
                 lastCaretMark = e.getMark();
-                popup.hide();
+                refreshCompletion();
             }
         });
         installKeys();
@@ -100,6 +105,10 @@ public final class ComposerArea extends RSyntaxTextArea {
 
     private int lastCaretDot = -1;
     private int lastCaretMark = -1;
+    /** True while the widget edits the text itself, so a programmatic change is not "the user typed". */
+    private boolean applyingProgrammatically;
+    /** Escape closes the list and keeps it closed until the next keystroke re-opens it. */
+    private boolean dismissed;
 
     /**
      * The card lives in the window's layered pane, one step outside this component, so nothing would
@@ -154,6 +163,7 @@ public final class ComposerArea extends RSyntaxTextArea {
         am.put("naru-dismiss", action(() -> {
             if (popup.isVisible()) {
                 popup.hide();
+                dismissed = true;
             }
         }));
         im.put(KeyStroke.getKeyStroke(KeyEvent.VK_BACK_SPACE,
@@ -163,11 +173,82 @@ public final class ComposerArea extends RSyntaxTextArea {
 
     /** Ask the engine for candidates at the caret and put the list where the caret is. */
     public void requestCompletion() {
+        dismissed = false;
+        popup.show(this, caretRect(), ask());
+    }
+
+    /**
+     * The keystroke path: re-ask the engine and let the answer decide whether the list is up.
+     * Hiding on every edit used to be the only honest response, because the popup remembered the
+     * span it was asked for and inserting at an offset computed against different text corrupts the
+     * line silently. Re-asking makes that span impossible to stale: the list now filters as the user
+     * types, and the row it offers always describes the text that is actually there.
+     */
+    private void onUserEdited() {
+        dismissed = false;
+        refreshCompletion();
+    }
+
+    private void refreshCompletion() {
+        if (applyingProgrammatically) {
+            return;
+        }
+        NaruLineCompletion.Result r = ask();
+        if (dismissed || !autoCompletable(r)) {
+            popup.hide();
+            return;
+        }
+        popup.show(this, caretRect(), r);
+    }
+
+    /**
+     * Whether a keystroke should open the list on its own. Only a directive line, which is what the
+     * user asked for: the token being typed is a command or a path, or the caret sits in an argument
+     * of a line whose first word starts with a slash. An empty composer answers with every directive
+     * the engine knows, and a list that appears because the window noticed a click is noise the user
+     * did not ask for.
+     */
+    private boolean autoCompletable(NaruLineCompletion.Result r) {
+        if (r.candidates() == null || r.candidates().isEmpty()) {
+            return false;
+        }
+        String token = r.token() == null ? "" : r.token();
+        if (token.startsWith("/")) {
+            return true;
+        }
+        return r.replaceStart() > 0 && firstWord().startsWith("/");
+    }
+
+    private String firstWord() {
+        String t = getText();
+        int i = 0;
+        while (i < t.length() && Character.isWhitespace(t.charAt(i))) {
+            i++;
+        }
+        int j = i;
+        while (j < t.length() && !Character.isWhitespace(t.charAt(j))) {
+            j++;
+        }
+        return t.substring(i, j);
+    }
+
+    /** Run an edit the widget asked for itself, without the keystroke path reacting to it. */
+    private void editQuietly(Runnable body) {
+        boolean previous = applyingProgrammatically;
+        applyingProgrammatically = true;
+        try {
+            body.run();
+        } finally {
+            applyingProgrammatically = previous;
+        }
+    }
+
+    private NaruLineCompletion.Result ask() {
         long started = System.nanoTime();
         NaruLineCompletion.Result r = source.complete(getText(), getCaretPosition());
         lastCompletionNanos = System.nanoTime() - started;
         lastCompletionCount = r.candidates() == null ? 0 : r.candidates().size();
-        popup.show(this, caretRect(), r);
+        return r;
     }
 
     /** Move through the list; the text area keeps the caret, so the popup cannot take focus. */
@@ -197,8 +278,10 @@ public final class ComposerArea extends RSyntaxTextArea {
         if (start < 0 || end > text.length() || start > end) {
             return;
         }
-        replaceRange(c.insert(), start, end);
-        setCaretPosition(start + c.insert().length());
+        editQuietly(() -> {
+            replaceRange(c.insert(), start, end);
+            setCaretPosition(start + c.insert().length());
+        });
         // A pick is not a focus change: the user is still writing this line, and after a click the
         // keyboard has to be here rather than wherever the window's traversal order went.
         requestFocusInWindow();
@@ -208,8 +291,10 @@ public final class ComposerArea extends RSyntaxTextArea {
         if (value == null) {
             return;
         }
-        setText(value);
-        setCaretPosition(value.length());
+        editQuietly(() -> {
+            setText(value);
+            setCaretPosition(value.length());
+        });
     }
 
     /**
@@ -289,7 +374,7 @@ public final class ComposerArea extends RSyntaxTextArea {
             // while the field has the keyboard the caret is the only hint it needs
             return;
         }
-        java.awt.Font f = UiFonts.font(UiFonts.BODY, java.awt.Font.PLAIN);
+        java.awt.Font f = UiFonts.monoFont(UiFonts.BODY, java.awt.Font.PLAIN);
         java.awt.Insets in = getInsets();
         g.setColor(UiPalette.muted());
         g.setFont(f);

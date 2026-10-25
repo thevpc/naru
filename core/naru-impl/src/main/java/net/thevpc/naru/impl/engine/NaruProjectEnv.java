@@ -83,4 +83,16 @@ public class NaruProjectEnv implements NaruEnv {
         out.putAll(projectPrivateEnv.toMap());
         return out;
     }
+
+    @Override
+    public Map<String, NElement> entries(NaruVisibility visibility) {
+        if (visibility == null || visibility == NaruVisibility.MIXED) {
+            return entries();
+        }
+        // one file, un-merged: a listing that has to say which file a key lives in cannot
+        // be built from entries(), which silently drops the loser of a private/public pair
+        return new LinkedHashMap<>(visibility == NaruVisibility.PUBLIC
+                ? projectPublicEnv.toMap()
+                : projectPrivateEnv.toMap());
+    }
 }
