@@ -64,6 +64,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private NaruInputRequest shownFor;
     private long selectedTaskId = -1;
     private java.util.List<net.thevpc.naru.api.model.NaruModelInfo> modelInfos = java.util.List.of();
+    private final java.util.Set<String> selectedModelProviders = new java.util.LinkedHashSet<>();
     private net.thevpc.naru.api.agent.NaruSession modelCatalogSession;
     private boolean modelCatalogLoading;
 
@@ -831,8 +832,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         java.util.Set<String> providersWithModels = new java.util.LinkedHashSet<>();
         modelInfos.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).forEach(providersWithModels::add);
 
-        javax.swing.JCheckBox allProvidersFlag = new javax.swing.JCheckBox("All providers", true);
-        java.util.Set<String> selectedProviders = new java.util.LinkedHashSet<>(allProviderNames);
+        javax.swing.JCheckBox allProvidersFlag = new javax.swing.JCheckBox("Show providers without models", true);
+        selectedModelProviders.clear();
+        selectedModelProviders.addAll(allProviderNames);
 
         javax.swing.JTextField providerFilter = new javax.swing.JTextField();
         providerFilter.setFont(providerFilter.getFont().deriveFont(11f));
@@ -855,10 +857,10 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                 if (!q.isEmpty() && !name.toLowerCase(java.util.Locale.ROOT).contains(q)) continue;
                 javax.swing.JCheckBox cb = new javax.swing.JCheckBox(ModelIcons.glyph(name) + "  " + name);
                 cb.setForeground(ModelIcons.color(name));
-                cb.setSelected(selectedProviders.contains(name) || selectedProviders.isEmpty());
+                cb.setSelected(selectedModelProviders.contains(name) || selectedModelProviders.isEmpty());
                 cb.addActionListener(e -> {
-                    if (cb.isSelected()) selectedProviders.add(name);
-                    else selectedProviders.remove(name);
+                    if (cb.isSelected()) selectedModelProviders.add(name);
+                    else selectedModelProviders.remove(name);
                     refilterHolder[0].run();
                 });
                 providerBoxPanel.add(cb);
@@ -894,7 +896,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                 for (int i = 0; i < all.size(); i++) {
                     var x = all.get(i);
                     String hay = x.toString() + " " + x.quantization() + " " + x.parameterSize() + " " + x.family() + " " + (x.capabilities() == null ? "" : x.capabilities().keys());
-                    boolean providerMatch = selectedProviders.isEmpty() || selectedProviders.contains(x.provider());
+                    boolean providerMatch = selectedModelProviders.isEmpty() || selectedModelProviders.contains(x.provider());
                     boolean anySourceSelected = srcLocal.isSelected() || srcRemote.isSelected();
                     boolean sourceMatch;
                     if (!anySourceSelected) {
@@ -957,10 +959,40 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         body.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         JPanel top = new JPanel(new BorderLayout(0, 6));
         JPanel filters = new JPanel(new BorderLayout(5, 5));
-        filters.add(filter, BorderLayout.NORTH);
+        filters.add(filter, BorderLayout.SOUTH);
+        javax.swing.JButton selectAllProviders = new javax.swing.JButton("All");
+        javax.swing.JButton selectNoProviders = new javax.swing.JButton("None");
+        selectAllProviders.setFont(selectAllProviders.getFont().deriveFont(10f));
+        selectNoProviders.setFont(selectNoProviders.getFont().deriveFont(10f));
+        selectAllProviders.addActionListener(e -> {
+            for (java.awt.Component c : providerBoxPanel.getComponents()) {
+                if (c instanceof javax.swing.JCheckBox cb) {
+                    cb.setSelected(true);
+                    String name = cb.getText().replaceFirst("^\\S+\\s+", "");
+                    selectedModelProviders.add(name);
+                }
+            }
+            refilterHolder[0].run();
+        });
+        selectNoProviders.addActionListener(e -> {
+            selectedModelProviders.clear();
+            for (java.awt.Component c : providerBoxPanel.getComponents()) {
+                if (c instanceof javax.swing.JCheckBox cb) cb.setSelected(false);
+            }
+            refilterHolder[0].run();
+        });
+        javax.swing.JPanel providerButtons = new javax.swing.JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 2, 0));
+        providerButtons.setOpaque(false);
+        providerButtons.add(selectAllProviders);
+        providerButtons.add(selectNoProviders);
+
         JPanel providerPanel = new JPanel(new BorderLayout(4, 4));
         providerPanel.setBorder(javax.swing.BorderFactory.createTitledBorder("Providers (none = all)"));
-        providerPanel.add(providerFilter, BorderLayout.NORTH);
+        javax.swing.JPanel providerNorth = new javax.swing.JPanel(new BorderLayout(4, 2));
+        providerNorth.setOpaque(false);
+        providerNorth.add(providerFilter, BorderLayout.CENTER);
+        providerNorth.add(providerButtons, BorderLayout.EAST);
+        providerPanel.add(providerNorth, BorderLayout.NORTH);
         providerPanel.add(providerScroll, BorderLayout.CENTER);
         providerPanel.add(allProvidersFlag, BorderLayout.SOUTH);
 
@@ -968,7 +1000,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         facets.add(providerPanel);
         facets.add(sourcePanel);
         facets.add(capPanel);
-        filters.add(facets, BorderLayout.SOUTH);
+        filters.add(facets, BorderLayout.NORTH);
         JPanel titleAndSort = new JPanel(new BorderLayout(5, 0));
         titleAndSort.add(new JLabel("Models available in this session"), BorderLayout.CENTER);
         JPanel sortBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
@@ -977,19 +1009,6 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         sortBox.add(sort);
         titleAndSort.add(sortBox, BorderLayout.EAST);
         top.add(titleAndSort, BorderLayout.NORTH);
-        String absent = absentProvidersSummary();
-        if (absent != null) {
-            // A provider with an empty catalog is simply not in the list above, so a user whose
-            // remote models are gone cannot tell "no key" from "not installed". Say which
-            // providers are registered but contributed nothing, and why.
-            JLabel note = new JLabel("<html><small>" + absent + "</small></html>");
-            note.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
-            note.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
-            JPanel north = new JPanel(new BorderLayout());
-            north.add(titleAndSort, BorderLayout.NORTH);
-            north.add(note, BorderLayout.SOUTH);
-            top.add(north, BorderLayout.NORTH);
-        }
         top.add(filters, BorderLayout.SOUTH);
         java.awt.event.ActionListener refilter = e -> {
             String q = filter.getText();
@@ -1057,6 +1076,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         try {
             for (var p : current.registry().modelProviders().values()) {
                 if (listed.contains(p.name().toLowerCase(java.util.Locale.ROOT))) continue;
+                if (!selectedModelProviders.isEmpty() && !selectedModelProviders.contains(p.name())) continue;
                 if (!p.isEnabled()) {
                     notes.add(p.name() + ": disabled");
                     continue;
