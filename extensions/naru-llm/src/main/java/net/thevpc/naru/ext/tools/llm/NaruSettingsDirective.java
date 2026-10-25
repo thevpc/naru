@@ -167,13 +167,11 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
 
     private NaruStmtResult write(NaruTask task, NaruVisibility visibility, String key, String rawValue) {
         boolean remove = rawValue.isEmpty() || "null".equalsIgnoreCase(rawValue);
-        Object value = remove ? null : parseValue(rawValue);
+        NElement value = remove ? null : NaruTaskConfig.parseValue(rawValue);
         // The config env takes an NElement, which is also how the file reads it back,
         // so a boolean written here is a boolean read there. A null value removes the
         // key from the chosen file only, leaving the other visibility untouched.
-        task.session().setProjectEnv(key,
-                value == null ? null : NElement.of(value),
-                visibility);
+        task.session().setProjectEnv(key, value, visibility);
         NMsg msg = remove
                 ? NMsg.ofC("removed %s from %s", NMsg.ofStyledPrimary1(key), label(visibility))
                 : NMsg.ofC("%s = %s (%s)", NMsg.ofStyledPrimary1(key), rawValue, label(visibility));
@@ -198,25 +196,6 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
                 ? resolved.scope()
                 : resolved.scope() + ", " + label(resolved.visibility());
         return key + " = " + NaruTaskConfig.toText(resolved.value()) + " (" + where + ")";
-    }
-
-    /**
-     * Parses a typed value the way an env file would hold it, so what a key reads
-     * back does not depend on which file it was written through.
-     */
-    private Object parseValue(String raw) {
-        String v = raw.trim();
-        if ("true".equalsIgnoreCase(v) || "false".equalsIgnoreCase(v)) {
-            return Boolean.parseBoolean(v);
-        }
-        try {
-            if (v.indexOf('.') >= 0) {
-                return Double.parseDouble(v);
-            }
-            return Long.parseLong(v);
-        } catch (NumberFormatException notANumber) {
-            return raw;
-        }
     }
 
     private NaruStmtResult error(NaruTask task, String format, Object... args) {

@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.agent;
 
 import net.thevpc.naru.api.registry.NaruAgentExtension;
+import net.thevpc.naru.api.registry.NaruConfigKey;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
@@ -137,6 +138,24 @@ public interface NaruWorkspace {
      * without writing a file. Nothing survives a restart.
      */
     NaruEnv agentEnv();
+
+    /**
+     * The declared configuration keys this build understands, resolved without any session.
+     *
+     * <p>The session-scoped view is {@code session.registry().configKeys()}, which adds keys
+     * that only a live session can know (a provider's dynamic {@code model.*} keys, for
+     * instance). This is the workspace-level counterpart: what the installed
+     * {@link net.thevpc.naru.api.registry.NaruConfigKeyProvider}s declare when asked with no
+     * session, so a settings editor can offer the known vocabulary before a session exists.
+     *
+     * <p>A provider that needs a session usually contributes nothing here; merge with a live
+     * session's registry when one is available. The result is sorted by key with duplicates
+     * dropped. The default returns an empty list: a workspace without an implementation of
+     * this method simply has no catalog to offer.
+     */
+    default List<NaruConfigKey> configKeys() {
+        return List.of();
+    }
 
     /** Opens a shared, backend-neutral feature store scoped to the project. */
     NaruDataStore dataStore(String namespace);

@@ -1,5 +1,8 @@
 package net.thevpc.naru.desktop.ui;
 
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
+
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JComboBox;
@@ -8,12 +11,14 @@ import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JSlider;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.function.Supplier;
 
 /** Full-client-area settings surface. Categories are a stable home for future preferences. */
 public final class SettingsPane extends JPanel {
@@ -29,7 +34,8 @@ public final class SettingsPane extends JPanel {
             new Theme("FlatLaf Mac Light", "com.formdev.flatlaf.themes.FlatMacLightLaf"),
             new Theme("FlatLaf Mac Dark", "com.formdev.flatlaf.themes.FlatMacDarkLaf"));
 
-    public SettingsPane(String selectedTheme, Consumer<String> onThemeChanged, int selectedFontScale, IntConsumer onFontScaleChanged, Runnable back) {
+    public SettingsPane(String selectedTheme, Consumer<String> onThemeChanged, int selectedFontScale, IntConsumer onFontScaleChanged, Runnable back,
+                        Supplier<NaruWorkspace> workspace, Supplier<NaruSession> liveSession) {
         super(new BorderLayout());
         setBorder(BorderFactory.createEmptyBorder(22, 26, 24, 26));
         JPanel header = new JPanel(new BorderLayout(24, 0));
@@ -90,7 +96,30 @@ public final class SettingsPane extends JPanel {
         JPanel texts = new JPanel(new BorderLayout(0, 6)); texts.add(heading, BorderLayout.NORTH); texts.add(copy, BorderLayout.SOUTH);
         content.add(texts, BorderLayout.NORTH); content.add(selector, BorderLayout.CENTER);
         appearance.add(content, BorderLayout.NORTH);
-        JPanel page = new JPanel(new BorderLayout(22, 0)); page.add(navigation, BorderLayout.WEST); page.add(appearance, BorderLayout.CENTER);
+        // one card per section; the list is the switcher, so every row it offers must show
+        // something real when selected
+        CardLayout cards = new CardLayout();
+        JPanel pageArea = new JPanel(cards);
+        pageArea.add(appearance, "Appearance");
+        JPanel shortcuts = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JLabel shortcutsNote = new JLabel("Shortcuts are fixed in this build; a shortcut editor is planned.");
+        UiFonts.apply(shortcutsNote, UiFonts.BODY, Font.PLAIN);
+        shortcuts.add(shortcutsNote);
+        pageArea.add(shortcuts, "Input & shortcuts");
+        WorkspaceEnvPane envPane = new WorkspaceEnvPane(workspace, liveSession);
+        envPane.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(borderColor == null ? new Color(120, 120, 120) : borderColor),
+                BorderFactory.createEmptyBorder(20, 22, 22, 22)));
+        pageArea.add(envPane, "Workspace");
+        sections.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                String chosen = sections.getSelectedValue();
+                if (chosen != null) {
+                    cards.show(pageArea, chosen);
+                }
+            }
+        });
+        JPanel page = new JPanel(new BorderLayout(22, 0)); page.add(navigation, BorderLayout.WEST); page.add(pageArea, BorderLayout.CENTER);
         add(page, BorderLayout.CENTER);
     }
 }

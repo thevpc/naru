@@ -284,6 +284,29 @@ public final class NaruTaskConfig {
     }
 
     /**
+     * Parses a typed value the way an env file would hold it: a boolean, a number, or
+     * otherwise the text itself, wrapped as an {@code NElement}.
+     *
+     * <p>One rule for every writer -- {@code /settings}, a script, and the desktop settings
+     * panel -- because a value written as the string {@code "true"} by one door and the
+     * boolean {@code true} by another does not read back the same through
+     * {@link #getBoolean} on every path.
+     */
+    public static NElement parseValue(String raw) {
+        String v = raw.trim();
+        if ("true".equalsIgnoreCase(v) || "false".equalsIgnoreCase(v)) {
+            return NElement.of(Boolean.parseBoolean(v));
+        }
+        try {
+            return v.indexOf('.') >= 0
+                    ? NElement.of(Double.parseDouble(v))
+                    : NElement.of(Long.parseLong(v));
+        } catch (NumberFormatException notANumber) {
+            return NElement.of(raw);
+        }
+    }
+
+    /**
      * Renders any env value as text.
      *
      * <p>An {@code NElement} is stringified rather than unwrapped by type, because a list

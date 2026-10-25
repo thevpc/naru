@@ -937,7 +937,12 @@ public final class MainWindow extends JFrame {
         SettingsPane pane = new SettingsPane(NaruDesktop.selectedTheme(), theme -> {
             try { NaruDesktop.applyTheme(theme); }
             catch (RuntimeException ex) { net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this,"Appearance",String.valueOf(ex.getMessage())); }
-        }, NaruDesktop.fontScale(), NaruDesktop::setFontScale, this::showWorkspace);
+        }, NaruDesktop.fontScale(), NaruDesktop::setFontScale, this::showWorkspace,
+            // the desktop's singleton workspace is built during startup catalog loading; asking
+            // for it here never bootstraps a second one. The live session adds its registry keys
+            // to the completion catalog, and is null while no session is open.
+            () -> NaruDesktop.workspace(projectDirectory),
+            () -> session == null ? null : session.session());
         center.removeAll(); center.setLayout(new BorderLayout()); center.add(pane, BorderLayout.CENTER);
         center.revalidate(); center.repaint();
     }

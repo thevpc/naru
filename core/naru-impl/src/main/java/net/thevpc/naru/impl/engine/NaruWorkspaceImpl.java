@@ -2,6 +2,8 @@ package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.*;
 import net.thevpc.naru.api.registry.NaruAgentExtension;
+import net.thevpc.naru.api.registry.NaruConfigKey;
+import net.thevpc.naru.api.registry.NaruConfigKeyProvider;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
@@ -11,6 +13,7 @@ import net.thevpc.naru.api.store.NaruDataStoreConfig;
 import net.thevpc.naru.api.store.NaruDataStoreProvider;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.registry.NaruRegistry;
+import net.thevpc.naru.impl.config.NaruCoreConfigKeyProvider;
 import net.thevpc.nuts.app.NApplication;
 import net.thevpc.nuts.artifact.*;
 import net.thevpc.nuts.command.NSearch;
@@ -388,6 +391,65 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     @Override
     public NaruEnv agentEnv() {
         return agentEnv;
+    }
+
+    /**
+     * Discovered once and kept: service loading walks the extension classloader, and the
+     * catalog is queried per keystroke by any editor, so it must not re-load per call.
+     * A provider's keys may still change between calls (dynamic keys), only the provider
+     * set is cached.
+     */
+    private volatile List<NaruConfigKeyProvider> configKeyProviders;
+
+    @Override
+    public List<NaruConfigKey> configKeys() {
+        List<NaruConfigKeyProvider> providers = configKeyProviders;
+        if (providers == null) {
+            List<NaruConfigKeyProvider> loaded = new ArrayList<>();
+            loaded.add(new NaruCoreConfigKeyProvider());
+            try {
+                for (NaruConfigKeyProvider provider : NServiceLoader
+                        .of(NaruConfigKeyProvider.class, null, classLoader().asClassLoader())
+                        .loadAll(null)) {
+                    boolean duplicate = false;
+                    for (NaruConfigKeyProvider known : loaded) {
+                        if (known.name().equals(provider.name())) {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                    if (!duplicate) {
+                        loaded.add(provider);
+                    }
+                }
+            } catch (RuntimeException ex) {
+                // discovery must not break the catalog: the core keys alone are still an answer
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "config-key providers unavailable: %s", ex.getMessage()));
+            }
+            configKeyProviders = loaded;
+            providers = loaded;
+        }
+        // asked with a null session: session-scoped providers contribute nothing or throw,
+        // and both are tolerated the same way NaruRegistryImpl.configKeys() tolerates them
+        TreeMap<String, NaruConfigKey> byKey = new TreeMap<>();
+        for (NaruConfigKeyProvider provider : providers) {
+            try {
+                List<NaruConfigKey> keys = provider.configKeys(null);
+                if (keys != null) {
+                    for (NaruConfigKey key : keys) {
+                        if (key != null) {
+                            byKey.putIfAbsent(key.key(), key);
+                        }
+                    }
+                }
+            } catch (RuntimeException e) {
+                log(NaruLogMode.DEBUG, NMsg.ofC(
+                        "config-key provider '%s' failed without a session: %s",
+                        provider.name(), e.getMessage()));
+            }
+        }
+        return new ArrayList<>(byKey.values());
     }
 
     public NaruRegistrationStore getRegistrations() {
