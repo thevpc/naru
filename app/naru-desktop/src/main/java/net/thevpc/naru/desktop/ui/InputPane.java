@@ -753,7 +753,42 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     }
 
     private void chooseModel() {
-        if (modelCatalogLoading) return;
+        if (session.session() == null) return;
+        if (modelCatalogLoading) {
+            DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Models", "Loading the model list…");
+            return;
+        }
+        modelCatalogLoading = true;
+        model.setEnabled(false);
+        model.setText(ModelIcons.glyph(null) + " loading…");
+        final var owner = session.session();
+        new javax.swing.SwingWorker<java.util.List<net.thevpc.naru.api.model.NaruModelInfo>, Void>() {
+            protected java.util.List<net.thevpc.naru.api.model.NaruModelInfo> doInBackground() {
+                return java.util.List.copyOf(owner.registry().modelsInfos(owner));
+            }
+            protected void done() {
+                modelCatalogLoading = false;
+                if (session.session() != owner) return;
+                try {
+                    modelInfos = get();
+                    modelCatalogSession = owner;
+                } catch (Exception ignored) {
+                    modelInfos = java.util.List.of();
+                    modelCatalogSession = owner;
+                }
+                model.setEnabled(true);
+                refreshModels();
+                showModelChooser();
+            }
+        }.execute();
+        return;
+    }
+
+    private void showModelChooser() {
+        if (modelInfos == null) modelInfos = java.util.List.of();
+        final javax.swing.JLabel emptyLabel = new javax.swing.JLabel("No models match the filters.");
+        emptyLabel.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+        emptyLabel.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
         DefaultListModel<net.thevpc.naru.api.model.NaruModelInfo> rows = new DefaultListModel<>();
         DefaultListModel<net.thevpc.naru.api.model.NaruModelInfo> all = new DefaultListModel<>();
         modelInfos.forEach(info -> {
@@ -797,23 +832,40 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         modelInfos.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).forEach(providersWithModels::add);
 
         javax.swing.JCheckBox allProvidersFlag = new javax.swing.JCheckBox("All providers", true);
-        javax.swing.DefaultListModel<String> providerModel = new javax.swing.DefaultListModel<>();
-        allProviderNames.forEach(providerModel::addElement);
+        java.util.Set<String> selectedProviders = new java.util.LinkedHashSet<>(allProviderNames);
 
-        javax.swing.JList<String> providerList = new javax.swing.JList<>(providerModel);
-        providerList.setSelectionMode(javax.swing.ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-        providerList.setVisibleRowCount(Math.min(4, Math.max(2, allProviderNames.size())));
-        providerList.setCellRenderer(new javax.swing.DefaultListCellRenderer() {
-            public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
-                javax.swing.JLabel l = (javax.swing.JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                String p = String.valueOf(value);
-                l.setText(ModelIcons.glyph(p) + "  " + p);
-                if (!isSelected) l.setForeground(ModelIcons.color(p));
-                return l;
+        javax.swing.JTextField providerFilter = new javax.swing.JTextField();
+        providerFilter.setFont(providerFilter.getFont().deriveFont(11f));
+        providerFilter.putClientProperty("JTextField.placeholderText", "Filter providers…");
+
+        javax.swing.JPanel providerBoxPanel = new javax.swing.JPanel();
+        providerBoxPanel.setLayout(new javax.swing.BoxLayout(providerBoxPanel, javax.swing.BoxLayout.Y_AXIS));
+        javax.swing.JScrollPane providerScroll = new javax.swing.JScrollPane(providerBoxPanel);
+        providerScroll.setBorder(null);
+        providerScroll.setPreferredSize(new java.awt.Dimension(200, 120));
+
+        Runnable[] refilterHolder = new Runnable[1];
+        Runnable rebuildProviders = () -> {
+            providerBoxPanel.removeAll();
+            String q = providerFilter.getText().trim().toLowerCase(java.util.Locale.ROOT);
+            java.util.List<String> names = allProvidersFlag.isSelected()
+                    ? new java.util.ArrayList<>(allProviderNames)
+                    : new java.util.ArrayList<>(providersWithModels);
+            for (String name : names) {
+                if (!q.isEmpty() && !name.toLowerCase(java.util.Locale.ROOT).contains(q)) continue;
+                javax.swing.JCheckBox cb = new javax.swing.JCheckBox(ModelIcons.glyph(name) + "  " + name);
+                cb.setForeground(ModelIcons.color(name));
+                cb.setSelected(selectedProviders.contains(name) || selectedProviders.isEmpty());
+                cb.addActionListener(e -> {
+                    if (cb.isSelected()) selectedProviders.add(name);
+                    else selectedProviders.remove(name);
+                    refilterHolder[0].run();
+                });
+                providerBoxPanel.add(cb);
             }
-        });
-        javax.swing.JScrollPane providerScroll = new javax.swing.JScrollPane(providerList);
-        providerScroll.setBorder(javax.swing.BorderFactory.createTitledBorder("Providers (none = all)"));
+            providerBoxPanel.revalidate();
+            providerBoxPanel.repaint();
+        };
 
         javax.swing.JCheckBox srcLocal = new javax.swing.JCheckBox("Local");
         javax.swing.JCheckBox srcRemote = new javax.swing.JCheckBox("Remote");
@@ -842,7 +894,6 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                 for (int i = 0; i < all.size(); i++) {
                     var x = all.get(i);
                     String hay = x.toString() + " " + x.quantization() + " " + x.parameterSize() + " " + x.family() + " " + (x.capabilities() == null ? "" : x.capabilities().keys());
-                    java.util.List<String> selectedProviders = providerList.getSelectedValuesList();
                     boolean providerMatch = selectedProviders.isEmpty() || selectedProviders.contains(x.provider());
                     boolean anySourceSelected = srcLocal.isSelected() || srcRemote.isSelected();
                     boolean sourceMatch;
@@ -867,6 +918,13 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                     matches.sort(java.util.Comparator.comparing(x -> x.provider() + "/" + x.model(), String.CASE_INSENSITIVE_ORDER));
                 rows.clear();
                 rows.addAll(matches);
+                if (matches.isEmpty()) {
+                    String reason = absentProvidersSummary();
+                    emptyLabel.setText(reason == null ? "No models match the filters." : reason);
+                    emptyLabel.setVisible(true);
+                } else {
+                    emptyLabel.setVisible(false);
+                }
             }
 
             public void insertUpdate(javax.swing.event.DocumentEvent e) {
@@ -900,8 +958,14 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         JPanel top = new JPanel(new BorderLayout(0, 6));
         JPanel filters = new JPanel(new BorderLayout(5, 5));
         filters.add(filter, BorderLayout.NORTH);
+        JPanel providerPanel = new JPanel(new BorderLayout(4, 4));
+        providerPanel.setBorder(javax.swing.BorderFactory.createTitledBorder("Providers (none = all)"));
+        providerPanel.add(providerFilter, BorderLayout.NORTH);
+        providerPanel.add(providerScroll, BorderLayout.CENTER);
+        providerPanel.add(allProvidersFlag, BorderLayout.SOUTH);
+
         JPanel facets = new JPanel(new java.awt.GridLayout(1, 3, 6, 6));
-        facets.add(providerScroll);
+        facets.add(providerPanel);
         facets.add(sourcePanel);
         facets.add(capPanel);
         filters.add(facets, BorderLayout.SOUTH);
@@ -932,19 +996,14 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             filter.setText(q + " ");
             filter.setText(q);
         };
-        allProvidersFlag.addActionListener(e -> {
-            java.util.List<String> selected = new java.util.ArrayList<>(providerList.getSelectedValuesList());
-            providerModel.clear();
-            java.util.List<String> names = allProvidersFlag.isSelected() ? allProviderNames : new java.util.ArrayList<>(providersWithModels);
-            names.stream().sorted(String.CASE_INSENSITIVE_ORDER).forEach(providerModel::addElement);
-            for (String s : selected) {
-                int idx = -1;
-                for (int i = 0; i < providerModel.size(); i++) if (providerModel.get(i).equals(s)) { idx = i; break; }
-                if (idx >= 0) providerList.addSelectionInterval(idx, idx);
-            }
-            refilter.actionPerformed(null);
+        refilterHolder[0] = () -> refilter.actionPerformed(null);
+        allProvidersFlag.addActionListener(e -> rebuildProviders.run());
+        providerFilter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { rebuildProviders.run(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { rebuildProviders.run(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { rebuildProviders.run(); }
         });
-        providerList.addListSelectionListener(e -> refilter.actionPerformed(null));
+        rebuildProviders.run();
         srcLocal.addActionListener(refilter);
         srcRemote.addActionListener(refilter);
         capVision.addActionListener(refilter);
@@ -953,8 +1012,12 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         capEmbeddings.addActionListener(refilter);
         capFree.addActionListener(refilter);
         sort.addActionListener(refilter);
+        javax.swing.JPanel centerPanel = new javax.swing.JPanel(new java.awt.BorderLayout());
+        javax.swing.JScrollPane listScroll = new javax.swing.JScrollPane(list);
+        centerPanel.add(listScroll, java.awt.BorderLayout.CENTER);
+        centerPanel.add(emptyLabel, java.awt.BorderLayout.SOUTH);
         body.add(top, BorderLayout.NORTH);
-        body.add(new JScrollPane(list), BorderLayout.CENTER);
+        body.add(centerPanel, BorderLayout.CENTER);
         body.add(select, BorderLayout.SOUTH);
         DesktopDialog.setBody(dialog, body);
         DesktopDialog.showCentered(dialog, SwingUtilities.getWindowAncestor(this), 760, 560);
