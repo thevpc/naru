@@ -20,7 +20,7 @@ changes.
 | Live activity counters | `model/TurnActivity.java` |
 | Live activity strip | `ui/TurnActivityBar.java` |
 | Compact working-tree change counts for the strip | `diff/GitChangeSummary.java` |
-| Floating "jump to latest" button | `ui/TailScrollPane.java` |
+| Floating "jump to latest" button | `ui/TailOverlay.java` |
 
 ## Invariants that must not be broken
 
@@ -71,11 +71,19 @@ end (`HtmlPanes.forwardWheelAtEdges`), so the small scroller does not trap the c
 
 ## Tail button
 
-`TailScrollPane` is the `JScrollPane` inside `TranscriptPane` (still component index 1, so existing
-tests keep casting it). It positions a floating `↓` button over the lower-right corner and never
-takes part in the scroll layout. `TranscriptPane.updateTailButton()` sets it visible when
-`!isAtBottom()`; it is refreshed by the scrollbar adjustment listener, the wheel listener, row
-rendering, text refreshes and `followTail()`.
+`TailOverlay` is the center component of `TranscriptPane`: a `JLayeredPane` holding the one
+`JScrollPane` in its default layer and the floating `↓` button in a popup layer. The button is a
+sibling of the scroll pane, not a child of it. That is deliberate: the viewport's optimized scroll
+path blits its backing store onto the screen, and a button painted inside the scroll pane is painted
+over by that blit until something forces a full repaint (the old implementation only reappeared on a
+window resize). A sibling in a higher layer is outside the viewport's clip, so scrolling and card
+repaints cannot erase it. Tests reach the scroller through `TranscriptPane.scrollPane()`.
+
+`TranscriptPane.updateTailButton()` sets it visible when `!isAtBottom()`; it is refreshed by the
+scrollbar adjustment listener, the wheel listener, row rendering, text refreshes, `followTail()`,
+and by `TailOverlay.doLayout()` after a resize. The overlay lays out the scroll pane to its full
+bounds and positions the button over the lower-right corner; the button never takes part in the
+scroll layout.
 
 `BOTTOM_MARGIN` is 4 px, not a wide dead zone: a single trackpad or wheel notch must reveal the
 button, while a couple of pixels of layout rounding still count as "at the end". The 48 px
@@ -127,9 +135,13 @@ and the Workbench Changes tab are unchanged; this is a compact mirror, not a rep
 
 - **The old fold threshold (120 lines).** It only delayed the expensive layout pass; 40 lines is
   the current bound, and the constant is the single source of truth.
-- **A second `JScrollPane` around the whole transcript.** The outer scroll pane must stay at
-  `TranscriptPane` child index 1 and remain the only scroller for the column; per-card scrollers
-  live inside card bodies and never re-parent the column.
+- **A second `JScrollPane` around the whole transcript.** The column still has exactly one
+  scrolling viewport; per-card scrollers live inside card bodies and never re-parent the column.
+  The floating button is not a component of that viewport, so the viewport can blit without
+  erasing it.
+- **Putting the floating button back inside the scroll pane.** A child above the viewport is still
+  inside the viewport's paint/blit clip; it looks correct after a full repaint and vanishes after
+  scrolling or a hover repaint. Keep it in `TailOverlay`'s popup layer.
 - **The terminal renderer / ANSI path.** Nothing here parses ANSI or shares terminal state; the
   desktop receives typed `TranscriptEvent`s only.
 - **Putting git counts inside `TurnActivity`.** Keep the event projection Swing-free and

@@ -77,7 +77,7 @@ class TranscriptPaneScrollTest {
             model = new NaruSessionModel(() -> null,
                     NPath.ofTempFolder("naru-desktop-transcript-scroll-" + System.nanoTime()), host);
             pane = new TranscriptPane(model);
-            scroll = (JScrollPane) pane.getComponent(1);
+            scroll = pane.scrollPane();
             view = scroll.getViewport().getView();
             relayout();
         });
@@ -98,6 +98,7 @@ class TranscriptPaneScrollTest {
             Dimension pref = view.getPreferredSize();
             view.setSize(Math.max(pref.width, scroll.getViewport().getExtentSize().width), pref.height);
             pane.doLayout();
+            scroll.getParent().doLayout();
             scroll.doLayout();
             // The scrollbar's model belongs to the scroll pane's UI, which refreshes it when the
             // viewport reports a different view rectangle. A hand-sized view never fires that, so
@@ -210,8 +211,13 @@ class TranscriptPaneScrollTest {
         onEdt(() -> {
             JButton tail = pane.jumpToLatestButton();
             JScrollBar vertical = scroll.getVerticalScrollBar();
+            assertFalse(scroll.isAncestorOf(tail),
+                    "the floating button must not live inside the scroll pane: viewport blits "
+                            + "would paint over it");
+            assertEquals(scroll.getParent(), tail.getParent(),
+                    "the button and the scroll pane share the overlay that keeps the button above it");
             assertTrue(tail.getX() >= 0 && tail.getY() >= 0,
-                    "the button is inside the scroll pane: " + tail.getBounds());
+                    "the button is inside the scroll area: " + tail.getBounds());
             assertTrue(tail.getX() + tail.getWidth() <= scroll.getWidth(),
                     "the button is not clipped on the right: " + tail.getBounds());
             assertTrue(tail.getY() + tail.getHeight() <= scroll.getHeight(),

@@ -75,9 +75,9 @@ class TranscriptPaneStreamTest {
         });
     }
 
-    /** The card column: index 0 of the pane is the filter bar, index 1 the scroll pane. */
+    /** The card column inside the transcript's single scroll pane. */
     private Container cards() {
-        return (Container) ((JScrollPane) pane.getComponent(1)).getViewport().getView();
+        return (Container) pane.scrollPane().getViewport().getView();
     }
 
     @Test
@@ -243,7 +243,7 @@ class TranscriptPaneStreamTest {
             // The scroller is laid out by a real window; here its bar has no extent yet, so give
             // it a stable model that puts the end of the body at the cursor.
             bodyBar.setModel(new javax.swing.DefaultBoundedRangeModel(90, 10, 0, 100));
-            JScrollBar columnBar = ((JScrollPane) pane.getComponent(1)).getVerticalScrollBar();
+            JScrollBar columnBar = pane.scrollPane().getVerticalScrollBar();
             columnBar.setModel(new javax.swing.DefaultBoundedRangeModel(0, 10, 0, 100));
             // The pane is laid out by hand in these tests, so the scroll pane has not decided
             // yet that its bar is needed; in a real window it is visible by the time a wheel runs.

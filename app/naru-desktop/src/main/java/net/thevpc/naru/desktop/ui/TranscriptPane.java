@@ -53,7 +53,9 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     private final NaruSessionModel sessionModel;
     private final boolean showChatMessages;
     private final CardsPanel cards = new CardsPanel();
-    private final TailScrollPane scroll = new TailScrollPane(cards, this::jumpToLatest);
+    private final TailOverlay scrollHost = new TailOverlay(cards, this::jumpToLatest,
+            this::updateTailButton);
+    private final JScrollPane scroll = scrollHost.scrollPane();
     private final TurnActivityBar activityBar;
     private final JLabel counter = new JLabel(" ");
     // ten columns is a command and a half to type and still leaves the filter row room for the
@@ -163,7 +165,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         bar.add(controls, BorderLayout.WEST);
         bar.add(counter, BorderLayout.EAST);
         add(bar, BorderLayout.NORTH);
-        add(scroll, BorderLayout.CENTER);
+        add(scrollHost, BorderLayout.CENTER);
         // The live turn line belongs to the conversation, not the raw Logs tab. It sits below the
         // scrolling cards so a reader who is deep in history still sees that work is happening.
         activityBar = showChatMessages ? new TurnActivityBar(session) : null;
@@ -171,6 +173,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             add(activityBar, BorderLayout.SOUTH);
         }
         scroll.setMinimumSize(new Dimension(240, 120));
+        scrollHost.setMinimumSize(scroll.getMinimumSize());
         // Message cards always wrap at the panel width; horizontal overflow is hosted by the
         // message items themselves, and only those that explicitly ask for it.
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
@@ -765,17 +768,27 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
      * itself.
      */
     private void updateTailButton() {
-        scroll.setTailButtonVisible(!isAtBottom());
+        if (scroll == null) {
+            // The overlay can be laid out once while TranscriptPane's fields are still being
+            // initialized; there is no viewport to measure yet.
+            return;
+        }
+        scrollHost.setTailButtonVisible(!isAtBottom());
     }
 
     /** True while the floating "jump to latest" button is on screen; package-visible for tests. */
     boolean isJumpToLatestVisible() {
-        return scroll.isTailButtonVisible();
+        return scrollHost.isTailButtonVisible();
     }
 
     /** The floating button, so a headless test can click the real control. */
     JButton jumpToLatestButton() {
-        return scroll.tailButton();
+        return scrollHost.tailButton();
+    }
+
+    /** The scrolling transcript; package-visible for tests. */
+    JScrollPane scrollPane() {
+        return scroll;
     }
 
     /** Return to the newest message and resume following the stream. */
@@ -783,7 +796,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         userScrolledAway = false;
         // Hide immediately; followTail() re-checks after the column has been laid out and will
         // put the button back if the jump could not reach the end.
-        scroll.setTailButtonVisible(false);
+        scrollHost.setTailButtonVisible(false);
         followTail();
     }
 
