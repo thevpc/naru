@@ -84,6 +84,14 @@ public class NaruLlamaCppProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
+    public String statusMessage(NaruSession session) {
+        if (!LlamaCppService.of().isRunning(session)) {
+            return "server not running";
+        }
+        return null;
+    }
+
+    @Override
     public List<String> findModelIds(NaruSession session) {
         LlamaCppService service = LlamaCppService.of();
         LinkedHashSet<String> ids = new LinkedHashSet<>(service.modelIds(session));

@@ -764,44 +764,63 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         list.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
         list.setCellRenderer((l, value, index, selected, focus) -> {
             var cap = value.capabilities();
-            String features = cap == null ? "" : String.join(" · ", java.util.stream.Stream.of(cap.isVision() ? "Vision" : null, cap.isTools() ? "Tools" : null, cap.isThinking() ? "Reasoning" : null).filter(java.util.Objects::nonNull).toList());
-            String context = cap == null || cap.contextLength() <= 0 ? "Context unknown" : String.format(java.util.Locale.ROOT, "%,d tokens", cap.contextLength());
-            String meta = String.join(" · ", java.util.stream.Stream.of(value.quantization(), value.parameterSize(), context, features, rateStatus(value.provider())).filter(s -> s != null && !s.isBlank()).toList());
-            JLabel label = new JLabel("<html><b><font color='" + ModelIcons.colorHex(value.provider()) + "'>" + ModelIcons.glyph(value.provider()) + "</font>  "
-                    + value.provider() + "/" + value.model() + "</b><br><small>" + meta + "</small></html>");
+            String features = cap == null ? "" : String.join(" ", java.util.stream.Stream.of(cap.isVision() ? "V" : null, cap.isTools() ? "T" : null, cap.isThinking() ? "R" : null, cap.isEmbedding() ? "E" : null).filter(java.util.Objects::nonNull).toList());
+            String context = cap == null || cap.contextLength() <= 0 ? "?" : String.format(java.util.Locale.ROOT, "%dk", cap.contextLength() / 1024);
+            String meta = String.join(" · ", java.util.stream.Stream.of(value.quantization(), value.parameterSize(), context + "tok", features, rateStatus(value.provider())).filter(s -> s != null && !s.isBlank()).toList());
+            JLabel label = new JLabel("<html><b><font color='" + ModelIcons.colorHex(value.provider()) + "'>" + ModelIcons.glyph(value.provider()) + "</font> "
+                    + value.provider() + "/" + value.model() + "</b> <small>" + meta + "</small></html>");
             label.setOpaque(true);
             label.setBackground(selected ? l.getSelectionBackground() : l.getBackground());
             label.setForeground(selected ? l.getSelectionForeground() : l.getForeground());
-            label.setBorder(BorderFactory.createEmptyBorder(5, 8, 5, 8));
+            label.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+            label.setToolTipText(value.provider() + "/" + value.model() + " — " + meta);
             return label;
         });
+        list.setFixedCellHeight(22);
         javax.swing.JTextField filter = new javax.swing.JTextField();
-        filter.putClientProperty("JTextField.placeholderText", "Filter models available in this session…");
-        java.util.List<String> providerNames = new java.util.ArrayList<>();
+        filter.setFont(filter.getFont().deriveFont(11f));
+        filter.putClientProperty("JTextField.placeholderText", "Filter models…");
+        if (modelCatalogLoading) {
+            DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Models", "Loading the model list…");
+            return;
+        }
+        java.util.List<String> allProviderNames0 = new java.util.ArrayList<>();
         try {
             for (var p : session.session().registry().modelProviders().values()) {
-                if (p != null && p.name() != null) providerNames.add(p.name());
+                if (p != null && p.name() != null) allProviderNames0.add(p.name());
             }
         } catch (RuntimeException ignored) {
         }
-        modelInfos.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).forEach(providerNames::add);
-        providerNames = providerNames.stream().filter(java.util.Objects::nonNull).distinct().sorted(String.CASE_INSENSITIVE_ORDER).collect(java.util.stream.Collectors.toList());
+        modelInfos.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).forEach(allProviderNames0::add);
+        final java.util.List<String> allProviderNames = allProviderNames0.stream().filter(java.util.Objects::nonNull).distinct().sorted(String.CASE_INSENSITIVE_ORDER).collect(java.util.stream.Collectors.toList());
+        java.util.Set<String> providersWithModels = new java.util.LinkedHashSet<>();
+        modelInfos.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).forEach(providersWithModels::add);
 
-        // Composable filters: providers (OR), sources (OR), capabilities (AND).
+        javax.swing.JCheckBox allProvidersFlag = new javax.swing.JCheckBox("All providers", true);
         javax.swing.DefaultListModel<String> providerModel = new javax.swing.DefaultListModel<>();
-        providerNames.forEach(providerModel::addElement);
+        allProviderNames.forEach(providerModel::addElement);
+
         javax.swing.JList<String> providerList = new javax.swing.JList<>(providerModel);
         providerList.setSelectionMode(javax.swing.ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-        providerList.setVisibleRowCount(4);
+        providerList.setVisibleRowCount(Math.min(4, Math.max(2, allProviderNames.size())));
+        providerList.setCellRenderer(new javax.swing.DefaultListCellRenderer() {
+            public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                javax.swing.JLabel l = (javax.swing.JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                String p = String.valueOf(value);
+                l.setText(ModelIcons.glyph(p) + "  " + p);
+                if (!isSelected) l.setForeground(ModelIcons.color(p));
+                return l;
+            }
+        });
         javax.swing.JScrollPane providerScroll = new javax.swing.JScrollPane(providerList);
         providerScroll.setBorder(javax.swing.BorderFactory.createTitledBorder("Providers (none = all)"));
 
         javax.swing.JCheckBox srcLocal = new javax.swing.JCheckBox("Local");
         javax.swing.JCheckBox srcRemote = new javax.swing.JCheckBox("Remote");
-        javax.swing.JCheckBox srcFree = new javax.swing.JCheckBox("Free");
         javax.swing.JPanel sourcePanel = new javax.swing.JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
         sourcePanel.setBorder(javax.swing.BorderFactory.createTitledBorder("Sources (none = all)"));
-        sourcePanel.add(srcLocal); sourcePanel.add(srcRemote); sourcePanel.add(srcFree);
+        sourcePanel.add(srcLocal); sourcePanel.add(srcRemote);
+        sourcePanel.add(allProvidersFlag);
 
         javax.swing.JCheckBox capVision = new javax.swing.JCheckBox("Vision");
         javax.swing.JCheckBox capTools = new javax.swing.JCheckBox("Tools");
@@ -813,7 +832,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         capPanel.add(capVision); capPanel.add(capTools); capPanel.add(capReasoning); capPanel.add(capEmbeddings); capPanel.add(capFree);
 
         javax.swing.JComboBox<String> sort = new javax.swing.JComboBox<>(new String[]{"Name", "Context size"});
-        sort.setBorder(javax.swing.BorderFactory.createTitledBorder("Sort"));
+        sort.setFont(sort.getFont().deriveFont(11f));
         JDialog dialog = DesktopDialog.create(SwingUtilities.getWindowAncestor(this), "Choose model");
         filter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             private void apply() {
@@ -825,14 +844,13 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                     String hay = x.toString() + " " + x.quantization() + " " + x.parameterSize() + " " + x.family() + " " + (x.capabilities() == null ? "" : x.capabilities().keys());
                     java.util.List<String> selectedProviders = providerList.getSelectedValuesList();
                     boolean providerMatch = selectedProviders.isEmpty() || selectedProviders.contains(x.provider());
-                    boolean anySourceSelected = srcLocal.isSelected() || srcRemote.isSelected() || srcFree.isSelected();
+                    boolean anySourceSelected = srcLocal.isSelected() || srcRemote.isSelected();
                     boolean sourceMatch;
                     if (!anySourceSelected) {
                         sourceMatch = true;
                     } else {
                         sourceMatch = (srcLocal.isSelected() && isLocal(x))
-                                || (srcRemote.isSelected() && !isLocal(x))
-                                || (srcFree.isSelected() && isFreeModel(x));
+                                || (srcRemote.isSelected() && !isLocal(x));
                     }
                     boolean capMatch = true;
                     if (capVision.isSelected() && !(x.capabilities() != null && x.capabilities().isVision())) capMatch = false;
@@ -882,15 +900,18 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         JPanel top = new JPanel(new BorderLayout(0, 6));
         JPanel filters = new JPanel(new BorderLayout(5, 5));
         filters.add(filter, BorderLayout.NORTH);
-        JPanel facets = new JPanel();
-        facets.setLayout(new javax.swing.BoxLayout(facets, javax.swing.BoxLayout.Y_AXIS));
+        JPanel facets = new JPanel(new java.awt.GridLayout(1, 3, 6, 6));
         facets.add(providerScroll);
         facets.add(sourcePanel);
         facets.add(capPanel);
         filters.add(facets, BorderLayout.SOUTH);
         JPanel titleAndSort = new JPanel(new BorderLayout(5, 0));
         titleAndSort.add(new JLabel("Models available in this session"), BorderLayout.CENTER);
-        titleAndSort.add(sort, BorderLayout.EAST);
+        JPanel sortBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        sortBox.setOpaque(false);
+        sortBox.add(new JLabel("Sort:"));
+        sortBox.add(sort);
+        titleAndSort.add(sortBox, BorderLayout.EAST);
         top.add(titleAndSort, BorderLayout.NORTH);
         String absent = absentProvidersSummary();
         if (absent != null) {
@@ -911,10 +932,21 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             filter.setText(q + " ");
             filter.setText(q);
         };
+        allProvidersFlag.addActionListener(e -> {
+            java.util.List<String> selected = new java.util.ArrayList<>(providerList.getSelectedValuesList());
+            providerModel.clear();
+            java.util.List<String> names = allProvidersFlag.isSelected() ? allProviderNames : new java.util.ArrayList<>(providersWithModels);
+            names.stream().sorted(String.CASE_INSENSITIVE_ORDER).forEach(providerModel::addElement);
+            for (String s : selected) {
+                int idx = -1;
+                for (int i = 0; i < providerModel.size(); i++) if (providerModel.get(i).equals(s)) { idx = i; break; }
+                if (idx >= 0) providerList.addSelectionInterval(idx, idx);
+            }
+            refilter.actionPerformed(null);
+        });
         providerList.addListSelectionListener(e -> refilter.actionPerformed(null));
         srcLocal.addActionListener(refilter);
         srcRemote.addActionListener(refilter);
-        srcFree.addActionListener(refilter);
         capVision.addActionListener(refilter);
         capTools.addActionListener(refilter);
         capReasoning.addActionListener(refilter);
@@ -925,7 +957,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         body.add(new JScrollPane(list), BorderLayout.CENTER);
         body.add(select, BorderLayout.SOUTH);
         DesktopDialog.setBody(dialog, body);
-        DesktopDialog.showCentered(dialog, SwingUtilities.getWindowAncestor(this), 560, 480);
+        DesktopDialog.showCentered(dialog, SwingUtilities.getWindowAncestor(this), 760, 560);
     }
 
     private boolean isDeclaredFree(net.thevpc.naru.api.model.NaruModelInfo info) {

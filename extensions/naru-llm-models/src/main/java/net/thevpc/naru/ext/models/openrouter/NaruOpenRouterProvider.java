@@ -187,6 +187,14 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
+    public String statusMessage(NaruSession session) {
+        if (!isApiKeySet(session)) {
+            return "API key not set";
+        }
+        return null;
+    }
+
+    @Override
     protected String baseUrl(NaruSession session) {
         return configValue("url", session)
                 .map(x -> x.replaceAll("/$", ""))

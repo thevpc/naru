@@ -26,6 +26,8 @@ import java.util.*;
  */
 public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
 
+    private volatile String lastStatusMessage;
+
     private final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
     private final Map<String, NaruModelCapabilities> cachedCapabilities = new HashMap<>();
     private final Map<String, NElement> cachedTagDetails = new HashMap<>();
@@ -308,12 +310,18 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
                     }
                 }
             }
+            lastStatusMessage = models.isEmpty() ? "no models found at " + baseUrl(session) : null;
             return models;
         } catch (Exception e) {
+            lastStatusMessage = "endpoint unreachable: " + String.valueOf(e.getMessage());
             // If we can't list models, return an empty list or a default
             return new ArrayList<>();
         }
     }
 
+    @Override
+    public String statusMessage(NaruSession session) {
+        return lastStatusMessage;
+    }
 
 }
