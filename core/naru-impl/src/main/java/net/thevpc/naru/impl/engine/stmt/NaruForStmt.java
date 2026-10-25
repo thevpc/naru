@@ -57,8 +57,8 @@ public class NaruForStmt extends NaruIncrementalStmt implements Cloneable {
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         a.set("condition", NElement.ofString(condition));
         a.set("body", NElement.ofArray(body == null ? new NElement[0] : body.stream().map(x -> x.toElement()).toArray(NElement[]::new)));
         if (parseStatus!=null && parseStatus !=NaruSimpleParseStatus.COMPLETE) {
@@ -69,7 +69,7 @@ public class NaruForStmt extends NaruIncrementalStmt implements Cloneable {
             a.set("runtimeChildIndexKey", runtimeChildIndexKey);
             a.set("runtimeVarName", runtimeVarName);
         }
-        return a.build();
+        return a;
     }
 
     @Override

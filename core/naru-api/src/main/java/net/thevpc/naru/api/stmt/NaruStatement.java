@@ -47,8 +47,11 @@ public abstract class NaruStatement implements NToElement, NCopiable, Cloneable 
     }
 
 
-    @Override
-    public NElement toElement() {
+    /**
+     * mutable serialized object form of a statement
+     * @return object builder
+     */
+    public NObjectElementBuilder toElementBuilder() {
         NObjectElementBuilder a = NElement.ofObjectBuilder(type.name());
         if (injected) {
             a.set("injected", injected);
@@ -56,7 +59,16 @@ public abstract class NaruStatement implements NToElement, NCopiable, Cloneable 
         if (creatorActor != null) {
             a.set("actor", creatorActor.toElement());
         }
-        return a.build();
+        return a;
+    }
+
+    /**
+     * if you want to  override this method, do override toElementBuilder() instead
+     * @return serialized form
+     */
+    @Override
+    public final NElement toElement() {
+        return toElementBuilder().build();
     }
 
 
@@ -93,7 +105,9 @@ public abstract class NaruStatement implements NToElement, NCopiable, Cloneable 
         return this;
     }
 
-    /** The actor that authored this statement, or null when it carries no claim. */
+    /**
+     * The actor that authored this statement, or null when it carries no claim.
+     */
     public NaruActor creatorActor() {
         return creatorActor;
     }

@@ -35,15 +35,15 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         if (call != null) {
             a.set("call", call.toElement());
         }
         if (awaitingInput) {
             a.set("awaitingInput", true);
         }
-        return a.build();
+        return a;
     }
 
     @Override

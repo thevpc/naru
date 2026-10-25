@@ -60,12 +60,12 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         if (!NBlankable.isBlank(prompt)) {
             a.set("prompt", NElement.ofString(prompt));
         }
-        return a.build();
+        return a;
     }
 
     @Override

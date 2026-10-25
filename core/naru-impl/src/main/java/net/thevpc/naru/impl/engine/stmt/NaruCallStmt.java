@@ -21,10 +21,10 @@ public class NaruCallStmt extends NaruStatement implements Cloneable {
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         a.set("cmd", NElement.ofString(cmd));
-        return a.build();
+        return a;
     }
 
 

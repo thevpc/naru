@@ -53,8 +53,8 @@ public class NaruIfStmt extends NaruIncrementalStmt implements Cloneable {
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         a.set("condition", NElement.ofString(condition));
         a.set("trueBranch", NElement.ofArray(trueBranch == null ? new NElement[0] : trueBranch.stream().map(x -> x.toElement()).toArray(NElement[]::new)));
         a.set("elseIfBranch", NElement.ofArray(elseIfBranch == null ? new NElement[0] : elseIfBranch.stream().map(x -> x.toElement()).toArray(NElement[]::new)));
@@ -67,7 +67,7 @@ public class NaruIfStmt extends NaruIncrementalStmt implements Cloneable {
             a.set("runtimeSelectedBranchType", runtimeSelectedBranchType.name());
             a.set("runtimeSelectedBranchSubIndex", runtimeSelectedBranchSubIndex);
         }
-        return a.build();
+        return a;
     }
 
     @Override
