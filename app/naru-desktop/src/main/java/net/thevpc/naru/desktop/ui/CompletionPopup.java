@@ -189,9 +189,10 @@ final class CompletionPopup {
             paneOfCard = pane;
         }
         entries.clear();
-        for (NaruLineCompletion.Candidate c : candidates) {
-            entries.addElement(c);
-        }
+        // addAll fires a single interval event instead of one per candidate: the
+        // per-element path made the list re-layout (and re-walk the layered pane's
+        // component tree) for every row, which froze the interface on long transcripts
+        entries.addAll(candidates);
         list.setSelectedIndex(0);
         // the row height is taken here, not once at construction: the interface size can change
         // between building the popup and opening it over the composer

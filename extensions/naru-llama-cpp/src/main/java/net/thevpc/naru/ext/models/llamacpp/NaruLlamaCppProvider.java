@@ -52,7 +52,7 @@ public class NaruLlamaCppProvider extends AbstractOpenAICompatProvider {
         long contextLength = configValue("contextLength", session)
                 .flatMap(x -> NLiteral.of(x).asLong()).orElse(32768L);
         // llama.cpp does automatic prefix caching natively
-        return new NaruModelCapabilitiesImpl(false, true, false, false, contextLength, NaruCachingMode.AUTOMATIC_PREFIX);
+        return new NaruModelCapabilitiesImpl(false, true, false, false, contextLength, NaruCachingMode.AUTOMATIC_PREFIX, true, true, true);
     }
 
     @Override

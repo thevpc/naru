@@ -260,7 +260,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
             // fall back to model_info arch context_length
         }
 
-        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength, NaruCachingMode.NONE);
+        return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength, NaruCachingMode.NONE, true, true, false);
     }
 
     private long parseNumCtx(String parameters) {

@@ -48,6 +48,24 @@ public class NaruModelInfo implements NToElement {
     public String parameterSize() { return parameterSize; }
     public String family() { return family; }
 
+    /**
+     * Whether this model is free to use, as reported by its capabilities.
+     * Falls back to {@code false} when no capabilities are available; callers
+     * that need the full heuristic (provider type, registration flags, ...)
+     * should use their own resolution.
+     */
+    public boolean isFree() {
+        return capabilities != null && capabilities.isFree();
+    }
+
+    /**
+     * Whether this model runs on a local endpoint, as reported by its
+     * capabilities.
+     */
+    public boolean isLocal() {
+        return capabilities != null && capabilities.isLocal();
+    }
+
     @Override
     public NElement toElement() {
         return NElement.ofObjectBuilder()

@@ -23,7 +23,9 @@ public final class ModelIcons {
         java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
         m.put("ollama", "◍");
         m.put("llamacpp", "◈");
+        m.put("llama-cpp", "◈");
         m.put("llama.cpp", "◈");
+        m.put("colibri", "▣");
         m.put("openai", "❋");
         m.put("anthropic", "✳");
         m.put("gemini", "✦");
@@ -79,6 +81,33 @@ public final class ModelIcons {
      * the largest interface size the row also holds the mode, the thinking box and Send, and a
      * {@code provider/model:tag} does not fit beside them.
      */
+    /**
+     * The hue that best identifies {@code provider}: a brand-ish colour for the
+     * well-known ones, the interface accent otherwise. Used to tint the provider
+     * glyph so a row can be picked out by colour as well as by shape.
+     */
+    public static java.awt.Color color(String provider) {
+        if (provider == null || provider.isBlank()) return UiPalette.muted();
+        String key = provider.toLowerCase(java.util.Locale.ROOT);
+        if (key.contains("ollama") || key.contains("llama") || key.contains("local") || key.contains("colibri") || key.contains("lmstudio"))
+            return UiPalette.LIVE;
+        if (key.contains("openai") || key.contains("azure") || key.contains("gemini") || key.contains("google") || key.contains("groq"))
+            return UiPalette.accent();
+        if (key.contains("anthropic") || key.contains("mistral") || key.contains("grok"))
+            return new java.awt.Color(0xF5, 0x9E, 0x0B);
+        if (key.contains("deepseek"))
+            return new java.awt.Color(0x06, 0xB6, 0xD4);
+        return UiPalette.muted();
+    }
+
+    public static java.awt.Color glyphColor(String provider) { return color(provider); }
+    public static java.awt.Color iconColor(String provider) { return color(provider); }
+    public static java.awt.Color colorFor(String provider) { return color(provider); }
+    public static String colorHex(String provider) {
+        java.awt.Color c = color(provider);
+        return String.format(java.util.Locale.ROOT, "#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
+    }
+
     public static String buttonLabel(String provider, String model, int maxNameChars) {
         String mark = glyph(provider);
         String name = model == null || model.isBlank() ? "no model" : model;

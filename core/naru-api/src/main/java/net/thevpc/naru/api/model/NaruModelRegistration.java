@@ -257,6 +257,50 @@ public class NaruModelRegistration implements NToElement {
     }
 
     /**
+     * Whether this registration declares itself free ({@code free=true}). A
+     * registration that does not say is assumed paid, matching the capability
+     * default. Local providers are free by construction regardless.
+     */
+    public boolean isFree() {
+        Boolean b = booleanValue("free").orNull();
+        if (Boolean.TRUE.equals(b)) {
+            return true;
+        }
+        if (NaruModelFilter.isConventionallyLocal(provider())) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether this registration points at a local endpoint: an explicit
+     * {@code local=true}, a loopback URL, or a conventionally local provider
+     * type (ollama, llama.cpp, colibri).
+     */
+    public boolean isLocal() {
+        Boolean b = booleanValue("local").orNull();
+        if (b != null) {
+            return b;
+        }
+        if (NaruModelFilter.isConventionallyLocal(provider())) {
+            return true;
+        }
+        for (String key : new String[]{"url", "baseUrl", "endpoint", "host", "baseURL"}) {
+            try {
+                String v = stringValue(key).orNull();
+                if (v != null) {
+                    String x = v.toLowerCase(java.util.Locale.ROOT);
+                    if (x.contains("localhost") || x.contains("127.0.0.1") || x.contains("::1")) {
+                        return true;
+                    }
+                }
+            } catch (RuntimeException ignored) {
+            }
+        }
+        return false;
+    }
+
+    /**
      * A list-valued parameter: an array as stored, or a comma-separated string.
      * Used for {@code model}/{@code models}, {@code stop}, {@code thinkingTags}.
      */

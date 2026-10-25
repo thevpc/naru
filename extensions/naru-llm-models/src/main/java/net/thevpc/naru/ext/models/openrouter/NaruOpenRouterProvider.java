@@ -148,7 +148,7 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
                         tools = hasToolsParam;
                     }
 
-                    cachedCapabilities.put(id, new NaruModelCapabilitiesImpl(vision, tools, thinking, false, contextLength, NaruCachingMode.AUTOMATIC_PREFIX));
+                    cachedCapabilities.put(id, new NaruModelCapabilitiesImpl(vision, tools, thinking, false, contextLength, NaruCachingMode.AUTOMATIC_PREFIX, true, isFree, false));
 
                     // Filter application
                     if (freeOnly && !isFree) {

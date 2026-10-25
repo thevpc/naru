@@ -129,7 +129,7 @@ public class ModelListTool extends DefaultNaruTool {
                 continue;
             }
             String type = providerType(task, m.provider());
-            boolean isFree = isFree(m, type);
+            boolean isFree = isFree(m, type, task);
             if (free != null && free != isFree) {
                 continue;
             }
@@ -250,13 +250,49 @@ public class ModelListTool extends DefaultNaruTool {
     }
 
     /**
-     * The same free heuristic the {@code /model list --free} filter uses:
-     * OpenRouter's {@code :free} variants, and anything served by an Ollama type
-     * (local models cost nothing), including Ollama registrations.
+     * Whether {@code m} is free to use: a capability that says so (the
+     * protocol-level answer), an OpenRouter {@code :free} variant, anything
+     * served by a local engine type (Ollama / llama.cpp, whose models cost
+     * nothing), a registration that declares {@code free=true}, or a provider
+     * whose endpoint is local. The heuristic is retained as a fallback so models
+     * enumerated before their capability was populated still classify correctly.
      */
-    private static boolean isFree(NaruModelInfo m, String providerType) {
-        return m.model().toLowerCase(Locale.ROOT).endsWith(":free")
-                || "ollama".equalsIgnoreCase(providerType);
+    private static boolean isFree(NaruModelInfo m, String providerType, NaruTask task) {
+        if (m.capabilities() != null && m.capabilities().isFree()) {
+            return true;
+        }
+        if (m.model() != null && m.model().toLowerCase(Locale.ROOT).endsWith(":free")) {
+            return true;
+        }
+        if ("ollama".equalsIgnoreCase(providerType)
+                || "llamacpp".equalsIgnoreCase(providerType)
+                || "llama-cpp".equalsIgnoreCase(providerType)
+                || "llama.cpp".equalsIgnoreCase(providerType)
+                || "colibri".equalsIgnoreCase(providerType)) {
+            return true;
+        }
+        if (task != null && task.session() != null) {
+            try {
+                net.thevpc.naru.api.model.NaruModelRegistration reg =
+                        task.session().registrations().get(m.provider());
+                if (reg != null && Boolean.TRUE.equals(reg.booleanValue("free").orNull())) {
+                    return true;
+                }
+            } catch (RuntimeException ignored) {
+            }
+            try {
+                net.thevpc.naru.api.model.NaruModelProvider p =
+                        task.session().registry().provider(m.provider()).orNull();
+                if (p != null && p.isLocal(task.session())) {
+                    return true;
+                }
+            } catch (RuntimeException ignored) {
+            }
+        }
+        if (m.capabilities() != null && m.capabilities().isLocal()) {
+            return true;
+        }
+        return false;
     }
 
     private static boolean matchesCapabilities(NaruModelCapabilities c, List<String> requested) {
@@ -289,6 +325,12 @@ public class ModelListTool extends DefaultNaruTool {
                     break;
                 case "caching":
                     if (c.cachingMode() == null || c.cachingMode() == NaruCachingMode.NONE) return false;
+                    break;
+                case "free":
+                    if (!c.isFree()) return false;
+                    break;
+                case "local":
+                    if (!c.isLocal()) return false;
                     break;
                 default:
                     return false;
@@ -328,6 +370,10 @@ public class ModelListTool extends DefaultNaruTool {
             case "caching":
             case "cache":
                 return "caching";
+            case "free":
+                return "free";
+            case "local":
+                return "local";
             default:
                 return null;
         }

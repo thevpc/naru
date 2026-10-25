@@ -16,6 +16,8 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
     private final long contextLength;
     private final NaruCachingMode cachingMode;
     private final boolean streaming;
+    private final boolean free;
+    private final boolean local;
 
     public NaruModelCapabilitiesImpl(NElement element) {
         NObjectElement o = element.asObject().get();
@@ -30,6 +32,8 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
         // absent means true: capabilities written before streaming existed are
         // models on the same wire protocols, which all stream
         streaming = o.getBooleanValue("streaming").orElse(true);
+        free = o.getBooleanValue("free").orElse(false);
+        local = o.getBooleanValue("local").orElse(false);
     }
 
     /**
@@ -46,6 +50,14 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
     }
 
     public NaruModelCapabilitiesImpl(boolean vision, boolean tools, boolean thinking, boolean embedding, long contextLength, NaruCachingMode cachingMode, boolean streaming) {
+        this(vision, tools, thinking, embedding, contextLength, cachingMode, streaming, false, false);
+    }
+
+    public NaruModelCapabilitiesImpl(boolean vision, boolean tools, boolean thinking, boolean embedding, long contextLength, NaruCachingMode cachingMode, boolean streaming, boolean free) {
+        this(vision, tools, thinking, embedding, contextLength, cachingMode, streaming, free, false);
+    }
+
+    public NaruModelCapabilitiesImpl(boolean vision, boolean tools, boolean thinking, boolean embedding, long contextLength, NaruCachingMode cachingMode, boolean streaming, boolean free, boolean local) {
         this.vision = vision;
         this.tools = tools;
         this.thinking = thinking;
@@ -53,11 +65,23 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
         this.contextLength = contextLength;
         this.cachingMode = cachingMode == null ? NaruCachingMode.NONE : cachingMode;
         this.streaming = streaming;
+        this.free = free;
+        this.local = local;
     }
 
     @Override
     public boolean isStreaming() {
         return streaming;
+    }
+
+    @Override
+    public boolean isFree() {
+        return free;
+    }
+
+    @Override
+    public boolean isLocal() {
+        return local;
     }
 
     public long contextLength() {
@@ -95,7 +119,7 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
         NaruModelCapabilitiesImpl that = (NaruModelCapabilitiesImpl) o;
         return vision == that.vision && tools == that.tools && thinking == that.thinking && embedding == that.embedding
                 && contextLength == that.contextLength && cachingMode == that.cachingMode
-                && streaming == that.streaming;
+                && streaming == that.streaming && free == that.free && local == that.local;
     }
 
     @Override
@@ -121,6 +145,12 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
         if (cachingMode != NaruCachingMode.NONE) {
             k.add("cache:" + cachingMode.name().toLowerCase(Locale.ROOT));
         }
+        if (free) {
+            k.add("free");
+        }
+        if (local) {
+            k.add("local");
+        }
         // streaming is deliberately absent: these keys describe what a model can
         // do with the content it is given, and streaming says nothing about that.
         // It is a property of the transport, true for nearly every model, so
@@ -134,7 +164,7 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
 
     @Override
     public int hashCode() {
-        return Objects.hash(vision, tools, thinking, embedding, contextLength, cachingMode, streaming);
+        return Objects.hash(vision, tools, thinking, embedding, contextLength, cachingMode, streaming, free, local);
     }
 
     @Override
@@ -152,6 +182,8 @@ public class NaruModelCapabilitiesImpl implements NaruModelCapabilities {
                 .set("contextLength", contextLength)
                 .set("cachingMode", cachingMode.name())
                 .set("streaming", streaming)
+                .set("free", free)
+                .set("local", local)
                 .build()
                 ;
     }
