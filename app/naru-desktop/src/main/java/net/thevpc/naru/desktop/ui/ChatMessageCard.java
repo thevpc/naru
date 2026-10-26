@@ -185,7 +185,7 @@ public final class ChatMessageCard extends JPanel {
         // Only a body past the fold threshold can be "unfolded" into this state, so a merely long
         // message stays inline instead of opening a second scrollbar unasked.
         boolean longExpanded = !folded
-                && HtmlPanes.lineCount(message.getContent()) > HtmlPanes.FOLD_AFTER_LINES;
+                && HtmlPanes.lineCount(message.getContent()) > HtmlPanes.SCROLL_AFTER_LINES;
         UiFonts.apply(contentBody, longExpanded ? UiFonts.SECONDARY : UiFonts.BODY, java.awt.Font.PLAIN);
         if (longExpanded != scrolled) {
             scrolled = longExpanded;

@@ -179,18 +179,18 @@ class TranscriptPaneStreamTest {
                     NaruLogMode.MODEL_THINKING, rest.toString(), false)), host);
             JPanel card = bodyCard();
             JEditorPane body = (JEditorPane) card.getClientProperty("transcript.body");
-            assertTrue(body.getText().contains("line 5"), "the short preview is on screen");
-            assertFalse(body.getText().contains("line 6"),
+            assertTrue(body.getText().contains("line 2"), "the short preview is on screen");
+            assertFalse(body.getText().contains("line 3"),
                     "thinking is collapsed by default: only the preview is measured");
             JButton more = (JButton) card.getClientProperty("transcript.more");
             assertTrue(more.isVisible());
-            assertTrue(more.getText().contains("294 more lines"), more.getText());
+            assertTrue(more.getText().contains("297 more lines"), more.getText());
             more.doClick();
             assertTrue(body.getText().contains("line 299"), "the control unfolds the whole answer");
             assertTrue(scrollsBody(card),
                     "a body this long is hosted in its own capped scrollport");
             more.doClick();
-            assertFalse(body.getText().contains("line 6"), "and folds it back to the preview");
+            assertFalse(body.getText().contains("line 3"), "and folds it back to the preview");
             assertFalse(scrollsBody(card));
         });
     }
@@ -207,24 +207,24 @@ class TranscriptPaneStreamTest {
     }
 
     @Test
-    void anOutputItemFoldsAtFortyLinesAndScrollsOnlyWhenExpanded() throws Exception {
+    void anOutputItemFoldsAtItsHeadAndScrollsOnlyWhenExpanded() throws Exception {
         buildPane();
         onEdt(() -> {
             model.onBatch(List.of(new TranscriptEvent.Chunk("s1",
                     NaruLogMode.SCRIPT, lines(60), false)), host);
             JPanel card = bodyCard();
             JEditorPane body = (JEditorPane) card.getClientProperty("transcript.body");
-            assertTrue(body.getText().contains("line 39"), "the folded head is on screen");
-            assertFalse(body.getText().contains("line 40"), "the tail is measured only on request");
+            assertTrue(body.getText().contains("line 11"), "the folded head is on screen");
+            assertFalse(body.getText().contains("line 12"), "the tail is measured only on request");
             JButton more = (JButton) card.getClientProperty("transcript.more");
-            assertTrue(more.getText().contains("20 more lines"), more.getText());
+            assertTrue(more.getText().contains("48 more lines"), more.getText());
             assertFalse(scrollsBody(card), "a folded head is small enough to stay inline");
 
             more.doClick();
             assertTrue(body.getText().contains("line 59"));
             assertTrue(scrollsBody(card), "the full 60-line body gets its own scrollport");
             more.doClick();
-            assertFalse(body.getText().contains("line 40"), "and folds back to the head");
+            assertFalse(body.getText().contains("line 12"), "and folds back to the head");
         });
     }
 
@@ -269,16 +269,61 @@ class TranscriptPaneStreamTest {
             JEditorPane body = (JEditorPane) card.getClientProperty("transcript.body");
             JButton more = (JButton) card.getClientProperty("transcript.more");
             assertTrue(more.isVisible());
-            assertTrue(more.getText().contains("24 more lines"), more.getText());
+            assertTrue(more.getText().contains("27 more lines"), more.getText());
 
             more.doClick();
-            assertTrue(body.getText().contains("line 29"), "all 30 lines fit once unfolded");
+            assertTrue(body.getText().contains("line 29"), "all 30 lines are there once unfolded");
             assertTrue(more.isVisible(), "a 30-line item still needs a labelled way back");
             assertTrue(more.getText().contains("view less"), more.getText());
 
             more.doClick();
-            assertFalse(body.getText().contains("line 6"), "and it returns to the short preview");
+            assertFalse(body.getText().contains("line 3"), "and it returns to the short preview");
         });
+    }
+
+    /**
+     * The ladder the fold controls promise: putting an item away makes it smaller, and opening it
+     * makes it bigger. A folded head measured in source lines used to come out at three times the
+     * height of the capped scrollport an expanded body gets, so "view more" shrank the card and
+     * "view less" grew it — which read as the control doing nothing but moving the page.
+     */
+    @Test
+    void foldingAnItemAlwaysMakesItShorterThanOpeningIt() throws Exception {
+        buildPane();
+        onEdt(() -> {
+            model.onBatch(List.of(new TranscriptEvent.Chunk("s1",
+                    NaruLogMode.SCRIPT, lines(300), false)), host);
+            JPanel card = bodyCard();
+            JEditorPane body = (JEditorPane) card.getClientProperty("transcript.body");
+            int foldedHeight = measuredHeight(body);
+            ((JButton) card.getClientProperty("transcript.more")).doClick();
+            JPanel host = (JPanel) card.getClientProperty("transcript.bodyHost");
+            int expandedHeight = measuredHeight(host);
+            assertTrue(foldedHeight > 0 && expandedHeight > 0,
+                    "both states measured: " + foldedHeight + "/" + expandedHeight);
+            assertTrue(foldedHeight < HtmlPanes.SCROLL_HEIGHT,
+                    "a folded head must fit inside the pane an opened body gets, but was "
+                            + foldedHeight + " of " + HtmlPanes.SCROLL_HEIGHT);
+            assertTrue(foldedHeight < expandedHeight, "opening an item makes it taller: "
+                    + foldedHeight + " folded against " + expandedHeight + " opened");
+        });
+    }
+
+    /** A body's height once it has been given the card's width, which is what makes it wrap. */
+    private static int measuredHeight(JEditorPane body) {
+        body.setSize(700, 10);
+        return body.getPreferredSize().height;
+    }
+
+    private static int measuredHeight(java.awt.Container host) {
+        for (Component c : host.getComponents()) {
+            c.setSize(700, 10);
+            if (c instanceof JScrollPane scroller) {
+                scroller.getViewport().setViewSize(new java.awt.Dimension(700, 10));
+                return scroller.getPreferredSize().height;
+            }
+        }
+        return 0;
     }
 
     private static String lines(int count) {

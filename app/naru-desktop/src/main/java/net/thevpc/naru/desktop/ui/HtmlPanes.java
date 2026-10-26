@@ -6,7 +6,10 @@ import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.plaf.basic.BasicTextUI;
+import javax.swing.text.DefaultCaret;
 import javax.swing.text.Document;
 import javax.swing.text.View;
 import java.awt.Container;
@@ -30,19 +33,25 @@ final class HtmlPanes {
      * every line of a body on each layout pass, so a four-thousand-line tool log costs seconds per
      * interface size change; a folded head keeps that cost bounded whatever the session accumulates.
      * <p>
-     * Forty, not a hundred and twenty: a body the reader has to scroll for three screens is already
-     * an item they want to put away, and the disclosure control makes the rest one click away.
+     * These four numbers are one ladder, not four preferences: a preview must be shorter than a
+     * folded head, and a folded head must be shorter than an expanded body however it is hosted.
+     * At the measured 18px a line, twelve lines is a fifth of the transcript pane, so folding an
+     * item always makes it smaller — which is what the control on the card promises.
      */
-    static final int FOLD_AFTER_LINES = 40;
+    static final int FOLD_AFTER_LINES = 12;
 
     /** Lines a collapsed item shows when the reader has explicitly put it away. */
-    static final int PREVIEW_LINES = 6;
+    static final int PREVIEW_LINES = 3;
 
-    /** An expanded body longer than this gets its own vertical scroll instead of the whole column. */
-    static final int SCROLL_AFTER_LINES = 24;
+    /**
+     * An expanded body longer than this gets its own vertical scroll instead of the whole column.
+     * Kept at the height of {@link #SCROLL_HEIGHT} in lines so switching a body from inline to
+     * scrolled is a wash, not a jump.
+     */
+    static final int SCROLL_AFTER_LINES = 22;
 
     /** The height cap for an expanded body's own scrollport, in pixels. */
-    static final int SCROLL_HEIGHT = 300;
+    static final int SCROLL_HEIGHT = 420;
 
     private HtmlPanes() {
     }
@@ -98,7 +107,7 @@ final class HtmlPanes {
 
     /**
      * A wheel over a nested scroller has to keep moving the column once that scroller reaches its
-     * end; otherwise the gesture is trapped in the 300 px body and the reader has to find the
+     * end; otherwise the gesture is trapped in the capped body and the reader has to find the
      * outer scrollbar to continue. The nearest enclosing scroll pane is the transcript column.
      */
     private static void forwardWheelAtEdges(JScrollPane inner) {
@@ -143,6 +152,14 @@ final class HtmlPanes {
         JEditorPane pane = new MeasuredPane(html);
         pane.setEditable(false);
         pane.setOpaque(false);
+        // A read-only body is read, not written to, so it must never scroll itself. The HTML kit
+        // parses into the document after setText returns, and a caret sitting at position 0 in an
+        // empty document rides every insertion to the end — which drags a card's own scrollport to
+        // the last line of a body the reader just asked to see the start of, and yanks it there
+        // again on each streamed batch.
+        if (pane.getCaret() instanceof DefaultCaret caret) {
+            caret.setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
+        }
         pane.setBorder(BorderFactory.createEmptyBorder(verticalPadding, 0, verticalPadding, 0));
         pane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
         if (ratio >= 0) {
@@ -178,9 +195,36 @@ final class HtmlPanes {
         private Document measuredDocument;
         private Dimension preferred;
         private Dimension minimum;
+        /** The document {@link #contentChanged} is registered against; re-taken on every re-text. */
+        private Document tracked;
+
+        private final DocumentListener contentChanged = new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                forget();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                forget();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                forget();
+            }
+        };
 
         MeasuredPane(String html) {
             super("text/html", html);
+            followDocument();
+        }
+
+        @Override
+        public void setText(String t) {
+            forget();
+            super.setText(t);
+            followDocument();
         }
 
         @Override
@@ -189,6 +233,33 @@ final class HtmlPanes {
             // Re-texting a body — a streamed answer growing, a refreshed card — changes the height
             // it needs, so the cached measurement is dropped and taken again on the next query.
             measuredDocument = null;
+            forget();
+        }
+
+        /**
+         * Watch the document this pane is now showing. Swing's HTML kit parses into the document
+         * after {@code setText} returns, so a body measured on the layout pass that follows the
+         * call has only its first screen in the view tree; the rest arrives as document events.
+         * Without this the measurement taken too early is cached forever, and an unfolded body
+         * keeps the height its folded head had — a tall card showing twelve lines and blank paper.
+         */
+        private void followDocument() {
+            Document doc = getDocument();
+            if (tracked == doc) {
+                return;
+            }
+            if (tracked != null) {
+                tracked.removeDocumentListener(contentChanged);
+            }
+            tracked = doc;
+            if (doc != null) {
+                doc.addDocumentListener(contentChanged);
+            }
+        }
+
+        private void forget() {
+            preferred = null;
+            minimum = null;
         }
 
         @Override
