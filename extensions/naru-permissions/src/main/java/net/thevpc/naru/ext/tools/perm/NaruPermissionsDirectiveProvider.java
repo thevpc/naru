@@ -9,6 +9,7 @@ import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.access.NaruResource;
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveProviderBase;
@@ -187,9 +188,10 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
         context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
     }
 
-    private static NaruStmtResult fail(NaruDirectiveCallContext context, String message) {
-        log(context, NMsg.ofStyledError(message));
-        return NaruStmtResult.ofError(message);
+    private static NaruStmtResult fail(NaruDirectiveCallContext context, NMsg message) {
+//        log(context, NMsg.ofStyledError(message));
+//        return NaruStmtResult.ofError(message);
+        return NaruStmtResult.ofError(message.asError());
     }
 
     private static String ruleId(Parsed p) {

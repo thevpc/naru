@@ -5,6 +5,7 @@ public enum NaruLogMode {
     SCRIPT,
     DEBUG,
     PROGRESS,
+    DIRECTIVE,
     MODEL_RESPONSE,
     AGENT_RESPONSE,
     RAW,

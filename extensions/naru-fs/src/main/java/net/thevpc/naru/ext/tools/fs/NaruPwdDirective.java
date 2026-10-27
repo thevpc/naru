@@ -16,9 +16,7 @@ public class NaruPwdDirective extends NaruDirectiveBase {
             @Override
             public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                context.task().addHistory(NaruMessage.user(NMsg.ofC("current working directory is %s", task.workingDir()).toString()));
-                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", task.workingDir()));
-                return NaruStmtResult.ofSuccess(task.workingDir().toString());
+                return NaruStmtResult.ofSuccess(task.workingDir().toString(),NaruMessage.user(NMsg.ofC("current working directory is %s", task.workingDir())));
             }
         });
     }

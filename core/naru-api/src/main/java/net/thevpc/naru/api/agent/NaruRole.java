@@ -1,7 +1,7 @@
 package net.thevpc.naru.api.agent;
 
 public enum NaruRole {
-    assistant, user, system, tool,
+    assistant, user, system, tool, engine,
     /**
      * A compaction summary standing in for conversation items this one covers.
      *

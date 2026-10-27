@@ -3,24 +3,30 @@ package net.thevpc.naru.api.model;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.time.NDuration;
+import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NCopiable;
+import net.thevpc.nuts.util.NOptional;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.stream.Collectors;
 
 /**
  * A single message in a chat conversation.
  * Roles: "system", "user", "assistant", "tool"
  */
-public class NaruMessage implements NToElement, NCopiable,Cloneable {
+public class NaruMessage implements NToElement, NCopiable, Cloneable {
 
     private String sourceName;
-    private NaruSource source=NaruSource.USER;
+    private NaruSource source = NaruSource.USER;
     private NaruRole role;
-    private String content;
+    private NormalizedMsg content;
     /**
      * Base64-encoded images (for multimodal/vision messages)
      */
@@ -37,7 +43,9 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
      * Tool calls requested by the assistant
      */
     private List<NaruToolCall> toolCalls;
-    /** Optional typed presentation parts, independent of provider-facing plain content. */
+    /**
+     * Optional typed presentation parts, independent of provider-facing plain content.
+     */
     private List<NaruMessagePart> parts;
     /**
      * Model reasoning/thinking channel content (e.g. reasoning_content, <think> blocks),
@@ -103,16 +111,17 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
     public NaruMessage() {
     }
 
-    public NaruMessage(String sourceName, NaruSource source, NaruRole role, String content, List<String> images, String toolCallId, String toolName, List<NaruToolCall> toolCalls) {
+    public NaruMessage(String sourceName, NaruSource source, NaruRole role, NMsg content, List<String> images, String toolCallId, String toolName, List<NaruToolCall> toolCalls) {
         this.sourceName = sourceName;
         this.source = source;
         this.role = role;
-        this.content = content;
+        this.content = content == null ? null : new NormalizedMsg(content);
         this.images = images;
         this.toolCallId = toolCallId;
         this.toolName = toolName;
         this.toolCalls = toolCalls;
     }
+
     /**
      * The same message with different visible content.
      *
@@ -126,12 +135,12 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
      * <p>Tool calls are copied rather than shared, so the returned message is independent
      * of the original and cannot be mutated through it.
      */
-    public NaruMessage withContent(String content) {
+    public NaruMessage withContent(NMsg content) {
         NaruMessage m = new NaruMessage(sourceName, source, role, content,
                 images == null ? null : new ArrayList<>(images),
                 toolCallId,
                 toolName, toolCalls == null ? null : toolCalls.stream()
-                        .map(NaruToolCall::copy).collect(Collectors.toList()));
+                .map(NaruToolCall::copy).collect(Collectors.toList()));
         m.thinking = thinking;
         m.parts = parts == null ? null : new ArrayList<>(parts);
         m.thinkingSegments = thinkingSegments == null ? null
@@ -172,11 +181,11 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         NaruMessage e = null;
         try {
             e = (NaruMessage) super.clone();
-            if(e.images!=null){
-               e.images=new ArrayList<>(images);
+            if (e.images != null) {
+                e.images = new ArrayList<>(images);
             }
-            if(e.toolCalls!=null){
-               e.toolCalls=toolCalls.stream().map(x->x.copy()).collect(Collectors.toList());
+            if (e.toolCalls != null) {
+                e.toolCalls = toolCalls.stream().map(x -> x.copy()).collect(Collectors.toList());
             }
             if (e.parts != null) e.parts = new ArrayList<>(parts);
             if (e.thinkingSegments != null) {
@@ -191,18 +200,19 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
     }
 
     public static NaruMessage of(NElement element) {
-        if(element==null){
+        if (element == null) {
             return null;
         }
-        if(element.isNull()){
+        if (element.isNull()) {
             return null;
         }
         return new NaruMessage(element);
     }
+
     public NaruMessage(NElement element) {
         NObjectElement o = element.asObject().get();
         this.role = NaruRole.valueOf(o.getStringValue("role").get());
-        this.content = o.getStringValue("content").orNull();
+        this.content = NormalizedMsg.of(o.get("content").orNull()).orNull();
         this.toolCallId = o.getStringValue("toolCallId").orNull();
         this.toolName = o.getStringValue("toolName").orNull();
         this.sourceName = o.getStringValue("sourceName").orNull();
@@ -253,7 +263,7 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
     public NElement toElement() {
         NObjectElementBuilder o = NObjectElementBuilder.of();
         o.set("role", role.name());
-        o.set("content", content);
+        o.set("content", content == null ? null : NText.of(content).length());
         o.set("toolName", toolName);
         if (toolCallId != null) {
             // omitted when null so existing session files stay byte-identical; without it
@@ -312,9 +322,9 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         return o.build();
     }
 
-    private NaruMessage(NaruRole role, String content) {
+    private NaruMessage(NaruRole role, NMsg content) {
         this.role = role;
-        this.content = content;
+        this.content = content==null?null:new NormalizedMsg(content);
     }
 
     /**
@@ -348,35 +358,35 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
 
     // ── factory helpers ──────────────────────────────────────────────────────
 
-    public static NaruMessage system(String content) {
+    public static NaruMessage system(NMsg content) {
         return new NaruMessage(NaruRole.system, content);
     }
 
     public static NaruMessage user(NMsg content) {
-        return new NaruMessage(NaruRole.user, content.toString());
-    }
-
-    public static NaruMessage user(String content) {
         return new NaruMessage(NaruRole.user, content);
     }
 
-    public static NaruMessage userWithImages(String content, List<String> base64Images) {
+    public static NaruMessage engine(NMsg content) {
+        return new NaruMessage(NaruRole.engine, content);
+    }
+
+    public static NaruMessage userWithImages(NMsg content, List<String> base64Images) {
         NaruMessage m = new NaruMessage(NaruRole.user, content);
         m.images = new ArrayList<>(base64Images);
         return m;
     }
 
-    public static NaruMessage assistant(String content) {
+    public static NaruMessage assistant(NMsg content) {
         return new NaruMessage(NaruRole.assistant, content).setSource(NaruSource.ASSISTANT);
     }
 
-    public static NaruMessage assistantWithToolCalls(String content, List<NaruToolCall> calls) {
+    public static NaruMessage assistantWithToolCalls(NMsg content, List<NaruToolCall> calls) {
         NaruMessage m = new NaruMessage(NaruRole.assistant, content).setSource(NaruSource.ASSISTANT);
         m.toolCalls = new ArrayList<>(calls);
         return m;
     }
 
-    public static NaruMessage tool(String toolName, String callId, String result) {
+    public static NaruMessage tool(String toolName, String callId, NMsg result) {
         NaruMessage m = new NaruMessage(NaruRole.tool, result).setSource(NaruSource.AGENT);
         m.toolName = toolName;
         m.toolCallId = callId;
@@ -386,7 +396,7 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
     /**
      * A summary item: the text is the message content, the metadata says what it replaced.
      */
-    public static NaruMessage summary(String text, NaruSummaryInfo summary) {
+    public static NaruMessage summary(NMsg text, NaruSummaryInfo summary) {
         NaruMessage m = new NaruMessage(NaruRole.summary, text);
         m.summary = summary;
         return m;
@@ -402,12 +412,12 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         this.role = role;
     }
 
-    public String getContent() {
-        return content;
+    public NMsg getContent() {
+        return content==null?null:content.toMsg();
     }
 
-    public void setContent(String content) {
-        this.content = content;
+    public void setContent(NMsg content) {
+        this.content = content==null?null:new NormalizedMsg(content);
     }
 
     public List<String> getImages() {
@@ -442,7 +452,9 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
         this.toolCalls = toolCalls;
     }
 
-    /** Typed display content, such as markdown, choices, forms, or downloadable files. */
+    /**
+     * Typed display content, such as markdown, choices, forms, or downloadable files.
+     */
     public List<NaruMessagePart> getParts() {
         return parts == null ? List.of() : Collections.unmodifiableList(parts);
     }
@@ -617,7 +629,7 @@ public class NaruMessage implements NToElement, NCopiable,Cloneable {
      * prompt-cache boundary: it sits at the position in the conversation where the compacted
      * span was.
      */
-    public NaruMessage asPlainUserContent(String plainContent) {
+    public NaruMessage asPlainUserContent(NMsg plainContent) {
         NaruMessage m = new NaruMessage(sourceName, NaruSource.USER, NaruRole.user, plainContent,
                 images == null ? null : new ArrayList<>(images),
                 null,

@@ -2,6 +2,7 @@ package net.thevpc.naru.api.registry;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.util.NaruExprs;
@@ -9,6 +10,7 @@ import net.thevpc.nuts.cmdline.*;
 import net.thevpc.nuts.expr.NExprContext;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.text.NTextBuilder;
 import net.thevpc.nuts.util.*;
 
 import java.util.*;
@@ -135,7 +137,9 @@ public abstract class NaruDirectiveBase implements NaruDirective {
                     // directives read context.argument() directly, so an empty
                     // cmdLine is fine and must not fail the whole call.
                 }
-                return s1.execute(context, cmdLine);
+                NaruMessage u = s1.execute(context, cmdLine);
+                task.addHistory(u);
+                return u;
             }
         }
         NCmdLine cmdLine;
@@ -147,7 +151,7 @@ public abstract class NaruDirectiveBase implements NaruDirective {
             NMsg msg = NMsg.ofC("invalid /%s syntax: %s", name(), context.argument());
             task.log(NaruLogMode.AGENT_RESPONSE,
                     msg);
-            return NaruStmtResult.ofError(msg.toString());
+            return NaruStmtResult.ofError(msg);
         }
         if (cmdLine.isEmpty()) {
             if (!NBlankable.isBlank(noCommand() != null)) {
@@ -175,7 +179,9 @@ public abstract class NaruDirectiveBase implements NaruDirective {
             }
             if (a.image().equals("help") || a.image().equals("--help")) {
                 cmdLine.next().get();
-                return executeHelp(context, cmdLine);
+                NaruStmtResult r = executeHelp(context, cmdLine);
+                task.log(NaruLogMode.DIRECTIVE, r.message().getContent());
+                return r;
             } else {
                 s = subCommand("").orNull();
                 if (s != null) {
@@ -189,30 +195,29 @@ public abstract class NaruDirectiveBase implements NaruDirective {
     }
 
     public NaruStmtResult executeHelp(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-        NaruTask task = context.task();
         NMsg prefix = NMsg.ofC("%s%s ", NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1(name()));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s%s%s", prefix, NMsg.ofStyledSeparator("["), NMsg.ofStyledPale("options..."), NMsg.ofStyledSeparator("]")));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("    %s", description));
-        StringBuilder sb = new StringBuilder();
+        NTextBuilder sb = NTextBuilder.of();
+        sb.append(NMsg.ofC("%s %s%s%s", prefix, NMsg.ofStyledSeparator("["), NMsg.ofStyledPale("options..."), NMsg.ofStyledSeparator("]")));
+        sb.append("\n");
+        sb.append(NMsg.ofC("    %s", description));
         for (SubCommand value : subCommands.values().stream().sorted(Comparator.comparing(x -> x.name())).collect(Collectors.toList())) {
             NaruStmtResult z = value.help(context);
-            Object o = z.successValue();
-            if (o instanceof String) {
-                if (!sb.isEmpty()) {
-                    sb.append("\n");
-                }
-                sb.append(o);
+            if (z.isSuccess()) {
+                sb.append("\n");
+                sb.append(z.message().getContent());
             }
         }
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  %s %s %s %s %s %s", prefix
+        sb.append("\n");
+        sb.append(NMsg.ofC("  %s %s %s %s %s %s", prefix
                 , NMsg.ofStyledSeparator("[")
                 , NMsg.ofStyledPrimary4("help")
                 , NMsg.ofStyledSeparator("|")
                 , NMsg.ofStyledPrimary4("--help")
                 , NMsg.ofStyledSeparator("]")
         ));
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("           show %s help", name()));
-        return NaruStmtResult.ofSuccess(sb.toString());
+        sb.append("\n");
+        sb.append(NMsg.ofC("           show %s help", name()));
+        return NaruStmtResult.ofSuccess(sb.build(),NaruMessage.engine(sb.build()));
     }
 
     /**
