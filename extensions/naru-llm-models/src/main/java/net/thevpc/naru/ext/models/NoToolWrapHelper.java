@@ -89,7 +89,7 @@ public class NoToolWrapHelper {
                         ).append("\n");
                         sb.append(callSep.close+"\n");
                     }
-                    message.setContent(sb.toString());
+                    message.setContent(NMsg.ofP(sb.toString()));
                     message.setToolCalls(null);
                     messages.set(i,message);
                 }
@@ -98,10 +98,10 @@ public class NoToolWrapHelper {
                 message = message.copy();
                 message.setRole(NaruRole.user);
                 message.setContent(
-                        resultSep.open+"\n"+
+                        NMsg.ofP(resultSep.open+"\n"+
                                 "tool: " + message.getToolName()+"\n"+
                                 message.getContent()+"\n"+
-                                resultSep.close+"\n"
+                                resultSep.close+"\n")
                 );
                 message.setToolCallId(null);
                 message.setToolName(null);
@@ -183,7 +183,7 @@ public class NoToolWrapHelper {
 
     public static NaruResponse unwrapResponse(NaruResponse naruResponse, Separators openClose, NaruTask task) {
         NaruMessage msg = naruResponse.getMessage();
-        ParsedEmulatedResponse parsed = parseEmulatedToolCalls(msg.getContent(), openClose, task);
+        ParsedEmulatedResponse parsed = parseEmulatedToolCalls(msg.getContent().toString(), openClose, task);
         if (!parsed.calls.isEmpty()) {
             // withContent keeps the provenance and, importantly, the reasoning
             // channel the parser may have filled (thinking / thinkingSegments) --
@@ -236,8 +236,9 @@ public class NoToolWrapHelper {
                 calls.add(call);
             } catch (Exception e) {
                 if (task != null) {
-                    task.log(NaruLogMode.AGENT_RESPONSE,
-                            NMsg.ofC("Failed to parse emulated tool_call: %s", json));
+                    task.addHistory(NaruMessage.engine(
+                            NMsg.ofC("Failed to parse emulated tool_call: %s", json).asError()
+                    ));
                 }
             }
             matcher.appendReplacement(clean, "");

@@ -228,7 +228,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             public void onEventAppended(NaruEvent newEvent) {
                 NaruTask t = findTask(newEvent.sourceTid()).orNull();
                 if (t != null) {
-                    t.log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] fire %s", newEvent.sourceTid(), newEvent));
+                    t.addHistory(NaruMessage.engine(NMsg.ofC("[%s] fire %s", newEvent.sourceTid(), newEvent)));
                 } else {
                     log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s/dead] fire %s", newEvent.sourceTid(), newEvent));
                 }

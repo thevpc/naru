@@ -1,13 +1,11 @@
 package net.thevpc.naru.impl.registry.builtindirectives;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
@@ -34,7 +32,7 @@ public class NaruGoDirective extends NaruDirectiveBase {
         super("go", "general", "call model without additional prompt");
         register(new AbstractSubCommand() {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String prompt = task.inputBuffer();
                 task.inputBuffer("");
@@ -52,16 +50,14 @@ public class NaruGoDirective extends NaruDirectiveBase {
                     List<NaruMessage> messages = cc.messages()
                             .stream().filter(x -> x.getRole() != NaruRole.summary).toList();
                     if (messages.isEmpty()) {
-                        task.log(NaruLogMode.TRACE, NMsg.ofC("nothing to do..."));
-                        return NaruStmtResult.ofError("nothing to do...");
+                        return NaruStmtResult.ofError(NMsg.ofP("nothing to do..."));
                     }
                     NaruMessage last = messages.get(messages.size() - 1);
                     if (last.getRole() == NaruRole.assistant) {
                         // The last thing that happened is an answer. Asking again would
                         // send a request whose tail is an assistant message, which is not
                         // a request.
-                        task.log(NaruLogMode.TRACE, NMsg.ofC("nothing to do..."));
-                        return NaruStmtResult.ofError("nothing to do...");
+                        return NaruStmtResult.ofError(NMsg.ofP("nothing to do..."));
                     }
                     if (isSystemOnly(messages)) {
                         // The system prompt is instructions, not a turn. With nothing
@@ -76,13 +72,12 @@ public class NaruGoDirective extends NaruDirectiveBase {
                         // instead of watching a request fail.
                         NOptional<String> problem = validateTail(task, cc);
                         if (problem.isPresent()) {
-                            task.log(NaruLogMode.DEBUG, NMsg.ofC("cannot go: %s", problem.get()));
-                            return NaruStmtResult.ofError("cannot go: " + problem.get());
+                            return NaruStmtResult.ofError(NMsg.ofP("cannot go: " + problem.get()));
                         }
                     }
                 }
                 task.prependStatement(NaruStatementHelper.ofModelCall(prompt));
-                return NaruStmtResult.ofSuccess(null);
+                return NaruStmtResult.ofSuccess();
             }
         });
     }

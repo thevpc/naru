@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.llamacpp;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
@@ -38,7 +39,7 @@ public class LlamaCppRmTool extends DefaultNaruTool {
             return "ERROR: missing model to delete.";
         }
         try {
-            LlamaCppService.of().rmModel(model, task.session(), msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+            LlamaCppService.of().rmModel(model, task.session(), msg -> task.addHistory(NaruMessage.engine(msg)));
             return "SUCCESS: model " + model + " deleted.";
         } catch (Exception e) {
             return "ERROR: " + e.getMessage();

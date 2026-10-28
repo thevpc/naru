@@ -559,7 +559,7 @@ public class AgentModelIntegrationTest {
                     () -> "expected the task to finish, but status was " + task.status());
             NaruMessage last = task.getLastResult();
             assertNotNull(last, "expected the model to produce a final assistant message");
-            String answer = last.getContent();
+            String answer = last.getFilteredContent();
             NOut.println(NMsg.ofC("model answer: %s", answer == null ? "<empty>" : answer.trim()));
         });
     }
@@ -641,7 +641,7 @@ public class AgentModelIntegrationTest {
 
             NaruMessage last = task.getLastResult();
             if (last != null) {
-                String answer = last.getContent();
+                String answer = last.getFilteredContent();
                 NOut.println(NMsg.ofC("model answer: %s", answer == null ? "<empty>" : answer.trim()));
             }
         });
@@ -761,7 +761,7 @@ public class AgentModelIntegrationTest {
 
             NaruMessage last = task.getLastResult();
             if (last != null) {
-                String answer = last.getContent();
+                String answer = last.getFilteredContent();
                 NOut.println(NMsg.ofC("model answer: %s", answer == null ? "<empty>" : answer.trim()));
             }
         });

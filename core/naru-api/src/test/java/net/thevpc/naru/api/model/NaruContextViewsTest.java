@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.agent.NaruRole;
+import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -28,11 +29,11 @@ class NaruContextViewsTest {
     }
 
     private static NaruMessage summary(String text, String id) {
-        return NaruMessage.summary(text, info(id, 2));
+        return NaruMessage.summary(NMsg.ofP(text), info(id, 2));
     }
 
     private static NaruMessage covered(String text, String summaryId) {
-        return NaruMessage.user(text).setExcludedBy(summaryId);
+        return NaruMessage.user(NMsg.ofP(text)).setExcludedBy(summaryId);
     }
 
     // ── contextView ──────────────────────────────────────────────────────────
@@ -125,8 +126,8 @@ class NaruContextViewsTest {
         }
         NaruMessage summaryOnWire = wire.get(0);
         assertEquals(NaruRole.user, summaryOnWire.getRole());
-        assertTrue(summaryOnWire.getContent().contains(NaruContextViews.SUMMARY_BEGIN));
-        assertTrue(summaryOnWire.getContent().contains("the gist"));
+        assertTrue(summaryOnWire.getFilteredContent().contains(NaruContextViews.SUMMARY_BEGIN));
+        assertTrue(summaryOnWire.getFilteredContent().contains("the gist"));
     }
 
     @Test

@@ -57,8 +57,8 @@ public class NaruModelResourceResolutionTest {
                 stringValue(context.env().get("emulate_tool_calls")));
         boolean bodyIncluded = context.messages().stream()
                 .anyMatch(m -> m.getContent() != null
-                        && m.getContent().contains("### AGENT CLASSPATH:")
-                        && m.getContent().contains("classpath default body"));
+                        && m.getContent().toString().contains("### AGENT CLASSPATH:")
+                        && m.getContent().toString().contains("classpath default body"));
         Assertions.assertTrue(bodyIncluded,
                 "the resource body must be contributed as a classpath system message");
     }
@@ -78,7 +78,7 @@ public class NaruModelResourceResolutionTest {
                 stringValue(context.env().get("probe_key")),
                 "a project .naru/models file must beat the jar-shipped default");
         long projectMessages = context.messages().stream()
-                .filter(m -> m.getContent() != null && m.getContent().contains("### PROJECT CONTEXT:"))
+                .filter(m -> m.getContent() != null && m.getContent().toString().contains("### PROJECT CONTEXT:"))
                 .count();
         Assertions.assertEquals(1, projectMessages);
     }

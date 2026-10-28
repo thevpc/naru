@@ -140,8 +140,9 @@ public interface NaruModelProtocol {
         if (message.getThinking() != null && !message.getThinking().isEmpty()) {
             pipeline.feedNativeThinking(message.getThinking());
         }
-        if (message.getContent() != null && !message.getContent().isEmpty()) {
-            pipeline.feed(message.getContent());
+        String content = message.getFilteredContent();
+        if (content != null && !content.isEmpty()) {
+            pipeline.feed(content);
         }
         pipeline.finish(!response.isDone());
     }

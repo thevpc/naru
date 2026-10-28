@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.llamacpp;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
@@ -29,7 +30,7 @@ public class LlamaCppInstallTool extends DefaultNaruTool {
     @Override
     public String execute(NaruToolCallContext context) {
         NaruTask task = context.task();
-        boolean ok = LlamaCppService.of().install(task.session(), msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+        boolean ok = LlamaCppService.of().install(task.session(), msg -> task.addHistory(NaruMessage.engine(msg)));
         if (ok) {
             LlamaCppInstallationInfo info = LlamaCppService.of().getInstallationInfo(task.session());
             return "SUCCESS: llama.cpp installed at " + info.getExecutablePath() + " (Version: " + info.getVersion() + ")";

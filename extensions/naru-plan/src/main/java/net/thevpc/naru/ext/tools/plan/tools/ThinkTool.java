@@ -1,10 +1,7 @@
 package net.thevpc.naru.ext.tools.plan.tools;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
-import net.thevpc.naru.api.model.NaruModelConfig;
-import net.thevpc.naru.api.model.NaruToolDefinition;
-import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.model.NaruThinkingConfig;
+import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
 import net.thevpc.naru.api.registry.NaruToolParameter;
@@ -72,7 +69,8 @@ public class ThinkTool extends DefaultNaruTool {
     public String execute(NaruToolCallContext context) {
         Object thought = context.arg("thought").orNull();
         if (!NBlankable.isBlank(thought)) {
-            context.task().log(NaruLogMode.MODEL_THINKING, NMsg.ofC("%s", thought));
+            //thinking...
+            context.task().addHistory(NaruMessage.engine(NMsg.ofC("%s", thought)));
         }
         return "ok";
     }

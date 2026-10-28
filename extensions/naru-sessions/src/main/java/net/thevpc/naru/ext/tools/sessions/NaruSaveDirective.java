@@ -47,12 +47,12 @@
 //                    session.setName(chat.getMessage().getContent());
 //                }
 //            } catch (Exception ex) {
-//                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Unable ot evaluate session title using LLM : %s : %s", NMsg.ofStyledString(session.name()), ex));
+//                context.outln( NMsg.ofC("Unable ot evaluate session title using LLM : %s : %s", NMsg.ofStyledString(session.name()), ex));
 //            }
 //        }
 //        session.save();
-//        context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved session: %s", NMsg.ofStyledString(session.name())));
-//        return NaruStmtResult.ofSuccess(null);
+//        context.outln( NMsg.ofC("Saved session: %s", NMsg.ofStyledString(session.name())));
+//        return NaruStmtResult.ofSuccess();
 //    }
 //
 //

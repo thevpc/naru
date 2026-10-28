@@ -63,7 +63,7 @@ public class NaruGeminiNativeRequestSerializer implements NaruCacheAwareRequestS
         if (request.messages() != null) {
             for (NaruMessage m : request.messages()) {
                 if (m.getRole() == NaruRole.system) {
-                    addTextPart(systemParts, m.getContent());
+                    addTextPart(systemParts, m.getFilteredContent());
                     continue;
                 }
                 if (m.getRole() == NaruRole.tool) {
@@ -74,8 +74,8 @@ public class NaruGeminiNativeRequestSerializer implements NaruCacheAwareRequestS
                 NObjectElementBuilder content = NElement.ofObjectBuilder();
                 content.set("role", role);
                 List<NElement> parts = new ArrayList<>();
-                if (m.getContent() != null && !m.getContent().isEmpty()) {
-                    addTextPart(parts, m.getContent());
+                if (m.getContent() != null && !m.getFilteredContent().isEmpty()) {
+                    addTextPart(parts, m.getFilteredContent());
                 }
                 if (m.getImages() != null) {
                     for (String img : m.getImages()) {
@@ -197,7 +197,7 @@ public class NaruGeminiNativeRequestSerializer implements NaruCacheAwareRequestS
         NObjectElementBuilder response = NElement.ofObjectBuilder();
         response.set("name", m.getToolName() != null ? m.getToolName() : "tool");
         NObjectElementBuilder wrapper = NElement.ofObjectBuilder();
-        wrapper.set("result", m.getContent() != null ? m.getContent() : "");
+        wrapper.set("result", m.getFilteredContent() != null ? m.getFilteredContent() : "");
         response.set("response", wrapper.build());
 
         NObjectElementBuilder part = NElement.ofObjectBuilder();

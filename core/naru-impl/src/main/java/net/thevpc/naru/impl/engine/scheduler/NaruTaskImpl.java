@@ -137,9 +137,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private Instant creationDate;
     private Instant modificationDate;
     private NaruModelConfig model;
-    /** Spawn-time string hint ({@code spec.model()} or the policy model); resolved lazily. */
+    /**
+     * Spawn-time string hint ({@code spec.model()} or the policy model); resolved lazily.
+     */
     private String modelHint;
-    /** One-shot result and flag for the tools-capable best fit, so its warnings fire once. */
+    /**
+     * One-shot result and flag for the tools-capable best fit, so its warnings fire once.
+     */
     private NaruModelConfig resolvedConfiguredModel;
     private boolean modelResolutionAttempted;
     private String extraContext;
@@ -231,26 +235,53 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         return inbox;
     }
 
-    @Override public synchronized List<String> queuedMessages() { return List.copyOf(queuedMessages); }
-    @Override public synchronized NaruTask queueMessage(String message) {
-        if (message == null || message.isBlank()) throw new IllegalArgumentException("queued message must not be blank");
-        queuedMessages.add(message); fireChanged(); return this;
+    @Override
+    public synchronized List<String> queuedMessages() {
+        return List.copyOf(queuedMessages);
     }
-    @Override public synchronized NaruTask editQueuedMessage(int index, String message) {
-        if (message == null || message.isBlank()) throw new IllegalArgumentException("queued message must not be blank");
-        queuedMessages.set(index, message); fireChanged(); return this;
+
+    @Override
+    public synchronized NaruTask queueMessage(String message) {
+        if (message == null || message.isBlank())
+            throw new IllegalArgumentException("queued message must not be blank");
+        queuedMessages.add(message);
+        fireChanged();
+        return this;
     }
-    @Override public synchronized NaruTask deleteQueuedMessage(int index) {
-        queuedMessages.remove(index); fireChanged(); return this;
+
+    @Override
+    public synchronized NaruTask editQueuedMessage(int index, String message) {
+        if (message == null || message.isBlank())
+            throw new IllegalArgumentException("queued message must not be blank");
+        queuedMessages.set(index, message);
+        fireChanged();
+        return this;
     }
-    @Override public synchronized NaruTask mergeQueuedMessages(int first, int last) {
-        if (first < 0 || last <= first || last >= queuedMessages.size()) throw new IndexOutOfBoundsException("select at least two queued messages");
+
+    @Override
+    public synchronized NaruTask deleteQueuedMessage(int index) {
+        queuedMessages.remove(index);
+        fireChanged();
+        return this;
+    }
+
+    @Override
+    public synchronized NaruTask mergeQueuedMessages(int first, int last) {
+        if (first < 0 || last <= first || last >= queuedMessages.size())
+            throw new IndexOutOfBoundsException("select at least two queued messages");
         String merged = String.join("\n\n", queuedMessages.subList(first, last + 1));
-        queuedMessages.subList(first, last + 1).clear(); queuedMessages.add(first, merged); fireChanged(); return this;
+        queuedMessages.subList(first, last + 1).clear();
+        queuedMessages.add(first, merged);
+        fireChanged();
+        return this;
     }
-    @Override public synchronized String pollQueuedMessage() {
+
+    @Override
+    public synchronized String pollQueuedMessage() {
         if (queuedMessages.isEmpty()) return null;
-        String next = queuedMessages.remove(0); fireChanged(); return next;
+        String next = queuedMessages.remove(0);
+        fireChanged();
+        return next;
     }
 
     @Override
@@ -275,14 +306,22 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public boolean isConversation() { return conversation; }
+    public boolean isConversation() {
+        return conversation;
+    }
 
     @Override
-    public long version() { return version; }
+    public long version() {
+        return version;
+    }
 
-    public List<NElement> lifecycleLog() { return Collections.unmodifiableList(lifecycleLog); }
+    public List<NElement> lifecycleLog() {
+        return Collections.unmodifiableList(lifecycleLog);
+    }
 
-    public String terminationReason() { return terminationReason; }
+    public String terminationReason() {
+        return terminationReason;
+    }
 
     @Override
     public Instant creationTime() {
@@ -363,8 +402,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         this.historyLoaded = false;
     }
 
-    public boolean isHistoryLoaded() { return historyLoaded; }
-    public String loadedHistoryHash() { return loadedHistoryHash; }
+    public boolean isHistoryLoaded() {
+        return historyLoaded;
+    }
+
+    public String loadedHistoryHash() {
+        return loadedHistoryHash;
+    }
 
     private void ensureHistoryLoaded() {
         if (historyLoaded) return;
@@ -378,7 +422,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         historyLoaded = true;
     }
 
-    /** Returns false when this idempotency key was already consumed by the task. */
+    /**
+     * Returns false when this idempotency key was already consumed by the task.
+     */
     public synchronized boolean claimInputKey(String key) {
         return key == null || deliveredInputKeys.add(key);
     }
@@ -665,7 +711,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         // which threw out of the scheduler worker and left the run's result unset.
         if (isCompleted()) {
             if (newStatus != status) {
-                log(NaruLogMode.TRACE, NMsg.ofC("[%s] ignoring status %s after %s", id(), newStatus, status).asError());
+                addHistory(NaruMessage.engine(NMsg.ofC("[%s] ignoring status %s after %s", id(), newStatus, status).asErrorAlert()));
             }
             return;
         }
@@ -691,7 +737,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                             && !(oldStatus == NaruTaskStatus.RUNNING && newStatus == NaruTaskStatus.READY)
 
             ) {
-                log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] status %s->%s", id(), oldStatus, newStatus));
+                addHistory(NaruMessage.engine(NMsg.ofC("[%s] status %s->%s", id(), oldStatus, newStatus)));
             }
             this.fireChanged();
         }
@@ -707,7 +753,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     public synchronized NaruTask reactivate(long expectedVersion) {
         if (!isCompleted()) return this;
-        if (!conversation) throw new IllegalStateException("task " + id + " is not a conversation and cannot be reactivated");
+        if (!conversation)
+            throw new IllegalStateException("task " + id + " is not a conversation and cannot be reactivated");
         if (version != expectedVersion) throw new IllegalStateException("task " + id + " version conflict: expected "
                 + expectedVersion + " but current version is " + version);
         ensureHistoryLoaded();
@@ -738,7 +785,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         frozenExitCode = 0;
         outcomeSettled = false;
         completion = new CompletableFuture<>();
-        synchronized (completionLock) { completionCallbacks.clear(); }
+        synchronized (completionLock) {
+            completionCallbacks.clear();
+        }
         lifecycleLog.add(NElement.ofObjectBuilder().set("event", "reactivated")
                 .set("at", Instant.now()).set("previousTerminationReason", previousReason)
                 .set("discardedFrameDepth", discardedDepth).set("synthesizedToolResults", synthesized)
@@ -768,7 +817,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             repaired.add(message);
             if (message.getRole() == NaruRole.assistant && message.hasToolCalls()) {
                 for (NaruToolCall call : message.getToolCalls()) {
-                    if (call.getId() != null) pending.put(call.getId(), call.getName() == null ? "unknown" : call.getName());
+                    if (call.getId() != null)
+                        pending.put(call.getId(), call.getName() == null ? "unknown" : call.getName());
                 }
             }
         }
@@ -1036,11 +1086,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 } catch (Exception e) {
                     // a subscriber that throws must not stop the others, nor make the task look
                     // as though it failed: it ran, and this is the subscriber's problem
-                    log(NaruLogMode.SCHEDULER, NMsg.ofC("onComplete callback threw for task %s: %s", id(), e).asError());
+                    addHistory(NaruMessage.engine(NMsg.ofC("onComplete callback threw for task %s: %s", id(), e).asError()));
                 }
             });
         } catch (Exception e) {
-            log(NaruLogMode.SCHEDULER, NMsg.ofC("could not schedule onComplete callback for task %s: %s", id(), e).asError());
+            addHistory(NaruMessage.engine(NMsg.ofC("could not schedule onComplete callback for task %s: %s", id(), e).asError()));
         }
     }
 
@@ -1118,7 +1168,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         o.set("taskMode", taskMode.name());
         o.set("inputBuffer", inputBuffer);
         NArrayElementBuilder queued = NArrayElementBuilder.of();
-        synchronized (this) { for (String message : queuedMessages) queued.add(message); }
+        synchronized (this) {
+            for (String message : queuedMessages) queued.add(message);
+        }
         o.set("queuedMessages", queued.build());
         NArrayElementBuilder _todos = NArrayElementBuilder.of();
         for (NaruTaskFrameImpl a : frames) {
@@ -1165,9 +1217,14 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         this.deliveredInputKeys.clear();
         NArrayElement inputKeys = o.get("deliveredInputKeys").flatMap(x -> x.isNull() ? null : x.asArray()).orNull();
-        if (inputKeys != null) for (NElement key : inputKeys) key.asStringValue().ifPresent(this.deliveredInputKeys::add);
+        if (inputKeys != null)
+            for (NElement key : inputKeys) key.asStringValue().ifPresent(this.deliveredInputKeys::add);
         String savedMode = o.getStringValue("taskMode").orElse(NaruTaskMode.BATCH.name());
-        try { this.taskMode = NaruTaskMode.valueOf(savedMode); } catch (IllegalArgumentException ignored) { this.taskMode = NaruTaskMode.BATCH; }
+        try {
+            this.taskMode = NaruTaskMode.valueOf(savedMode);
+        } catch (IllegalArgumentException ignored) {
+            this.taskMode = NaruTaskMode.BATCH;
+        }
         this.conversation = o.getBooleanValue("conversation").orElse(this.taskMode == NaruTaskMode.INTERACTIVE);
         this.version = o.getLongValue("version").orElse(0L);
         this.terminationReason = o.getStringValue("terminationReason").orNull();
@@ -1400,8 +1457,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                         ext.onModeChanged(this, oldMode, newMode);
                     } catch (Exception e) {
                         // an extension must never be able to break a mode switch
-                        log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("session extension '%s' failed on mode change: %s",
-                                ext.name(), e));
+                        addHistory(NaruMessage.engine(NMsg.ofC("session extension '%s' failed on mode change: %s",
+                                ext.name(), e)));
                     }
                 }
             } else {
@@ -1521,9 +1578,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private void warnOnUnknownTaskToolTags() {
         for (String name : taskToolTags) {
             if (session().registry().findAvailableTag(name).isEmpty()) {
-                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                addHistory(NaruMessage.engine(NMsg.ofC(
                         "⚠ task %s holds tool tag '%s' but no provider declares it; the tag is kept and reveals no tool",
-                        id(), name));
+                        id(), name)));
             }
         }
     }
@@ -2099,7 +2156,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             model = session.findModel(requestedKey).orNull();
         }
         if (model == null) {
-            log(NaruLogMode.SCRIPT, NMsg.ofC("Selected model %s was not found. Choose an available model with /model list, then select it with /model use <key>.", requestedModel).asError());
+            addHistory(NaruMessage.engine(NMsg.ofC("Selected model %s was not found. Choose an available model with /model list, then select it with /model use <key>.", requestedModel).asError()));
         }
         return model;
     }
@@ -2202,7 +2259,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 if (path.exists() && path.isFile()) {
                     addStatements(parseFile(path).get().toArray(new NaruStatement[0]));
                 } else {
-                    log(NaruLogMode.TRACE, NMsg.ofC("Skipping file %s: does not exist", path));
+                    addHistory(NaruMessage.engine(NMsg.ofC("Skipping file %s: does not exist", path)));
                 }
             }
         }
@@ -2239,7 +2296,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public void throwError(NMsg nMsg) {
-        log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Error : %s", nMsg));
+        addHistory(NaruMessage.engine(NMsg.ofC("Error : %s", nMsg)));
     }
 
     @Override
@@ -2281,6 +2338,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public void addHistory(NaruMessage assistantMsg) {
+        if (assistantMsg == null) {
+            return;
+        }
         ensureHistoryLoaded();
         if (assistantMsg.getRole().equals(NaruRole.system)) {
             systemHistory.add(s -> assistantMsg);
@@ -2349,7 +2409,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                         return;
                     }
                 } else {
-                    log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] pending %s", id(), pendingStatement.toElement()));
+                    addHistory(NaruMessage.engine(NMsg.ofC("[%s] pending %s", id(), pendingStatement.toElement())));
                     throwError(NMsg.ofC("PENDING %s", pendingStatement.toElement()));
                     return;
                 }
@@ -2370,7 +2430,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             }
             String line = routine.lineCommandAt(frame.pc());
             if (line == null) {
-                log(NaruLogMode.SCHEDULER, NMsg.ofC("PENDING %s", pendingStatement.toElement()));
+                addHistory(NaruMessage.engine(NMsg.ofC("PENDING %s", pendingStatement.toElement())));
                 throwError(NMsg.ofC("PENDING %s", pendingStatement.toElement()));
                 return;
             }
@@ -2388,7 +2448,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                         return;
                     }
                 } else {
-                    log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] pending %s", id(), pendingStatement.toElement()));
+                    addHistory(NaruMessage.engine(NMsg.ofC("[%s] pending %s", id(), pendingStatement.toElement())));
                     throwError(NMsg.ofC("PENDING %s", pendingStatement.toElement()));
                     return;
                 }
@@ -2429,7 +2489,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     private void _exeRollableStmt(NaruStatement op) {
-        log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] invoke : %s", id(), op.toElement()));
+        addHistory(NaruMessage.engine(NMsg.ofC("[%s] invoke : %s", id(), op.toElement())));
         doing = op;
         // A statement that names its author runs as that author: a tool call an agent
         // emitted is checked as the agent, and the identity is restored the moment the
@@ -2457,7 +2517,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (line.startsWith("/")) {
             line = line.substring(1).trim();
         } else {
-            log(NaruLogMode.TRACE, NMsg.ofC("Unknown directive : %s", line));
+            addHistory(NaruMessage.directive(NMsg.ofC("Unknown directive : %s", line)));
             return;
         }
         int idx = line.indexOf(' ');
@@ -2470,7 +2530,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         NaruDirective dir = session().registry().findDirective(cmd).orNull();
         if (dir == null) {
-            log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown directive '/" + cmd + "'. Available tools: " + session().registry().directives().keySet()).asError());
+            addHistory(NaruMessage.directive(NMsg.ofC("ERROR: Unknown directive '/" + cmd + "'. Available tools: " + session().registry().directives().keySet()).asError()));
             return;
         }
         invokeDirective(dir, new NaruDirectiveCallContextImpl(cmd, line, this));
@@ -2484,8 +2544,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         NaruAccessDecision access = NaruAccessGuard.check(this, resource, NaruAction.CALL);
         if (!access.allowed()) {
             String deny = NaruAccessGuard.denyMessage(this, resource, NaruAction.CALL, access);
-            log(NaruLogMode.SCRIPT, NMsg.ofC(deny).asError());
-            return NaruStmtResult.ofError(deny);
+            addHistory(NaruMessage.engine(NMsg.ofC(deny).asError()));
+            return NaruStmtResult.ofError(NMsg.ofP(deny));
         }
         NaruStmtResult r;
         try {
@@ -2494,8 +2554,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             throw e;
         } catch (Exception e) {
             NMsg msg = NMsg.ofC("ERROR executing directive '/" + dir.name() + "': " + e.getMessage()).asError();
-            log(NaruLogMode.TRACE, msg);
-            r = NaruStmtResult.of(msg.toString(), 127);
+//            log(NaruLogMode.TRACE, msg);
+            r = NaruStmtResult.ofError(msg, 127);
+            addHistory(NaruMessage.directive(msg));
         }
         setTaskEnv("lastExitCode", r.exitCode());
         setTaskEnv("lastResult", r.successValue());
@@ -2540,7 +2601,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     public void invokeRoutine(String routineName) {
         NaruRoutine routine = session().routine(routineName, this, false).orNull();
         if (routine.isEmpty()) {
-            log(NaruLogMode.TRACE, NMsg.ofC("Routine '%s' is empty. Nothing to execute.", NMsg.ofStyledPrimary1(routineName)));
+            addHistory(NaruMessage.engine(NMsg.ofC("Routine '%s' is empty. Nothing to execute.", NMsg.ofStyledPrimary1(routineName))));
             return;
         }
         String sysPrompt = "You are executing a script named '" + routineName + "'.\n" +
@@ -2726,7 +2787,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public NaruTask runInitHooks(String trigger) {
         boolean forceWorkspace = NaruEvent.PROJECT_CHANGE.equals(trigger);
-        NPath hookBase = forceWorkspace ? ((NaruSessionImpl) session).projectDir() : workingDir;
+        NPath hookBase = forceWorkspace ? session.projectDir() : workingDir;
         _prependInitHooks(forceWorkspace, hookBase);
         return this;
     }
@@ -2961,7 +3022,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (line.startsWith("/")) {
             NOptional<NaruStatement> a = parseAsDirectiveStatement(line);
             if (!a.isPresent()) {
-                log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown directive '" + line + "'. Available tools: " + session().registry().directives().keySet()).asError());
+                addHistory(NaruMessage.directive(NMsg.ofC("ERROR: Unknown directive '" + line + "'. Available tools: " + session().registry().directives().keySet()).asError()));
             }
             return a;
         }
@@ -3445,13 +3506,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     @Override
     public void addResultMessage(NMsg msg) {
         if (msg.isError()) {
-            this.addHistory(NaruMessage.user(msg.toString()));
-            this.log(NaruLogMode.AGENT_RESPONSE, msg);
-            this.frame().lastResult(NaruStmtResult.ofError(msg.toString()));
+            this.addHistory(NaruMessage.engine(msg));
+            this.frame().lastResult(NaruStmtResult.ofError(NElement.of(msg.toString())));
         } else {
-            this.addHistory(NaruMessage.user(msg.toString()));
-            this.log(NaruLogMode.AGENT_RESPONSE, msg);
-            this.frame().lastResult(NaruStmtResult.ofSuccess(msg));
+            this.addHistory(NaruMessage.engine(msg));
+            this.frame().lastResult(NaruStmtResult.ofSuccess(NElement.of(msg.toString())));
         }
     }
 }

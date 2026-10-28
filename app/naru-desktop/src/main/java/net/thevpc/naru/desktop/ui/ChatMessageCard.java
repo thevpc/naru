@@ -66,7 +66,7 @@ public final class ChatMessageCard extends JPanel {
         who.setForeground(UiPalette.readable(accent));
         heading.add(who, BorderLayout.WEST);
 
-        String textToCopy = this.message.getContent();
+        String textToCopy = this.message.getFilteredContent();
         boolean hasParts = !this.message.getParts().isEmpty();
         if (textToCopy != null && !textToCopy.isBlank() || hasParts) {
             // A row with only parts — a form, an image — still holds text worth taking, and a card
@@ -144,7 +144,7 @@ public final class ChatMessageCard extends JPanel {
     }
 
     private String contentHtml() {
-        String content = message.getContent();
+        String content = message.getFilteredContent();
         if (!folded || HtmlPanes.hiddenLines(content, HtmlPanes.FOLD_AFTER_LINES) == 0) {
             return "<html><body>" + (preparedHtml == null ? TextHtml.paragraphs(content) : preparedHtml)
                     + "</body></html>";
@@ -154,7 +154,7 @@ public final class ChatMessageCard extends JPanel {
     }
 
     private void updateFold() {
-        int hidden = HtmlPanes.hiddenLines(message.getContent(), HtmlPanes.FOLD_AFTER_LINES);
+        int hidden = HtmlPanes.hiddenLines(message.getFilteredContent(), HtmlPanes.FOLD_AFTER_LINES);
         fold.setVisible(hidden > 0);
         fold.setText(folded ? "⌄ view more · " + hidden + " more lines" : "⌃ view less");
     }
@@ -185,7 +185,7 @@ public final class ChatMessageCard extends JPanel {
         // Only a body past the fold threshold can be "unfolded" into this state, so a merely long
         // message stays inline instead of opening a second scrollbar unasked.
         boolean longExpanded = !folded
-                && HtmlPanes.lineCount(message.getContent()) > HtmlPanes.SCROLL_AFTER_LINES;
+                && HtmlPanes.lineCount(message.getFilteredContent()) > HtmlPanes.SCROLL_AFTER_LINES;
         UiFonts.apply(contentBody, longExpanded ? UiFonts.SECONDARY : UiFonts.BODY, java.awt.Font.PLAIN);
         if (longExpanded != scrolled) {
             scrolled = longExpanded;

@@ -37,7 +37,7 @@ public class NaruTaskInboxImpl implements NaruTaskInbox {
     @Override
     public void push(long seq) {
         if(seqs.add(seq)) {
-            task.log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] inbox %s", task.id(), seq));
+            task.addHistory(NaruMessage.engine((NMsg.ofC("[%s] inbox %s", task.id(), seq))));
         }
     }
 
@@ -75,7 +75,7 @@ public class NaruTaskInboxImpl implements NaruTaskInbox {
     }
 
     private void _markConsumed(long seq) {
-        task.log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] event consumed %s", task.id(), seq));
+        task.addHistory(NaruMessage.engine(NMsg.ofC("[%s] event consumed %s", task.id(), seq)));
         consumed.add(seq);
     }
 

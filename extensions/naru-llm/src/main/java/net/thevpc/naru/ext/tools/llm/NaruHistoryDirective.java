@@ -9,6 +9,7 @@ import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextStyle;
@@ -27,7 +28,7 @@ public class NaruHistoryDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[<n1>-<n2>]", "list history (user only) selected lines, or all")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeList(context, false, cmdLine);
             }
         });
@@ -35,7 +36,7 @@ public class NaruHistoryDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[<n1>-<n2>]", "list all context history (user only) selected lines, or all")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeList(context, true, cmdLine);
             }
         });
@@ -43,14 +44,14 @@ public class NaruHistoryDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[<n1>-<n2>]", "delete all context history selected lines")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeDrop(context, cmdLine);
             }
         });
         register(new AbstractSubCommand("clear", NText.ofPlain("delete all history lines")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeClear(context, cmdLine);
             }
         });
@@ -58,13 +59,13 @@ public class NaruHistoryDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<count>", "trim <count> lines")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeTrim(context, cmdLine);
             }
         });
     }
 
-    public NaruStmtResult executeList(NaruDirectiveCallContext context, boolean includeAll, NCmdLine cmdLine) {
+    public NaruStmtResult executeList(SubCommandContext context, boolean includeAll, NCmdLine cmdLine) {
         NaruTask task = context.task();
         List<NaruMessage> all = context.task().context(includeAll ? NaruSource.values() : new NaruSource[]{NaruSource.USER}).messages();
         Set<Integer> toShow = new HashSet<>();
@@ -91,37 +92,36 @@ public class NaruHistoryDirective extends NaruDirectiveBase {
                         }
                     } else {
                         NMsg msg = NMsg.ofC("invalid position to drop", range).asError();
-                        task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                        return NaruStmtResult.ofError(msg.toString());
+                        context.outln(msg);
+                        return NaruStmtResult.ofError();
                     }
                 }
             }
         }
-        NStringBuilder sb = NStringBuilder.of();
         if (toShow.isEmpty()) {
             for (int i = 0; i < all.size(); i++) {
                 NaruMessage a = all.get(i);
-                logRow(i + 1, all.size(), a, task, sb);
+                logRow(i + 1, all.size(), a, task, context);
             }
         } else {
             List<Integer> bb = toShow.stream().sorted().collect(Collectors.toList());
             for (int k = 0; k < bb.size(); k++) {
                 int i = bb.get(k);
                 NaruMessage a = all.get(i);
-                logRow(i + 1, all.size(), a, task, sb);
+                logRow(i + 1, all.size(), a, task, context);
             }
         }
-        return NaruStmtResult.ofSuccess(sb.toString());
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
-    private void logRow(int rowIndex, int max, NaruMessage a, NaruTask task, NStringBuilder sb) {
+    private void logRow(int rowIndex, int max, NaruMessage a, NaruTask task, SubCommandContext context) {
         int zeros = (int) Math.ceil(Math.log10(max));
         if (zeros <= 0) {
             zeros = 1;
         }
         DecimalFormat zformat = new DecimalFormat(NStringUtils.repeat("0", zeros));
 
-        List<String> lines = NStringUtils.splitLines(a.getContent());
+        List<String> lines = NStringUtils.splitLines(a.getContent().toString());
         for (int j = 0; j < lines.size(); j++) {
             String line = lines.get(j);
             if (j == 0) {
@@ -131,12 +131,10 @@ public class NaruHistoryDirective extends NaruDirectiveBase {
                         NMsg.ofStyled(a.getRole().name(), agentStyle(a.getRole())),
                         NMsg.ofStyled(">", agentStyle(a.getRole()))
                         , line);
-                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                sb.println(msg.toString());
+                context.outln(msg);
             } else {
                 NMsg msg = NMsg.ofC("        %s", line);
-                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                sb.println(msg.toString());
+                context.outln(msg);
             }
         }
         List<NaruToolCall> toolCalls = a.getToolCalls();
@@ -148,8 +146,7 @@ public class NaruHistoryDirective extends NaruDirectiveBase {
                         NMsg.ofStyled(a.getRole().name(), agentStyle(a.getRole())),
                         NMsg.ofStyled(">", agentStyle(a.getRole()))
                         , toolCall.toString());
-                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                sb.println(msg.toString());
+                context.outln(msg.toString());
             }
         }
     }
@@ -182,16 +179,16 @@ public class NaruHistoryDirective extends NaruDirectiveBase {
         return null;
     }
 
-    public NaruStmtResult executeClear(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeClear(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         int count = task.clearHistory();
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s history messages", count));
-        return NaruStmtResult.ofSuccess(count);
+        context.outln(NMsg.ofC("removed %s history messages", count));
+        return NaruStmtResult.ofSuccess(NElement.of(count), null);
     }
 
-    public NaruStmtResult executeDrop(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeDrop(SubCommandContext context, NCmdLine cmdLine) {
         if (cmdLine.isEmpty()) {
-            return NaruStmtResult.ofSuccess(null);
+            return NaruStmtResult.ofSuccess();
         }
         NaruTask task = context.task();
         List<NaruUtils.LineRange> ranges = NaruUtils.parseRanges(cmdLine);
@@ -206,8 +203,8 @@ public class NaruHistoryDirective extends NaruDirectiveBase {
                 b.add(a.get(i));
             }
         }
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s history messages", b.size()));
-        return NaruStmtResult.ofSuccess(b.size());
+        context.outln(NMsg.ofC("removed %s history messages", b.size()));
+        return NaruStmtResult.ofSuccess(NElement.of(b.size()), null);
 
         // TODO: history drop is not pair-aware — dropping a tool_call or tool_result
         // message individually will produce a malformed conversation history.
@@ -215,22 +212,22 @@ public class NaruHistoryDirective extends NaruDirectiveBase {
     }
 
 
-    public NaruStmtResult executeTrim(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeTrim(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         while (!cmdLine.isEmpty()) {
             String a = cmdLine.next().get().image();
             if (a.matches("[0-9]+")) {
                 int deleted = task.trimHistory(Integer.parseInt(a));
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s history messages", deleted));
-                return NaruStmtResult.ofSuccess(deleted);
+                context.outln(NMsg.ofC("removed %s history messages", deleted));
+                return NaruStmtResult.ofSuccess(NElement.of(deleted), null);
             } else {
                 NMsg msg = NMsg.ofC("invalid trim").asError();
-                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                return NaruStmtResult.ofError(msg.toString());
+                context.errln(msg);
+                return NaruStmtResult.ofError(msg);
             }
         }
         int deleted = task.trimHistory(1024); // default trim
-        task.log(NaruLogMode.RAW, NMsg.ofC("removed %s history messages", deleted));
-        return NaruStmtResult.ofSuccess(deleted);
+        context.outln(NMsg.ofC("removed %s history messages", deleted));
+        return NaruStmtResult.ofSuccess(NElement.of(deleted), null);
     }
 }

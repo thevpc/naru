@@ -446,7 +446,7 @@ public class NaruRegistryImpl implements NaruRegistry {
         if (!access.allowed()) {
             String deny = NaruAccessGuard.denyMessage(task, resource, NaruAction.CALL, access);
             if (task != null) {
-                task.log(NaruLogMode.SCRIPT, NMsg.ofC(deny).asError());
+                task.addHistory(NaruMessage.engine(NMsg.ofC(deny).asError()));
             }
             return deny;
         }
@@ -475,7 +475,7 @@ public class NaruRegistryImpl implements NaruRegistry {
     public void dispatchSlash(String name, String argument, NaruTask task) {
         NaruDirective dir = findDirective(name).orNull();
         if (dir == null) {
-            task.log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + availableDirectives.keySet()).asError());
+            task.addHistory(NaruMessage.engine(NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + availableDirectives.keySet()).asError()));
             return;
         }
         task.invokeDirective(dir, new NaruDirectiveCallContextImpl(name, argument, task));

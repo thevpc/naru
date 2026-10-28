@@ -9,6 +9,7 @@ import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruSummaryLevel;
 import net.thevpc.naru.api.model.NaruToolOutputPolicy;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 
 import java.util.ArrayList;
@@ -179,10 +180,10 @@ public class LlmNaruSummarizer implements NaruSummarizer {
             shortened = harder;
         }
         // 3. cut, and record that we did
-        task.log(NaruLogMode.PROGRESS, NMsg.ofC(
+        task.addHistory(NaruMessage.engine(NMsg.ofC(
                 "compaction summary was %s tokens, over the %s target; truncating it and marking "
                         + "the summary as incomplete. The covered history is still intact.",
-                NaruCompactTokens.format(actual), NaruCompactTokens.format(maxTokens)).asWarning());
+                NaruCompactTokens.format(actual), NaruCompactTokens.format(maxTokens)).asWarning().withIntent(NMsgIntent.PROGRESS)));
         return truncateTo(shortened, maxTokens);
     }
 
@@ -223,7 +224,7 @@ public class LlmNaruSummarizer implements NaruSummarizer {
             throw new IllegalStateException(
                     "summarizer model " + model.provider() + "/" + model.model() + " returned no text");
         }
-        return message.getContent();
+        return message.getFilteredContent();
     }
 
     /** The policy a call would render its input with, for reporting. */

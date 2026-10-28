@@ -136,13 +136,13 @@ public final class TranscriptModel {
                     // answer appears as it is written and settles in the place it already
                     // occupies — where creating a second block would show the same text twice.
                     TranscriptBlock streamed = (m.message().getRole() == net.thevpc.naru.api.agent.NaruRole.assistant)
-                            ? streamedAnswerFor(m.taskId(), m.message().getContent()) : null;
+                            ? streamedAnswerFor(m.taskId(), m.message().getFilteredContent()) : null;
                     boolean isNew = streamed == null && byId.get(m.blockId()) == null;
                     NaruLogMode mode = m.message().getRole() == net.thevpc.naru.api.agent.NaruRole.user
                             ? NaruLogMode.SCRIPT : NaruLogMode.AGENT_RESPONSE;
                     TranscriptBlock b = streamed != null ? streamed : blockFor(m.blockId(), mode, m.taskId());
                     b.setMessage(m.message(), m.sequence());
-                    String body = m.message().getContent();
+                    String body = m.message().getFilteredContent();
                     if (body == null) body = "";
                     if (!m.message().getParts().isEmpty()) {
                         for (var part : m.message().getParts()) body += "\n" + part.type() + ": " + part.payload();

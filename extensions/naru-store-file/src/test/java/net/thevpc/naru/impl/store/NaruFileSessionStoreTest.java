@@ -94,7 +94,7 @@ public class NaruFileSessionStoreTest {
     private static List<String> texts(List<NaruMessage> messages) {
         List<String> out = new ArrayList<>();
         for (NaruMessage m : messages) {
-            out.add(m.getContent());
+            out.add(m.getContent().toFullString());
         }
         return out;
     }

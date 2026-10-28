@@ -1,5 +1,7 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.nuts.text.NMsg;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -121,7 +123,8 @@ public final class NaruContextViews {
         List<NaruMessage> out = new ArrayList<>(view.size());
         for (NaruMessage m : view) {
             if (m.isSummary()) {
-                out.add(m.copy().withContent(renderSummary(m)));
+                String s = renderSummary(m);
+                out.add(m.copy().withContent(s==null?null: NMsg.ofP(s)));
             } else {
                 out.add(m);
             }

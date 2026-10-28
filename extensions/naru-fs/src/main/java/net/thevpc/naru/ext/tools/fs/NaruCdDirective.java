@@ -4,10 +4,10 @@ import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.*;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
@@ -20,23 +20,27 @@ public class NaruCdDirective extends NaruDirectiveBase {
         super("cd", "fs", "change directory");
         register(new AbstractSubCommand(new SubCommandHelp("<dir>", "change directory to <dir>")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NPath p2 = NBlankable.isBlank(context.argument()) ? context.task().projectDir() : NPath.of(context.argument());
                 String denied = NaruFsGuard.deny(task, p2, NaruResourceType.DIR, NaruAction.LIST);
                 if (denied != null) {
                     NMsg msg = NMsg.ofC("%s", denied).asError();
                     context.task().addResultMessage(msg);
-                    return NaruStmtResult.ofError(denied);
+                    context.outln(msg);
+                    return NaruStmtResult.ofError(1);
                 }
                 if (p2.isDirectory()) {
                     task.setWorkingDir(p2);
-                    context.task().addResultMessage(NMsg.ofC("change working directory to %s", task.workingDir()));
-                    return NaruStmtResult.ofSuccess(task.workingDir().toString());
+                    NMsg msg = NMsg.ofC("change working directory to %s", task.workingDir());
+                    context.task().addResultMessage(msg);
+                    context.outln(msg);
+                    return NaruStmtResult.ofSuccess(NElement.of(task.workingDir().toString()),msg );
                 } else {
                     NMsg msg = NMsg.ofC("directory not found: %s", p2).asError();
                     context.task().addResultMessage(msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
             }
         });

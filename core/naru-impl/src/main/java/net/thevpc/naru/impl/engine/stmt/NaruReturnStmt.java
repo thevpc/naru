@@ -6,6 +6,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
+import net.thevpc.nuts.text.NMsg;
 
 public class NaruReturnStmt extends NaruStatement implements Cloneable {
     private String expression;
@@ -31,7 +32,7 @@ public class NaruReturnStmt extends NaruStatement implements Cloneable {
     @Override
     public void exec(NaruTask task) {
         Object ret = expression==null?null:task.evalExpression(expression);
-        task.frame().lastResult(NaruStmtResult.ofSuccess(ret));
+        task.frame().lastResult(NaruStmtResult.ofSuccess(NElement.of(ret), NMsg.ofC("%s",ret)));
         task.popFrame();
         // A return that unwinds past the last frame is the task's own return value, and
         // nothing else would ever set it: popFrame only propagates between frames, so a

@@ -350,7 +350,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                                             // tool results arrive as typed cards. Only add a card
                                             // when nothing on screen represents this message yet.
                                             if (stored.getRole() == NaruRole.user
-                                                    && consumeUserEcho(taskId, stored.getContent())) {
+                                                    && consumeUserEcho(taskId, stored.getFilteredContent())) {
                                                 return;
                                             }
                                             if (stored.getRole() == NaruRole.system) return;
@@ -1284,7 +1284,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
      * same answer twice.
      */
     private boolean isShownAsStreamedAnswer(long taskId, NaruMessage stored) {
-        String content = stored.getContent();
+        String content = stored.getFilteredContent();
         if (content == null || content.isBlank()) return false;
         String wanted = content.strip();
         for (TranscriptBlock block : transcript.blocks()) {

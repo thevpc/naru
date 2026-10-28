@@ -1,6 +1,5 @@
 package net.thevpc.naru.ext.tools.routines;
 
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NArg;
@@ -14,15 +13,16 @@ public class NaruUseDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<routine>", "use routine by name")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NArg n = cmdLine.next().orNull();
-                if(n==null || n.isOption()){
+                if (n == null || n.isOption()) {
                     NMsg msg = NMsg.ofC("expected <routine-name>");
+                    context.errln(msg);
                     context.task().throwError(msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    return NaruStmtResult.ofError();
                 }
                 context.task().frame().editRoutine(n.image());
-                return NaruStmtResult.ofSuccess(null);
+                return NaruStmtResult.ofSuccess();
             }
         });
     }

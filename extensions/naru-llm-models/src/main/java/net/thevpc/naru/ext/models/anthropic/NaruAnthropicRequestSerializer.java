@@ -87,8 +87,8 @@ public class NaruAnthropicRequestSerializer implements NaruCacheAwareRequestSeri
                 NaruMessage m = request.messages().get(i);
                 if (m.getRole() == NaruRole.system) {
                     if (m.getContent() != null && !m.getContent().isBlank()) {
-                        systemParts.add(m.getContent());
-                        systemBlocks.add(textBlock(m.getContent(), isLastOfSegment(owner, i, marked)).build());
+                        systemParts.add(m.getContent().toString());
+                        systemBlocks.add(textBlock(m.getContent().toString(), isLastOfSegment(owner, i, marked)).build());
                     }
                 } else {
                     msgList.add(messageToElement(m, isLastOfSegment(owner, i, marked)));
@@ -256,7 +256,7 @@ public class NaruAnthropicRequestSerializer implements NaruCacheAwareRequestSeri
             NObjectElementBuilder tr = NElement.ofObjectBuilder();
             tr.set("type", "tool_result");
             tr.set("tool_use_id", m.getToolCallId() != null ? m.getToolCallId() : "toolu_" + m.getToolName());
-            tr.set("content", m.getContent() != null ? m.getContent() : "");
+            tr.set("content", m.getFilteredContent() != null ? m.getFilteredContent() : "");
             if (markCache) {
                 markCache(tr);
             }
@@ -271,8 +271,8 @@ public class NaruAnthropicRequestSerializer implements NaruCacheAwareRequestSeri
         // 2. Assistant message containing tool invocations -> content blocks
         if (m.getRole() == NaruRole.assistant && m.hasToolCalls()) {
             NArrayElementBuilder contentArr = NElement.ofArrayBuilder();
-            if (m.getContent() != null && !m.getContent().isBlank()) {
-                contentArr.add(textBlock(m.getContent(), false).build());
+            if (m.getFilteredContent() != null && !m.getFilteredContent().isBlank()) {
+                contentArr.add(textBlock(m.getFilteredContent(), false).build());
             }
             int lastCall = m.getToolCalls().size() - 1;
             int c = 0;
@@ -295,7 +295,7 @@ public class NaruAnthropicRequestSerializer implements NaruCacheAwareRequestSeri
         // 3. Multimodal content (user / assistant with base64 images)
         if (m.getImages() != null && !m.getImages().isEmpty()) {
             List<NObjectElementBuilder> blocks = new ArrayList<>();
-            blocks.add(textBlock(m.getContent(), false));
+            blocks.add(textBlock(m.getFilteredContent(), false));
             for (String img : m.getImages()) {
                 NObjectElementBuilder image = NElement.ofObjectBuilder();
                 image.set("type", "image");
@@ -321,10 +321,10 @@ public class NaruAnthropicRequestSerializer implements NaruCacheAwareRequestSeri
         // 4. Plain text. A marker forces the block form, since cache_control
         //    cannot be attached to a bare JSON string.
         if (markCache) {
-            msgObj.set("content", contentArrOf(textBlock(m.getContent(), true).build()));
+            msgObj.set("content", contentArrOf(textBlock(m.getFilteredContent(), true).build()));
             return msgObj.build();
         }
-        msgObj.set("content", m.getContent() != null ? m.getContent() : "");
+        msgObj.set("content", m.getFilteredContent() != null ? m.getFilteredContent() : "");
         return msgObj.build();
     }
 

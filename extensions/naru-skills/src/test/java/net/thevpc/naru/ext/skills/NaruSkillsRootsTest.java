@@ -481,7 +481,7 @@ public class NaruSkillsRootsTest {
         atSub.addToolTag(NaruSkillsToolTagProvider.SKILLS_TAG);
 
         assertTrue(ext.contribute(atSub).stream()
-                        .anyMatch(m -> m.getContent().contains("## AVAILABLE SKILL: FOLDER-SKILL")),
+                        .anyMatch(m -> m.getFilteredContent().contains("## AVAILABLE SKILL: FOLDER-SKILL")),
                 () -> "a folder skill must be advertised to the task inside the folder: " + ext.contribute(atSub));
     }
 

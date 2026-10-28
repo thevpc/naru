@@ -14,11 +14,12 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class NaruUtils {
 
-    public static void showItemsWithFormat(String context2, String format, List<NaruUtils.LineRange> ranges, NaruTask task) {
+    public static void showItemsWithFormat(String context2, String format, List<NaruUtils.LineRange> ranges, NaruTask task,Consumer<NMsg> textBuilder) {
         NText nText;
         switch (format) {
             case "markdown": {
@@ -32,7 +33,7 @@ public class NaruUtils {
         }
         List<NText> linesOk = nText.splitLines();
         Set<Integer> toShow = net.thevpc.naru.api.util.NaruUtils.resolveIndexes(ranges.toArray(new net.thevpc.naru.api.util.NaruUtils.LineRange[0]), linesOk.size());
-        showItems(linesOk, toShow, task);
+        showItems(linesOk, toShow, task,textBuilder);
     }
 
     public static NText formattedTokensSize(long cl) {
@@ -66,13 +67,13 @@ public class NaruUtils {
     }
 
 
-    public static void showItems(List<NText> items, Set<Integer> toShow, NaruTask task) {
+    public static void showItems(List<NText> items, Set<Integer> toShow, NaruTask task,Consumer<NMsg> textBuilder) {
         int lastKey = items.size() + 1;
         if (toShow.isEmpty()) {
             if (!items.isEmpty()) {
                 for (int i = 0; i < items.size(); i++) {
                     NText e = items.get(i);
-                    showItem(i + 1, lastKey, e, task);
+                    showItem(i + 1, lastKey, e, task,textBuilder);
                 }
             }
         } else {
@@ -81,14 +82,14 @@ public class NaruUtils {
                 int i = bb.get(k);
                 int im1 = i - 1;
                 if (im1 >= 0 && im1 < items.size()) {
-                    showItem(i, lastKey, items.get(im1), task);
+                    showItem(i, lastKey, items.get(im1), task,textBuilder);
                 }
             }
         }
     }
 
 
-    private static void showItem(int rowIndex, int max, NText item, NaruTask task) {
+    private static void showItem(int rowIndex, int max, NText item, NaruTask task, Consumer<NMsg> textBuilder) {
         int zeros = (int) Math.ceil(Math.log10(max));
         if (zeros <= 0) {
             zeros = 1;
@@ -99,15 +100,15 @@ public class NaruUtils {
         for (int j = 0; j < lines.size(); j++) {
             NText line = lines.get(j);
             if (j == 0) {
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
+                textBuilder.accept(NMsg.ofC("%s %s",
                         NMsg.ofStyledNumber(zformat.format(rowIndex)),
                         line));
             } else {
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("        %s", line));
+                textBuilder.accept(NMsg.ofC("        %s", line));
             }
         }
         if (lines.isEmpty()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
+            textBuilder.accept(NMsg.ofC("%s %s",
                     NMsg.ofStyledNumber(zformat.format(rowIndex)),
                     item));
         }
@@ -191,6 +192,26 @@ public class NaruUtils {
         }
         String cc = content.substring(0, Math.min(content.length(), 40));
         return cc.replace("\r\n", " ").replace("\n", " ");
+    }
+
+    public static NText snippet(NMsg content) {
+        return snippet(NText.of(content));
+    }
+
+    public static NText snippet(NText content) {
+        if (NBlankable.isBlank(content)) {
+            return NText.ofBlank();
+        }
+        NText cc = content.substring(0, Math.min(content.length(), 40));
+        NTextBuilder sb=NTextBuilder.of();
+        for (NPrimitiveText a : cc.toCharArray()) {
+            if(a.isNewLine()){
+                sb.append(" ");
+            }else{
+                sb.append(a);
+            }
+        }
+        return sb.build();
     }
 
     public static String timeAgo(Instant instant) {

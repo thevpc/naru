@@ -155,7 +155,10 @@ public class NaruSpawnDirectiveTest {
         // must stay in the tasks map instead of running to completion and being pruned
         long fromSeq = session.eventLog().currentSeq() + 1;
         NaruStmtResult r = call(parent, "start", "probe.naru --policy=review-safe");
-        NaruTask child = session.findTask((Long) r.successValue()).orElseThrow(() -> new AssertionError("no child " + r.successValue()));
+        NaruTask child = session.findTask(
+                r.successValue().asLongValue().get()
+
+        ).orElseThrow(() -> new AssertionError("no child " + r.successValue()));
         assertEquals(Set.of("exec", "network"), child.findToolTagNames(),
                 () -> "policy inherit+revoke+add not applied by /start: " + child.findToolTagNames());
         assertEquals(Set.of("run_shell"), child.findToolExclusions());
@@ -223,7 +226,7 @@ public class NaruSpawnDirectiveTest {
         // spawn while the scheduler is not running, so the child is still in the tasks map
         // when we look it up; then start the session and let it run to completion
         NaruStmtResult r = call(parent, "start", "probe.naru");
-        Long childId = (Long) r.successValue();
+        Long childId = r.successValue().asLongValue().get();
         assertNotNull(childId, () -> "/start must return the spawned child id, got " + r);
 
         NaruTask child = session.findTask(childId).orElseThrow(() -> new AssertionError("no task " + childId));
@@ -246,7 +249,9 @@ public class NaruSpawnDirectiveTest {
         // once the spawn grants fs the same target spawns and completes
         NaruTask holder = parent();
         NaruStmtResult r = call(holder, "start", "guarded.naru --add-tags=fs");
-        NaruTask child = session.findTask((Long) r.successValue()).orElseThrow(() -> new AssertionError("no child " + r.successValue()));
+        NaruTask child = session.findTask(
+                r.successValue().asLongValue().get()
+        ).orElseThrow(() -> new AssertionError("no child " + r.successValue()));
         session.start();
         child.await();
         assertEquals(Set.of("fs"), child.findToolTagNames());
@@ -264,7 +269,7 @@ public class NaruSpawnDirectiveTest {
 
         NaruEvent spawned = lastSpawned(fromSeq);
         assertEquals("agent", spawned.payload().get("kind"));
-        NaruTask child = session.findTask((Long) r.successValue()).orElseThrow(() -> new AssertionError("no child " + r.successValue()));
+        NaruTask child = session.findTask(r.successValue().asLongValue().get()).orElseThrow(() -> new AssertionError("no child " + r.successValue()));
         assertEquals(Set.of("write"), child.findToolTagNames());
     }
 

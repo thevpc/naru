@@ -156,8 +156,9 @@ public class NaruSessionDirectiveTest {
         NaruStmtResult r = call("list");
 
         assertEquals(0, r.exitCode(), "/session list must not fail: " + r.errorValue());
-        assertTrue(r.successValue() instanceof String, "expected the listing as a string value");
-        assertFalse(((String) r.successValue()).isEmpty(), "an empty listing means nothing was printed");
+        String nElement = r.successValue().asStringValue().orNull();
+        assertTrue(nElement instanceof String, "expected the listing as a string value");
+        assertFalse(((String) nElement).isEmpty(), "an empty listing means nothing was printed");
     }
 
     /**

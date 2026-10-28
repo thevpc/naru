@@ -21,7 +21,6 @@ import net.thevpc.nuts.util.NOptional;
 import net.thevpc.nuts.util.NStringBuilder;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -78,13 +77,13 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<key> null", "remove the key, restoring the default")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeSettings(context, cmdLine);
             }
         });
     }
 
-    private NaruStmtResult executeSettings(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    private NaruStmtResult executeSettings(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         NaruVisibility visibility = NaruVisibility.PRIVATE;
         List<String> words = new ArrayList<>();
@@ -102,10 +101,10 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
             words.add(cmdLine.next().get().image());
         }
         if (words.isEmpty()) {
-            return list(task);
+            return list(task, context);
         }
         if (words.size() == 1 && !words.get(0).contains("=")) {
-            return show(task, words.get(0));
+            return show(task, words.get(0), context);
         }
         String key;
         String rawValue;
@@ -121,15 +120,15 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
             key = word;
             rawValue = String.join(" ", words.subList(1, words.size()));
         } else {
-            return show(task, word);
+            return show(task, word, context);
         }
         if (key.isEmpty()) {
-            return error(task, "missing settings key in '%s'", word);
+            return error(task, context,"missing settings key in '%s'", word);
         }
-        return write(task, visibility, key, rawValue);
+        return write(task, visibility, key, rawValue, context);
     }
 
-    private NaruStmtResult list(NaruTask task) {
+    private NaruStmtResult list(NaruTask task,SubCommandContext context) {
         List<NaruConfigKey> keys = task.session().registry().configKeys();
         List<NaruConfigKey> configured = new ArrayList<>();
         for (NaruConfigKey key : keys) {
@@ -138,34 +137,29 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
                 configured.add(key);
             }
         }
-        NStringBuilder sb = NStringBuilder.of();
         NMsg header = NMsg.ofC("%s settings:", configured.size());
-        task.log(NaruLogMode.AGENT_RESPONSE, header);
-        sb.println(header.toString());
+        context.outln(header);
         for (NaruConfigKey key : configured) {
             NMsg row = NMsg.ofC("  %s%s", describe(task, key.key()),
                     key.description().isEmpty() ? "" : " — " + key.description());
-            task.log(NaruLogMode.AGENT_RESPONSE, row);
-            sb.println(row.toString());
+            context.outln(row);
         }
         if (configured.isEmpty()) {
             NMsg empty = NMsg.ofC("  no settings are currently set");
-            task.log(NaruLogMode.AGENT_RESPONSE, empty);
-            sb.println(empty.toString());
+            context.outln(empty);
         }
         NMsg hint = NMsg.ofC("  any other key is readable too: /%s <key>", name());
-        task.log(NaruLogMode.AGENT_RESPONSE, hint);
-        sb.println(hint.toString());
-        return NaruStmtResult.ofSuccess(sb.toString());
+        context.outln(hint);
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
-    private NaruStmtResult show(NaruTask task, String key) {
+    private NaruStmtResult show(NaruTask task, String key,SubCommandContext context) {
         NMsg row = NMsg.ofC("%s", describe(task, key));
-        task.log(NaruLogMode.AGENT_RESPONSE, row);
-        return NaruStmtResult.ofSuccess(row.toString());
+        context.outln( row);
+        return NaruStmtResult.ofSuccess(NElement.of(row.toString()));
     }
 
-    private NaruStmtResult write(NaruTask task, NaruVisibility visibility, String key, String rawValue) {
+    private NaruStmtResult write(NaruTask task, NaruVisibility visibility, String key, String rawValue,SubCommandContext context) {
         boolean remove = rawValue.isEmpty() || "null".equalsIgnoreCase(rawValue);
         NElement value = remove ? null : NaruTaskConfig.parseValue(rawValue);
         // The config env takes an NElement, which is also how the file reads it back,
@@ -175,8 +169,8 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
         NMsg msg = remove
                 ? NMsg.ofC("removed %s from %s", NMsg.ofStyledPrimary1(key), label(visibility))
                 : NMsg.ofC("%s = %s (%s)", NMsg.ofStyledPrimary1(key), rawValue, label(visibility));
-        task.log(NaruLogMode.AGENT_RESPONSE, msg);
-        return NaruStmtResult.ofSuccess(msg.toString());
+        context.outln( msg);
+        return NaruStmtResult.ofSuccess(NElement.of(remove));
     }
 
     /**
@@ -198,10 +192,10 @@ public class NaruSettingsDirective extends NaruDirectiveBase {
         return key + " = " + NaruTaskConfig.toText(resolved.value()) + " (" + where + ")";
     }
 
-    private NaruStmtResult error(NaruTask task, String format, Object... args) {
+    private NaruStmtResult error(NaruTask task,SubCommandContext context, String format, Object... args) {
         NMsg msg = NMsg.ofC(format, args);
-        task.log(NaruLogMode.AGENT_RESPONSE, msg.asError());
-        return NaruStmtResult.ofError(msg.toString());
+        context.outln( msg.asError());
+        return NaruStmtResult.ofError();
     }
 
     private static String label(NaruVisibility visibility) {

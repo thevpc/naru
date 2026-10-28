@@ -1,6 +1,5 @@
 package net.thevpc.naru.ext.tools.tasks;
 
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.scheduler.NaruEventFilter;
@@ -28,7 +27,7 @@ public class NaruWaitDirective extends NaruDirectiveBase {
                 +"\n  <taskId>"
         )) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NRef<String> eventName = NRef.of();
                 NRef<String> fromFilter = NRef.of();
@@ -41,11 +40,12 @@ public class NaruWaitDirective extends NaruDirectiveBase {
                         context.task());
                 if (f.isNotPresent()) {
                     NMsg msg = f.message().get();
+                    context.errln(msg);
                     task.throwError(msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    return NaruStmtResult.ofError();
                 }
                 task.awaitFilter(f.get());
-                return NaruStmtResult.ofSuccess(null);
+                return NaruStmtResult.ofSuccess();
             }
         });
     }

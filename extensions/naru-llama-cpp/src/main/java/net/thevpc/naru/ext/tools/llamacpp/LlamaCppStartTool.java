@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.llamacpp;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
@@ -43,10 +44,10 @@ public class LlamaCppStartTool extends DefaultNaruTool {
             return "llama.cpp server is already running at " + service.getUrl(task.session());
         }
         if (!service.isInstalled(task.session()) && autoInstall) {
-            task.log(NaruLogMode.TRACE, NMsg.ofC("Auto-installing llama.cpp before starting..."));
-            service.install(task.session(), msg -> task.log(NaruLogMode.TRACE, msg));
+            task.addHistory(NaruMessage.engine(NMsg.ofC("Auto-installing llama.cpp before starting...")));
+            service.install(task.session(), msg -> task.addHistory(NaruMessage.engine(msg)));
         }
-        LlamaCppService.StartResult result = service.start(task.session(), model, msg -> task.log(NaruLogMode.TRACE, msg));
+        LlamaCppService.StartResult result = service.start(task.session(), model, msg -> task.addHistory(NaruMessage.engine(msg)));
         if (result.started() || result.alreadyStarted()) {
             return "SUCCESS: llama.cpp started at " + service.getUrl(task.session())
                     + " with model " + (result.model() != null ? result.model() : "?")

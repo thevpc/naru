@@ -6,7 +6,6 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.registry.NaruConfigKey;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
@@ -23,7 +22,6 @@ import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -56,7 +54,7 @@ public class NaruSetDirective extends NaruDirectiveBase {
                 new SubCommandHelp("--local", "list current frame variables")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String raw = context.argument() == null ? "" : context.argument().trim();
                 VarType v = VarType.TASK;
@@ -74,7 +72,7 @@ public class NaruSetDirective extends NaruDirectiveBase {
                     v = VarType.VAR;
                 }
                 if (raw.isEmpty()) {
-                    return listVars(task, v);
+                    return listVars(task, v,context);
                 }
                 NExprContext b = task.expressionBuilder().build();
                 // 1) increment / decrement: name++ | name--
@@ -85,7 +83,7 @@ public class NaruSetDirective extends NaruDirectiveBase {
                     long current = NLiteral.of(readVar(task, v, name)).asLong().orElse(0L);
                     long value = current + delta;
                     writeVar(task, v, name, value);
-                    return NaruStmtResult.of(value, setExitCode(value));
+                    return NaruStmtResult.of(NElement.of(value), null, setExitCode(value));
                 }
                 // 2) compound assignment: name op= <expr>
                 Matcher cmp = COMPOUND.matcher(raw);
@@ -95,16 +93,18 @@ public class NaruSetDirective extends NaruDirectiveBase {
                     String rhs = cmp.group(3).trim();
                     NOptional<NExprNode> rn = b.parse(rhs);
                     if (!rn.isPresent()) {
+                        context.errln("expected <var> <op>= <expr>");
                         task.throwError(NMsg.ofC("expected <var> <op>= <expr> : %s", raw));
-                        return NaruStmtResult.ofError("expected <var> <op>= <expr>");
+                        return NaruStmtResult.ofError();
                     }
                     Object rhsValue = rn.get().eval(b).orNull();
                     Object value = applyCompound(task, readVar(task, v, name), rhsValue, op);
                     if (value == null) {
-                        return NaruStmtResult.ofError("invalid compound assignment"); // applyCompound already reported the error
+                        context.errln("invalid compound assignment");
+                        return NaruStmtResult.ofError(); // applyCompound already reported the error
                     }
                     writeVar(task, v, name, value);
-                    return NaruStmtResult.of(value, setExitCode(value));
+                    return NaruStmtResult.of(NElement.of(value),setExitCode(value));
                 }
                 // 3) plain assignment: name = <expr>
                 NOptional<NExprNode> n = b.parse(raw);
@@ -114,13 +114,15 @@ public class NaruSetDirective extends NaruDirectiveBase {
                         String varName = a.children().get(0).name();
                         Object exprValue = a.children().get(1).eval(b).orNull();
                         writeVar(task, v, varName, exprValue);
-                        return NaruStmtResult.of(exprValue, setExitCode(exprValue));
+                        return NaruStmtResult.of(NElement.of(exprValue), setExitCode(exprValue));
                     } else {
-                        task.throwError(NMsg.ofC("expected var = <expr>"));
-                        return NaruStmtResult.ofError("expected var = <expr>");
+                        NMsg msg = NMsg.ofC("expected var = <expr>");
+                        context.errln(msg);
+                        task.throwError(msg);
+                        return NaruStmtResult.ofError();
                     }
                 } else {
-                    return listVars(task, v);
+                    return listVars(task, v,context);
                 }
             }
         });
@@ -218,7 +220,7 @@ public class NaruSetDirective extends NaruDirectiveBase {
         return value instanceof Boolean ? ((Boolean) value ? 0 : 1) : 0;
     }
 
-    private static NaruStmtResult listVars(NaruTask task, VarType v) {
+    private static NaruStmtResult listVars(NaruTask task, VarType v,SubCommandContext context) {
         Map<String, Object> varMap;
         switch (v) {
             case SESSION:
@@ -246,9 +248,9 @@ public class NaruSetDirective extends NaruDirectiveBase {
                 setVars.put(key, value);
             }
         });
-        setVars.forEach((key, value) -> task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+        setVars.forEach((key, value) -> context.outln( NMsg.ofC(
                 "%s : %s", NMsg.ofStyledPrimary1(key), value)));
-        return NaruStmtResult.ofSuccess(setVars);
+        return NaruStmtResult.ofSuccess(NElement.of(setVars));
     }
 
     // ── autocomplete ─────────────────────────────────────────────────────────

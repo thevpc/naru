@@ -256,7 +256,7 @@ public class NaruOpenAiStreamParser extends NaruSseResponseParser {
                 // Same shape the batch parser produces for a tool call, so the
                 // actor loop cannot tell a streamed turn from a batched one.
                 message = NaruMessage.assistantWithToolCalls(
-                                message.getContent() == null ? "" : message.getContent(), calls)
+                                message.getFilteredContent() == null ? "" : message.getFilteredContent(), calls)
                         .setThinkingSegments(message.getThinkingSegments());
             }
         } else {
@@ -267,7 +267,7 @@ public class NaruOpenAiStreamParser extends NaruSseResponseParser {
             // (NaruOpenAiResponseParser.parseEmbeddedToolCalls); a streamed turn
             // must reach the same decision or the actor loop sees a plain answer
             // where the batch path would have executed a tool.
-            String content = message == null ? null : message.getContent();
+            String content = message == null ? null : message.getFilteredContent();
             if (content != null) {
                 List<NaruToolCall> embedded = NaruOpenAiResponseParser.parseEmbeddedToolCalls(content);
                 if (!embedded.isEmpty()) {

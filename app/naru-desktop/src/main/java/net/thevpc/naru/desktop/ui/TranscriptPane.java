@@ -247,7 +247,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
                                 : net.thevpc.naru.api.agent.NaruLogMode.AGENT_RESPONSE,
                         hit.taskId(), matching.size());
                 block.setMessage(message);
-                String body = message.getContent() == null ? "" : message.getContent();
+                String body = message.getContent() == null ? "" : message.getFilteredContent();
                 for (var part : message.getParts()) body += "\n" + part.type() + ": " + part.payload();
                 block.append(body);
                 block.close();
@@ -928,7 +928,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     public int rowCount() { return matching.size(); }
     public String cellTextAt(int i) {
         TranscriptBlock b = matching.get(i);
-        return b.isChatMessage() ? b.message().getContent() : b.text();
+        return b.isChatMessage() ? b.message().getFilteredContent() : b.text();
     }
     public String visibleRange() { return matching.isEmpty() ? "none" : first + "-" + (last - 1); }
     public String scrollState() { JScrollBar b = scroll.getVerticalScrollBar(); return b.getValue() + "/" + b.getMaximum(); }

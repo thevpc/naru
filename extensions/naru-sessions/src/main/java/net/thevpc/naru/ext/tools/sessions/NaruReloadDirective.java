@@ -17,7 +17,7 @@
 //                NaruTask task = context.task();
 //                task.session().reload();
 //                context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("reloaded session."));
-//                return NaruStmtResult.ofSuccess(null);
+//                return NaruStmtResult.ofSuccess();
 //            }
 //        });
 //    }

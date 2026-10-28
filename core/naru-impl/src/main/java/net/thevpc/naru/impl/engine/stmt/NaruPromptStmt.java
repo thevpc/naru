@@ -72,15 +72,15 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
     public void exec(NaruTask task) {
         if (task.model() == null) {
             NMsg message = NMsg.ofC("No model is selected. Choose one yourself with /model list and /model use <key>, then submit your request again.");
-            task.log(NaruLogMode.AGENT_RESPONSE, message.asError());
-            task.frame().lastResult(NaruStmtResult.ofError(message.toString()));
+            task.addHistory(NaruMessage.engine(message));
+            task.frame().lastResult(NaruStmtResult.ofError(message));
             task.defaultAdvance(this);
             return;
         }
-        task.log(NaruLogMode.PROGRESS, NMsg.ofC("%s Model: %s…",
+        task.addHistory(NaruMessage.engine(NMsg.ofC("%s Model: %s…",
                 NMsg.ofStyledPrimary8("\uD83E\uDDE0"),
                 task.model().toText()
-        ));
+        )));
         if (!NBlankable.isBlank(prompt)) {
             task.addHistory(NaruMessage.user(prompt));
         }
@@ -90,22 +90,23 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             response = task.chat(task.model(),
                     task.context(NaruSource.values())
             );
-            task.frame().lastResult(NaruStmtResult.ofSuccess(response.getMessage()==null?"":response.getMessage().getContent()));
+            task.frame().lastResult(NaruStmtResult.ofSuccess(
+                    NElement.of(response.getMessage()==null?"":response.getMessage().getFilteredContent())
+
+            ));
         } catch (Exception e) {
             String err = "ERROR calling model: " + e.getMessage();
-            task.log(NaruLogMode.PROGRESS, NMsg.ofC("%s", err).asError());
             task.defaultAdvance(this);
             task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
-            NaruStmtResult.ofError(err);
+            NaruStmtResult.ofError(NMsg.ofP(err).asError());
             return;
         }
 
         NaruMessage assistantMsg = response.getMessage();
         if (assistantMsg == null) {
-            task.log(NaruLogMode.DEBUG, NMsg.ofC("Model returned empty response."));
+            task.addHistory(NaruMessage.engine(NMsg.ofC("Model returned empty response.")));
             task.defaultAdvance(this);
             task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
-            NaruStmtResult.ofSuccess("");
             return;
         }
         // Interrupted (Ctrl+C) while this call was running: the stream stopped at
@@ -120,13 +121,13 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                 // for every later turn of this task. The half-started round is
                 // dropped for the same reason a partial answer is kept -- neither
                 // is a thing the model ever finished saying.
-                task.log(NaruLogMode.PROGRESS, NMsg.ofC(
+                task.addHistory(NaruMessage.engine(NMsg.ofC(
                         "%s Interrupted before the tool call completed; discarding it.",
-                        NMsg.ofStyledPrimary8("⏹")));
+                        NMsg.ofStyledPrimary8("⏹"))));
             } else {
-                task.log(NaruLogMode.PROGRESS, NMsg.ofC(
-                        "%s Interrupted.", NMsg.ofStyledPrimary8("⏹")));
                 task.addHistory(assistantMsg);
+                task.addHistory(NaruMessage.engine(NMsg.ofC(
+                        "%s Interrupted.", NMsg.ofStyledPrimary8("⏹"))));
                 reportAnswer(task, assistantMsg);
                 task.setLastResult(assistantMsg);
             }
@@ -140,9 +141,9 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             // A stalled loop costs a provider request and a transcript card per round. Bounding it
             // by round count alone lets a model spend the whole budget re-asking for the same call.
             if (repeatsLastToolRound(task)) {
-                task.log(NaruLogMode.PROGRESS, NMsg.ofC(
+                task.addHistory(NaruMessage.engine(NMsg.ofC(
                         "%s The model repeated its previous tool call unchanged; ending this turn.",
-                        NMsg.ofStyledPrimary8("⏹")));
+                        NMsg.ofStyledPrimary8("⏹"))));
                 reportAnswer(task, assistantMsg);
                 reportSilentTurn(task, assistantMsg);
                 task.setLastResult(assistantMsg);
@@ -168,8 +169,8 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                     .orElse(0) + 1;
             task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, rounds);
             if (rounds >= maxSteps) {
-                task.log(NaruLogMode.PROGRESS, NMsg.ofC(
-                        "Reached max tool-call rounds (%s); ending agent loop.", maxSteps));
+                task.addHistory(NaruMessage.engine(NMsg.ofC(
+                        "Reached max tool-call rounds (%s); ending agent loop.", maxSteps)));
                 reportAnswer(task, assistantMsg);
                 reportSilentTurn(task, assistantMsg);
                 task.setLastResult(assistantMsg);
@@ -223,9 +224,9 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             try {
                 extension.beforeModelRequest(task);
             } catch (Exception e) {
-                task.log(NaruLogMode.DEBUG, NMsg.ofC(
+                task.addHistory(NaruMessage.engine(NMsg.ofC(
                         "session extension '%s' failed before the model request: %s",
-                        extension.name(), e.getMessage()).asError());
+                        extension.name(), e.getMessage()).asError()));
             }
         }
     }
@@ -240,7 +241,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             return;
         }
         if (!NBlankable.isBlank(assistantMsg.getContent())) {
-            task.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
+            task.addHistory(NaruMessage.engine(NMsg.ofC("%s", assistantMsg.getContent())));
         }
     }
 
@@ -255,10 +256,10 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         if (!NBlankable.isBlank(assistantMsg.getContent()) || task.isResponseStreamed()) {
             return;
         }
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+        task.addHistory(NaruMessage.engine(NMsg.ofC(
                 "%s This turn ended in tool calls without an answer. Ask again, or turn off the"
                         + " tools the model keeps calling (/tools, /tag).",
-                NMsg.ofStyledPrimary8("⚠")));
+                NMsg.ofStyledPrimary8("⚠"))));
     }
 
     /**

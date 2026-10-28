@@ -95,7 +95,9 @@ public class NaruSkillsExtension implements NaruSessionExtension {
      */
     private static final int CATALOG_TOKEN_BUDGET = 2000;
 
-    /** Per-message framing the provider charges on top of the text, matching naru-budget. */
+    /**
+     * Per-message framing the provider charges on top of the text, matching naru-budget.
+     */
     private static final int MESSAGE_OVERHEAD_CHARS = 16;
 
     private static final double CHARS_PER_TOKEN = 4.0;
@@ -123,7 +125,9 @@ public class NaruSkillsExtension implements NaruSessionExtension {
 
     private NaruSkillManager manager;
 
-    /** The session this extension is bound to, so {@code close()} can detach its listener. */
+    /**
+     * The session this extension is bound to, so {@code close()} can detach its listener.
+     */
     private NaruSession boundSession;
 
     /**
@@ -293,12 +297,12 @@ public class NaruSkillsExtension implements NaruSessionExtension {
             }
         }
         if (!inconsistent.isEmpty()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+            task.addHistory(NaruMessage.engine(NMsg.ofC(
                     "⚠ %s seeded skill(s) whose 'requires' the spawned task's resolved tags do not "
                             + "satisfy: %s. The skill(s) stay loaded but their body is gated at "
                             + "request-build; grant the missing tags with --add-tags=<tag> (or "
                             + "revoke with --revoke-tags=<tag>) on the spawn.",
-                    inconsistent.size(), String.join("; ", inconsistent)));
+                    inconsistent.size(), String.join("; ", inconsistent))));
         }
     }
 
@@ -338,8 +342,8 @@ public class NaruSkillsExtension implements NaruSessionExtension {
             NaruSkill skill = skills().findSkill(task, name);
             if (skill == null) {
                 out.add(NaruMessage.user(
-                        "## SKILL MISSING: " + name.toUpperCase()
-                                + "\nselected but no longer on disk — /skill doctor")
+                                "## SKILL MISSING: " + name.toUpperCase()
+                                        + "\nselected but no longer on disk — /skill doctor")
                         .setSourceName(NAME + ":" + name));
                 continue;
             }
@@ -418,9 +422,9 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         }
         if (dropped > 0) {
             out.add(NaruMessage.user(
-                    "## SKILL CATALOG TRUNCATED: " + dropped + " of " + advertised.size()
-                            + " advertised skills omitted (catalog token budget " + CATALOG_TOKEN_BUDGET
-                            + " exceeded) — load skills by name with the skill tool or /skill list")
+                            "## SKILL CATALOG TRUNCATED: " + dropped + " of " + advertised.size()
+                                    + " advertised skills omitted (catalog token budget " + CATALOG_TOKEN_BUDGET
+                                    + " exceeded) — load skills by name with the skill tool or /skill list")
                     .setSourceName(CATALOG_SOURCE_PREFIX + "truncated"));
         }
         return out;
@@ -472,7 +476,7 @@ public class NaruSkillsExtension implements NaruSessionExtension {
                     + skill.getRequires().violations(granted);
         }
         return NaruMessage.user(headline + "\n" + detail
-                + "\n(injected, would violate the requires gate; /skill doctor, or --add-tags/--revoke-tags)")
+                        + "\n(injected, would violate the requires gate; /skill doctor, or --add-tags/--revoke-tags)")
                 .setSourceName(skill.getSourceName());
     }
 
@@ -521,7 +525,9 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         return own == null ? Collections.emptySet() : Collections.unmodifiableSet(new TreeSet<>(own));
     }
 
-    /** The state of a skill for a task, LOADED or (by default) ADVERTISED. */
+    /**
+     * The state of a skill for a task, LOADED or (by default) ADVERTISED.
+     */
     public NaruSkillState state(NaruTask task, String name) {
         String canonical = canonical(name);
         return canonical != null && loadedNames(task).contains(canonical)
@@ -529,7 +535,9 @@ public class NaruSkillsExtension implements NaruSessionExtension {
                 : NaruSkillState.ADVERTISED;
     }
 
-    /** LOADED names, sorted — kept for the directives and for {@code /context skills}. */
+    /**
+     * LOADED names, sorted — kept for the directives and for {@code /context skills}.
+     */
     public Set<String> activeNames(NaruTask task) {
         return loadedNames(task);
     }
@@ -640,7 +648,9 @@ public class NaruSkillsExtension implements NaruSessionExtension {
                 || skills().reload(canonical) != null);
     }
 
-    /** Task-aware existence check: the folder-scoped roots of {@code task} included. */
+    /**
+     * Task-aware existence check: the folder-scoped roots of {@code task} included.
+     */
     public boolean exists(NaruTask task, String name) {
         String canonical = canonical(name);
         if (canonical == null) {
@@ -649,12 +659,16 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         return skills().findSkill(task, canonical) != null || skills().reload(canonical) != null;
     }
 
-    /** The ordered skill roots effective for a task, untrusted foreign ones included (WP6). */
+    /**
+     * The ordered skill roots effective for a task, untrusted foreign ones included (WP6).
+     */
     public List<NaruSkillRoot> roots(NaruTask task) {
         return skills().roots(task);
     }
 
-    /** Every copy of every name for a task, losers marked shadowed (WP6). */
+    /**
+     * Every copy of every name for a task, losers marked shadowed (WP6).
+     */
     public List<NaruSkillEntry> entries(NaruTask task) {
         return skills().entries(task);
     }
@@ -710,12 +724,16 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         return needed;
     }
 
-    /** Explicit {@code /skill reload}: rebuild the discovery snapshot from disk. */
+    /**
+     * Explicit {@code /skill reload}: rebuild the discovery snapshot from disk.
+     */
     public void reload() {
         skills().reload();
     }
 
-    /** Explicit {@code /skill reload <name>}: refresh one skill from disk. */
+    /**
+     * Explicit {@code /skill reload <name>}: refresh one skill from disk.
+     */
     public NaruSkill reload(String name) {
         return name == null ? null : skills().reload(name);
     }

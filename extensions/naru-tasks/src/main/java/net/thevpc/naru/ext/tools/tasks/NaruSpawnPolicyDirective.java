@@ -1,15 +1,15 @@
 package net.thevpc.naru.ext.tools.tasks;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.mode.NaruPromptMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.spawn.NaruSpawnInherit;
 import net.thevpc.naru.api.spawn.NaruSpawnPolicy;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NOptional;
@@ -44,7 +44,7 @@ public class NaruSpawnPolicyDirective extends NaruDirectiveBase {
                         + "  --exclude-tools=<tools> --add-skills=<skills>\n"
                         + "  --model=<name> --working-dir=<path> --prompt-mode=<mode>")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NRef<String> name = NRef.of();
                 NRef<NaruSpawnStrategy> strategy = NRef.of();
@@ -101,8 +101,10 @@ public class NaruSpawnPolicyDirective extends NaruDirectiveBase {
                         .whenNonOption().asArg(a -> name.set(a.image()))
                         .requireAll();
                 if (name.get() == null || name.get().trim().isEmpty()) {
+                    NMsg msg = NMsg.ofP("spawn policy needs a name");
+                    context.errln(msg);
                     task.throwError(NMsg.ofC("/spawn-policy needs a name"));
-                    return NaruStmtResult.ofError("spawn policy needs a name");
+                    return NaruStmtResult.ofError();
                 }
                 NaruSpawnPolicy policy = new NaruSpawnPolicy(name.get().trim());
                 if (strategy.get() != null) {
@@ -136,8 +138,8 @@ public class NaruSpawnPolicyDirective extends NaruDirectiveBase {
                     policy.promptMode(promptMode.get());
                 }
                 task.session().defineSpawnPolicy(policy);
-                task.log(NaruLogMode.SCRIPT, NMsg.ofC("✓ spawn policy '%s' defined (%s)", policy.name(), policy));
-                return NaruStmtResult.ofSuccess(policy.name());
+                context.outln(NMsg.ofC("✓ spawn policy '%s' defined (%s)", policy.name(), policy));
+                return NaruStmtResult.ofSuccess(NElement.of(policy.name()));
             }
         });
     }

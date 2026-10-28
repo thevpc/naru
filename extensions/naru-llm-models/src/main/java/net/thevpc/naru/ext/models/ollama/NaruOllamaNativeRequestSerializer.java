@@ -108,7 +108,7 @@ public class NaruOllamaNativeRequestSerializer implements NaruModelRequestSerial
     private NElement messageToElement(NaruMessage m) {
         NObjectElementBuilder msgObj = NElement.ofObjectBuilder();
         msgObj.set("role", m.getRole().id());
-        msgObj.set("content", m.getContent() != null ? m.getContent() : ""); // default for all
+        msgObj.set("content", m.getFilteredContent() != null ? m.getFilteredContent() : ""); // default for all
 
         // 1. Tool Message Execution Outputs (Native spec tracking)
         if (m.getRole() == NaruRole.tool) {

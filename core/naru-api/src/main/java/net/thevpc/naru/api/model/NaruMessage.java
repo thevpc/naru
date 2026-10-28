@@ -3,18 +3,13 @@ package net.thevpc.naru.api.model;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.nuts.elem.*;
-import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
-import net.thevpc.nuts.time.NDuration;
-import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NCopiable;
-import net.thevpc.nuts.util.NOptional;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.logging.Level;
 import java.util.stream.Collectors;
 
 /**
@@ -120,6 +115,10 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
         this.toolCallId = toolCallId;
         this.toolName = toolName;
         this.toolCalls = toolCalls;
+    }
+
+    public NaruMessage withContent(String content) {
+        return withContent(content == null ? null : NMsg.ofP(content));
     }
 
     /**
@@ -324,7 +323,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
 
     private NaruMessage(NaruRole role, NMsg content) {
         this.role = role;
-        this.content = content==null?null:new NormalizedMsg(content);
+        this.content = content == null ? null : new NormalizedMsg(content);
     }
 
     /**
@@ -358,6 +357,10 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
 
     // ── factory helpers ──────────────────────────────────────────────────────
 
+    public static NaruMessage system(String content) {
+        return system(content == null ? null : NMsg.ofP(content));
+    }
+
     public static NaruMessage system(NMsg content) {
         return new NaruMessage(NaruRole.system, content);
     }
@@ -366,8 +369,28 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
         return new NaruMessage(NaruRole.user, content);
     }
 
+    public static NaruMessage user(String content) {
+        return new NaruMessage(NaruRole.user, content == null ? null : NMsg.ofP(content));
+    }
+
+    public static NaruMessage engine(String content) {
+        return new NaruMessage(NaruRole.engine, content == null ? null : NMsg.ofP(content));
+    }
+
     public static NaruMessage engine(NMsg content) {
         return new NaruMessage(NaruRole.engine, content);
+    }
+
+    public static NaruMessage directive(NText content) {
+        return directive(NMsg.ofNtf(content));
+    }
+
+    public static NaruMessage directive(NMsg content) {
+        return new NaruMessage(NaruRole.directive, content);
+    }
+
+    public static NaruMessage directive(String content) {
+        return directive(NMsg.ofP(content));
     }
 
     public static NaruMessage userWithImages(NMsg content, List<String> base64Images) {
@@ -378,6 +401,14 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
 
     public static NaruMessage assistant(NMsg content) {
         return new NaruMessage(NaruRole.assistant, content).setSource(NaruSource.ASSISTANT);
+    }
+
+    public static NaruMessage assistant(String content) {
+        return assistant(content == null ? null : NMsg.ofP(content));
+    }
+
+    public static NaruMessage assistantWithToolCalls(String content, List<NaruToolCall> calls) {
+        return assistantWithToolCalls(NMsg.ofP(content), calls);
     }
 
     public static NaruMessage assistantWithToolCalls(NMsg content, List<NaruToolCall> calls) {
@@ -393,11 +424,20 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
         return m;
     }
 
+    public static NaruMessage tool(String toolName, String callId, String result) {
+        return tool(toolName, callId, result == null ? null : NMsg.ofP(result));
+    }
+
     /**
      * A summary item: the text is the message content, the metadata says what it replaced.
      */
     public static NaruMessage summary(NMsg text, NaruSummaryInfo summary) {
         NaruMessage m = new NaruMessage(NaruRole.summary, text);
+        m.summary = summary;
+        return m;
+    }
+    public static NaruMessage summary(String text, NaruSummaryInfo summary) {
+        NaruMessage m = new NaruMessage(NaruRole.summary, NMsg.ofP(text));
         m.summary = summary;
         return m;
     }
@@ -412,12 +452,23 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
         this.role = role;
     }
 
+    public String getFilteredContent() {
+        if (content == null) {
+            return null;
+        }
+        return NText.of(content.toMsg()).filteredText();
+    }
+
+    public NText getTextContent() {
+        return content == null ? null : NText.of(content.toMsg());
+    }
+
     public NMsg getContent() {
-        return content==null?null:content.toMsg();
+        return content == null ? null : content.toMsg();
     }
 
     public void setContent(NMsg content) {
-        this.content = content==null?null:new NormalizedMsg(content);
+        this.content = content == null ? null : new NormalizedMsg(content);
     }
 
     public List<String> getImages() {

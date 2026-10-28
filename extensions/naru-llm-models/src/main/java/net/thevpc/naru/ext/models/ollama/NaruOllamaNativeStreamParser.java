@@ -193,7 +193,7 @@ public class NaruOllamaNativeStreamParser implements NaruStreamResponseParser {
         NaruMessage message = pipeline.finish(interrupted);
         if (!toolCalls.isEmpty()) {
             message = NaruMessage.assistantWithToolCalls(
-                            message.getContent() == null ? "" : message.getContent(), toolCalls)
+                            message.getFilteredContent() == null ? "" : message.getFilteredContent(), toolCalls)
                     .setThinkingSegments(message.getThinkingSegments());
         }
         NaruResponse response = new NaruResponse();

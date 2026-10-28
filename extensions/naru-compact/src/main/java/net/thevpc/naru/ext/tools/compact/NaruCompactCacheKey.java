@@ -49,7 +49,7 @@ public final class NaruCompactCacheKey {
             // length-prefixed so two different item sequences cannot produce the same
             // concatenation, which a bare separator would let through
             sb.append("item(").append(m.getRole().id()).append(',');
-            appendBounded(sb, m.getContent());
+            appendBounded(sb, m.getFilteredContent());
             sb.append(',');
             appendBounded(sb, m.getToolName());
             sb.append(',');
@@ -99,7 +99,7 @@ public final class NaruCompactCacheKey {
                 continue;
             }
             sb.append("item(").append(m.getRole().id()).append(',');
-            appendBounded(sb, m.getContent());
+            appendBounded(sb, m.getFilteredContent());
             sb.append(',');
             appendBounded(sb, m.getToolName());
             sb.append(',');

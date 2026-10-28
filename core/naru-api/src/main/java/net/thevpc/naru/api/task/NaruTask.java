@@ -266,6 +266,7 @@ public interface NaruTask extends NToElement {
 
     NaruTask setExtraContext(String extraContext);
 
+    @Deprecated
     void log(NaruLogMode mode, NMsg s);
 
     /**

@@ -66,16 +66,16 @@ public final class NaruSummaryInput {
                 // it is the densest statement of what happened so far, and summarizing it
                 // away is how a long session loses its thread.
                 sb.append("(this is a summary of earlier conversation, kept as-is)\n");
-                sb.append(text(m.getContent()));
+                sb.append(text(m.getFilteredContent()));
                 return sb.toString();
             }
             case tool: {
                 sb.append("tool call: ").append(m.getToolName()).append('\n');
-                sb.append(shape(m.getContent(), policy));
+                sb.append(shape(m.getFilteredContent(), policy));
                 return sb.toString();
             }
             case assistant: {
-                sb.append(text(m.getContent()));
+                sb.append(text(m.getFilteredContent()));
                 if (m.hasToolCalls()) {
                     sb.append("\n(tool calls requested: ");
                     List<String> names = new ArrayList<>();
@@ -87,7 +87,7 @@ public final class NaruSummaryInput {
                 return sb.toString();
             }
             default:
-                sb.append(text(m.getContent()));
+                sb.append(text(m.getFilteredContent()));
                 return sb.toString();
         }
     }

@@ -168,8 +168,8 @@ public class NaruPlanExtension implements NaruSessionExtension {
         }
         List<NaruPlan> unfinished = unfinishedPlans(task.session());
         if (unfinished.size() > 1) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
-                    "there are unfinished plans; activate the one you mean with /plan activate <id>"));
+            task.addHistory(NaruMessage.engine(NMsg.ofC(
+                    "there are unfinished plans; activate the one you mean with /plan activate <id>")));
             return;
         }
         if (unfinished.isEmpty()) {
@@ -177,9 +177,9 @@ public class NaruPlanExtension implements NaruSessionExtension {
         }
         NaruPlan candidate = unfinished.get(0);
         plans.setActivePlanId(candidate.id());
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC(
+        task.addHistory(NaruMessage.engine( NMsg.ofC(
                 "activated plan %s (%s) since you switched to %s mode",
-                candidate.id(), candidate.goal(), now.name()));
+                candidate.id(), candidate.goal(), now.name())));
     }
 
     @Override

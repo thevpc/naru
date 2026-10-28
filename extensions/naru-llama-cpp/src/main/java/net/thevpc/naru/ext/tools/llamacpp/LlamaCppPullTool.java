@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.llamacpp;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
@@ -39,7 +40,7 @@ public class LlamaCppPullTool extends DefaultNaruTool {
         }
         try {
             LlamaCppModelInfo info = LlamaCppService.of().pullModel(spec, task.session(),
-                    msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+                    msg -> task.addHistory(NaruMessage.engine(msg)));
             return "SUCCESS: model " + info.getId() + " available at " + info.getPath();
         } catch (Exception e) {
             return "ERROR: " + e.getMessage();

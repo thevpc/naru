@@ -14,6 +14,7 @@ import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -609,7 +610,7 @@ public class NaruPlanGraphTest {
         plans(session).setActivePlanId(plan.id());
         List<NaruMessage> contributed = ext.contribute(null);
         Assertions.assertEquals(1, contributed.size());
-        String text = contributed.get(0).getContent();
+        String text = contributed.get(0).getFilteredContent();
         Assertions.assertTrue(text.contains("### ACTIVE PLAN:"), text);
         Assertions.assertTrue(text.contains("design"), text);
         // the completion rule must travel with the plan, or the model will mark items
@@ -642,6 +643,7 @@ public class NaruPlanGraphTest {
 
         String rendered = request.messages().stream()
                 .map(NaruMessage::getContent)
+                .map(NMsg::toString)
                 .filter(java.util.Objects::nonNull)
                 .reduce("", (a, b) -> a + "\n" + b);
         Assertions.assertTrue(rendered.contains("### ACTIVE PLAN:"), rendered);

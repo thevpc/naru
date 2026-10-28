@@ -2,10 +2,8 @@ package net.thevpc.naru.ext.skills;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.util.NaruUtils;
@@ -14,6 +12,7 @@ import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
 import net.thevpc.nuts.cmdline.NArgCompletePosition;
 import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NStringBuilder;
@@ -49,7 +48,7 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[<keyword>] [--source=<native|naru|claude|agents|opencode>] [--search=<keyword>] [--semantic] [--all]",
                         "list the loaded skills with their description and origin; filter by origin family and by a name/description keyword, or rank by relevance with --semantic")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return renderList(context, cmdLine, ListMode.LOADED);
             }
         });
@@ -57,7 +56,7 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[<keyword>] [--source=<native|naru|claude|agents|opencode>] [--search=<keyword>] [--semantic] [--all]",
                         "list the discovered skills that are still advertised (not loaded) with their description and origin; same filters as list")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return renderList(context, cmdLine, ListMode.UNLOADED);
             }
         });
@@ -65,87 +64,83 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<name> [<n1>-<n2>]", "show skill named <name> content wile listing only the selected files (or all if no filter)")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String name = cmdLine.next().map(x -> x.image()).orElse("");
                 if (name.isEmpty()) {
-                    NMsg msg = NMsg.ofC("missing skill name : %s", name);
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(NMsg.ofC("missing skill name : %s", name));
+                    return NaruStmtResult.ofError();
                 }
                 NaruSkill skill = NaruSkillsExtension.skills(task.session()).skills().findSkill(task, name);
                 if (skill == null) {
-                    return notFound(task, name);
+                    return notFound(context, name);
                 }
                 String content = String.join("\n", skill.getLines());
                 List<NaruUtils.LineRange> lineRanges = NaruUtils.parseRanges(cmdLine);
-                NaruUtils.showItemsWithFormat(content, "markdown", lineRanges, task);
-                return NaruStmtResult.ofSuccess(null);
+                NaruUtils.showItemsWithFormat(content, "markdown", lineRanges, task, context::outln);
+                return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
             }
         });
         register(new AbstractSubCommand("load", NText.ofPlain("load skill by name"),
                 new SubCommandHelp("<name>", "load skill named <name>")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String name = cmdLine.next().map(x -> x.image()).orElse("");
                 if (name.isEmpty()) {
                     NMsg msg = NMsg.ofC("missing skill name : %s", name);
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
                 NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
                 NaruSkillTrustLevel shortfall = ext.trustShortfall(task, name);
                 if (shortfall != null) {
                     NMsg msg = NMsg.ofC("skill %s declares tools that need %s trust, but its foreign root grants less; run /skills trust <root> --%s",
                             name, shortfall.name().toLowerCase(), shortfall.name().toLowerCase()).asError();
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
                 if (ext.load(task, name)) {
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded skill : %s", name));
-                    task.addHistory(NaruMessage.user(NMsg.ofC("Loaded skill : %s", name).toString()));
-                    return NaruStmtResult.ofSuccess(null);
+                    context.outln(NMsg.ofC("Loaded skill : %s", name));
+                    return NaruStmtResult.ofSuccess();
                 }
                 if (!ext.exists(task, name)) {
-                    return notFound(task, name);
+                    return notFound(context, name);
                 }
                 // already loaded
                 NMsg msg = NMsg.ofC("skill already loaded : %s", name);
-                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                return NaruStmtResult.ofSuccess(msg.toString());
+                context.outln(msg);
+                return NaruStmtResult.ofSuccess();
             }
         });
         register(new AbstractSubCommand("unload", NText.ofPlain("unload skill by name"),
                 new SubCommandHelp("<name>", "unload skill named <name>")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String name = cmdLine.next().map(x -> x.image()).orElse("");
                 if (name.isEmpty()) {
                     NMsg msg = NMsg.ofC("missing skill name : %s", name);
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
                 NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
                 if (ext.unload(task, name)) {
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Unloaded skill : %s", name));
-                    task.addHistory(NaruMessage.user(NMsg.ofC("Unloaded skill : %s", name).toString()));
-                    task.log(NaruLogMode.PROGRESS, NMsg.ofC("Unloaded skill context. Back to main."));
-                    return NaruStmtResult.ofSuccess(null);
+                    context.outln(NMsg.ofC("Unloaded skill : %s", name).toString());
+                    return NaruStmtResult.ofSuccess();
                 }
                 if (!ext.exists(task, name)) {
-                    return notFound(task, name);
+                    return notFound(context, name);
                 }
                 NMsg msg = NMsg.ofC("skill not loaded : %s", name);
-                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                return NaruStmtResult.ofSuccess(msg.toString());
+                context.outln(msg);
+                return NaruStmtResult.ofSuccess();
             }
         });
         register(new AbstractSubCommand("reload", NText.ofPlain("re-read a skill (or all skills) from disk"),
                 new SubCommandHelp("[<name>]", "reload the named skill, or the whole discovery snapshot when no name is given")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
                 String name = cmdLine.next().map(x -> x.image()).orElse("");
@@ -153,59 +148,57 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                     ext.reload();
                     int n = ext.skills().available().size();
                     NMsg msg = NMsg.ofC("Reloaded skills from disk : %s available", n);
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofSuccess(null);
+                    context.outln(msg);
+                    return NaruStmtResult.ofSuccess();
                 }
                 NaruSkill refreshed = ext.reload(name);
                 if (refreshed == null) {
                     NMsg msg = NMsg.ofC("skill not found after reload : %s", name);
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
                 NMsg msg = NMsg.ofC("Reloaded skill : %s (hash %s)", refreshed.getName(), refreshed.getContentHash());
-                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                return NaruStmtResult.ofSuccess(null);
+                context.outln(msg);
+                return NaruStmtResult.ofSuccess();
             }
         });
         register(new AbstractSubCommand("doctor", NText.ofPlain("report problems with the selected skills"),
                 new SubCommandHelp("", "report missing, empty, silently changed, unsatisfied-requires, and unmapped allowed-tools")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
                 Set<String> loaded = ext.loadedNames(task);
-                NStringBuilder sb = NStringBuilder.of();
                 if (loaded.isEmpty()) {
                     NMsg msg = NMsg.ofC("No skills loaded — nothing to check");
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofSuccess(null);
+                    context.outln(msg);
+                    return NaruStmtResult.ofSuccess();
                 }
                 int issues = 0;
                 for (String name : loaded) {
                     List<String> problems = doctorOne(ext, task, name);
                     issues += problems.size();
-                    task.log(NaruLogMode.AGENT_RESPONSE,
+                    context.outln(
                             NMsg.ofC("skill %s : %s", name,
                                     problems.isEmpty() ? "ok" : String.join(" ; ", problems)));
                 }
                 NMsg msg = NMsg.ofC("Doctor: %s selected skills, %s issue(s) found", loaded.size(), issues);
-                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                sb.println(msg.toString());
-                return NaruStmtResult.ofSuccess(sb.toString());
+                context.outln(msg);
+                return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
             }
         });
         register(new AbstractSubCommand("trust", NText.ofPlain("trust a foreign skill root, and how far"),
                 new SubCommandHelp("<index|substring> [--read|--write|--exec]",
                         "trust the foreign root at the index /skill list prints, or whose path/label contains the given text; grant read (default), write, or exec level")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return setTrust(context, cmdLine, null);
             }
         });
         register(new AbstractSubCommand("untrust", NText.ofPlain("stop trusting a foreign skill root"),
                 new SubCommandHelp("<index|substring>", "untrust a previously trusted foreign root; NARU-native roots are never trustable")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return setTrust(context, cmdLine, NaruSkillTrustLevel.NONE);
             }
         });
@@ -213,7 +206,9 @@ public class NaruSkillDirective extends NaruDirectiveBase {
 
     // ── autocomplete ─────────────────────────────────────────────────────────
 
-    /** Flags the {@code list} / {@code available} listings accept. */
+    /**
+     * Flags the {@code list} / {@code available} listings accept.
+     */
     private static final String[] LIST_FLAGS = {
             "--source=", "--search=", "--semantic", "--all"
     };
@@ -294,7 +289,9 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         addSkillNames(candidates, currentArg, session);
     }
 
-    /** Completes available skill names by case-insensitive prefix. */
+    /**
+     * Completes available skill names by case-insensitive prefix.
+     */
     private void addSkillNames(List<NArgCompleteCandidate> candidates, String currentArg, NaruSession session) {
         for (NaruSkill skill : NaruSkillsExtension.skills(session).skills().available()) {
             String name = skill.getName();
@@ -304,7 +301,9 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         }
     }
 
-    /** Completes {@code <prefix><skill-name>} values (e.g. {@code --search=javadoc}). */
+    /**
+     * Completes {@code <prefix><skill-name>} values (e.g. {@code --search=javadoc}).
+     */
     private void addNamesWithPrefix(List<NArgCompleteCandidate> candidates, String currentArg, String prefix,
                                     NaruSession session) {
         for (NaruSkill skill : NaruSkillsExtension.skills(session).skills().available()) {
@@ -315,7 +314,9 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         }
     }
 
-    /** Completes the labels of the discovered foreign/native roots. */
+    /**
+     * Completes the labels of the discovered foreign/native roots.
+     */
     private void addRootLabels(List<NArgCompleteCandidate> candidates, String currentArg, NaruSession session) {
         for (NaruSkillRoot root : NaruSkillsExtension.skills(session).skills().roots(null)) {
             String label = root.label();
@@ -347,7 +348,7 @@ public class NaruSkillDirective extends NaruDirectiveBase {
      * command (choose from the flags, read when absent) and {@link NaruSkillTrustLevel#NONE}
      * on untrust.
      */
-    private static NaruStmtResult setTrust(NaruDirectiveCallContext context, NCmdLine cmdLine, NaruSkillTrustLevel level) {
+    private static NaruStmtResult setTrust(SubCommandContext context, NCmdLine cmdLine, NaruSkillTrustLevel level) {
         NaruTask task = context.task();
         NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
         String selector = null;
@@ -359,14 +360,14 @@ public class NaruSkillDirective extends NaruDirectiveBase {
                 String flag = image.substring(2).trim();
                 if (granted == NaruSkillTrustLevel.NONE) {
                     NMsg msg = NMsg.ofC("unexpected flag --%s on untrust", flag).asError();
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
                 NaruSkillTrustLevel byFlag = parseTrustFlag(flag);
                 if (byFlag == null) {
                     NMsg msg = NMsg.ofC("unknown trust level --%s (expected --read, --write or --exec)", flag).asError();
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
                 granted = byFlag;
             } else if (selector == null) {
@@ -375,30 +376,30 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         }
         if (selector == null || selector.isEmpty()) {
             NMsg msg = NMsg.ofC("missing root selector (index or path fragment)");
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
+            context.errln(msg);
+            return NaruStmtResult.ofError();
         }
         NaruSkillRoot root = resolveRoot(ext.roots(task), selector);
         if (root == null) {
             NMsg msg = NMsg.ofC("no skill root matches '%s'", selector).asError();
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
+            context.errln(msg);
+            return NaruStmtResult.ofError();
         }
         if (!root.requiresTrust()) {
             NMsg msg = NMsg.ofC("root %s is NARU-native and always trusted; nothing to change", root.path());
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofSuccess(msg.toString());
+            context.outln(msg);
+            return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
         }
         NaruSkillTrustLevel grant = granted == null ? NaruSkillTrustLevel.READ : granted;
         boolean changed = ext.trust(root, grant);
         String verb = grant == NaruSkillTrustLevel.NONE ? "Untrusted" : "Trusted";
         NMsg msg = grant == NaruSkillTrustLevel.NONE
                 ? NMsg.ofC("%s foreign root %s (%s)%s", verb, root.label(), root.path(),
-                        changed ? "" : " — no change")
+                changed ? "" : " — no change")
                 : NMsg.ofC("%s foreign root %s (%s) at %s level%s", verb, root.label(), root.path(),
-                        grant.name().toLowerCase(), changed ? "" : " — no change");
-        task.log(NaruLogMode.AGENT_RESPONSE, msg);
-        return NaruStmtResult.ofSuccess(msg.toString());
+                grant.name().toLowerCase(), changed ? "" : " — no change");
+        context.outln(msg);
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
     private static NaruSkillTrustLevel parseTrustFlag(String flag) {
@@ -502,9 +503,7 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         int paren = token.indexOf('(');
         if (paren > 0) {
             String base = token.substring(0, paren).trim();
-            if (!base.isEmpty() && toolNames.stream().anyMatch(n -> n.equalsIgnoreCase(base))) {
-                return true;
-            }
+            return !base.isEmpty() && toolNames.stream().anyMatch(n -> n.equalsIgnoreCase(base));
         }
         return false;
     }
@@ -523,14 +522,14 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         String error;
     }
 
-    private static NaruStmtResult renderList(NaruDirectiveCallContext context, NCmdLine cmdLine, ListMode mode) {
+    private static NaruStmtResult renderList(SubCommandContext context, NCmdLine cmdLine, ListMode mode) {
         NaruTask task = context.task();
         NaruSkillsExtension ext = NaruSkillsExtension.skills(task.session());
         ListOptions opts = parseListOptions(cmdLine);
         if (opts.error != null) {
             NMsg msg = NMsg.ofC(opts.error).asError();
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
+            context.errln(msg);
+            return NaruStmtResult.ofError();
         }
 
         List<NaruSkill> available = ext.skills().available(task);
@@ -555,30 +554,28 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         List<NaruSkillSearch.Hit> hits = NaruSkillSearch.search(candidates, opts.query, opts.semantic);
         boolean filtered = !opts.sources.isEmpty() || !opts.query.isBlank();
 
-        NStringBuilder sb = NStringBuilder.of();
         NMsg header = NMsg.ofC(headerText(mode, loaded, unloaded, available.size(), opts, filtered));
-        task.log(NaruLogMode.AGENT_RESPONSE, header);
-        sb.println(header.toString());
+        context.outln(header);
 
         if (hits.isEmpty()) {
-            sb.println(emptyText(mode, loaded, unloaded, available.size(), filtered));
+            context.outln(emptyText(mode, loaded, unloaded, available.size(), filtered));
         } else {
             int index = 1;
             for (NaruSkillSearch.Hit hit : hits) {
-                sb.println(skillRow(index++, task, ext, hit, opts.semantic));
+                context.outln(skillRow(index++, task, ext, hit, opts.semantic));
             }
         }
 
         // the ordered root model: untrusted foreign roots are shown so they can be trusted
         List<NaruSkillRoot> roots = ext.roots(task);
         if (!roots.isEmpty()) {
-            sb.println("roots (strongest first):");
+            context.outln("roots (strongest first):");
             int rootIndex = 1;
             for (NaruSkillRoot root : roots) {
-                sb.println(rootRow(rootIndex++, root, task));
+                context.outln(rootRow(rootIndex++, root, task));
             }
         }
-        return NaruStmtResult.ofSuccess(sb.toString());
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
     private static boolean accepts(ListMode mode, boolean all, boolean isLoaded) {
@@ -646,7 +643,9 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         return desc.isEmpty() ? row : row + " — " + desc;
     }
 
-    /** Single-line, whitespace-collapsed, length-capped description for a listing row. */
+    /**
+     * Single-line, whitespace-collapsed, length-capped description for a listing row.
+     */
     private static String oneLine(String s) {
         if (s == null) {
             return "";
@@ -794,10 +793,9 @@ public class NaruSkillDirective extends NaruDirectiveBase {
         };
     }
 
-    private static NaruStmtResult notFound(NaruTask task, String name) {
+    private static NaruStmtResult notFound(SubCommandContext context, String name) {
         NMsg msg = NMsg.ofC("skill not found : %s", name).asError();
-        task.log(NaruLogMode.AGENT_RESPONSE, msg);
-        task.addHistory(NaruMessage.user(NMsg.ofC("Error : skill not found : %s", name).toString()));
-        return NaruStmtResult.ofError(msg.toString());
+        context.errln(msg);
+        return NaruStmtResult.ofError();
     }
 }

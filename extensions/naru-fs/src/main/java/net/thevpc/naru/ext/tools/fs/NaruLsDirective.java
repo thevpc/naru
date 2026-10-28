@@ -2,16 +2,14 @@ package net.thevpc.naru.ext.tools.fs;
 
 import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.access.NaruResourceType;
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.io.NPathPermission;
-import net.thevpc.nuts.io.NAnsiTermHelper;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextBuilder;
@@ -30,7 +28,7 @@ public class NaruLsDirective extends NaruDirectiveBase {
         super("ls", "fs", "list directory");
         register(new AbstractSubCommand() {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
 
                 NBooleanRef optAll = NBooleanRef.of(false); // -a
@@ -94,10 +92,9 @@ public class NaruLsDirective extends NaruDirectiveBase {
                 }
 
                 NText resultStr = result.build();
-                task.addHistory(NaruMessage.user(NMsg.ofC("call   : ls %s", context.argument()).toString()));
-                task.addHistory(NaruMessage.user(NMsg.ofC("result :\n%s", resultStr).toString()));
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", resultStr));
-                return NaruStmtResult.ofSuccess(NAnsiTermHelper.of().stripAnsi(resultStr.toString()));
+                context.outln(NMsg.ofC("call   : ls %s", context.argument()));
+                context.outln(NMsg.ofC("result :\n%s", resultStr));
+                return NaruStmtResult.ofSuccess(NElement.of(resultStr),null);
             }
 
             private void renderPath(NPath path,

@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.ollama;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
@@ -34,7 +35,7 @@ public class OllamaStopTool extends DefaultNaruTool {
     public String execute(NaruToolCallContext context) {
         boolean forceAll = context.booleanArg("force_all").orElse(false);
         NaruTask task = context.task();
-        boolean ok = OllamaService.of().stop(task.session(), forceAll, msg -> task.log(NaruLogMode.TRACE, msg));
+        boolean ok = OllamaService.of().stop(task.session(), forceAll, msg -> task.addHistory(NaruMessage.engine(msg)));
         if (ok) {
             return "SUCCESS: Ollama server stopped.";
         } else {

@@ -4,12 +4,10 @@ import net.thevpc.naru.api.access.NaruAccessGuard;
 import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.access.NaruResource;
 import net.thevpc.naru.api.access.NaruResourceType;
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.util.NaruUtils;
@@ -17,9 +15,11 @@ import net.thevpc.naru.ext.budget.store.DefaultNaruBudgetStoreQuery;
 import net.thevpc.naru.ext.budget.store.NaruBudgetStoreQuery;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.text.NTextBuilder;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NStringBuilder;
@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
  *
  * <p>Price mutation ({@code price set|unset|refresh}) and label mutation
  * ({@code label set|unset|clear}) are accounting writes and are gated by
- * {@link NaruAccessGuard} with {@link NaruAction#UPDATE}; the built-in policy denies
+ * {@link NaruAccessGuard} with {@link NaruAction#APPEND}; the built-in policy denies
  * them to an AGENT actor, because an agent that can price its own calls can rewrite
  * its own bill.
  */
@@ -81,7 +81,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[--since=<dur>] [--from=<ts>] [--to=<ts>]", "narrow by time"),
                 new SubCommandHelp("[--explain]", "add the request estimate, bucket shares and skill attribution (opt-in)")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeList(context, cmdLine);
             }
         });
@@ -92,7 +92,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                 new SubCommandHelp("unset <provider>[/<model>]", "remove a price"),
                 new SubCommandHelp("refresh", "fetch prices from a public source (network call; agent-denied)")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executePrice(context, cmdLine);
             }
         });
@@ -102,7 +102,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                 new SubCommandHelp("list", "list the current task's labels"),
                 new SubCommandHelp("clear", "remove every label from the current task")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeLabel(context, cmdLine);
             }
         });
@@ -115,7 +115,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
      * stamps on every model call this task makes. Labels are stored on the task (and
      * persisted with it); a label never overrides a built-in dimension.
      */
-    public NaruStmtResult executeLabel(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeLabel(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         String sub = cmdLine.isEmpty() ? "list" : cmdLine.next().get().image();
         switch (sub) {
@@ -141,7 +141,9 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                     return denied;
                 }
                 pending.forEach(task::setLabel);
-                return NaruStmtResult.ofSuccess(formatLabels(task.labels()));
+                String r = formatLabels(task.labels());
+                context.outln(r);
+                return NaruStmtResult.ofSuccess();
             }
             case "unset": {
                 List<String> keys = new ArrayList<>();
@@ -156,7 +158,9 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                     return denied;
                 }
                 keys.forEach(task::removeLabel);
-                return NaruStmtResult.ofSuccess(formatLabels(task.labels()));
+                String r = formatLabels(task.labels());
+                context.outln(r);
+                return NaruStmtResult.ofSuccess();
             }
             case "clear": {
                 NaruStmtResult denied = requireAccountingWrite(context, "label");
@@ -164,10 +168,14 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                     return denied;
                 }
                 task.clearLabels();
-                return NaruStmtResult.ofSuccess("labels cleared");
+                context.outln("labels cleared");
+                return NaruStmtResult.ofSuccess();
             }
-            case "list":
-                return NaruStmtResult.ofSuccess(formatLabels(task.labels()));
+            case "list": {
+                String r = formatLabels(task.labels());
+                context.outln(r);
+                return NaruStmtResult.ofSuccess(NElement.of(r));
+            }
             default:
                 return fail(context, NMsg.ofC("Error: unknown label command '%s' (expected set|unset|list|clear)", sub));
         }
@@ -185,7 +193,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
 
     // ── /budget price ... ──────────────────────────────────────────────────────
 
-    public NaruStmtResult executePrice(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executePrice(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         String sub = cmdLine.isEmpty() ? "list" : cmdLine.next().get().image();
         NaruBudgetService svc = NaruBudgetExtension.budget(task.session());
@@ -203,19 +211,16 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         }
     }
 
-    private NaruStmtResult executePriceList(NaruDirectiveCallContext context, NaruBudgetService svc) {
+    private NaruStmtResult executePriceList(SubCommandContext context, NaruBudgetService svc) {
         NaruTask task = context.task();
         Map<String, NaruUnitPrice> entries = svc.priceTable().entries();
-        NStringBuilder sb = NStringBuilder.of();
         if (entries.isEmpty()) {
             String line = "no prices set — spent tokens are counted but unpriced (use /budget price set, or /budget price refresh)";
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", line));
-            sb.println(line);
-            return NaruStmtResult.ofSuccess(sb.toString());
+            context.outln(line);
+            return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
         }
         NMsg header = NMsg.ofC("prices (per 1M tokens): %s", entries.size());
-        task.log(NaruLogMode.AGENT_RESPONSE, header);
-        sb.println(header.toString());
+        context.outln(header);
         for (Map.Entry<String, NaruUnitPrice> e : entries.entrySet()) {
             NaruUnitPrice p = e.getValue();
             NMsg row = NMsg.ofC("  %s  input %s, output %s%s%s  [%s%s]",
@@ -225,13 +230,12 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                     p.hasExplicitCacheWrite() ? ", cache-write " + money(p.cacheWritePrice()) : "",
                     p.source() == NaruPriceSource.USER ? "user" : "fetched",
                     p.source() == NaruPriceSource.FETCHED && p.origin() != null ? ", " + p.origin() : "");
-            task.log(NaruLogMode.AGENT_RESPONSE, row);
-            sb.println(row.toString());
+            context.outln(row);
         }
-        return NaruStmtResult.ofSuccess(sb.toString());
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
-    private NaruStmtResult executePriceSet(NaruDirectiveCallContext context, NaruBudgetService svc, NCmdLine cmdLine) {
+    private NaruStmtResult executePriceSet(SubCommandContext context, NaruBudgetService svc, NCmdLine cmdLine) {
         String key = null;
         Map<String, String> fields = new LinkedHashMap<>();
         while (cmdLine.hasNext()) {
@@ -273,20 +277,17 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         }
         svc.priceTable().set(key, price);
 
-        NStringBuilder sb = NStringBuilder.of();
         NMsg ok = NMsg.ofC("price set: %s  input %s, output %s",
                 NMsg.ofStyledPrimary1(key), price.input().toPlainString(), price.output().toPlainString());
-        context.task().log(NaruLogMode.AGENT_RESPONSE, ok);
-        sb.println(ok.toString());
+        context.outln(ok.toString());
         for (String w : warnings) {
             NMsg warn = NMsg.ofC("warning: %s", w);
-            context.task().log(NaruLogMode.AGENT_RESPONSE, warn);
-            sb.println(warn.toString());
+            context.outln(warn.toString());
         }
-        return NaruStmtResult.ofSuccess(sb.toString());
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
-    private NaruStmtResult executePriceUnset(NaruDirectiveCallContext context, NaruBudgetService svc, NCmdLine cmdLine) {
+    private NaruStmtResult executePriceUnset(SubCommandContext context, NaruBudgetService svc, NCmdLine cmdLine) {
         if (!cmdLine.hasNext()) {
             return fail(context, NMsg.ofC("%s", "Error: missing price key (usage: /budget price unset <provider>[/<model>])"));
         }
@@ -302,11 +303,11 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         NMsg msg = removed == null
                 ? NMsg.ofC("no price was set for %s", key)
                 : NMsg.ofC("price removed: %s", key);
-        context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-        return NaruStmtResult.ofSuccess(msg.toString());
+        context.outln(msg.toString());
+        return NaruStmtResult.ofSuccess(NElement.of(removed));
     }
 
-    private NaruStmtResult executePriceRefresh(NaruDirectiveCallContext context, NaruBudgetService svc) {
+    private NaruStmtResult executePriceRefresh(SubCommandContext context, NaruBudgetService svc) {
         NaruStmtResult denied = requireAccountingWrite(context, "price");
         if (denied != null) {
             return denied;
@@ -317,21 +318,19 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         } catch (RuntimeException ex) {
             return fail(context, NMsg.ofC("Error: price refresh failed: %s", ex.getMessage()));
         }
-        NStringBuilder sb = NStringBuilder.of();
         for (String line : report.split("\\n")) {
-            context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", line));
-            sb.println(line);
+            context.outln(line);
         }
-        return NaruStmtResult.ofSuccess(sb.toString());
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
     /**
      * {@code requireAccountingWrite} — a price or label write is an accounting change, so
-     * it is gated with {@link NaruAction#UPDATE} on the {@code budget} resource. The
+     * it is gated with {@link NaruAction#APPEND} on the {@code budget} resource. The
      * built-in policy denies it to an AGENT; a human acting directly is allowed. Returns
      * null when allowed.
      */
-    private NaruStmtResult requireAccountingWrite(NaruDirectiveCallContext context, String locator) {
+    private NaruStmtResult requireAccountingWrite(SubCommandContext context, String locator) {
         NaruTask task = context.task();
         if (NaruAccessGuard.isAllowed(task, NaruResource.of(BUDGET_RESOURCE, locator), BUDGET_UPDATE)) {
             return null;
@@ -359,7 +358,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         boolean explain;
     }
 
-    public NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeList(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         NaruSession session = task.session();
         ReportOptions opts = new ReportOptions();
@@ -390,7 +389,6 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
             groups.computeIfAbsent(tupleKey(t, groupKeys), k -> new ArrayList<>()).add(t);
         }
 
-        NStringBuilder sb = NStringBuilder.of();
         List<Group> rows = new ArrayList<>();
         for (Map.Entry<String, List<NaruTokenTransaction>> e : groups.entrySet()) {
             NaruAccumulatorBuilder b = new NaruAccumulatorBuilder();
@@ -401,16 +399,16 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                 .<Group, BigDecimal>comparing(g -> g.stats.spending().total()).reversed()
                 .thenComparing(g -> g.key));
 
-        log(task, sb, NMsg.ofC("%s  (%s)", NMsg.ofStyledPrimary1("/budget"), describeScope(opts, groupKeys)));
+        log(task, context, NMsg.ofC("%s  (%s)", NMsg.ofStyledPrimary1("/budget"), describeScope(opts, groupKeys)));
         if (rows.isEmpty()) {
-            log(task, sb, NMsg.ofC("%s", "  no model calls in scope"));
+            log(task, context, NMsg.ofC("%s", "  no model calls in scope"));
         }
         for (Group g : rows) {
-            log(task, sb, NMsg.ofC("%s: %s", NMsg.ofStyledPrimary1(String.join(",", groupKeys)),
+            log(task, context, NMsg.ofC("%s: %s", NMsg.ofStyledPrimary1(String.join(",", groupKeys)),
                     NMsg.ofStyledPrimary2(g.key)));
-            log(task, sb, summaryLine(g.stats));
+            log(task, context, summaryLine(g.stats));
             if (groupKeys.length == 1 && "model".equals(groupKeys[0])) {
-                printModelDetail(task, sb, session, g.stats);
+                printModelDetail(task, context, session, g.stats);
             }
         }
 
@@ -419,20 +417,20 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         txs.forEach(totalB::accumulate);
         NaruModelBudgetStats total = totalB.build();
         if (!rows.isEmpty()) {
-            log(task, sb, NMsg.ofC("%s", "-----------------------------------------------"));
-            log(task, sb, NMsg.ofC("priced total  %s calls | in %s | out %s | cost %s%s",
+            log(task, context, NMsg.ofC("%s", "-----------------------------------------------"));
+            log(task, context, NMsg.ofC("priced total  %s calls | in %s | out %s | cost %s%s",
                     total.calls(),
                     NaruUtils.formattedTokensSize(total.promptTokens()),
                     NaruUtils.formattedTokensSize(total.completionTokens()),
                     money(total.spending().total()),
                     total.unpricedCalls() > 0 ? "   (" + total.unpricedCalls() + " calls unpriced)" : ""));
             for (Map.Entry<String, String> e : unpricedNotices(txs, svc.priceTable()).entrySet()) {
-                log(task, sb, NMsg.ofC("unpriced: %s (%s)", e.getKey(), e.getValue()));
+                log(task, context, NMsg.ofC("unpriced: %s (%s)", e.getKey(), e.getValue()));
             }
         }
 
         if (!opts.explain) {
-            printTokenContributions(task, sb);
+            printTokenContributions(task, context);
         }
 
         // rate limits (the same section the report always had)
@@ -442,28 +440,28 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                     s.serverTime(),
                     s.retryAfter().isPresent() ? ", retry after  : " : "",
                     s.retryAfter().orNull());
-            log(task, sb, msg);
+            log(task, context, msg);
             for (NaruRateLimitBucket requestBucket : s.requestBuckets()) {
                 NMsg bmsg = bucketMsg("request", requestBucket);
                 if (bmsg != null) {
-                    log(task, sb, bmsg);
+                    log(task, context, bmsg);
                 }
             }
             for (NaruRateLimitBucket tokenBucket : s.tokenBuckets()) {
                 NMsg tmsg = bucketMsg("token  ", tokenBucket);
                 if (tmsg != null) {
-                    log(task, sb, tmsg);
+                    log(task, context, tmsg);
                 }
             }
         }
 
         if (opts.explain) {
-            printExplain(task, sb, session, svc, query);
+            printExplain(task, context, session, svc, query);
         }
-        return NaruStmtResult.ofSuccess(sb.toString());
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
-    private NaruStmtResult parseReportOptions(NaruDirectiveCallContext context, NCmdLine cmdLine, ReportOptions opts) {
+    private NaruStmtResult parseReportOptions(SubCommandContext context, NCmdLine cmdLine, ReportOptions opts) {
         while (cmdLine.hasNext()) {
             NArg a = cmdLine.next().get();
             if (!a.isOption()) {
@@ -733,20 +731,20 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         return out;
     }
 
-    private void printModelDetail(NaruTask task, NStringBuilder sb, NaruSession session, NaruModelBudgetStats modelStat) {
+    private void printModelDetail(NaruTask task, SubCommandContext context, NaruSession session, NaruModelBudgetStats modelStat) {
         NaruModelConfig model = session.findModel(modelStat.fullModelKey()).orNull();
         long contextSize = model != null ? model.contextLength() : -1;
-        log(task, sb, NMsg.ofC("  %s  | %s %s, %s %s, %s %s",
+        log(task, context, NMsg.ofC("  %s  | %s %s, %s %s, %s %s",
                 NMsg.ofStyledPrimary1("context"),
                 "used", contextShare(modelStat.contextUsage(), contextSize),
                 "peak", contextShare(modelStat.peakContextUsage(), contextSize),
                 "available", contextSize > 0 ? NaruUtils.formattedTokensSize(contextSize) : NMsg.ofC("%s", "unknown")));
-        log(task, sb, NMsg.ofC("  %s    | %s", NMsg.ofStyledPrimary1("calls"), modelStat.calls()));
-        log(task, sb, NMsg.ofC("  %s | min %s, max %s",
+        log(task, context, NMsg.ofC("  %s    | %s", NMsg.ofStyledPrimary1("calls"), modelStat.calls()));
+        log(task, context, NMsg.ofC("  %s | min %s, max %s",
                 NMsg.ofStyledPrimary1("duration"),
                 NDuration.ofMillis(modelStat.minDuration()),
                 NDuration.ofMillis(modelStat.maxDuration())));
-        log(task, sb, NMsg.ofC("  %s   | %s, prompt %s, eval %s",
+        log(task, context, NMsg.ofC("  %s   | %s, prompt %s, eval %s",
                 NMsg.ofStyledPrimary1("tokens"),
                 modelStat.totalTokens(),
                 modelStat.promptTokens(),
@@ -757,7 +755,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
      * The opt-in section: the request estimate, the bucket shares, the skill attribution
      * and the calibration line, ported from the retired {@code /stats}.
      */
-    private void printExplain(NaruTask task, NStringBuilder sb, NaruSession session,
+    private void printExplain(NaruTask task, SubCommandContext context, NaruSession session,
                               NaruBudgetService svc, NaruBudgetStoreQuery query) {
         List<NaruModelBudgetStats> modelStats = svc.findByModelBudgetStats(query)
                 .stream()
@@ -769,31 +767,31 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                 .collect(Collectors.toList());
 
         PromptStats s = estimateTokens(task);
-        log(task, sb, NMsg.ofC("%s", ""));
-        log(task, sb, NMsg.ofC("%s", "explain:"));
-        log(task, sb, NMsg.ofC("  %s",
+        log(task, context, NMsg.ofC("%s", ""));
+        log(task, context, NMsg.ofC("%s", "explain:"));
+        log(task, context, NMsg.ofC("  %s",
                 NMsg.ofC("tool defs : %s | messages : %s | tool calls : %s",
                         s.toolDefs, s.messages, s.toolCalls)));
-        log(task, sb, NMsg.ofC("  estimated tokens : ~%s (rough text estimate)", s.tokens));
-        log(task, sb, contributionLine("  messages", s, Bucket.SYSTEM, Bucket.USER, Bucket.AGENT, Bucket.ASSISTANT, Bucket.THINKING));
-        log(task, sb, contributionLine("  tools", s, Bucket.TOOL_CALLS, Bucket.TOOL_DEFS, Bucket.TOOL_RESULTS));
+        log(task, context, NMsg.ofC("  estimated tokens : ~%s (rough text estimate)", s.tokens));
+        log(task, context, contributionLine("  messages", s, Bucket.SYSTEM, Bucket.USER, Bucket.AGENT, Bucket.ASSISTANT, Bucket.THINKING));
+        log(task, context, contributionLine("  tools", s, Bucket.TOOL_CALLS, Bucket.TOOL_DEFS, Bucket.TOOL_RESULTS));
         if (s.skillCatalogMessages + s.skillLoadedMessages + s.agentOtherChars > 0) {
-            log(task, sb, NMsg.ofC("%s", "  skill contribution (agent source) :"));
-            log(task, sb, NMsg.ofC("    %s : %s / ~%s", "catalog",
+            log(task, context, NMsg.ofC("%s", "  skill contribution (agent source) :"));
+            log(task, context, NMsg.ofC("    %s : %s / ~%s", "catalog",
                     plural(s.skillCatalogMessages, "message"), s.skillCatalogTokens()));
-            log(task, sb, NMsg.ofC("    %s : %s / ~%s", "loaded bodies",
+            log(task, context, NMsg.ofC("    %s : %s / ~%s", "loaded bodies",
                     plural(s.skillLoadedMessages, "message"), s.skillLoadedTokens()));
-            log(task, sb, NMsg.ofC("    %s : %s / ~%s", "other agent",
+            log(task, context, NMsg.ofC("    %s : %s / ~%s", "other agent",
                     plural(s.agentOtherMessages, "message"), s.agentOtherTokens()));
         } else {
-            log(task, sb, NMsg.ofC("  skill contribution (agent source) : %s", "none in the agent bucket"));
+            log(task, context, NMsg.ofC("  skill contribution (agent source) : %s", "none in the agent bucket"));
         }
-        log(task, sb, NMsg.ofC("%s", "  per model (this scope) :"));
+        log(task, context, NMsg.ofC("%s", "  per model (this scope) :"));
         if (modelStats.isEmpty()) {
-            log(task, sb, NMsg.ofC("    %s", "no model spent tokens yet"));
+            log(task, context, NMsg.ofC("    %s", "no model spent tokens yet"));
         }
         for (NaruModelBudgetStats m : modelStats) {
-            log(task, sb, NMsg.ofC("    %s | %s %s, %s %s, %s %s, %s %s",
+            log(task, context, NMsg.ofC("    %s | %s %s, %s %s, %s %s, %s %s",
                     NMsg.ofStyledPrimary1(String.valueOf(m.fullModelKey())),
                     "calls", m.calls(), "prompt", m.promptTokens(),
                     "eval", m.completionTokens(), "cost", money(m.spending().total())));
@@ -801,7 +799,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         NaruModelBudgetStats lastCall = lastCalledModel(modelStats);
         if (lastCall != null && lastCall.contextUsage() > 0) {
             long reported = lastCall.contextUsage();
-            log(task, sb, NMsg.ofC("  reported last call : %s prompt tokens for %s (estimate / reported : %s)",
+            log(task, context, NMsg.ofC("  reported last call : %s prompt tokens for %s (estimate / reported : %s)",
                     reported,
                     lastCall.fullModelKey(),
                     new DecimalFormat("#.##").format((double) s.tokens / reported)));
@@ -809,12 +807,12 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
     }
 
     /** Shows a rough token split of the current request context in the normal report. */
-    private void printTokenContributions(NaruTask task, NStringBuilder sb) {
+    private void printTokenContributions(NaruTask task, SubCommandContext context) {
         PromptStats s = estimateTokens(task);
-        log(task, sb, NMsg.ofC("%s", "approximate current prompt context (character-based token estimate):"));
-        log(task, sb, NMsg.ofC("  estimated ~%s tokens; contributions:", s.tokens));
-        log(task, sb, contributionLine("    messages", s, Bucket.SYSTEM, Bucket.USER, Bucket.AGENT, Bucket.ASSISTANT, Bucket.THINKING));
-        log(task, sb, contributionLine("    tools", s, Bucket.TOOL_CALLS, Bucket.TOOL_DEFS, Bucket.TOOL_RESULTS));
+        log(task, context, NMsg.ofC("%s", "approximate current prompt context (character-based token estimate):"));
+        log(task, context, NMsg.ofC("  estimated ~%s tokens; contributions:", s.tokens));
+        log(task, context, contributionLine("    messages", s, Bucket.SYSTEM, Bucket.USER, Bucket.AGENT, Bucket.ASSISTANT, Bucket.THINKING));
+        log(task, context, contributionLine("    tools", s, Bucket.TOOL_CALLS, Bucket.TOOL_DEFS, Bucket.TOOL_RESULTS));
     }
 
     private NMsg contributionLine(String label, PromptStats s, Bucket... buckets) {
@@ -838,17 +836,13 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
         }
     }
 
-    private void log(NaruTask task, NStringBuilder sb, NMsg msg) {
-        task.log(NaruLogMode.AGENT_RESPONSE, msg);
-        sb.println(msg.toString());
+    private void log(NaruTask task, SubCommandContext context, NMsg msg) {
+        context.outln(msg);
     }
 
-    private NaruStmtResult fail(NaruDirectiveCallContext context, NMsg msg) {
-        NaruTask task = context.task();
-        if (task != null) {
-            task.log(NaruLogMode.AGENT_RESPONSE, msg.asError());
-        }
-        return NaruStmtResult.ofError(msg.toString());
+    private NaruStmtResult fail(SubCommandContext context, NMsg msg) {
+        context.errln(msg);
+        return NaruStmtResult.ofError();
     }
 
     private static String plural(long n, String noun) {
@@ -1037,7 +1031,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                 Bucket b = bucketOf(msg);
                 long msgChars = MSG_OVERHEAD_CHARS;
                 if (msg.getContent() != null) {
-                    msgChars += msg.getContent().length();
+                    msgChars += msg.getFilteredContent().length();
                 }
                 if (msg.getToolCalls() != null) {
                     long toolCallChars = 0;

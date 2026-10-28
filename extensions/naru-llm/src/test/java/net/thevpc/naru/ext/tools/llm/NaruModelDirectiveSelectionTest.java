@@ -237,7 +237,7 @@ public class NaruModelDirectiveSelectionTest {
         Harness h = buildTask(ctx);
 
         NaruStmtResult res = new NaruModelDirective()
-                .executeList(ctx[0], NCmdLine.of(KEY));
+                .executeList(NaruModelDirectiveRegistrationTest.buildSubContext(ctx[0]), NCmdLine.of(KEY));
 
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         Assertions.assertNotNull(h.task.model(),
@@ -251,7 +251,7 @@ public class NaruModelDirectiveSelectionTest {
         Harness h = buildTask(ctx);
 
         NaruStmtResult res = new NaruModelDirective()
-                .executeList(ctx[0], NCmdLine.of("ollama/qwen2.5-coder:7b"));
+                .executeList(NaruModelDirectiveRegistrationTest.buildSubContext(ctx[0]), NCmdLine.of("ollama/qwen2.5-coder:7b"));
 
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         Assertions.assertNotNull(h.task.model());
@@ -263,7 +263,7 @@ public class NaruModelDirectiveSelectionTest {
         Harness h = buildTask(ctx);
 
         NaruStmtResult res = new NaruModelDirective()
-                .executeList(ctx[0], NCmdLine.of("coder"));
+                .executeList(NaruModelDirectiveRegistrationTest.buildSubContext(ctx[0]), NCmdLine.of("coder"));
 
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         Assertions.assertNull(h.task.model(),
@@ -278,7 +278,7 @@ public class NaruModelDirectiveSelectionTest {
         Harness h = buildTask(ctx);
 
         NaruStmtResult res = new NaruModelDirective()
-                .executeList(ctx[0], NCmdLine.of("ollama/no-such-model:1b"));
+                .executeList(NaruModelDirectiveRegistrationTest.buildSubContext(ctx[0]), NCmdLine.of("ollama/no-such-model:1b"));
 
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         Assertions.assertNull(h.task.model());

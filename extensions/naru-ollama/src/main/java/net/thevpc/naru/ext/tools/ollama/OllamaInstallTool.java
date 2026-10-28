@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.ollama;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
@@ -28,7 +29,7 @@ public class OllamaInstallTool extends DefaultNaruTool {
     @Override
     public String execute(NaruToolCallContext context) {
         NaruTask task = context.task();
-        boolean ok = OllamaService.of().install(msg -> task.log(NaruLogMode.AGENT_RESPONSE, msg));
+        boolean ok = OllamaService.of().install(msg -> task.addHistory(NaruMessage.engine(msg)));
         if (ok) {
             OllamaInstallationInfo info = OllamaService.of().getInstallationInfo();
             return "SUCCESS: Ollama installed at " + info.getExecutablePath() + " (Version: " + info.getVersion() + ")";

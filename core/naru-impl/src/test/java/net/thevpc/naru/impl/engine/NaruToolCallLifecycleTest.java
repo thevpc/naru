@@ -428,7 +428,7 @@ public class NaruToolCallLifecycleTest {
         List<NaruMessage> history = task.history();
         for (int i = history.size() - 1; i >= 0; i--) {
             if (history.get(i).getRole() == NaruRole.tool) {
-                return history.get(i).getContent();
+                return history.get(i).getContent().toString();
             }
         }
         return null;

@@ -4,6 +4,7 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruSummaryInfo;
 import net.thevpc.naru.api.model.NaruSummaryState;
 import net.thevpc.naru.api.model.NaruSummaryTrigger;
+import net.thevpc.nuts.text.NMsg;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -94,7 +95,7 @@ public class NaruCompactCacheEntry {
                 NaruSummaryTrigger.parse(trigger),
                 NaruSummaryState.ACTIVE,
                 ok);
-        return NaruMessage.summary(summaryText, info);
+        return NaruMessage.summary(NMsg.ofP(summaryText), info);
     }
 
     /** Whether a cached summary may satisfy a request for {@code maxTokens}. */

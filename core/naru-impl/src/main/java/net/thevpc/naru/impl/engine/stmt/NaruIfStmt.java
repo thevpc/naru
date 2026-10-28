@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.engine.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
@@ -230,11 +231,11 @@ public class NaruIfStmt extends NaruIncrementalStmt implements Cloneable {
                     return ((NaruIncrementalStmt) last).acceptStatement(any, task);
                 }
                 if (any instanceof NaruElseStmt) {
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("error statement : unexpected 'else'"));
+                    task.addHistory(NaruMessage.engine(NMsg.ofC("error statement : unexpected 'else'")));
                     task.throwError(NMsg.ofC("error statement : unexpected 'else'"));
                     return false;
                 } else if (any instanceof NaruElseIfStmt) {
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("error statement : unexpected 'else'"));
+                    task.addHistory(NaruMessage.engine(NMsg.ofC("error statement : unexpected 'else'")));
                     task.throwError(NMsg.ofC("error statement : unexpected 'elseif'"));
                     return false;
                 } else if (any instanceof NaruEndStmt) {

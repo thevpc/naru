@@ -30,24 +30,24 @@ public class NaruModelDirective extends NaruDirectiveBase {
         noCommand("list");
         register(new AbstractSubCommand("current", NText.ofPlain("show current model")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NMsg msg = NMsg.ofC("%s", task.model().toText());
-                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                return NaruStmtResult.ofSuccess(msg.toString());
+                context.outln(msg);
+                return NaruStmtResult.ofSuccess(NElement.of(task.model().toText().filteredText()),null);
             }
         });
         register(new AbstractSubCommand("use", NText.ofPlain("select model"),
                 new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name, 'provider/model', registration id, or index of the last listing ('/model list [--free|--provider=x|<filter>]')"))
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NOptional<NArg> n = cmdLine.next();
                 if (!n.isPresent()) {
                     NMsg msg = NMsg.ofC("Error: missing model name to set.").asError();
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
                 NArg a = n.get();
                 NaruSession session = task.session();
@@ -58,48 +58,48 @@ public class NaruModelDirective extends NaruDirectiveBase {
                     // of a generic 'not found'
                     NMsg regErr = registrationSelectionError(session, a.image());
                     if (regErr != null) {
-                        task.log(NaruLogMode.AGENT_RESPONSE, regErr);
-                        return NaruStmtResult.ofError(regErr.toString());
+                        context.errln(regErr);
+                        return NaruStmtResult.ofError();
                     }
                     NMsg msg = NMsg.ofC("Error: model %s not found%s.",
                             a.image(),
                             NLiteral.of(a.image()).asInt().isPresent() ? " (see the indexes printed by '/model list')" : ""
                     ).asError();
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
                 context.task().setModel(k);
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s",
+                context.outln(NMsg.ofC("Selected model : %s",
                         task.model().toText()));
-                return NaruStmtResult.ofSuccess(null);
+                return NaruStmtResult.ofSuccess();
             }
         });
         register(new AbstractSubCommand("use-global", NText.ofPlain("use model as default globally")
                 , new SubCommandHelp(NText.of("<model>"), NText.ofPlain("model name to set as default globally"))
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NOptional<NArg> n = cmdLine.next();
                 if (!n.isPresent()) {
                     NMsg msg = NMsg.ofC("Error: missing model name to set.").asError();
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
                 NArg a = n.get();
                 NaruModelConfig k = task.session().findModel(a.image()).orNull();
                 if (k == null) {
                     NMsg msg = NMsg.ofC("Error: model %s not found.",
                             a.image()).asError();
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln(msg);
+                    return NaruStmtResult.ofError();
                 }
                 context.task().setModel(k);
                 NAssert.requireNamedNonNull(k, "key");
                 context.task().session().setProjectEnv("model", k.toElement(), NaruVisibility.PRIVATE);
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("switch global model : %s",
+                context.outln(NMsg.ofC("switch global model : %s",
                         task.model().toText()));
-                return NaruStmtResult.ofSuccess(null);
+                return NaruStmtResult.ofSuccess();
             }
         });
 
@@ -107,7 +107,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 new SubCommandHelp(NText.of("[<filter>] [--provider=<name>] [--free]"), NText.ofPlain("list available models, optionally filtered by keyword, provider or free-only. The printed indexes can be reused with '/model use <n>' until the next listing"))
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeList(context, cmdLine);
             }
         });
@@ -116,7 +116,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<filter>", "list models matching the given filter / keyword")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 // Non-numeric bare argument (e.g. /model glm) falls back to a
                 // filtered listing; a pure index selects the model at that position.
                 NOptional<NArg> head = cmdLine.peek();
@@ -133,7 +133,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 new SubCommandHelp(NText.of("<id> --provider=<type> [--protocol=<wire>] [--url=…] [--model=<id>|--models=a,b] [--apiKey=sk-…|$VAR] [--temperature=… --contextLength=…] | <id> --protocol=<wire> --url=… --models=a,b [--apiKey=…]"), NText.ofPlain("register an instance of a built-in provider type, or a generic endpoint speaking a wire protocol; with an existing id, merges the given parameters into it"))
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeRegistration(context, cmdLine, "add");
             }
         });
@@ -141,7 +141,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 new SubCommandHelp(NText.of("<id> [--temperature=… --apiKey=…]"), NText.ofPlain("merge the given parameters into an existing registration; an empty value clears the parameter"))
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeRegistration(context, cmdLine, "update");
             }
         });
@@ -149,13 +149,13 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 new SubCommandHelp(NText.of("<id>"), NText.ofPlain("delete a registration and its stored parameters"))
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeRemoveRegistration(context, cmdLine);
             }
         });
         register(new AbstractSubCommand("registered", NText.ofPlain("list registrations (api keys masked)")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeRegisteredList(context, cmdLine);
             }
         });
@@ -470,7 +470,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
         return keys == null ? List.of() : keys;
     }
 
-    public NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeList(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         String filter = null;
         String providerFilter = null;
@@ -509,8 +509,8 @@ public class NaruModelDirective extends NaruDirectiveBase {
         List<NaruModelInfo> allModels = context.task().session().registry().modelsInfos(task.session());
         if (allModels.isEmpty()) {
             NMsg msg = NMsg.ofC("No available models found. Check if %s is running ('/ollama status') or configure an API key for a cloud provider (e.g. 'openrouter.apiKey', 'gemini.apiKey', 'groq.apiKey').", NMsg.ofStyledPrimary1("ollama")).asError();
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
+            context.errln(msg);
+            return NaruStmtResult.ofError();
         }
 
         List<NaruModelInfo> models = new ArrayList<>();
@@ -554,16 +554,16 @@ public class NaruModelDirective extends NaruDirectiveBase {
             NaruModelConfig selected = task.session().findModel(exactMatch.key().toString()).orNull();
             if (selected != null) {
                 task.setModel(selected);
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s", task.model().toText()));
-                return NaruStmtResult.ofSuccess(null);
+                context.outln(NMsg.ofC("Selected model : %s", task.model().toText()));
+                return NaruStmtResult.ofSuccess();
             }
         }
 
         if (models.isEmpty()) {
             String crit = filter != null ? "'" + filter + "'" : (providerFilter != null ? "provider '" + providerFilter + "'" : "criteria");
             NMsg msg = NMsg.ofC("No available models found matching %s (%s total models available).", crit, allModels.size());
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofSuccess(null);
+            context.outln(msg);
+            return NaruStmtResult.ofSuccess();
         }
 
         String titleSuffix = (filter != null || providerFilter != null || freeOnly) ? " (filtered)" : "";
@@ -574,14 +574,12 @@ public class NaruModelDirective extends NaruDirectiveBase {
         // rows, not the unfiltered catalog, otherwise filtering renumbers the list and
         // every index the user copies becomes a different model.
         task.session().setListedModels(displayedModels.stream().map(NaruModelInfo::key).collect(Collectors.toList()));
-        NStringBuilder sb = NStringBuilder.of();
         NMsg msg = NMsg.ofC("%s Available models%s: showing %s-%s%s",
                 models.size(), titleSuffix,
                 displayedModels.isEmpty() ? 0 : fromIndex + 1,
                 toIndex,
                 displayedModels.size() == models.size() ? " (all)" : "");
-        task.log(NaruLogMode.AGENT_RESPONSE, msg);
-        sb.println(msg.toString());
+        context.outln(msg);
         int zeros = displayedModels.size() <= 1 ? 1 : (int) Math.ceil(Math.log10(displayedModels.size()));
         DecimalFormat zformat = new DecimalFormat(NStringUtils.repeat("0", Math.max(1, zeros)));
         NaruModelConfig selectedModel = task.model();
@@ -628,8 +626,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
                     extra3 == null ? "" : extra3,
                     details.isEmpty() ? "" : " {" + details.trim() + "}"
             );
-            task.log(NaruLogMode.AGENT_RESPONSE, row);
-            sb.println(row.toString());
+            context.outln(row);
             index++;
         }
         NMsg hint = NMsg.ofC("Use %s or %s with any of these %sindexes%s, or a full %s.",
@@ -639,13 +636,12 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 NMsg.ofStyledSuccess(""),
                 NMsg.ofStyledPrimary1("provider/model")
         );
-        task.log(NaruLogMode.AGENT_RESPONSE, hint);
-        sb.println(hint.toString());
-        return NaruStmtResult.ofSuccess(sb.toString());
+        context.outln(hint);
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
 
-    public NaruStmtResult executeSetByNumber(NaruDirectiveCallContext context, int nbr) {
+    public NaruStmtResult executeSetByNumber(SubCommandContext context, int nbr) {
         NaruTask task = context.task();
         NaruModelConfig k = task.session().findModel(String.valueOf(nbr)).orNull();
         if (k == null) {
@@ -655,13 +651,13 @@ public class NaruModelDirective extends NaruDirectiveBase {
                     nbr, listed, NMsg.ofStyledPrimary1("/model list"))
                     : NMsg.ofC("Error: no model at index %s. Use %s first.",
                     nbr, NMsg.ofStyledPrimary1("/model list"))).asError();
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
+            context.errln(msg);
+            return NaruStmtResult.ofError();
         }
         context.task().setModel(k);
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Selected model : %s",
+        context.outln(NMsg.ofC("Selected model : %s",
                 task.model().toText()));
-        return NaruStmtResult.ofSuccess(null);
+        return NaruStmtResult.ofSuccess(NElement.of(task.model().toText().filteredText()));
     }
 
     // ── /model add|update|remove|registered ───────────────────────────────────
@@ -675,7 +671,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
      * every model selected under the id. An update is a merge: parameters the
      * flags do not mention are kept, an empty value clears one.
      */
-    public NaruStmtResult executeRegistration(NaruDirectiveCallContext context, NCmdLine cmdLine, String operation) {
+    public NaruStmtResult executeRegistration(SubCommandContext context, NCmdLine cmdLine, String operation) {
         NaruTask task = context.task();
         NaruSession session = task.session();
         boolean update = "update".equals(operation);
@@ -910,14 +906,14 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 NMsg.ofStyledPrimary1(reg.id()), reg.provider(),
                 protocol == null ? "" : ", protocol=" + protocol)
                 : NMsg.ofC("registration '%s' updated", NMsg.ofStyledPrimary1(reg.id()));
-        task.log(NaruLogMode.AGENT_RESPONSE, ok);
-        return NaruStmtResult.ofSuccess(ok.toString());
+        context.outln(ok);
+        return NaruStmtResult.ofSuccess(NElement.of(true),null);
     }
 
     /**
      * Deletes a registration and its stored parameters from both visibility files.
      */
-    public NaruStmtResult executeRemoveRegistration(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeRemoveRegistration(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         NOptional<NArg> n = cmdLine.next();
         if (!n.isPresent() || NBlankable.isBlank(n.get().image())) {
@@ -930,8 +926,8 @@ public class NaruModelDirective extends NaruDirectiveBase {
         }
         task.session().removeRegistration(key);
         NMsg ok = NMsg.ofC("registration '%s' removed", NMsg.ofStyledPrimary1(key));
-        task.log(NaruLogMode.AGENT_RESPONSE, ok);
-        return NaruStmtResult.ofSuccess(ok.toString());
+        context.outln(ok);
+        return NaruStmtResult.ofSuccess(NElement.of(true),null);
     }
 
     /**
@@ -939,25 +935,24 @@ public class NaruModelDirective extends NaruDirectiveBase {
      * {@code /model add} wrote. A {@code $NAME} value is shown as-is — it names a
      * variable, not a value, and masking a reference would hide what it points to.
      */
-    public NaruStmtResult executeRegisteredList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeRegisteredList(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         Map<String, NaruModelRegistration> regs = task.session().registrations();
         if (regs == null || regs.isEmpty()) {
             NMsg msg = NMsg.ofC("No model registrations. Create one with %s (e.g. %s).",
                     NMsg.ofStyledPrimary1("/model add <id> --provider=<type>"),
                     NMsg.ofStyledPrimary1("/model add personal --provider=gemini"));
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofSuccess(msg.toString());
+            context.errln(msg);
+            return NaruStmtResult.ofError();
         }
         TreeMap<String, NaruModelRegistration> sorted = new TreeMap<>(regs);
         int width = 0;
         for (String id : sorted.keySet()) {
             width = Math.max(width, id.length());
         }
-        NStringBuilder sb = NStringBuilder.of();
         NMsg header = NMsg.ofC("Registrations: %s", sorted.size());
-        task.log(NaruLogMode.AGENT_RESPONSE, header);
-        sb.println(header.toString());
+        context.outln(header);
+        context.outln(header);
         for (Map.Entry<String, NaruModelRegistration> e : sorted.entrySet()) {
             NaruModelRegistration r = e.getValue().masked();
             List<String> kv = new ArrayList<>();
@@ -981,10 +976,10 @@ public class NaruModelDirective extends NaruDirectiveBase {
                     String.format("%-" + width + "s", e.getKey()),
                     registrationTypeColumn(r),
                     String.join("  ", kv));
-            task.log(NaruLogMode.AGENT_RESPONSE, row);
-            sb.println(row.toString());
+            context.outln(row);
+            context.outln(row.toString());
         }
-        return NaruStmtResult.ofSuccess(sb.toString());
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
     /**
@@ -1202,10 +1197,10 @@ public class NaruModelDirective extends NaruDirectiveBase {
         return v != null && v.isPresent() ? v.get() : e.toString();
     }
 
-    private static NaruStmtResult fail(NaruDirectiveCallContext context, NMsg msg) {
+    private static NaruStmtResult fail(SubCommandContext context, NMsg msg) {
         NMsg e = msg.asError();
-        context.task().log(NaruLogMode.AGENT_RESPONSE, e);
-        return NaruStmtResult.ofError(e.toString());
+        context.errln(e);
+        return NaruStmtResult.ofError();
     }
 
 }

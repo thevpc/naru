@@ -4,7 +4,6 @@ import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveProvider;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
@@ -15,8 +14,10 @@ import net.thevpc.nuts.cmdline.NArgCompletePosition;
 import net.thevpc.nuts.cmdline.NArgCompleteResolver;
 import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NIO;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -163,8 +164,8 @@ public class NaruNArgCompleteResolverTest {
             register(new AbstractSubCommand("enable", NText.ofPlain("enable things"),
                     new SubCommandHelp("<name>...", "synthetic")) {
                 @Override
-                public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
-                    return NaruStmtResult.ofSuccess(0);
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                    return NaruStmtResult.ofSuccess(NElement.of(0), NMsg.ofC("%s",0));
                 }
 
                 @Override

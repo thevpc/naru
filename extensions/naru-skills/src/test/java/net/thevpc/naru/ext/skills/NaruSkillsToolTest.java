@@ -183,7 +183,7 @@ public class NaruSkillsToolTest {
         NaruTask t = taskWithSkillsTag();
         assertTrue(toolVisible(t, "skill"), "holding the skills tag must reveal the skill tool");
         List<NaruMessage> messages = ext.contribute(t);
-        assertTrue(messages.stream().anyMatch(m -> m.getContent().contains("## AVAILABLE SKILL: GIT-FLOW")),
+        assertTrue(messages.stream().anyMatch(m -> m.getFilteredContent().contains("## AVAILABLE SKILL: GIT-FLOW")),
                 () -> "the catalog must accompany the visible tool: " + messages);
         // catalog rows carry the distinct catalog source so /context can tell them apart
         assertTrue(messages.stream().anyMatch(m ->
@@ -307,9 +307,9 @@ public class NaruSkillsToolTest {
         List<NaruMessage> messages = ext.contribute(t);
 
         assertTrue(messages.stream().anyMatch(m ->
-                        m.getContent().contains("UNTRUSTED SKILL SOURCE (claude)")),
+                        m.getFilteredContent().contains("UNTRUSTED SKILL SOURCE (claude)")),
                 () -> "a foreign body must be framed, not injected as native instruction: " + messages);
-        assertTrue(messages.stream().anyMatch(m -> m.getContent().contains("legacy instructions")), messages.toString());
+        assertTrue(messages.stream().anyMatch(m -> m.getFilteredContent().contains("legacy instructions")), messages.toString());
     }
 
     private static NaruSkillRoot root(List<NaruSkillRoot> roots, String label) {
@@ -340,6 +340,6 @@ public class NaruSkillsToolTest {
     private static boolean activeBodyPresent(NaruTask task) {
         NaruSkillsExtension e = NaruSkillsExtension.skills(task.session());
         return e.contribute(task).stream()
-                .anyMatch(m -> m.getContent().contains("## ACTIVE SKILL DIRECTIVE: GIT-FLOW"));
+                .anyMatch(m -> m.getFilteredContent().contains("## ACTIVE SKILL DIRECTIVE: GIT-FLOW"));
     }
 }

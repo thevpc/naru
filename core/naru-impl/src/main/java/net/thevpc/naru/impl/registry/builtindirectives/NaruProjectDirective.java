@@ -2,11 +2,11 @@ package net.thevpc.naru.impl.registry.builtindirectives;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
@@ -33,7 +33,7 @@ public class NaruProjectDirective extends NaruDirectiveBase {
                         + "workspace init.naru once and fire project-change.\n"
                         + "ex:\n/project /path/to/other/project")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NaruSession session = task.session();
                 String arg = context.argument();
@@ -41,13 +41,13 @@ public class NaruProjectDirective extends NaruDirectiveBase {
                     NMsg msg = NMsg.ofC("project: missing <dir> (current project is %s)",
                             session.projectDir()).asError();
                     task.addResultMessage(msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    return NaruStmtResult.ofError(msg);
                 }
                 NPath target = NPath.of(arg.trim()).toAbsolute(session.projectDir()).normalize();
                 if (!target.isDirectory()) {
                     NMsg msg = NMsg.ofC("project directory not found: %s", target).asError();
                     task.addResultMessage(msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    return NaruStmtResult.ofError(msg);
                 }
                 NPath old = session.projectDir();
                 session.projectDir(target);
@@ -59,7 +59,7 @@ public class NaruProjectDirective extends NaruDirectiveBase {
                 } else {
                     task.addResultMessage(NMsg.ofC("project changed to %s", now));
                 }
-                return NaruStmtResult.ofSuccess(now.toString());
+                return NaruStmtResult.ofSuccess(NElement.of(now.toString()), NMsg.ofC("%s", now));
             }
         });
     }

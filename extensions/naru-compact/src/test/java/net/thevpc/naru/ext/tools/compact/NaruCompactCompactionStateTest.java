@@ -14,6 +14,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -98,7 +99,7 @@ class NaruCompactCompactionStateTest {
         for (NaruMessage m : covered) {
             m.setExcludedBy(id);
         }
-        history.add(NaruMessage.summary("the gist", info(id, covered, false)));
+        history.add(NaruMessage.summary(NMsg.ofP("the gist"), info(id, covered, false)));
         history.add(NaruMessage.user("recent"));
         return history;
     }
@@ -207,7 +208,7 @@ class NaruCompactCompactionStateTest {
         assertEquals(NaruSummaryState.ACTIVE, summary.getSummary().state(),
                 "keep means keep: the summary stays in the view");
         assertTrue(summary.getSummary().stale(), "but it is labelled so the user can see it");
-        assertTrue(summary.getContent().length() > 0);
+        assertTrue(summary.getFilteredContent().length() > 0);
     }
 
     @Test

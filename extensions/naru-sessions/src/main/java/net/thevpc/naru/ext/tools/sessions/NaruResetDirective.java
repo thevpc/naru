@@ -17,7 +17,7 @@
 //                NaruTask task = context.task();
 //                task.session().reset(true);
 //                context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("reset session."));
-//                return NaruStmtResult.ofSuccess(null);
+//                return NaruStmtResult.ofSuccess();
 //            }
 //        });
 //    }

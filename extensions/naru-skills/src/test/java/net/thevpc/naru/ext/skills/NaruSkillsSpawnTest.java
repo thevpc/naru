@@ -281,7 +281,7 @@ public class NaruSkillsSpawnTest {
         // the child holds write, so the request-build gate opens and the body is injected
         NaruTask child = spawn(parent, NaruTaskSpec.of().addTags("write").addSkills("fs-aware"));
         assertTrue(ext.contribute(child).stream()
-                        .anyMatch(m -> m.getContent().contains("## ACTIVE SKILL DIRECTIVE: FS-AWARE")),
+                        .anyMatch(m -> m.getFilteredContent().contains("## ACTIVE SKILL DIRECTIVE: FS-AWARE")),
                 () -> "a satisfied requirement must inject the body: " + ext.contribute(child));
     }
 
@@ -291,7 +291,7 @@ public class NaruSkillsSpawnTest {
         NaruTask parent = task();
         NaruTask child = spawn(parent, NaruTaskSpec.of().addTags("write").addSkills("fs-aware"));
         assertTrue(ext.contribute(child).stream()
-                .anyMatch(m -> m.getContent().contains("ACTIVE SKILL DIRECTIVE")),
+                .anyMatch(m -> m.getFilteredContent().contains("ACTIVE SKILL DIRECTIVE")),
                 "precondition: before the revoke the body is injected");
 
         child.removeToolTag("write");
@@ -299,10 +299,10 @@ public class NaruSkillsSpawnTest {
         // decision 4: still LOADED — the tag revocation does not unload the skill
         assertEquals(NaruSkillState.LOADED, ext.state(child, "fs-aware"));
         assertTrue(ext.contribute(child).stream()
-                        .anyMatch(m -> m.getContent().contains("## SKILL REQUIRES GATE (UNSATISFIED): FS-AWARE")),
+                        .anyMatch(m -> m.getFilteredContent().contains("## SKILL REQUIRES GATE (UNSATISFIED): FS-AWARE")),
                 () -> "the revoked tag must gate the body at request-build: " + ext.contribute(child));
         assertTrue(ext.contribute(child).stream()
-                        .noneMatch(m -> m.getContent().contains("## ACTIVE SKILL DIRECTIVE: FS-AWARE")),
+                        .noneMatch(m -> m.getFilteredContent().contains("## ACTIVE SKILL DIRECTIVE: FS-AWARE")),
                 "the gated body must not be injected");
     }
 }

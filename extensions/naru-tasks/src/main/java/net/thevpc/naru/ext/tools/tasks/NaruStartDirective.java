@@ -1,15 +1,14 @@
 package net.thevpc.naru.ext.tools.tasks;
 
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.spawn.NaruSpawnContract;
 import net.thevpc.naru.api.spawn.NaruSpawnInherit;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.spawn.NaruSpawnResolution;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 import net.thevpc.naru.api.spawn.NaruSpawnTargets;
@@ -17,13 +16,13 @@ import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
 import net.thevpc.nuts.cmdline.NArgCompletePosition;
 import net.thevpc.nuts.cmdline.NArgCompleteResult;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NTextBuilder;
 import net.thevpc.nuts.util.NOptional;
-import net.thevpc.nuts.util.NRef;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * {@code /start <routine...> [flags]} — start one or more routines (or an agent
@@ -56,7 +55,7 @@ public class NaruStartDirective extends NaruDirectiveBase {
         super("start", "task", "start new task");
         register(new AbstractSubCommand(new SubCommandHelp("<routine>... [name=value...]", "start one or more routines as a single consecutive new task\n<routine> can be routine name or routine path; an agent .md name is also accepted\nNamed inputs (for example, topic=cache) are available as task variables.\n\nflags:\n  --fork | --summary | --window=<n>turns\n  --inherit=tags[,env]\n  --add-tags=<tags> --revoke-tags=<tags>\n  --exclude-tools=<tools> --add-skills=<skills>\n  --policy=<name> (a /spawn-policy defined policy)\n  --explain (resolve and print the policy, spawn nothing)")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NaruTaskSpec spec = NaruTaskSpec.of()
                         .parentId(task.id());
@@ -132,7 +131,8 @@ public class NaruStartDirective extends NaruDirectiveBase {
                         })
                         .requireAll();
                 if (failed[0]) {
-                    return NaruStmtResult.ofError("invalid /start arguments");
+                    context.errln("invalid /start arguments");
+                    return NaruStmtResult.ofError();
                 }
                 if (!stmts.isEmpty()) {
                     spec.statements(stmts);
@@ -143,12 +143,12 @@ public class NaruStartDirective extends NaruDirectiveBase {
                 warnIfSkillsRequestedWithoutExtension(task, spec, targetContract[0]);
                 spec.resolveName();
                 if (explain[0]) {
-                    return explain(task, spec);
+                    return explain(context, task, spec);
                 }
                 NaruTask tt = task.session().newTask(spec)
                         .bg()
                         .unhold();
-                return NaruStmtResult.ofSuccess(tt.id());
+                return NaruStmtResult.ofSuccess(NElement.of(tt.id()));
             }
         });
     }
@@ -177,7 +177,7 @@ public class NaruStartDirective extends NaruDirectiveBase {
             holder[0] = c;
         } else if (!warned[0]) {
             warned[0] = true;
-            task.log(NaruLogMode.SCRIPT, NMsg.ofC("⚠ multiple spawn targets declare contracts; using the first one only"));
+            task.addHistory(NaruMessage.engine(NMsg.ofC("⚠ multiple spawn targets declare contracts; using the first one only")));
         }
     }
 
@@ -210,21 +210,21 @@ public class NaruStartDirective extends NaruDirectiveBase {
         boolean installed = task.session().registry().sessionExtensions().stream()
                 .anyMatch(e -> "skills".equals(e.name()));
         if (!installed) {
-            task.log(NaruLogMode.SCRIPT, NMsg.ofC(
+            task.addHistory(NaruMessage.engine(NMsg.ofC(
                     "⚠ %s requests skills (%s), but no 'skills' extension is installed in this session; "
                             + "the spawn resolves and records them, but nothing will load them into the child",
                     spec.spawnKind() == null ? "--add-skills" : "the spawn target",
-                    String.join(", ", requested)));
+                    String.join(", ", requested))));
         }
     }
 
-    private NaruStmtResult explain(NaruTask task, NaruTaskSpec spec) {
+    private NaruStmtResult explain(SubCommandContext context,NaruTask task, NaruTaskSpec spec) {
         NaruSpawnResolution resolution = task.session().resolveSpawn(spec);
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", "spawn policy for this target:"));
+        context.outln( NMsg.ofC("%s", "spawn policy for this target:"));
         for (String line : resolution.provenanceText()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", "  " + line));
+            context.outln( NMsg.ofC("%s", "  " + line));
         }
-        return NaruStmtResult.ofSuccess(null);
+        return NaruStmtResult.ofSuccess();
     }
 
     /**

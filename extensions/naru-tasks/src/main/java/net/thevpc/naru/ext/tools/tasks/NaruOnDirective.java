@@ -1,6 +1,5 @@
 package net.thevpc.naru.ext.tools.tasks;
 
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.NaruEventFilter;
 import net.thevpc.naru.api.scheduler.NaruEventFilters;
@@ -33,7 +32,7 @@ public class NaruOnDirective extends NaruDirectiveBase {
                         + "\n  child(<number>) : any child of task with id <number>"
         )) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String event = null;
                 String routine = null;
@@ -62,29 +61,33 @@ public class NaruOnDirective extends NaruDirectiveBase {
                             once = p.booleanValue();
                         } else {
                             NMsg msg = NMsg.ofC("Error on event: missing event and/or routine %s / %s", event, routine);
+                            context.errln(msg);
                             task.throwError(msg);
-                            return NaruStmtResult.ofError(msg.toString());
+                            return NaruStmtResult.ofError();
                         }
                     } else {
                         NMsg msg = NMsg.ofC("Error on event: missing event and/or routine %s / %s", event, routine);
+                        context.errln(msg);
                         task.throwError(msg);
-                        return NaruStmtResult.ofError(msg.toString());
+                        return NaruStmtResult.ofError();
                     }
                 }
                 if (NBlankable.isBlank(event) || NBlankable.isBlank(routine)) {
                     NMsg msg = NMsg.ofC("Error on event: missing event and/or routine %s / %s", event, routine);
+                    context.errln(msg);
                     task.throwError(msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    return NaruStmtResult.ofError();
                 }
                 NOptional<NaruEventFilter> u = NaruEventFilters.parse(filter, null, task);
                 if (!u.isPresent()) {
                     NMsg msg = NMsg.ofC("Error on event: missing event and/or routine %s / %s", event, routine);
+                    context.errln(msg);
                     task.throwError(msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    return NaruStmtResult.ofError();
                 }
                 NaruEventFilter c = NaruEventFilters.and(NaruEventFilters.eventName(event), u.get());
                 task.subscribe(event, new NaruEventSubscription(routine, args, c, once));
-                return NaruStmtResult.ofSuccess(null);
+                return NaruStmtResult.ofSuccess();
             }
         });
     }

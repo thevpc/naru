@@ -13,6 +13,7 @@ import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelRegistration;
+import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.naru.api.routine.NaruStmtResult;
@@ -25,6 +26,7 @@ import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NTextBuilder;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.Assertions;
@@ -47,9 +49,13 @@ import java.util.Set;
  */
 public class NaruModelDirectiveRegistrationTest {
 
-    /** provider type → enumerable models; absent = wire-like (declared only) */
+    /**
+     * provider type → enumerable models; absent = wire-like (declared only)
+     */
     private static final Map<String, List<String>> UNIVERSE = new HashMap<>();
-    /** provider type → wire shapes it speaks; absent = fixed wire shape */
+    /**
+     * provider type → wire shapes it speaks; absent = fixed wire shape
+     */
     private static final Map<String, Set<String>> PROTOCOLS = new HashMap<>();
 
     private final Map<String, NaruModelProvider> builtins = new LinkedHashMap<>();
@@ -65,7 +71,8 @@ public class NaruModelDirectiveRegistrationTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        Nuts.require();    }
+        Nuts.require();
+    }
 
     @BeforeEach
     public void reset() {
@@ -91,6 +98,56 @@ public class NaruModelDirectiveRegistrationTest {
 
     // ── harness ───────────────────────────────────────────────────────────────
 
+    public static NaruDirectiveBase.SubCommandContext buildSubContext(NaruDirectiveCallContext context) {
+        return new NaruDirectiveBase.SubCommandContext() {
+            final NTextBuilder out = NTextBuilder.of();
+
+            @Override
+            public NTextBuilder out() {
+                return out;
+            }
+
+            @Override
+            public NTextBuilder errln(String m) {
+                return out.println(m);
+            }
+
+            @Override
+            public NTextBuilder errln(NMsg m) {
+                return out.println(m);
+            }
+
+            @Override
+            public NTextBuilder outln(NMsg m) {
+                return out.println(m);
+            }
+
+            @Override
+            public NTextBuilder outln(String m) {
+                return out.println(m);
+            }
+
+            @Override
+            public String name() {
+                return context.name();
+            }
+
+            @Override
+            public String argument() {
+                return context.argument();
+            }
+
+            @Override
+            public NaruTask task() {
+                return context.task();
+            }
+        };
+    }
+
+    private NaruDirectiveBase.SubCommandContext buildSubContext() {
+        return buildSubContext(context);
+    }
+
     private NaruDirectiveCallContext buildContext() {
         NaruEnv env = new NaruEnv() {
             @Override
@@ -106,6 +163,7 @@ public class NaruModelDirectiveRegistrationTest {
             @Override
             public void put(String key, NElement value, NaruVisibility visibility) {
             }
+
         };
         NaruWorkspace agent = (NaruWorkspace) Proxy.newProxyInstance(getClass().getClassLoader(),
                 new Class<?>[]{NaruWorkspace.class},
@@ -198,20 +256,24 @@ public class NaruModelDirectiveRegistrationTest {
                     }
                 });
 
-        return (NaruDirectiveCallContext) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{NaruDirectiveCallContext.class},
-                (proxy, method, args) -> {
-                    switch (method.getName()) {
-                        case "task":
-                            return task;
-                        case "name":
-                            return "model";
-                        case "argument":
-                            return argument[0];
-                        default:
-                            return null;
-                    }
-                });
+        return new NaruDirectiveCallContext() {
+            @Override
+            public String name() {
+                return "model";
+            }
+
+            @Override
+            public String argument() {
+                return argument[0];
+            }
+
+            @Override
+            public NaruTask task() {
+                return task;
+            }
+
+
+        };
     }
 
     /**
@@ -234,7 +296,9 @@ public class NaruModelDirectiveRegistrationTest {
         instances.put(reg.id().toLowerCase(), instance);
     }
 
-    /** Scalars as text, arrays comma-joined — the provider param layer's shape. */
+    /**
+     * Scalars as text, arrays comma-joined — the provider param layer's shape.
+     */
     private static String paramValue(NElement e) {
         if (e == null || e.isNull()) {
             return null;
@@ -283,7 +347,7 @@ public class NaruModelDirectiveRegistrationTest {
             if (inst == null) {
                 continue;
             }
-            if (inst instanceof AbstractNaruModelProvider && !((AbstractNaruModelProvider) inst).isEnabled()) {
+            if (inst instanceof AbstractNaruModelProvider && !inst.isEnabled()) {
                 continue;
             }
             List<String> declared = declaredModels(e.getValue());
@@ -328,11 +392,11 @@ public class NaruModelDirectiveRegistrationTest {
     }
 
     private NaruStmtResult add(String args) {
-        return directive.executeRegistration(context, NCmdLine.of(args), "add");
+        return directive.executeRegistration(buildSubContext(), NCmdLine.of(args), "add");
     }
 
     private NaruStmtResult update(String args) {
-        return directive.executeRegistration(context, NCmdLine.of(args), "update");
+        return directive.executeRegistration(buildSubContext(), NCmdLine.of(args), "update");
     }
 
     private String logged() {
@@ -407,7 +471,9 @@ public class NaruModelDirectiveRegistrationTest {
      * of the type (shared by every instance), as in the real providers.
      */
     public static class FakeProvider extends AbstractNaruModelProvider {
-        /** no-arg constructor so {@link #newInstance(String)} can build instances */
+        /**
+         * no-arg constructor so {@link #newInstance(String)} can build instances
+         */
         public FakeProvider() {
             super("stub", new String[0]);
         }
@@ -461,8 +527,7 @@ public class NaruModelDirectiveRegistrationTest {
         NaruModelRegistration reg = registrations.get("ex");
         Assertions.assertNotNull(reg);
         Assertions.assertEquals("custom", reg.provider(), "no provider param defaults to the internal custom type");
-        Assertions.assertTrue(reg.param("provider").isPresent() == false,
-                "a generic endpoint never stores a provider param");
+        Assertions.assertFalse(reg.param("provider").isPresent(), "a generic endpoint never stores a provider param");
         Assertions.assertEquals("openai", reg.protocol().get());
         Assertions.assertEquals("custom", instances.get("ex").type(), "the instance must be typed by its provider type");
         Assertions.assertTrue(logged().contains("created (protocol=openai, generic endpoint)"),
@@ -689,13 +754,13 @@ public class NaruModelDirectiveRegistrationTest {
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, add("tmp --provider=stub").type());
         Assertions.assertTrue(instances.containsKey("tmp"));
 
-        NaruStmtResult res = directive.executeRemoveRegistration(context, NCmdLine.of("tmp"));
+        NaruStmtResult res = directive.executeRemoveRegistration(buildSubContext(), NCmdLine.of("tmp"));
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         Assertions.assertTrue(registrations.isEmpty());
         Assertions.assertFalse(instances.containsKey("tmp"));
         Assertions.assertTrue(logged().contains("registration 'tmp' removed"), () -> logged());
 
-        NaruStmtResult again = directive.executeRemoveRegistration(context, NCmdLine.of("tmp"));
+        NaruStmtResult again = directive.executeRemoveRegistration(buildSubContext(), NCmdLine.of("tmp"));
         Assertions.assertEquals(NaruStmtResultType.ERROR, again.type());
         Assertions.assertTrue(logged().contains("no registration 'tmp'"), () -> logged());
     }
@@ -711,7 +776,7 @@ public class NaruModelDirectiveRegistrationTest {
         Assertions.assertEquals("sk-secret1234",
                 registrations.get("secret").stringValue("apiKey").get());
 
-        NaruStmtResult res = directive.executeRegisteredList(context, NCmdLine.of(""));
+        NaruStmtResult res = directive.executeRegisteredList(buildSubContext(), NCmdLine.of(""));
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         String out = logged();
         Assertions.assertTrue(out.contains("sk-***1234"), () -> "expected the masked key, got: " + out);
@@ -725,7 +790,7 @@ public class NaruModelDirectiveRegistrationTest {
                 add("ex --protocol=openai --url=http://x --models=a,b").type());
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, add("personal --provider=gemini").type());
 
-        NaruStmtResult res = directive.executeRegisteredList(context, NCmdLine.of(""));
+        NaruStmtResult res = directive.executeRegisteredList(buildSubContext(), NCmdLine.of(""));
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         String out = logged();
         Assertions.assertTrue(java.util.regex.Pattern.compile("ex[ ]+openai").matcher(out).find(),
@@ -773,7 +838,7 @@ public class NaruModelDirectiveRegistrationTest {
         catalog.add(info("gemini", "gem-2"));
         catalog.add(info("ollama", "qwen"));
 
-        NaruStmtResult res = directive.executeList(context, NCmdLine.of("--provider=gemini"));
+        NaruStmtResult res = directive.executeList(buildSubContext(), NCmdLine.of("--provider=gemini"));
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
 
         // rows render with NText style markers (##{p9:personal}##…), so match on the
@@ -923,7 +988,7 @@ public class NaruModelDirectiveRegistrationTest {
     @Test
     public void bareIndexCompletesAfterAListing() {
         catalog.add(info("gemini", "gem-2"));
-        NaruStmtResult res = directive.executeList(context, NCmdLine.of(""));
+        NaruStmtResult res = directive.executeList(buildSubContext(), NCmdLine.of(""));
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
 
         Assertions.assertTrue(complete("/model", "").contains("1"),

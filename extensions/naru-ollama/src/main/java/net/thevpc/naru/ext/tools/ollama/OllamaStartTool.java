@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.tools.ollama;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
@@ -42,11 +42,11 @@ public class OllamaStartTool extends DefaultNaruTool {
         }
 
         if (!service.isInstalled() && autoInstall) {
-            task.log(NaruLogMode.TRACE, NMsg.ofC("Auto-installing Ollama before starting..."));
-            service.install(msg -> task.log(NaruLogMode.TRACE, msg));
+            task.addHistory(NaruMessage.engine(NMsg.ofC("Auto-installing Ollama before starting...")));
+            service.install(msg -> task.addHistory(NaruMessage.engine(msg)));
         }
 
-        OllamaService.StartResult result = service.start(task.session(), msg -> task.log(NaruLogMode.TRACE, msg));
+        OllamaService.StartResult result = service.start(task.session(), msg -> task.addHistory(NaruMessage.engine((msg))));
         if (result.started() || result.alreadyStarted()) {
             return "SUCCESS: Ollama started at " + service.getOllamaUrl(task.session()) + " (PID: " + OllamaProcessManager.getManagedPid() + ")";
         } else {

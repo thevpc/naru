@@ -16,8 +16,8 @@
 //            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
 //                NaruTask task = context.task();
 //                task.session().restoreFromStore();
-//                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", task.session().name()));
-//                return NaruStmtResult.ofSuccess(null);
+//                context.outln( NMsg.ofC("Restored session: %s", task.session().name()));
+//                return NaruStmtResult.ofSuccess();
 //            }
 //        });
 //    }

@@ -11,6 +11,7 @@ import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.util.ImplNaruUtils;
 import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
@@ -63,13 +64,13 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
         if (NBlankable.isBlank(call.getName())) {
             String err = "ERROR: Empty tool name. Available tools: "
                     + task.session().registry().tools().keySet().stream().sorted().collect(Collectors.joining(", "));
-            task.log(NaruLogMode.PROGRESS, NMsg.ofC("  %s Result: %s",
-                    NMsg.ofStyledPrimary6("📤"),
-                    ImplNaruUtils.abbreviate(err, 300)));
+//            task.addHistory(NaruMessage.engine(NMsg.ofC("  %s Result: %s",
+//                    NMsg.ofStyledPrimary6("📤"),
+//                    ImplNaruUtils.abbreviate(err, 300))));
             task.reportToolCall(NaruToolCallEvent.failed(task.id(), call, err, NaruToolCallEvent.UNKNOWN_DURATION));
             task.addHistory(NaruMessage.tool(call.getName(), call.getId(), err));
             task.defaultAdvance(this);
-            task.frame().lastResult(NaruStmtResult.ofSuccess(err));
+            task.frame().lastResult(NaruStmtResult.ofError());
             return;
         }
         NaruTool registeredTool = task.session().registry().findTool(call.getName()).orNull();
@@ -94,11 +95,11 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
             t.set(e.getKey(), NElement.of(e.getValue()));
         }
 
-        task.log(NaruLogMode.PROGRESS, NMsg.ofC("%s Tool: %s",
+        task.addHistory(NaruMessage.engine(NMsg.ofC("%s Tool: %s",
                         NMsg.ofStyledPrimary9("🔧"),
                         NText.ofCode("tson", t.build().toString())
-                )
-        );
+                ).withIntent(NMsgIntent.PROGRESS)
+        ));
         task.reportToolCall(NaruToolCallEvent.started(task.id(), call));
         long t0 = System.nanoTime();
         String result = task.session().registry().dispatch(call, task);
@@ -116,9 +117,9 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
     }
 
     private void finishToolCall(NaruTask task, String result, long durationMillis) {
-        task.log(NaruLogMode.PROGRESS, NMsg.ofC("  %s Result: %s",
+        task.addHistory(NaruMessage.engine(NMsg.ofC("  %s Result: %s",
                 NMsg.ofStyledPrimary6("📤"),
-                ImplNaruUtils.abbreviate(result, 300)));
+                ImplNaruUtils.abbreviate(result, 300)).withIntent(NMsgIntent.PROGRESS)));
         // The engine's failure convention is a result string that starts with ERROR (unknown
         // tool, permission denial, a tool that threw). Tools have no other way to report it,
         // so this is the same classification the log line and the model's history already get.
@@ -128,7 +129,7 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
                 : NaruToolCallEvent.result(task.id(), call, result, durationMillis));
         task.addHistory(NaruMessage.tool(call.getName(), call.getId(), result));
         task.defaultAdvance(this);
-        task.frame().lastResult(NaruStmtResult.ofSuccess(result));
+        task.frame().lastResult(NaruStmtResult.ofSuccess(NElement.of(result)));
     }
 
     private static long millisSince(long startNanos) {

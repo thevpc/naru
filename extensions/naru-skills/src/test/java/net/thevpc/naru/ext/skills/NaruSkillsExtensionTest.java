@@ -374,13 +374,13 @@ public class NaruSkillsExtensionTest {
         List<NaruMessage> messages = ext.contribute(a);
         assertEquals(2, messages.size(), () -> "both skills are advertised: " + messages);
         NaruMessage javadoc = messages.get(1);
-        assertTrue(javadoc.getContent().contains("## AVAILABLE SKILL: JAVADOC"), javadoc.getContent());
+        assertTrue(javadoc.getFilteredContent().contains("## AVAILABLE SKILL: JAVADOC"), javadoc.getFilteredContent());
         // the private copy won, so it is its description that is advertised
-        assertTrue(javadoc.getContent().contains("PRIVATE javadoc rules"), javadoc.getContent());
-        assertFalse(javadoc.getContent().contains("always document public API"),
+        assertTrue(javadoc.getFilteredContent().contains("PRIVATE javadoc rules"), javadoc.getFilteredContent());
+        assertFalse(javadoc.getFilteredContent().contains("always document public API"),
                 "the shadowed public body must not leak into the advertisement");
         // and the body itself must not be injected
-        assertFalse(javadoc.getContent().contains("## ACTIVE SKILL DIRECTIVE"), javadoc.getContent());
+        assertFalse(javadoc.getFilteredContent().contains("## ACTIVE SKILL DIRECTIVE"), javadoc.getFilteredContent());
     }
 
     @Test
@@ -390,8 +390,8 @@ public class NaruSkillsExtensionTest {
         List<NaruMessage> messages = ext.contribute(a);
         assertEquals(2, messages.size(), () -> "one active, one advertised: " + messages);
         NaruMessage active = messages.get(0);
-        assertTrue(active.getContent().contains("## ACTIVE SKILL DIRECTIVE: GIT-FLOW"), active.getContent());
-        assertTrue(active.getContent().contains("follow git flow"), active.getContent());
+        assertTrue(active.getFilteredContent().contains("## ACTIVE SKILL DIRECTIVE: GIT-FLOW"), active.getFilteredContent());
+        assertTrue(active.getFilteredContent().contains("follow git flow"), active.getFilteredContent());
         assertTrue(active.getSourceName().contains(".naru/skills/git-flow/SKILL.md"), active.getSourceName());
     }
 
@@ -403,9 +403,9 @@ public class NaruSkillsExtensionTest {
         a.addToolTag("write");
         ext.load(a, "guarded");
         List<NaruMessage> messages = ext.contribute(a);
-        assertTrue(messages.stream().anyMatch(m -> m.getContent().contains("## SKILL REQUIRES GATE (UNSATISFIED): GUARDED")),
+        assertTrue(messages.stream().anyMatch(m -> m.getFilteredContent().contains("## SKILL REQUIRES GATE (UNSATISFIED): GUARDED")),
                 () -> "the gate note must appear: " + messages);
-        assertTrue(messages.stream().noneMatch(m -> m.getContent().contains("ACTIVE SKILL DIRECTIVE: GUARDED")),
+        assertTrue(messages.stream().noneMatch(m -> m.getFilteredContent().contains("ACTIVE SKILL DIRECTIVE: GUARDED")),
                 "a gated skill body must not be injected");
     }
 
@@ -418,7 +418,7 @@ public class NaruSkillsExtensionTest {
         // 'fs' has no provider in this test classpath; the gate must say so explicitly
         assertEquals(NaruRequiresStatus.UNSATISFIABLE, ext.requiresStatus(ext.skills().findSkill("ghost"), a));
         List<NaruMessage> messages = ext.contribute(a);
-        assertTrue(messages.stream().anyMatch(m -> m.getContent().contains("## SKILL REQUIRES GATE (UNSATISFIABLE): GHOST")),
+        assertTrue(messages.stream().anyMatch(m -> m.getFilteredContent().contains("## SKILL REQUIRES GATE (UNSATISFIABLE): GHOST")),
                 () -> "an unsatisfiable skill must be reported separately: " + messages);
     }
 
@@ -437,7 +437,7 @@ public class NaruSkillsExtensionTest {
         assertEquals(NaruRequiresStatus.UNSATISFIED, ext.requiresStatus(ext.skills().findSkill("guarded"), a));
         assertFalse(contributeContainsActive(ext, a, "guarded"),
                 "the body must be withheld while the requires gate is closed");
-        assertTrue(ext.contribute(a).stream().anyMatch(m -> m.getContent().contains("SKILL REQUIRES GATE")),
+        assertTrue(ext.contribute(a).stream().anyMatch(m -> m.getFilteredContent().contains("SKILL REQUIRES GATE")),
                 "withholding must be flagged, not silent");
     }
 
@@ -449,13 +449,13 @@ public class NaruSkillsExtensionTest {
         projectDir.resolve(".naru/skills/git-flow/SKILL.md").delete();
         ext.reload();
         List<NaruMessage> messages = ext.contribute(a);
-        assertTrue(messages.stream().anyMatch(m -> m.getContent().contains("## SKILL MISSING: GIT-FLOW")),
+        assertTrue(messages.stream().anyMatch(m -> m.getFilteredContent().contains("## SKILL MISSING: GIT-FLOW")),
                 () -> "a selected skill that is gone must be flagged: " + messages);
     }
 
     private static boolean contributeContainsActive(NaruSkillsExtension ext, NaruTask task, String name) {
         return ext.contribute(task).stream()
-                .anyMatch(m -> m.getContent().contains("## ACTIVE SKILL DIRECTIVE: " + name.toUpperCase()));
+                .anyMatch(m -> m.getFilteredContent().contains("## ACTIVE SKILL DIRECTIVE: " + name.toUpperCase()));
     }
 
     @Test

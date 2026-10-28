@@ -1,5 +1,6 @@
 package net.thevpc.naru.api.agent;
 
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementWriter;
@@ -230,9 +231,7 @@ public final class NaruTaskConfig {
         Integer parsed = NLiteral.of(toText(found.get())).asInt().orElse(null);
         if (parsed == null || parsed < min || parsed > max) {
             if (task != null) {
-                task.log(NaruLogMode.DEBUG,
-                        NMsg.ofC("'%s' is not an integer in [%d, %d] (got '%s'); using default %d",
-                                key, min, max, toText(found.get()), defaultValue));
+                task.addHistory(NaruMessage.engine(NMsg.ofC("'%s' is not an integer in [%d, %d] (got '%s'); using default %d",key, min, max, toText(found.get()), defaultValue).asWarning()));
             }
             return defaultValue;
         }

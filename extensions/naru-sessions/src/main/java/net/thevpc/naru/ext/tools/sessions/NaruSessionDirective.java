@@ -11,10 +11,10 @@ import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.nuts.cmdline.*;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
-import net.thevpc.nuts.util.NStringBuilder;
 
 import java.util.*;
 import java.util.function.Function;
@@ -36,7 +36,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[--id=<prefix>] [--name=<name>]", "show one session; defaults to the current one")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeCurrent(context, cmdLine);
             }
         });
@@ -44,7 +44,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 , new SubCommandHelp("", "list the sessions saved for this project")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeList(context, cmdLine);
             }
         });
@@ -52,7 +52,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 , new SubCommandHelp("<name> [--id=<prefix>|--name=<name>]", "give a session a name (or a new one) and save it; defaults to the current session")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeRename(context, cmdLine);
             }
         });
@@ -61,7 +61,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[--id=<prefix>|--name=<name>]", "make a session public; defaults to the current session")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeChangeVisibility(NaruVisibility.PUBLIC, context, cmdLine);
             }
         });
@@ -69,32 +69,32 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[--id=<prefix>|--name=<name>]", "make a session private; defaults to the current session")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeChangeVisibility(NaruVisibility.PRIVATE, context, cmdLine);
             }
         });
         register(new AbstractSubCommand("delete", NText.ofPlain("delete session")
-                ,new SubCommandHelp("<name>...", "delete session by name")
-                ,new SubCommandHelp("[--id=<prefix>|--name=<name>]", "delete one session selected by id or name")
+                , new SubCommandHelp("<name>...", "delete session by name")
+                , new SubCommandHelp("[--id=<prefix>|--name=<name>]", "delete one session selected by id or name")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeDelete(context, cmdLine);
             }
         });
         register(new AbstractSubCommand("purge", NText.ofPlain("purge all sessions")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executePurge(context, cmdLine);
             }
         });
         register(new AbstractSubCommand("load", NText.ofPlain("load session by name (or path)")
-                ,new SubCommandHelp("<name>...", "load session by name")
-                ,new SubCommandHelp("[--id=<prefix>|--name=<name>]", "load the session selected by id or name")
+                , new SubCommandHelp("<name>...", "load session by name")
+                , new SubCommandHelp("[--id=<prefix>|--name=<name>]", "load the session selected by id or name")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeLoad(context, cmdLine);
             }
         });
@@ -104,7 +104,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
 //                + "changes made since the last write are discarded")
 //        ) {
 //            @Override
-//            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+//            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
 //                return executeReload(context, cmdLine);
 //            }
 //        });
@@ -112,23 +112,23 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[--id=<prefix>|--name=<name>]", "restore a running session from the store; defaults to the current session")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeRestore(context, cmdLine);
             }
         });
         register(new AbstractSubCommand("save", NText.ofPlain("save session")
-            ,new SubCommandHelp("[<name>]", "save current session with optional name.\nwhen no name was provided, and this is a new session, a generated name will be guessed using the current model.\n when name is provided, it will be used to set name or rename the session.")
-            ,new SubCommandHelp("[--id=<prefix>|--name=<name>]", "save a running session selected by id or name; defaults to the current session")
+                , new SubCommandHelp("[<name>]", "save current session with optional name.\nwhen no name was provided, and this is a new session, a generated name will be guessed using the current model.\n when name is provided, it will be used to set name or rename the session.")
+                , new SubCommandHelp("[--id=<prefix>|--name=<name>]", "save a running session selected by id or name; defaults to the current session")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeSave(context, cmdLine);
             }
         });
         register(new AbstractSubCommand("new", NText.ofPlain("start a new session")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeNew(context, cmdLine);
             }
         });
@@ -136,7 +136,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[--id=<prefix>|--name=<name>]", "reset a running session; defaults to the current session")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeReset(context, cmdLine);
             }
         });
@@ -144,7 +144,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 new SubCommandHelp("[--id=<prefix>|--name=<name>]", "copy a running session; defaults to the current session")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 return executeCopy(context, cmdLine);
             }
         });
@@ -176,6 +176,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 public NaruTask task() {
                     return base.task();
                 }
+
             };
         }
         return super.execute(context);
@@ -219,31 +220,20 @@ public class NaruSessionDirective extends NaruDirectiveBase {
     }
 
     /**
-     * One resolved session: its uuid, a display name, and — depending on where it was found —
-     * the live session or the saved catalog entry. At least one of {@code live}/{@code saved}
-     * is non-null, and {@code live} is preferred when both exist.
-     */
-    private static final class SessionTarget {
-        final String uuid;
-        final String name;
-        final NaruSession live;
-        final NaruResourceInfo saved;
-
-        SessionTarget(String uuid, String name, NaruSession live, NaruResourceInfo saved) {
-            this.uuid = uuid;
-            this.name = name;
-            this.live = live;
-            this.saved = saved;
-        }
+         * One resolved session: its uuid, a display name, and — depending on where it was found —
+         * the live session or the saved catalog entry. At least one of {@code live}/{@code saved}
+         * is non-null, and {@code live} is preferred when both exist.
+         */
+        private record SessionTarget(String uuid, String name, NaruSession live, NaruResourceInfo saved) {
 
         String displayName() {
-            String n = name;
-            if (NBlankable.isBlank(n) && saved != null) {
-                n = saved.getName();
+                String n = name;
+                if (NBlankable.isBlank(n) && saved != null) {
+                    n = saved.getName();
+                }
+                return NBlankable.isBlank(n) ? "NO_NAME" : n;
             }
-            return NBlankable.isBlank(n) ? "NO_NAME" : n;
         }
-    }
 
     private TargetArgs parseTargetArgs(NaruTask task, NCmdLine cmdLine) {
         TargetArgs ta = new TargetArgs();
@@ -343,20 +333,20 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         return matches.get(0);
     }
 
-    private NaruStmtResult withTarget(NaruTask task, TargetArgs ta, Function<SessionTarget, NaruStmtResult> body) {
+    private NaruStmtResult withTarget(SubCommandContext context, NaruTask task, TargetArgs ta, Function<SessionTarget, NaruStmtResult> body) {
         SessionTarget target;
         try {
             target = resolveTarget(task, ta);
         } catch (IllegalArgumentException e) {
-            return fail(task, e.getMessage());
+            return fail(context, e.getMessage());
         }
         return body.apply(target);
     }
 
-    private NaruStmtResult fail(NaruTask task, String message) {
+    private NaruStmtResult fail(SubCommandContext context, String message) {
         NMsg msg = NMsg.ofC("%s", message).asError();
-        task.log(NaruLogMode.AGENT_RESPONSE, msg);
-        return NaruStmtResult.ofError(msg.toString());
+        context.outln(msg);
+        return NaruStmtResult.ofError();
     }
 
     private static String safeName(NaruSession session) {
@@ -401,11 +391,11 @@ public class NaruSessionDirective extends NaruDirectiveBase {
      * Rejects {@code --id}/{@code --name} on a subcommand that acts on every session or on
      * the current one only, instead of silently ignoring them.
      */
-    private NaruStmtResult rejectTargetSelectors(NaruTask task, NCmdLine cmdLine, String subCommand) {
+    private NaruStmtResult rejectTargetSelectors(SubCommandContext context, NCmdLine cmdLine, String subCommand) {
         while (!cmdLine.isEmpty()) {
             NArg a = cmdLine.peek().get();
             if (a.isOption() && (a.key().equals("--id") || a.key().equals("--name"))) {
-                return fail(task, NMsg.ofC("/session %s does not accept %s",
+                return fail(context, NMsg.ofC("/session %s does not accept %s",
                         subCommand, a.key()).toString());
             }
             cmdLine.next();
@@ -431,7 +421,9 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             "current", "save", "restore", "reset", "copy",
             "public", "private", "delete", "rename", "load");
 
-    /** Subcommands whose positional words name sessions rather than being free text. */
+    /**
+     * Subcommands whose positional words name sessions rather than being free text.
+     */
     private static final Set<String> POSITIONAL_IS_SESSION = Set.of("delete", "load");
 
     /**
@@ -542,9 +534,9 @@ public class NaruSessionDirective extends NaruDirectiveBase {
     }
 
 
-    public NaruStmtResult executeList(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeList(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        NaruStmtResult rejected = rejectTargetSelectors(task, cmdLine, "list");
+        NaruStmtResult rejected = rejectTargetSelectors(context, cmdLine, "list");
         if (rejected != null) {
             return rejected;
         }
@@ -564,26 +556,25 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             }
         }
 
-        NStringBuilder sb = NStringBuilder.of();
         int index = 1;
         Set<String> shown = new LinkedHashSet<>();
-        logSessionRow(task, sb, index++, current, findSaved(saved, current.uuid()), true, current.isRunning());
+        logSessionRow(context, index++, current, findSaved(saved, current.uuid()), true, current.isRunning());
         shown.add(current.uuid());
         for (NaruSession s : running) {
             if (shown.contains(s.uuid())) {
                 continue;
             }
-            logSessionRow(task, sb, index++, s, findSaved(saved, s.uuid()), false, true);
+            logSessionRow(context, index++, s, findSaved(saved, s.uuid()), false, true);
             shown.add(s.uuid());
         }
         for (NaruResourceInfo info : saved) {
             if (info.getUuid() == null || shown.contains(info.getUuid())) {
                 continue;
             }
-            logSessionRow(task, sb, index++, null, info, false, false);
+            logSessionRow(context, index++, null, info, false, false);
             shown.add(info.getUuid());
         }
-        return NaruStmtResult.ofSuccess(sb.toString());
+        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
     }
 
     /**
@@ -592,7 +583,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
      * age prints {@code (unknown)} rather than the empty {@code ()} a null instant used
      * to produce.
      */
-    private void logSessionRow(NaruTask task, NStringBuilder sb, int index,
+    private void logSessionRow(SubCommandContext context, int index,
                                NaruSession live, NaruResourceInfo saved,
                                boolean current, boolean running) {
         String uuid = live != null ? live.uuid() : saved.getUuid();
@@ -623,8 +614,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 NMsg.ofStyledKeyword(state),
                 NMsg.ofStyledPale(age)
         );
-        task.log(NaruLogMode.AGENT_RESPONSE, msg);
-        sb.println(msg.toString());
+        context.outln(msg);
     }
 
     private static int liveTaskCount(NaruSession session) {
@@ -641,25 +631,25 @@ public class NaruSessionDirective extends NaruDirectiveBase {
     }
 
 
-    public NaruStmtResult executePurge(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executePurge(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        NaruStmtResult rejected = rejectTargetSelectors(task, cmdLine, "purge");
+        NaruStmtResult rejected = rejectTargetSelectors(context, cmdLine, "purge");
         if (rejected != null) {
             return rejected;
         }
         int count = task.session().sessionStoreManager().purge();
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("purged %s sessions", count));
-        return NaruStmtResult.ofSuccess(count);
+        context.outln(NMsg.ofC("purged %s sessions", count));
+        return NaruStmtResult.ofSuccess(NElement.of(count));
     }
 
-    public NaruStmtResult executeDelete(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeDelete(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         TargetArgs ta = parseTargetArgs(task, cmdLine);
         if (ta.error != null) {
-            return fail(task, ta.error);
+            return fail(context, ta.error);
         }
         if (!ta.hasSelector() && ta.positionals.isEmpty()) {
-            return NaruStmtResult.ofSuccess(null);
+            return NaruStmtResult.ofSuccess();
         }
 
         NaruSessionStoreManager sm = task.session().sessionStoreManager();
@@ -669,14 +659,14 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             try {
                 target = resolveTarget(task, ta);
             } catch (IllegalArgumentException e) {
-                return fail(task, e.getMessage());
+                return fail(context, e.getMessage());
             }
             uuids.add(target.uuid);
         }
         for (String a : ta.positionals) {
             String uuid = sm.findByUuidOrName(a);
             if (uuid == null) {
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("session not found %s", a));
+                context.outln(NMsg.ofC("session not found %s", a));
             } else {
                 uuids.add(uuid);
             }
@@ -688,22 +678,22 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 count++;
             }
         }
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s sessions", count));
-        return NaruStmtResult.ofSuccess(count);
+        context.outln(NMsg.ofC("removed %s sessions", count));
+        return NaruStmtResult.ofSuccess(NElement.of(count));
     }
 
-//    public NaruStmtResult executeReload(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+//    public NaruStmtResult executeReload(SubCommandContext context, NCmdLine cmdLine) {
 //        NaruTask task = context.task();
 //        task.session().reload();
 //        context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("Reloaded session."));
-//        return NaruStmtResult.ofSuccess(null);
+//        return NaruStmtResult.ofSuccess();
 //    }
 
-    public NaruStmtResult executeLoad(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeLoad(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         TargetArgs ta = parseTargetArgs(task, cmdLine);
         if (ta.error != null) {
-            return fail(task, ta.error);
+            return fail(context, ta.error);
         }
         NaruSessionStoreManager sm = task.session().sessionStoreManager();
         String uuid;
@@ -712,7 +702,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             try {
                 target = resolveTarget(task, ta);
             } catch (IllegalArgumentException e) {
-                return fail(task, e.getMessage());
+                return fail(context, e.getMessage());
             }
             uuid = target.uuid;
         } else {
@@ -726,50 +716,50 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             String label = ta.hasSelector() ? ta.selectorText()
                     : (ta.positionals.isEmpty() ? "main" : ta.positionals.get(0));
             NMsg msg = NMsg.ofC("session not found %s", label);
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofError(msg.toString());
+            context.errln(msg);
+            return NaruStmtResult.ofError();
         }
         task.session().load(uuid);
-        context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded session: %s", task.session().name()));
-        return NaruStmtResult.ofSuccess(null);
+        context.outln(NMsg.ofC("Loaded session: %s", task.session().name()));
+        return NaruStmtResult.ofSuccess();
     }
 
-    public NaruStmtResult executeRestore(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeRestore(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         TargetArgs ta = parseTargetArgs(task, cmdLine);
         if (ta.error != null) {
-            return fail(task, ta.error);
+            return fail(context, ta.error);
         }
-        return withTarget(task, ta, target -> {
+        return withTarget(context, task, ta, target -> {
             if (target.live == null) {
-                return fail(task, NMsg.ofC(
+                return fail(context, NMsg.ofC(
                         "session %s is not running; /session restore needs a running session",
                         target.uuid).toString());
             }
             target.live.restoreFromStore();
-            context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Restored session: %s", target.live.name()));
-            return NaruStmtResult.ofSuccess(null);
+            context.outln(NMsg.ofC("Restored session: %s", target.live.name()));
+            return NaruStmtResult.ofSuccess();
         });
     }
 
-    public NaruStmtResult executeSave(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeSave(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         TargetArgs ta = parseTargetArgs(task, cmdLine);
         if (ta.error != null) {
-            return fail(task, ta.error);
+            return fail(context, ta.error);
         }
         String newName = ta.positionals.isEmpty() ? null : String.join(" ", ta.positionals).trim();
-        return withTarget(task, ta, target -> {
+        return withTarget(context, task, ta, target -> {
             if (!NBlankable.isBlank(newName)) {
                 if (!renameTarget(task, target, newName)) {
-                    return fail(task, NMsg.ofC("session not found %s", target.uuid).toString());
+                    return fail(context, NMsg.ofC("session not found %s", target.uuid).toString());
                 }
             }
             if (target.live == null) {
                 // a session that only lives in the catalog is, by definition, already saved
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved session: %s",
+                context.outln(NMsg.ofC("Saved session: %s",
                         NMsg.ofStyledString(target.displayName())));
-                return NaruStmtResult.ofSuccess(null);
+                return NaruStmtResult.ofSuccess();
             }
             NaruSession session = target.live;
             if ((NBlankable.isBlank(session.name()) || session.name().equals("NO_NAME"))
@@ -785,112 +775,110 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                             )
                     );
                     if (chat.getMessage() != null) {
-                        session.name(chat.getMessage().getContent());
+                        session.name(chat.getMessage().getContent().toString());
                     }
                 } catch (Exception ex) {
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Unable ot evaluate session title using LLM : %s : %s", NMsg.ofStyledString(session.name()), ex));
+                    context.outln(NMsg.ofC("Unable ot evaluate session title using LLM : %s : %s", NMsg.ofStyledString(session.name()), ex));
                 }
             }
             session.save();
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Saved session: %s", NMsg.ofStyledString(session.name())));
-            return NaruStmtResult.ofSuccess(null);
+            context.outln(NMsg.ofC("Saved session: %s", NMsg.ofStyledString(session.name())));
+            return NaruStmtResult.ofSuccess();
         });
     }
 
-    public NaruStmtResult executeRename(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeRename(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         TargetArgs ta = parseTargetArgs(task, cmdLine);
         if (ta.error != null) {
-            return fail(task, ta.error);
+            return fail(context, ta.error);
         }
         String newName = String.join(" ", ta.positionals).trim();
         if (NBlankable.isBlank(newName)) {
             NMsg msg = NMsg.ofC("empty or invalid session name : %s", NMsg.ofStyledString(newName));
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofSuccess(msg.toString());
+            context.errln(msg);
+            return NaruStmtResult.ofError();
         }
-        return withTarget(task, ta, target -> {
+        return withTarget(context, task, ta, target -> {
             if (!renameTarget(task, target, newName)) {
-                return fail(task, NMsg.ofC("session not found %s", target.uuid).toString());
+                return fail(context, NMsg.ofC("session not found %s", target.uuid).toString());
             }
             NMsg msg = NMsg.ofC("Renamed session %s (%s) to %s",
                     NMsg.ofStyledString(target.displayName()), target.uuid, NMsg.ofStyledString(newName));
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofSuccess(msg.toString());
+            context.outln(msg);
+            return NaruStmtResult.ofSuccess(NElement.of(true));
         });
     }
 
-    public NaruStmtResult executeNew(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeNew(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        NaruStmtResult rejected = rejectTargetSelectors(task, cmdLine, "new");
+        NaruStmtResult rejected = rejectTargetSelectors(context, cmdLine, "new");
         if (rejected != null) {
             return rejected;
         }
         task.session().reset(false);
-        context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("new session."));
-        return NaruStmtResult.ofSuccess(null);
+        context.outln(NMsg.ofC("new session."));
+        return NaruStmtResult.ofSuccess();
     }
 
-    public NaruStmtResult executeReset(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeReset(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         TargetArgs ta = parseTargetArgs(task, cmdLine);
         if (ta.error != null) {
-            return fail(task, ta.error);
+            return fail(context, ta.error);
         }
-        return withTarget(task, ta, target -> {
+        return withTarget(context, task, ta, target -> {
             if (target.live == null) {
-                return fail(task, NMsg.ofC(
+                return fail(context, NMsg.ofC(
                         "session %s is not running; /session reset needs a running session",
                         target.uuid).toString());
             }
             target.live.reset(true);
-            context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("reset session."));
-            return NaruStmtResult.ofSuccess(null);
+            context.outln(NMsg.ofC("reset session."));
+            return NaruStmtResult.ofSuccess();
         });
     }
 
-    public NaruStmtResult executeCopy(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeCopy(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         TargetArgs ta = parseTargetArgs(task, cmdLine);
         if (ta.error != null) {
-            return fail(task, ta.error);
+            return fail(context, ta.error);
         }
-        return withTarget(task, ta, target -> {
+        return withTarget(context, task, ta, target -> {
             if (target.live == null) {
-                return fail(task, NMsg.ofC(
+                return fail(context, NMsg.ofC(
                         "session %s is not running; /session copy needs a running session",
                         target.uuid).toString());
             }
             target.live.copy();
-            context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Loaded session copy : %s", target.live.name()));
-            return NaruStmtResult.ofSuccess(null);
+            context.outln(NMsg.ofC("Loaded session copy : %s", target.live.name()));
+            return NaruStmtResult.ofSuccess();
         });
     }
 
-    public NaruStmtResult executeCurrent(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeCurrent(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         TargetArgs ta = parseTargetArgs(task, cmdLine);
         if (ta.error != null) {
-            return fail(task, ta.error);
+            return fail(context, ta.error);
         }
-        return withTarget(task, ta, target -> {
+        return withTarget(context, task, ta, target -> {
             NMsg msg = ta.hasSelector()
                     ? NMsg.ofC("Session: %s (%s)", target.displayName(), target.uuid)
                     : NMsg.ofC("Current session: %s (%s)", target.displayName(), target.uuid);
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            NStringBuilder sb = NStringBuilder.of();
-            sb.println(msg.toString());
-            return NaruStmtResult.ofSuccess(sb.toString());
+            context.outln(msg);
+            return NaruStmtResult.ofSuccess(NElement.of(target.uuid));
         });
     }
 
-    public NaruStmtResult executeChangeVisibility(NaruVisibility makePublic, NaruDirectiveCallContext context, NCmdLine cmdLine) {
+    public NaruStmtResult executeChangeVisibility(NaruVisibility makePublic, SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
         TargetArgs ta = parseTargetArgs(task, cmdLine);
         if (ta.error != null) {
-            return fail(task, ta.error);
+            return fail(context, ta.error);
         }
-        return withTarget(task, ta, target -> {
+        return withTarget(context, task, ta, target -> {
             if (target.live != null) {
                 if (target.live.getVisibility() != makePublic) {
                     target.live.setVisibility(makePublic);
@@ -898,7 +886,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 }
             } else {
                 if (!task.session().sessionStoreManager().setVisibility(target.uuid, makePublic)) {
-                    return fail(task, NMsg.ofC("session not found %s", target.uuid).toString());
+                    return fail(context, NMsg.ofC("session not found %s", target.uuid).toString());
                 }
             }
             NMsg msg = NMsg.ofC("make session %s %s: %s (%s)",
@@ -906,8 +894,8 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                     makePublic == NaruVisibility.PUBLIC ? "public" : "private",
                     target.uuid,
                     target.live != null ? "running" : "saved");
-            task.log(NaruLogMode.AGENT_RESPONSE, msg);
-            return NaruStmtResult.ofSuccess(null);
+            context.outln(msg);
+            return NaruStmtResult.ofSuccess();
         });
     }
 

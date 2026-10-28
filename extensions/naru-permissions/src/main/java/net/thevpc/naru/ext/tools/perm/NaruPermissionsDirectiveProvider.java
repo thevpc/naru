@@ -8,15 +8,16 @@ import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.access.NaruResource;
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveProviderBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.text.NTextBuilder;
 import net.thevpc.nuts.util.NBlankable;
 
 import java.util.ArrayList;
@@ -55,7 +56,7 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
             noCommand("list");
             register(new AbstractSubCommand("list", NText.ofPlain("list the rules in evaluation order")) {
                 @Override
-                public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                     Parsed p = parse(cmdLine);
                     NaruAccessPolicy policy = policy(context);
                     String source = p.one("source");
@@ -64,23 +65,19 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
                         log(context, NMsg.ofP("no rules"
                                 + (source == null ? "" : " for source " + source)
                                 + " (default " + policy.defaultEffect().name().toLowerCase() + ")"));
-                        return NaruStmtResult.ofSuccess(null);
+                        return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
                     }
-                    StringBuilder sb = new StringBuilder();
-                    sb.append(rules.size()).append(" rule(s), default ")
-                            .append(policy.defaultEffect().name().toLowerCase()).append(":\n");
+                    context.outln(rules.size()+" rule(s), default "+policy.defaultEffect().name().toLowerCase()).append(":");
                     int i = 1;
                     for (NaruPermissionRule r : rules) {
-                        sb.append("  ").append(i++).append(". ")
-                                .append(NaruPermissionsUtil.describeRule(r)).append('\n');
+                        context.outln("  "+(i++)+". "+NaruPermissionsUtil.describeRule(r));
                     }
-                    log(context, NMsg.ofNtf(sb.toString().stripTrailing()));
-                    return NaruStmtResult.ofSuccess(null);
+                    return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
                 }
             });
             register(new AbstractSubCommand("add", NText.ofPlain("add or replace a rule (kept in the session)")) {
                 @Override
-                public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                     Parsed p = parse(cmdLine);
                     String id = ruleId(p);
                     if (id == null) {
@@ -90,12 +87,12 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
                     policy.putRule(buildRule(id, p, null));
                     applyIndex(policy, id, p);
                     log(context, NMsg.ofC("rule added: %s", NaruPermissionsUtil.describeRule(policy.rule(id).get())));
-                    return NaruStmtResult.ofSuccess(null);
+                    return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
                 }
             });
             register(new AbstractSubCommand("update", NText.ofPlain("change fields of an existing rule in place")) {
                 @Override
-                public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                     Parsed p = parse(cmdLine);
                     String id = ruleId(p);
                     if (id == null) {
@@ -109,12 +106,12 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
                     policy.putRule(buildRule(id, p, existing));
                     applyIndex(policy, id, p);
                     log(context, NMsg.ofC("rule updated: %s", NaruPermissionsUtil.describeRule(policy.rule(id).get())));
-                    return NaruStmtResult.ofSuccess(null);
+                    return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
                 }
             });
             register(new AbstractSubCommand("remove", NText.ofPlain("remove a rule by id")) {
                 @Override
-                public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                     Parsed p = parse(cmdLine);
                     String id = ruleId(p);
                     if (id == null) {
@@ -122,14 +119,17 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
                     }
                     boolean removed = policy(context).removeRule(id);
                     log(context, NMsg.ofP(removed ? "rule removed: " + id : "no such rule: " + id));
+                    if (!removed) {
+                        context.errln("no such rule '" + id + "'");
+                    }
                     return removed
-                            ? NaruStmtResult.ofSuccess(null)
-                            : NaruStmtResult.ofError("no such rule '" + id + "'");
+                            ? NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()))
+                            : NaruStmtResult.ofError();
                 }
             });
             register(new AbstractSubCommand("move", NText.ofPlain("change a rule's position (order is precedence)")) {
                 @Override
-                public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                     Parsed p = parse(cmdLine);
                     String id = ruleId(p);
                     if (id == null) {
@@ -144,12 +144,12 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
                     }
                     applyIndex(policy, id, p);
                     log(context, NMsg.ofC("rule moved: %s", NaruPermissionsUtil.describeRule(policy.rule(id).get())));
-                    return NaruStmtResult.ofSuccess(null);
+                    return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
                 }
             });
             register(new AbstractSubCommand("default", NText.ofPlain("show or change the fallback effect")) {
                 @Override
-                public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                     Parsed p = parse(cmdLine);
                     NaruAccessPolicy policy = policy(context);
                     String value = !p.args.isEmpty() ? p.args.get(0)
@@ -160,18 +160,18 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
                         policy.defaultEffect(NaruPermissionsUtil.parseEffect(value));
                         log(context, NMsg.ofC("default effect set to %s", policy.defaultEffect().name().toLowerCase()));
                     }
-                    return NaruStmtResult.ofSuccess(null);
+                    return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
                 }
             });
             register(new AbstractSubCommand("check", NText.ofPlain("answer whether an action is allowed")) {
                 @Override
-                public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                     return check0(context, parse(cmdLine), false);
                 }
             });
             register(new AbstractSubCommand("explain", NText.ofPlain("check and show every rule that was weighed")) {
                 @Override
-                public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                     return check0(context, parse(cmdLine), true);
                 }
             });
@@ -180,18 +180,19 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
 
     // ── shared parsing and evaluation ─────────────────────────────────────────
 
-    private static NaruAccessPolicy policy(NaruDirectiveCallContext context) {
+    private static NaruAccessPolicy policy(NaruDirectiveBase.SubCommandContext context) {
         return context.task().session().accessPolicy();
     }
 
-    private static void log(NaruDirectiveCallContext context, NMsg msg) {
-        context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
+    private static void log(NaruDirectiveBase.SubCommandContext context, NMsg msg) {
+        context.outln(msg);
     }
 
-    private static NaruStmtResult fail(NaruDirectiveCallContext context, NMsg message) {
+    private static NaruStmtResult fail(NaruDirectiveBase.SubCommandContext context, String message) {
 //        log(context, NMsg.ofStyledError(message));
 //        return NaruStmtResult.ofError(message);
-        return NaruStmtResult.ofError(message.asError());
+        context.errln(message);
+        return NaruStmtResult.ofError();
     }
 
     private static String ruleId(Parsed p) {
@@ -256,7 +257,7 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
         return r;
     }
 
-    private static NaruAccessRequest request(NaruDirectiveCallContext context, Parsed p) {
+    private static NaruAccessRequest request(NaruDirectiveBase.SubCommandContext context, Parsed p) {
         String locator = p.one("resource") != null
                 ? p.one("resource")
                 : (p.args.isEmpty() ? null : p.args.get(0));
@@ -268,11 +269,12 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
         return NaruAccessRequest.of(resource, action, actor).task(context.task());
     }
 
-    static NaruStmtResult check0(NaruDirectiveCallContext context, Parsed p, boolean explain) {
+    static NaruStmtResult check0(NaruDirectiveBase.SubCommandContext context, Parsed p, boolean explain) {
+
         NaruAccessPolicy policy = policy(context);
         NaruAccessRequest request = request(context, p);
         NaruAccessDecision d = explain ? policy.explain(request) : policy.check(request);
-        StringBuilder sb = new StringBuilder();
+        NTextBuilder sb = NTextBuilder.of();
         sb.append(d.allowed() ? "ALLOW" : "DENY")
                 .append(' ').append(request.resource().type().id())
                 .append(' ').append(request.resource().locator())
@@ -297,11 +299,10 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
                 }
             }
         }
-        String text = sb.toString();
-        log(context, NMsg.ofNtf(text));
+        context.outln(sb.toString());
         // "check" is a question, so a denied answer is a failed statement a script can
         // branch on; "explain" is a report and always succeeds.
-        return (!explain && !d.allowed()) ? NaruStmtResult.ofError(text) : NaruStmtResult.ofSuccess(null);
+        return (!explain && !d.allowed()) ? NaruStmtResult.ofError() : NaruStmtResult.ofSuccess(NElement.of(sb.toString()));
     }
 
     static final class Parsed {

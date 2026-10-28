@@ -1,6 +1,5 @@
 package net.thevpc.naru.ext.tools.compact;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.context.NaruCompactionException;
 import net.thevpc.naru.api.context.NaruCompactionResult;
 import net.thevpc.naru.api.model.NaruContextSpec;
@@ -12,11 +11,11 @@ import net.thevpc.naru.api.model.NaruSummaryOptions;
 import net.thevpc.naru.api.model.NaruToolOutputPolicy;
 import net.thevpc.naru.api.model.NaruWindowSpec;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NStringBuilder;
@@ -76,13 +75,14 @@ public class NaruCompactDirective extends NaruDirectiveBase {
         String msg = NMsg.ofC(
                 "compaction is not installed in this session. Add the naru-tools-compact "
                         + "extension to the classpath.").toString();
-        task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", msg).asError());
-        return NaruStmtResult.ofError(msg);
+        return NaruStmtResult.ofError(NMsg.ofP(msg));
     }
 
     // ── option parsing ──────────────────────────────────────────────────────
 
-    /** Parsed {@code key=value} options plus the one bare positional argument. */
+    /**
+     * Parsed {@code key=value} options plus the one bare positional argument.
+     */
     static final class Options {
         String keep;
         String level;
@@ -236,7 +236,7 @@ public class NaruCompactDirective extends NaruDirectiveBase {
         }
 
         @Override
-        public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
             NaruTask task = context.task();
             NaruCompactExtension extension = ext(task);
             if (extension == null) {
@@ -244,16 +244,19 @@ public class NaruCompactDirective extends NaruDirectiveBase {
             }
             Options options = parseOptions(cmdLine);
             if (options.errors.length() > 0) {
-                return NaruStmtResult.ofError(options.errors.toString());
+                context.outln(options.errors.toString());
+                return NaruStmtResult.ofError();
             }
             NaruCompactConfig config = new NaruCompactConfig(task);
             try {
                 NaruCompactionResult result = extension.compactNow(task,
                         options.window(config), options.summaryOptions(config));
-                return NaruStmtResult.ofSuccess(report(task, result));
+                String report = report(task, result);
+                context.outln(report);
+                return NaruStmtResult.ofSuccess(NElement.of(report));
             } catch (NaruCompactionException e) {
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", e.getMessage()).asError());
-                return NaruStmtResult.ofError(e.getMessage());
+                context.errln(NMsg.ofC("%s", e).asError());
+                return NaruStmtResult.ofError();
             }
         }
     }
@@ -266,7 +269,7 @@ public class NaruCompactDirective extends NaruDirectiveBase {
         }
 
         @Override
-        public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
             NaruTask task = context.task();
             NaruCompactExtension extension = ext(task);
             if (extension == null) {
@@ -274,7 +277,8 @@ public class NaruCompactDirective extends NaruDirectiveBase {
             }
             Options options = parseOptions(cmdLine);
             if (options.errors.length() > 0) {
-                return NaruStmtResult.ofError(options.errors.toString());
+                context.errln(options.errors.toString());
+                return NaruStmtResult.ofError();
             }
             NaruCompactConfig config = new NaruCompactConfig(task);
             try {
@@ -284,16 +288,18 @@ public class NaruCompactDirective extends NaruDirectiveBase {
                 // preview, not compact: the same compactor, with apply=false
                 NaruCompactionResult result = net.thevpc.naru.api.context.NaruCompactors
                         .preview(task, spec);
-                NStringBuilder sb = NStringBuilder.of();
-                sb.println(report(task, result));
+                context.outln(report(task, result));
                 if (result.summaryItem() != null) {
-                    sb.println("");
-                    sb.println("--- would insert ---");
-                    sb.println(result.summaryItem().getContent());
+                    context.outln("");
+                    context.outln("--- would insert ---");
+                    context.outln(result.summaryItem().getContent());
                 }
-                return NaruStmtResult.ofSuccess(sb.toString());
+                return NaruStmtResult.ofSuccess(
+                        NElement.of(context.out().filteredText())
+                );
             } catch (NaruCompactionException e) {
-                return NaruStmtResult.ofError(e.getMessage());
+                context.errln(e.getMessage());
+                return NaruStmtResult.ofError();
             }
         }
     }
@@ -304,15 +310,15 @@ public class NaruCompactDirective extends NaruDirectiveBase {
         }
 
         @Override
-        public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
             NaruTask task = context.task();
             NaruCompactExtension extension = ext(task);
             if (extension == null) {
                 return notInstalled(task);
             }
             String text = extension.describe(task);
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", text));
-            return NaruStmtResult.ofSuccess(text);
+            context.outln(text);
+            return NaruStmtResult.ofSuccess(NElement.of(text));
         }
     }
 
@@ -324,7 +330,7 @@ public class NaruCompactDirective extends NaruDirectiveBase {
         }
 
         @Override
-        public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+        public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
             NaruTask task = context.task();
             NaruCompactExtension extension = ext(task);
             if (extension == null) {
@@ -338,17 +344,19 @@ public class NaruCompactDirective extends NaruDirectiveBase {
             if (id == null || id.isBlank()) {
                 id = newestActiveSummaryId(task);
                 if (id == null) {
-                    return NaruStmtResult.ofError("no active summary to undo");
+                    context.errln("no active summary to undo");
+                    return NaruStmtResult.ofError();
                 }
             }
             NaruCompactionResult result = extension.undo(task, id);
             if (!result.isSuccess()) {
-                return NaruStmtResult.ofError(result.message());
+                context.errln(result.message());
+                return NaruStmtResult.ofError();
             }
             String msg = "undid summary " + id
                     + "; the covered items are back in the context view";
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", msg));
-            return NaruStmtResult.ofSuccess(msg);
+            context.outln(msg);
+            return NaruStmtResult.ofSuccess(NElement.of(msg));
         }
     }
 
@@ -376,7 +384,9 @@ public class NaruCompactDirective extends NaruDirectiveBase {
         return best;
     }
 
-    /** A one-line report of what a compaction did. */
+    /**
+     * A one-line report of what a compaction did.
+     */
     static String report(NaruTask task, NaruCompactionResult result) {
         if (result == null) {
             return "compaction produced no result";

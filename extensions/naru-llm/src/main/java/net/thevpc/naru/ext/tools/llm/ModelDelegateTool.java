@@ -249,7 +249,7 @@ public class ModelDelegateTool extends DefaultNaruTool {
                     )
             );
             if (response.getMessage() != null) {
-                return response.getMessage().getContent();
+                return response.getMessage().getContent().toString();
             }
             return "Error: Model returned empty response.";
         } catch (Exception e) {

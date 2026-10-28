@@ -1,13 +1,12 @@
 package net.thevpc.naru.ext.tools.fs;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NAnsiTermHelper;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
@@ -20,7 +19,6 @@ import net.thevpc.nuts.util.NRef;
 
 import java.util.ArrayList;
 import java.util.List;
-import net.thevpc.naru.api.registry.NaruDirectiveBase;
 
 public class NaruCatDirective extends NaruDirectiveBase {
     public NaruCatDirective() {
@@ -31,7 +29,7 @@ public class NaruCatDirective extends NaruDirectiveBase {
                 new SubCommandHelp("-L", "syntax highlighting with inferred language")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
 
                 NBooleanRef optLineNumbers = NBooleanRef.of(false); // -n
@@ -53,8 +51,7 @@ public class NaruCatDirective extends NaruDirectiveBase {
 
                 if (targets.isEmpty()) {
                     NMsg msg = NMsg.ofStyled("view: no file specified", NTextStyle.error());
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    return NaruStmtResult.ofError(msg);
                 }
 
                 NTextBuilder result = NTextBuilder.of();
@@ -98,10 +95,9 @@ public class NaruCatDirective extends NaruDirectiveBase {
                 }
 
                 NText resultText = result.build();
-                task.addHistory(NaruMessage.user(NMsg.ofC("call   : view %s", context.argument()).toString()));
-                task.addHistory(NaruMessage.user(NMsg.ofC("result :\n%s", NAnsiTermHelper.of().stripAnsi(resultText.toString())).toString()));
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", resultText));
-                return NaruStmtResult.ofSuccess(NAnsiTermHelper.of().stripAnsi(resultText.toString()));
+                context.outln(NMsg.ofC("call   : view %s", context.argument()));
+                context.outln(NMsg.ofC("result :\n%s", NAnsiTermHelper.of().stripAnsi(resultText.toString())));
+                return NaruStmtResult.ofSuccess(NElement.of(resultText.toString()),null);
             }
 
             private String withLineNumbers(String content) {

@@ -1,14 +1,12 @@
 package net.thevpc.naru.ext.tools.sh;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.api.model.NaruMessage;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.command.NExec;
 import net.thevpc.nuts.core.NSession;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NAnsiTermHelper;
 import net.thevpc.nuts.platform.NEnv;
 import net.thevpc.nuts.platform.NOsFamily;
@@ -37,7 +35,7 @@ public class NaruSystemDirective extends NaruDirectiveBase {
         super("system", "general", "run system command", "sys");
         register(new AbstractSubCommand() {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String cmd = context.argument();
                 boolean grab = true;
@@ -86,10 +84,6 @@ public class NaruSystemDirective extends NaruDirectiveBase {
                             if (result != null && result.length() > MAX_OUTPUT_CHARS) {
                                 result = result.substring(result.length() - MAX_OUTPUT_CHARS);
                             }
-                            task.addHistory(NaruMessage.user(NMsg.ofC(
-                                    "call   : system %s\nexit code %s\nresult : \n%s",
-                                    runCmd, exitCode, result).toString()));
-                            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
                             // optional capture: /system --save <var> <cmd> stores the
                             // trimmed output so a script can compare it without a pipe
                             String trimmedOut = result == null ? "" : result.trim();
@@ -98,14 +92,22 @@ public class NaruSystemDirective extends NaruDirectiveBase {
                             }
                             // the returned (value, exitCode) pair is published centrally
                             // by invokeDirective into lastResult (alias _) and lastExitCode
-                            outcome.set(NaruStmtResult.of(trimmedOut, exitCode));
+                            context.task().setTaskEnv("lastExitCode", exitCode);
+                            context.outln(NMsg.ofC(
+                                    "call   : system %s\nexit code %s\nresult : \n%s",
+                                    runCmd, exitCode, result));
+                            outcome.set(NaruStmtResult.of(NElement.of(trimmedOut),
+                                    null,
+                                    exitCode));
                         } else {
                             // no output capture: run attached to the terminal (vim, ...)
                             e.run();
                             int exitCode = e.exitCode();
-                            task.addHistory(NaruMessage.user(NMsg.ofC(
-                                    "call   : system --no-grab %s\nexit code %s", runCmd, exitCode).toString()));
-                            outcome.set(NaruStmtResult.of(null, exitCode));
+                            context.outln(NMsg.ofC(
+                                    "call   : system --no-grab %s\nexit code %s", runCmd, exitCode));
+                            outcome.set(NaruStmtResult.of(null,
+                                    null,
+                                    exitCode));
                         }
                     });
                 }

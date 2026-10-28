@@ -100,7 +100,7 @@ public class NaruOpenAiRequestSerializer implements NaruModelRequestSerializer {
     private NElement messageToElement(NaruMessage m) {
         NObjectElementBuilder msgObj = NElement.ofObjectBuilder();
         msgObj.set("role", m.getRole().id());
-        msgObj.set("content", m.getContent() != null ? m.getContent() : "");
+        msgObj.set("content", m.getFilteredContent() != null ? m.getFilteredContent() : "");
 
         // 1. Tool Message Execution Outputs
         if (m.getRole() == NaruRole.tool) {
@@ -145,7 +145,7 @@ public class NaruOpenAiRequestSerializer implements NaruModelRequestSerializer {
 
             NObjectElementBuilder textPart = NElement.ofObjectBuilder();
             textPart.set("type", "text");
-            textPart.set("text", m.getContent() != null ? m.getContent() : "");
+            textPart.set("text", m.getFilteredContent() != null ? m.getFilteredContent() : "");
             contentParts.add(textPart.build());
 
             for (String img : m.getImages()) {

@@ -4,7 +4,6 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.stmt.NaruStatement;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.text.NMsg;
@@ -19,7 +18,7 @@ public class NaruSourceDirective extends NaruDirectiveBase {
         super("source", "task", "inline routine");
         register(new AbstractSubCommand(new SubCommandHelp("<routine>...", "inline and run one or more routines in the current task\n<routine> can be routine name or routine path")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 List<List<NaruStatement>> li = new ArrayList<>();
                 cmdLine.matcher()
@@ -42,7 +41,7 @@ public class NaruSourceDirective extends NaruDirectiveBase {
                 for (int i = li.size() - 1; i >= 0; i--) {
                     task.prependStatements(li.get(i).toArray(new NaruStatement[0]));
                 }
-                return NaruStmtResult.ofSuccess(null);
+                return NaruStmtResult.ofSuccess();
             }
         });
     }

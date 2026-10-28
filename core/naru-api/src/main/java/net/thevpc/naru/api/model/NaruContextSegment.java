@@ -103,7 +103,7 @@ public record NaruContextSegment(
         if (content instanceof NaruSegmentContent.Messages messages) {
             for (NaruMessage m : messages.messages()) {
                 sb.append("msg").append(UNIT).append(m.getRole()).append(UNIT);
-                append(sb, m.getContent());
+                append(sb, m.getFilteredContent());
                 sb.append(UNIT).append(m.getToolName()).append(UNIT).append(m.getToolCallId());
                 sb.append(UNIT).append(m.getThinking()).append(UNIT);
                 if (m.getImages() != null) {

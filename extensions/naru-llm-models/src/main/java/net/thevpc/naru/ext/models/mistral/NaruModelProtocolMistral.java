@@ -155,7 +155,7 @@ public class NaruModelProtocolMistral extends NaruModelProtocolOpenAICompat {
 
         for (NaruMessage msg : rawMessages) {
             NaruRole role = msg.getRole();
-            String content = msg.getContent();
+            String content = msg.getFilteredContent();
 
             // 1. Isolate and accumulate all system prompts regardless of where they appear
             if (role == NaruRole.system) {

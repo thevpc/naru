@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruSummaryOptions;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 
 import java.util.ArrayList;
@@ -293,7 +294,7 @@ public class NaruCompactCache {
         String msg = String.format("compaction cache: %d/%d entries, %s, %d evicted",
                 size(), maxEntries, ratio, evictions);
         if (task != null) {
-            task.log(NaruLogMode.DEBUG, NMsg.ofC("%s", msg));
+            task.addHistory(NaruMessage.engine(NMsg.ofC("%s", msg).withIntent(NMsgIntent.CACHE)));
         }
         return msg;
     }

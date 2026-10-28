@@ -7,6 +7,7 @@ import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
+import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -115,7 +116,7 @@ public class NaruAnthropicRequestSerializerTest {
     @Test
     public void testImageBlock() {
         NaruAnthropicRequestSerializer serializer = new NaruAnthropicRequestSerializer();
-        NaruMessage user = NaruMessage.userWithImages("what is this?", Collections.singletonList("QUJD"));
+        NaruMessage user = NaruMessage.userWithImages(NMsg.ofP("what is this?"), Collections.singletonList("QUJD"));
         NaruModelRequest request = new NaruModelRequest(
                 Collections.singletonList(user), Collections.emptyMap());
         NaruModelConfig model = new NaruModelConfig("anthropic-compat", "claude-sonnet-4");

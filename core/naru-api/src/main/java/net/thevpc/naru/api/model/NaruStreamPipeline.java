@@ -1,5 +1,6 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 
 import java.util.ArrayList;
@@ -167,7 +168,7 @@ public class NaruStreamPipeline {
      * without the segment numbering drifting.
      */
     public NaruMessage message() {
-        NaruMessage m = NaruMessage.assistant(answer.toString());
+        NaruMessage m = NaruMessage.assistant(NMsg.ofP(answer.toString()));
         if (nativeThinking.length() > 0) {
             // native reasoning is a single contiguous stretch, so it becomes one
             // segment; addThinkingSegment puts it in the right position

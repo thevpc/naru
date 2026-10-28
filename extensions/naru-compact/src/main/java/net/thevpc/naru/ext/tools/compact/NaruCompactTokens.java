@@ -44,7 +44,7 @@ public final class NaruCompactTokens {
         if (message == null) {
             return 0;
         }
-        long chars = len(message.getContent()) + len(message.getToolName());
+        long chars = len(message.getFilteredContent()) + len(message.getToolName());
         if (message.getToolCalls() != null) {
             for (NaruToolCall call : message.getToolCalls()) {
                 chars += len(call.getName());

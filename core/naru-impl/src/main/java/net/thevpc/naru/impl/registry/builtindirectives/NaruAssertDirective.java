@@ -2,10 +2,10 @@ package net.thevpc.naru.impl.registry.builtindirectives;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NLiteral;
 
@@ -46,7 +46,7 @@ public class NaruAssertDirective extends NaruDirectiveBase {
                 new SubCommandHelp("--fail <condition>", "abort the script (task error) when the condition is false.\nex:\n/assert --fail count == 3")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String raw = context.argument() == null ? "" : context.argument().trim();
                 boolean fail = false;
@@ -70,18 +70,18 @@ public class NaruAssertDirective extends NaruDirectiveBase {
                 String condition = raw;
                 if (condition.isEmpty()) {
                     NMsg msg = NMsg.ofC("assert: missing condition").asError();
-                    task.log(NaruLogMode.PROGRESS, msg);
+                    context.errln(msg);
                     if (fail) {
                         task.throwError(NMsg.ofC("assert failed: missing condition"));
                     }
-                    return NaruStmtResult.of(msg.toString(), 2);
+                    return NaruStmtResult.ofError( 2);
                 }
                 Object value = task.evalExpression(condition);
                 boolean ok = NLiteral.of(value).asBoolean().orElse(false);
                 if (ok) {
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("✓ assert %s", NMsg.ofStyledPrimary1(condition)));
+                    context.outln(NMsg.ofC("✓ assert %s", NMsg.ofStyledPrimary1(condition)));
                 } else {
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("✗ assert %s", NMsg.ofStyledPrimary2(condition)));
+                    context.outln(NMsg.ofC("✗ assert %s", NMsg.ofStyledPrimary2(condition)));
                 }
                 if (setVar != null && !setVar.isEmpty()) {
                     Object current = task.getTaskEnv(setVar, false).orNull();
@@ -94,7 +94,9 @@ public class NaruAssertDirective extends NaruDirectiveBase {
                 // exit code mirrors the condition: 0 = pass, 1 = fail.
                 // _ / lastResult carries the condition value; lastError the condition
                 // value too when the assertion failed (via NaruStmtResult.of).
-                return NaruStmtResult.of(value, ok ? 0 : 1);
+                return NaruStmtResult.of(NElement.of(value),
+                        NMsg.ofC("%s", value),
+                        ok ? 0 : 1);
             }
         });
     }

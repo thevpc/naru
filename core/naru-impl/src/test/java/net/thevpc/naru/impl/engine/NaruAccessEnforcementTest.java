@@ -22,7 +22,9 @@ import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -266,7 +268,7 @@ public class NaruAccessEnforcementTest {
         @Override
         public NaruStmtResult execute(NaruDirectiveCallContext context) {
             ran.set(true);
-            return NaruStmtResult.ofSuccess("done");
+            return NaruStmtResult.ofSuccess(NElement.of("done"));
         }
     }
 

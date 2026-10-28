@@ -68,7 +68,7 @@ public class NoToolWrapHelperTest {
         Assertions.assertTrue(unwrapped.hasToolCalls());
         Assertions.assertEquals("file_read", unwrapped.getMessage().getToolCalls().get(0).getName());
         Assertions.assertEquals("/x", unwrapped.getMessage().getToolCalls().get(0).getArguments().get("path"));
-        Assertions.assertFalse(unwrapped.getMessage().getContent().contains("tool_call"),
+        Assertions.assertFalse(unwrapped.getMessage().getContent().toString().contains("tool_call"),
                 "the emulated block must be stripped from the answer text");
     }
 

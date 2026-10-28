@@ -1,6 +1,5 @@
 package net.thevpc.naru.ext.tools.llm;
 
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
@@ -14,7 +13,6 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NLiteral;
-import net.thevpc.nuts.util.NStringBuilder;
 import net.thevpc.nuts.util.NStringUtils;
 
 import java.util.*;
@@ -27,39 +25,35 @@ public class NaruToolsDirective extends NaruDirectiveBase {
         this.noCommand("list");
         register(new AbstractSubCommand("all", NText.ofPlain("list all tools")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 List<Map.Entry<String, NaruTool>> collected = context.task().session().registry().tools().entrySet().stream().sorted(Comparator.comparing(a -> a.getKey())).collect(Collectors.toList());
-                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s available tools:", collected.size()));
-                NStringBuilder sb = NStringBuilder.of();
+                context.outln( NMsg.ofC("%s available tools:", collected.size()));
                 for (Map.Entry<String, NaruTool> e : collected) {
                     NMsg msg = NMsg.ofC("  %s - %s",
                             NMsg.ofStyledPrimary1(e.getKey())
                             , e.getValue().getDescription(context.task()));
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                    sb.println(msg.toString());
+                    context.outln(msg);
                 }
-                return NaruStmtResult.ofSuccess(sb.toString());
+                return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
             }
         });
         register(new AbstractSubCommand("list", NText.ofPlain("list selected tools")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 List<NaruToolDefinition> collected = context.task().findTools().stream().sorted(Comparator.comparing(a -> a.getName())).collect(Collectors.toList());
-                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s selected tools:", collected.size()));
-                NStringBuilder sb = NStringBuilder.of();
+                context.outln( NMsg.ofC("%s selected tools:", collected.size()));
                 for (NaruToolDefinition e : collected) {
                     NMsg msg = NMsg.ofC("  %s - %s",
                             NMsg.ofStyledPrimary1(e.getName())
                             , e.getDescriptionText());
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                    sb.println(msg.toString());
+                    context.outln( msg);
                 }
-                return NaruStmtResult.ofSuccess(sb.toString());
+                return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
             }
         });
         register(new AbstractSubCommand("unselected", NText.ofPlain("list unselected (non included) tools")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 Map<String, NaruToolDefinition> collected = context.task().findTools().stream()
                         .collect(Collectors.toMap(x -> x.getName(), x -> x));
                 Map<String, NaruTool> allTools = context.task().session().registry().tools();
@@ -68,45 +62,41 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                 }
                 List<Map.Entry<String, NaruTool>> all = allTools.entrySet().stream().sorted(Comparator.comparing(a -> a.getKey())).collect(Collectors.toList());
 
-                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s unselected tools:", collected.size()));
-                NStringBuilder sb = NStringBuilder.of();
+                context.outln( NMsg.ofC("%s unselected tools:", collected.size()));
                 for (Map.Entry<String, NaruTool> e : all) {
                     NMsg msg = NMsg.ofC("  %s - %s",
                             NMsg.ofStyledPrimary1(e.getValue().name())
                             , e.getValue().getDescription(context.task()));
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                    sb.println(msg.toString().trim());
+                    context.outln( msg);
                 }
-                return NaruStmtResult.ofSuccess(sb.toString());
+                return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
             }
         });
         register(new AbstractSubCommand("excluded", NText.ofPlain("list excluded tools")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 List<String> collected = context.task().findToolExclusions().stream().sorted().collect(Collectors.toList());
-                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s excluded tools:", collected.size()));
-                NStringBuilder sb = NStringBuilder.of();
+                context.outln( NMsg.ofC("%s excluded tools:", collected.size()));
                 for (String e : collected) {
                     NMsg msg = NMsg.ofC("  %s",
                             NMsg.ofStyledPrimary1(e));
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                    sb.println(msg.toString().trim());
+                    context.outln( msg);
                 }
-                return NaruStmtResult.ofSuccess(sb.toString());
+                return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
             }
         });
         register(new AbstractSubCommand("exclude", NText.ofPlain("add tool to exclusion set"),
                 new SubCommandHelp("<tool-name>... [<tool-name>...]", "add tool to exclusion set")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 // cmdLine is already positioned after the 'exclude' keyword by
                 // NaruDirectiveBase; re-parsing context.argument() would re-include
                 // the keyword itself and ban a tool literally named 'exclude'.
                 if (cmdLine.isEmpty()) {
                     NMsg msg = NMsg.ofC("missing tool");
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln( msg);
+                    return NaruStmtResult.ofError();
                 }
                 int count = 0;
                 while (!cmdLine.isEmpty()) {
@@ -114,7 +104,7 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                     context.task().addToolExclusion(a.image());
                     count++;
                 }
-                return NaruStmtResult.ofSuccess(count);
+                return NaruStmtResult.ofSuccess(NElement.of(count));
 
             }
         });
@@ -122,12 +112,12 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<tool-name>... [<tool-name>...]", "remove tool from exclusion set")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 // cmdLine is already positioned after the 'unexclude' keyword (see exclude).
                 if (cmdLine.isEmpty()) {
                     NMsg msg = NMsg.ofC("missing tool");
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln( msg);
+                    return NaruStmtResult.ofError();
                 }
                 int count = 0;
                 while (!cmdLine.isEmpty()) {
@@ -135,7 +125,7 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                     context.task().removeToolExclusion(a.image());
                     count++;
                 }
-                return NaruStmtResult.ofSuccess(count);
+                return NaruStmtResult.ofSuccess(NElement.of(count));
             }
         });
 
@@ -143,9 +133,9 @@ public class NaruToolsDirective extends NaruDirectiveBase {
 //            @Override
 //            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
 //                Map<String, NaruToolTag> tags = context.task().session().registry().availableTags();
-//                context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s available tags:", tags.size()));
+//                context.outln( NMsg.ofC("%s available tags:", tags.size()));
 //                for (Map.Entry<String, NaruToolTag> e : tags.entrySet()) {
-//                    context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("  %s - %s",
+//                    context.outln( NMsg.ofC("  %s - %s",
 //                            NMsg.ofStyledPrimary1(e.getKey())
 //                            , e.getValue().description()));
 //                }
@@ -186,18 +176,18 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<tool-name>  [<key>=<value>...]", "run a tool by name with named arguments\nex:\n/tools run file_read path=src/Main.java")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NArg a = cmdLine.next().orNull();
                 if (a == null) {
                     NMsg msg = NMsg.ofC("missing tool");
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln( msg);
+                    return NaruStmtResult.ofError();
                 } else {
                     NaruTool t = context.task().session().registry().findTool(a.image()).orNull();
                     if (t == null) {
                         NMsg msg = NMsg.ofC("missing tool : %s", a.image());
-                        context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                        return NaruStmtResult.ofError(msg.toString());
+                        context.errln( msg);
+                        return NaruStmtResult.ofError();
                     }
                     List<NaruToolParameter> params = new ArrayList<>();
                     NaruToolDefinition d = t.getDefinition(context.task());
@@ -258,14 +248,14 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                     String result = t.execute(new NaruToolCallContextImpl(
                             args, context.task()
                     ));
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s", result));
+                    context.outln( NMsg.ofC("%s", result));
                     context.task().addHistory(NaruMessage.user(NMsg.ofC("calls tool %s %s\nresults:\n%s", a.image(), args, result).toString()));
                     // Publish the exit code of process-running tools (e.g. run_shell)
                     // so script control-flow (/while, /if) can condition on it, e.g.
                     // "run until 'mvn -o -q test' exits 0". Results without an
                     // EXIT_CODE= prefix leave the previous value untouched.
                     Integer exitCode = extractExitCode(result);
-                    return NaruStmtResult.of(null, exitCode == null ? -127 : exitCode);
+                    return NaruStmtResult.of(NElement.ofNull(),null, exitCode == null ? -127 : exitCode);
                 }
             }
         });
@@ -273,33 +263,31 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<tool-name>", "describe a tool by name")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NArg a = cmdLine.next().orNull();
                 if (a == null) {
                     NMsg msg = NMsg.ofC("missing tool");
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                    return NaruStmtResult.ofError(msg.toString());
+                    context.errln( msg);
+                    return NaruStmtResult.ofError();
                 } else {
                     NaruTool t = context.task().session().registry().findTool(a.image()).orNull();
                     if (t == null) {
-                        context.task().log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("missing tool : %s", a.image()));
-                        return NaruStmtResult.ofError(NMsg.ofC("missing tool : %s", a.image()).toString());
+                        context.errln( NMsg.ofC("missing tool : %s", a.image()));
+                        return NaruStmtResult.ofError();
                     }
                     List<NaruToolParameter> params = new ArrayList<>();
                     NaruToolDefinition d = t.getDefinition(context.task());
                     if (d instanceof NaruToolDefinitionFunction) {
                         params = ((NaruToolDefinitionFunction) d).getParams();
                     }
-                    NStringBuilder sb = NStringBuilder.of();
                     NMsg msg = NMsg.ofC("  %s - %s",
                             NMsg.ofStyledPrimary1(t.name())
                             , t.getDescription(context.task()));
-                    context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-                    sb.println(msg.toString());
+                    context.outln( msg);
                     for (NaruToolParameter param : params) {
-                        describeParam(param, sb, context, "      ");
+                        describeParam(param, context, "      ");
                     }
-                    return NaruStmtResult.ofSuccess(sb.toString());
+                    return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
                 }
             }
         });
@@ -323,7 +311,7 @@ public class NaruToolsDirective extends NaruDirectiveBase {
         return NMsg.ofStyledPrimary1(param.getType().name().toLowerCase());
     }
 
-    private void describeParam(NaruToolParameter param, NStringBuilder sb, NaruDirectiveCallContext context, String indent) {
+    private void describeParam(NaruToolParameter param, SubCommandContext context, String indent) {
         NMsg msg = NMsg.ofC("%s%s : %s%s%s%s%s - %s",
                 indent,
                 NMsg.ofStyledPrimary1(param.getName()),
@@ -334,11 +322,10 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                 !(param.getEnumValues()==null ||param.getEnumValues().isEmpty()) ?NMsg.ofC(" (values: %s)",param.getEnumValues()):"",
                 param.getDescription());
 
-        context.task().log(NaruLogMode.AGENT_RESPONSE, msg);
-        sb.println(msg.toString());
+        context.outln( msg);
         if (param.getType() == NaruToolParameter.Type.ARRAY) {
             if (param.getItemType().getType() == NaruToolParameter.Type.OBJECT) {
-                describeParam(param.getItemType(), sb, context, indent + "    ");
+                describeParam(param.getItemType(), context, indent + "    ");
             } else if (param.getItemType().getType() == NaruToolParameter.Type.ARRAY) {
                 NaruToolParameter tt = param.getItemType();
                 while (true) {
@@ -351,11 +338,11 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                         break;
                     }
                 }
-                describeParam(tt, sb, context, indent + "  ");
+                describeParam(tt, context, indent + "  ");
             }
         } else if (param.getType() == NaruToolParameter.Type.OBJECT) {
             for (NaruToolParameter tt : param.getProperties()) {
-                describeParam(tt, sb, context, indent + "  ");
+                describeParam(tt, context, indent + "  ");
             }
         }
     }

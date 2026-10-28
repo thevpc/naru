@@ -137,7 +137,7 @@ public class NaruPlanModeSwitchTest {
         assertNotNull(ext);
         List<net.thevpc.naru.api.model.NaruMessage> contributed = ext.contribute(task);
         assertEquals(1, contributed.size());
-        String text = contributed.get(0).getContent();
+        String text = contributed.get(0).getFilteredContent();
         // the executor must see the same graph the planner produced
         assertTrue(text.contains("inventory the build"), text);
         assertTrue(text.contains("### ACTIVE PLAN:"), text);

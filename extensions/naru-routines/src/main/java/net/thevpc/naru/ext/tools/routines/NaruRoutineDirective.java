@@ -1,13 +1,14 @@
 package net.thevpc.naru.ext.tools.routines;
 
 import net.thevpc.naru.api.agent.*;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NRef;
@@ -26,22 +27,21 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                 new SubCommandHelp("", "list routines")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 List<NaruResourceInfo> naruResourceInfos = task.session().routines();
                 naruResourceInfos.sort(Comparator.comparing(x -> x.getModificationInstant(), Comparator.reverseOrder()));
-                NStringBuilder sb = NStringBuilder.of();
                 int index = 1;
                 for (NaruResourceInfo naruResourceInfo : naruResourceInfos) {
                     NMsg msg = NMsg.ofC("[%s] %s %s %s", index,
                             NMsg.ofStyledKeyword(naruResourceInfo.getMode().name().toLowerCase()),
                             NMsg.ofStyledPrimary1(naruResourceInfo.getUuid()),
                             NMsg.ofStyledString(naruResourceInfo.getName()));
-                    task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                    sb.println(msg.toString());
+                    context.outln( msg);
+                    context.outln(msg.toString());
                     index++;
                 }
-                return NaruStmtResult.ofSuccess(sb.toString());
+                return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
             }
         });
         register(new AbstractSubCommand("show", NText.ofPlain("show current routine lines"),
@@ -56,7 +56,7 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                 )
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
 
                 NaruRoutine currentRoutine = task.editRoutine().get();
@@ -85,20 +85,19 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                                 }
                             } else {
                                 NMsg msg = NMsg.ofC("invalid position to drop", range).asError();
-                                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                                return NaruStmtResult.ofError(msg.toString());
+                                context.errln( msg);
+                                return NaruStmtResult.ofError();
                             }
                         }
                     }
                 }
-                NStringBuilder sb = NStringBuilder.of();
                 Map.Entry<Integer, String> last = null;
                 for (Map.Entry<Integer, String> e : currentRoutine.getLinesSet().entrySet()) last = e;
                 Integer lastKey = last == null ? 0 : last.getKey();
                 if (toShow.isEmpty()) {
                     if (!currentRoutine.getLinesSet().isEmpty()) {
                         for (Map.Entry<Integer, String> e : currentRoutine.getLinesSet().entrySet()) {
-                            logRow(e.getKey(), lastKey, e.getValue(), task, sb);
+                            logRow(e.getKey(), lastKey, e.getValue(), task, context);
                         }
                     }
                 } else {
@@ -107,22 +106,22 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                         int i = bb.get(k);
                         String s = currentRoutine.getLinesSet().get(i);
                         if (s != null) {
-                            logRow(i, lastKey, s, task, sb);
+                            logRow(i, lastKey, s, task, context);
                         }
                     }
                 }
-                return NaruStmtResult.ofSuccess(sb.toString());
+                return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
             }
 
         });
         register(new AbstractSubCommand("clear", NText.ofPlain("clear current routine lines")) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NaruRoutine cs = task.editRoutine().get();
                 int count = cs.clear();
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s lines", count));
-                return NaruStmtResult.ofSuccess(count);
+                context.outln( NMsg.ofC("removed %s lines", count));
+                return NaruStmtResult.ofSuccess(NElement.of(count));
             }
         });
 
@@ -130,9 +129,9 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<n1>-<n2>", "filter routine content lines to delete")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 if (cmdLine.isEmpty()) {
-                    return NaruStmtResult.ofSuccess(null);
+                    return NaruStmtResult.ofSuccess();
                 }
                 NaruTask task = context.task();
                 NaruRoutine cs = task.editRoutine().get();
@@ -161,8 +160,8 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                                 }
                             } else {
                                 NMsg msg = NMsg.ofC("invalid position to drop", range).asError();
-                                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                                return NaruStmtResult.ofError(msg.toString());
+                                context.errln( msg);
+                                return NaruStmtResult.ofError();
                             }
                         }
                     }
@@ -174,8 +173,8 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                         b.add(a.get(i));
                     }
                 }
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("removed %s lines", b.size()));
-                return NaruStmtResult.ofSuccess(b.size());
+                context.outln( NMsg.ofC("removed %s lines", b.size()));
+                return NaruStmtResult.ofSuccess(NElement.of(b.size()));
             }
         });
 
@@ -184,7 +183,7 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                 new SubCommandHelp("<name>", "routine name (or path) to load")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 String a = NStringUtils.stripToNull(cmdLine.next().map(NArg::image).orNull());
                 if ("self".equalsIgnoreCase(a)) {
@@ -192,28 +191,28 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                 }
                 String n = task.useRoutine(a).map(x -> x.name()).orNull();
                 if (n != null) {
-                    context.task().log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] Use routine : %s", task.id(), n));
+                    context.outln(NMsg.ofC("[%s] Use routine : %s", task.id(), n));
                 }
-                return NaruStmtResult.ofSuccess(n);
+                return NaruStmtResult.ofSuccess(NElement.of(n));
             }
         });
         register(new AbstractSubCommand("self", NText.ofPlain("select <self> routine")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 task.useRoutine(null);
-                context.task().log(NaruLogMode.PROGRESS, NMsg.ofC("Unloaded routine context. Back to self routine."));
-                return NaruStmtResult.ofSuccess(null);
+                context.outln(NMsg.ofC("Unloaded routine context. Back to self routine."));
+                return NaruStmtResult.ofSuccess();
             }
         });
         register(new AbstractSubCommand("current", NText.ofPlain("shows current routine name")
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Current routine: %s", task.editRoutineName()));
-                return NaruStmtResult.ofSuccess(task.editRoutineName());
+                context.outln( NMsg.ofC("Current routine: %s", task.editRoutineName()));
+                return NaruStmtResult.ofSuccess(NElement.of(task.editRoutineName()));
             }
         });
         register(new AbstractSubCommand("renum", NText.ofPlain("re-index routine lines"),
@@ -224,7 +223,7 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                 )
         ) {
             @Override
-            public NaruStmtResult execute(NaruDirectiveCallContext context, NCmdLine cmdLine) {
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
                 NRef<Integer> start = NRef.of(0);
                 NRef<Integer> increment = NRef.of(0);
@@ -236,13 +235,13 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                         .whenNonOption().asArg(a -> r.set(context.task().session().routine(a.image(), context.task(), true).get()))
                         .requireAll();
                 RoutinesToolHelper.renum(start.get(), increment.get(), r.get());
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("Renum routine: %s", r.get().name()));
-                return NaruStmtResult.ofSuccess(r.get().name());
+                context.outln( NMsg.ofC("Renum routine: %s", r.get().name()));
+                return NaruStmtResult.ofSuccess(NElement.of(r.get().name()));
             }
         });
     }
 
-    private void logRow(int rowIndex, int max, String a, NaruTask task, NStringBuilder sb) {
+    private void logRow(int rowIndex, int max, String a, NaruTask task, SubCommandContext context) {
         int zeros = (int) Math.ceil(Math.log10(max));
         if (zeros <= 0) {
             zeros = 1;
@@ -256,15 +255,9 @@ public class NaruRoutineDirective extends NaruDirectiveBase {
                 NMsg msg = NMsg.ofC("%s %s",
                         NMsg.ofStyledNumber(zformat.format(rowIndex)),
                         line);
-                task.log(NaruLogMode.AGENT_RESPONSE, msg);
-                if (sb != null) {
-                    sb.println(msg.toString());
-                }
+                context.outln( msg);
             } else {
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("        %s", line));
-                if (sb != null) {
-                    sb.println("        " + line);
-                }
+                context.outln( NMsg.ofC("        %s", line));
             }
         }
     }

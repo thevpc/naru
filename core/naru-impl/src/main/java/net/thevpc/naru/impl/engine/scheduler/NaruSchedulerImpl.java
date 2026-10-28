@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.engine.scheduler;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.scheduler.NaruTaskSchedulerView;
@@ -364,16 +365,15 @@ public class NaruSchedulerImpl implements NaruScheduler {
             } catch (NCancelException exit) {
                 task.kill();
             } catch (Exception error) {
-                task.log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s] Task failed: %s", task.id(), error).asError());
+                task.addHistory(NaruMessage.engine(NMsg.ofC("[%s] Task failed: %s", task.id(), error).asError()));
                 if (task.taskMode() == NaruTaskMode.INTERACTIVE){
-                    task.log(NaruLogMode.DEBUG, NMsg.ofC("[%s] Task failed: %s", task.id(), error).asError());
+                    task.addHistory(NaruMessage.engine(NMsg.ofC("[%s] Task failed: %s", task.id(), error).asError()));
                 } else {
                     // Non-interactive failures were silent before killing: most
                     // console sinks filter SCHEDULER mode, so a batch script that
                     // died looked like a spur-of-the-moment KILLED. Surface the
                     // root cause at a visible mode before killing the task.
-                    task.log(NaruLogMode.PROGRESS, NMsg.ofC("[%s] Task killed by an error: %s", task.id(), error).asError());
-                    error.printStackTrace(System.err);
+                    task.addHistory(NaruMessage.engine(NMsg.ofC("[%s] Task killed by an error: %s", task.id(), error).asError()));
                     task.kill();
                 }
             }

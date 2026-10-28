@@ -1,6 +1,8 @@
 package net.thevpc.naru.api.store;
 
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -50,7 +52,7 @@ public interface NaruMessageStore {
 
     private static boolean matchesText(net.thevpc.naru.api.model.NaruMessage message, String needle) {
         if (message == null) return false;
-        String content = message.getContent();
+        String content = message.getFilteredContent();
         if (content != null && content.toLowerCase(Locale.ROOT).contains(needle)) return true;
         String name = message.getToolName();
         if (name != null && name.toLowerCase(Locale.ROOT).contains(needle)) return true;
