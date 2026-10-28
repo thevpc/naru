@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.ext.models.NoToolWrapHelper;
@@ -96,7 +97,7 @@ public class NoToolWrapHelperTest {
         NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
 
         Assertions.assertFalse(unwrapped.hasToolCalls());
-        Assertions.assertEquals("just an answer", unwrapped.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("just an answer"), unwrapped.getMessage().getContent());
     }
 
     @Test
@@ -137,8 +138,8 @@ public class NoToolWrapHelperTest {
         NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
 
         Assertions.assertFalse(unwrapped.hasToolCalls());
-        Assertions.assertEquals("{\"poem\": \"roses are red\", \"lines\": 4}",
-                unwrapped.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("{\"poem\": \"roses are red\", \"lines\": 4}"),
+    unwrapped.getMessage().getContent());
     }
 
     @Test
@@ -183,7 +184,7 @@ public class NoToolWrapHelperTest {
         NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
 
         Assertions.assertTrue(unwrapped.hasToolCalls());
-        Assertions.assertEquals("Let me look.", unwrapped.getMessage().getContent(),
+        Assertions.assertEquals(NMsg.ofP("Let me look."), unwrapped.getMessage().getContent(),
                 "the prose around the recovered call must be kept");
     }
 }

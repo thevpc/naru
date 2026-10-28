@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.ext.models.openai.NaruOpenAiResponseParser;
@@ -41,7 +42,7 @@ public class NaruOpenAiResponseParserTest {
                 "}");
         Assertions.assertTrue(r.isDone());
         Assertions.assertEquals("stop", r.getStopReason());
-        Assertions.assertEquals("Hello from OpenAI", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("Hello from OpenAI"), r.getMessage().getContent());
         Assertions.assertEquals(25, r.getPromptTokens());
         Assertions.assertEquals(30, r.getEvalTokens());
         Assertions.assertEquals(55, r.getTotalTokens());
@@ -91,7 +92,7 @@ public class NaruOpenAiResponseParserTest {
                 "}");
         Assertions.assertFalse(r.isDone());
         Assertions.assertEquals("length", r.getStopReason());
-        Assertions.assertEquals("partial answer", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("partial answer"), r.getMessage().getContent());
     }
 
     @Test
@@ -111,7 +112,7 @@ public class NaruOpenAiResponseParserTest {
                 "  \"usage\": {}\n" +
                 "}");
         Assertions.assertTrue(r.isDone());
-        Assertions.assertEquals("final answer", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("final answer"), r.getMessage().getContent());
         Assertions.assertEquals("think step by step", r.getMessage().getThinking());
     }
 

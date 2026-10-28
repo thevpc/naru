@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.model.NaruChunkKind;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelConfig;
@@ -75,7 +76,7 @@ public class NaruOllamaNativeStreamParserTest {
                 "{\"model\":\"qwen2.5-coder:7b\",\"message\":{\"role\":\"assistant\",\"content\":\"Hel\"},\"done\":false}",
                 "{\"model\":\"qwen2.5-coder:7b\",\"message\":{\"role\":\"assistant\",\"content\":\"lo\"},\"done\":false}",
                 "{\"model\":\"qwen2.5-coder:7b\",\"message\":{\"role\":\"assistant\",\"content\":\"!\"},\"done\":true}");
-        Assertions.assertEquals("Hello!", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("Hello!"), r.getMessage().getContent());
     }
 
     @Test
@@ -97,7 +98,7 @@ public class NaruOllamaNativeStreamParserTest {
                 "{\"message\":{\"content\":\"a\"},\"done\":false}",
                 "   ",
                 "{\"message\":{\"content\":\"b\"},\"done\":true}");
-        Assertions.assertEquals("ab", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("ab"), r.getMessage().getContent());
     }
 
     @Test
@@ -106,7 +107,7 @@ public class NaruOllamaNativeStreamParserTest {
                 "{\"message\":{\"content\":\"a\"},\"done\":false}",
                 "this is not json",
                 "{\"message\":{\"content\":\"b\"},\"done\":true}");
-        Assertions.assertEquals("ab", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("ab"), r.getMessage().getContent());
     }
 
     @Test
@@ -118,7 +119,7 @@ public class NaruOllamaNativeStreamParserTest {
                 "done:true is the end of stream and the caller must stop reading");
         Assertions.assertFalse(parser.onLine("{\"message\":{\"content\":\"never\"},\"done\":false}"),
                 "a document after done is refused, not merged into the answer");
-        Assertions.assertEquals("a", parser.finish(false).getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("a"), parser.finish(false).getMessage().getContent());
     }
 
     // ── content ───────────────────────────────────────────────────────────────
@@ -149,7 +150,7 @@ public class NaruOllamaNativeStreamParserTest {
                 "{\"message\":{\"content\":\"\",\"thinking\":\"Let me consider\"},\"done\":false}",
                 "{\"message\":{\"content\":\"the answer\",\"thinking\":\" the options.\"},\"done\":false}",
                 "{\"done\":true}");
-        Assertions.assertEquals("the answer", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("the answer"), r.getMessage().getContent());
         Assertions.assertEquals("Let me consider the options.", r.getMessage().getThinking());
         Assertions.assertEquals(List.of("Let me consider", " the options."),
                 chunkTexts(NaruChunkKind.THINKING));
@@ -185,7 +186,7 @@ public class NaruOllamaNativeStreamParserTest {
                 "{\"message\":{\"content\":\"<think>\"},\"done\":false}",
                 "{\"message\":{\"content\":\"weighing it up</think>\"},\"done\":false}",
                 "{\"message\":{\"content\":\"7\"},\"done\":true}");
-        Assertions.assertEquals("7", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("7"), r.getMessage().getContent());
         Assertions.assertTrue(r.getMessage().getThinking().contains("weighing it up"));
     }
 
@@ -247,7 +248,7 @@ public class NaruOllamaNativeStreamParserTest {
                 "{\"message\":{\"content\":\"{\\\"poem\\\": \\\"roses are red\\\", \\\"lines\\\": 4}\"},\"done\":true,"
                         + "\"done_reason\":\"stop\"}");
         Assertions.assertFalse(r.hasToolCalls());
-        Assertions.assertEquals("{\"poem\": \"roses are red\", \"lines\": 4}", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("{\"poem\": \"roses are red\", \"lines\": 4}"), r.getMessage().getContent());
     }
 
     // ── termination and usage ─────────────────────────────────────────────────
@@ -286,7 +287,7 @@ public class NaruOllamaNativeStreamParserTest {
         Assertions.assertTrue(parser.hasDeliveredContent());
         NaruResponse r = parser.finish(true);
         Assertions.assertFalse(r.isDone());
-        Assertions.assertEquals("partial", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("partial"), r.getMessage().getContent());
     }
 
     @Test

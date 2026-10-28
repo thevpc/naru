@@ -84,6 +84,11 @@ class NormalizedMsg implements NToElement {
     }
 
     public NMsg toMsg(){
+        boolean plain = (intent == null && duration == null
+                && (level == null || level == java.util.logging.Level.INFO));
+        if (plain) {
+            return NMsg.ofP(text == null ? "" : text.toString());
+        }
         return NMsg.ofNtf(text)
                 .withDuration(duration)
                 .withIntent(intent)
@@ -92,8 +97,16 @@ class NormalizedMsg implements NToElement {
 
     @Override
     public NElement toElement() {
+        // A plain message (no intent, no duration, and the default level) serializes as a
+        // bare string so that session files written before NormalizedMsg existed stay
+        // byte-identical and readable as `{"content":"hello"}`.
+        boolean plain = (intent == null && duration == null
+                && (level == null || level == java.util.logging.Level.INFO));
+        if (plain) {
+            return NElement.ofString(text == null ? "" : text.toString());
+        }
         NObjectElementBuilder b = NObjectElementBuilder.of();
-        b.add("text", text == null ? "" : text.ntfText());
+        b.add("text", text == null ? "" : text.toString());
         if (level != null) {
             b.add("level", level.getName());
         }

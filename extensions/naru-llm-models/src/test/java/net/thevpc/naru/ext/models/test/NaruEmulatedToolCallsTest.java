@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.nuts.text.NMsg;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import net.thevpc.naru.api.agent.NaruWorkspace;
@@ -151,7 +152,7 @@ public class NaruEmulatedToolCallsTest {
                 Collections.emptyList(), envWith(false)));
 
         Assertions.assertFalse(response.hasToolCalls());
-        Assertions.assertEquals("here is the file listing:\n- a\n- b", response.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("here is the file listing:\n- a\n- b"), response.getMessage().getContent());
     }
 
     private NaruResponse chat(String baseUrl, NaruModelRequest request) {

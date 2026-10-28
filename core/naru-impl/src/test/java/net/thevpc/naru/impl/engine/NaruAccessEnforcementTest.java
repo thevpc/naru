@@ -140,7 +140,7 @@ public class NaruAccessEnforcementTest {
                 task.invokeDirective(dir, new NaruDirectiveCallContextImpl("secret_dir", "", task));
 
         assertNotNull(result.errorValue(), "a denied directive yields a failed statement");
-        assertTrue(String.valueOf(result.errorValue()).startsWith("ERROR: permission denied"));
+        assertTrue(result.errorValue().asStringValue().orElse("").startsWith("ERROR: permission denied"));
         assertFalse(dir.ran.get(), "the directive must not run when denied");
     }
 

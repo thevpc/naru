@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.nuts.text.NMsg;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import net.thevpc.naru.api.model.NaruCachingMode;
@@ -115,7 +116,7 @@ public class NaruRetryResendsRequestBodyTest {
 
         NaruResponse response = protocol.chat(request, (NaruTask) null);
 
-        Assertions.assertEquals("ok", response.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("ok"), response.getMessage().getContent());
         assertEveryBodyWasNonEmptyAndIdentical();
     }
 
@@ -129,7 +130,7 @@ public class NaruRetryResendsRequestBodyTest {
 
         NaruResponse response = protocol.chatStream(request, (NaruTask) null, null);
 
-        Assertions.assertEquals("ok", response.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("ok"), response.getMessage().getContent());
         assertEveryBodyWasNonEmptyAndIdentical();
     }
 

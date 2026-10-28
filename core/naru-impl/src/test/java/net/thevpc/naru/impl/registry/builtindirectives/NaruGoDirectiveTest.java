@@ -10,6 +10,7 @@ import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruResponse;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
@@ -18,6 +19,7 @@ import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.Assertions;
@@ -119,7 +121,7 @@ public class NaruGoDirectiveTest {
         Assertions.assertEquals(1, protocol.chatCalls, "the kickoff has to reach the model");
         List<NaruMessage> sent = protocol.lastRequest.messages();
         NaruMessage last = sent.get(sent.size() - 1);
-        Assertions.assertEquals(NaruGoDirective.KICKOFF, last.getContent(),
+        Assertions.assertEquals(NMsg.ofP(NaruGoDirective.KICKOFF), last.getContent(),
                 "the model must be handed a turn, not an empty one");
     }
 

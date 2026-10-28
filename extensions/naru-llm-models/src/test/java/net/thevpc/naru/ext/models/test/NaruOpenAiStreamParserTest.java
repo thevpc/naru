@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.model.NaruChunkKind;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelConfig;
@@ -76,7 +77,7 @@ public class NaruOpenAiStreamParserTest {
                 "{\"choices\":[{\"delta\":{\"content\":\", world\"}}]}",
                 "{\"choices\":[{\"delta\":{\"content\":\"!\"}}]}",
                 "[DONE]");
-        Assertions.assertEquals("Hello, world!", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("Hello, world!"), r.getMessage().getContent());
     }
 
     @Test
@@ -133,7 +134,7 @@ public class NaruOpenAiStreamParserTest {
                 "{\"choices\":[{\"delta\":{\"content\":\"42\"}}]}",
                 "{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}",
                 "[DONE]");
-        Assertions.assertEquals("42", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("42"), r.getMessage().getContent());
         Assertions.assertEquals("Let me think.", r.getMessage().getThinking());
         Assertions.assertEquals(List.of("Let me think."), chunkTexts(NaruChunkKind.THINKING));
     }
@@ -182,7 +183,7 @@ public class NaruOpenAiStreamParserTest {
                 "{\"choices\":[{\"delta\":{\"content\":\"really?</think>\"}}]}",
                 "{\"choices\":[{\"delta\":{\"content\":\"The answer is 7.\"}}]}",
                 "[DONE]");
-        Assertions.assertEquals("The answer is 7.", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("The answer is 7."), r.getMessage().getContent());
         Assertions.assertTrue(r.getMessage().getThinking().contains("really?"));
     }
 
@@ -329,7 +330,7 @@ public class NaruOpenAiStreamParserTest {
         NaruResponse r = stream(
                 "{\"choices\":[{\"delta\":{\"content\":\"a\"}}]}",
                 "[DONE]");
-        Assertions.assertEquals("a", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("a"), r.getMessage().getContent());
     }
 
     @Test
@@ -340,7 +341,7 @@ public class NaruOpenAiStreamParserTest {
                 "<not json at all>",
                 "{\"choices\":[{\"delta\":{\"content\":\"b\"}}]}",
                 "[DONE]");
-        Assertions.assertEquals("ab", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("ab"), r.getMessage().getContent());
     }
 
     @Test
@@ -349,7 +350,7 @@ public class NaruOpenAiStreamParserTest {
                 "{\"choices\":[{\"delta\":{}}]}",
                 "{\"choices\":[{\"delta\":{\"content\":\"x\"}}]}",
                 "[DONE]");
-        Assertions.assertEquals("x", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("x"), r.getMessage().getContent());
         Assertions.assertEquals(1, collector.chunks().size());
     }
 
@@ -359,7 +360,7 @@ public class NaruOpenAiStreamParserTest {
                 "{\"choices\":[{\"delta\":{\"content\":\"x\"}}]}",
                 "{\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1,\"total_tokens\":4}}",
                 "[DONE]");
-        Assertions.assertEquals("x", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("x"), r.getMessage().getContent());
         Assertions.assertEquals(4, r.getTotalTokens());
     }
 
@@ -372,7 +373,7 @@ public class NaruOpenAiStreamParserTest {
         Assertions.assertTrue(parser.hasDeliveredContent());
         NaruResponse r = parser.finish(true);
         Assertions.assertFalse(r.isDone());
-        Assertions.assertEquals("partial", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("partial"), r.getMessage().getContent());
     }
 
     @Test

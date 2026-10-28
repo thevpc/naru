@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.nuts.text.NMsg;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import net.thevpc.naru.api.model.NaruChunkKind;
@@ -122,7 +123,7 @@ public class NaruOllamaNativeStreamHttpTest {
         Assertions.assertFalse(serverTimedOut.get(),
                 "the server never saw a chunk before the response ended: the body was buffered, not streamed");
         Assertions.assertEquals(200, response.intStatusCode());
-        Assertions.assertEquals("Hello!", result.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("Hello!"), result.getMessage().getContent());
         Assertions.assertEquals("stop", result.getStopReason());
         Assertions.assertEquals(5, result.getPromptTokens());
         Assertions.assertEquals(3, result.getEvalTokens());

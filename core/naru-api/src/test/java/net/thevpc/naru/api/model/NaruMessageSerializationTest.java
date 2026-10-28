@@ -3,6 +3,7 @@ package net.thevpc.naru.api.model;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
@@ -192,7 +193,7 @@ public class NaruMessageSerializationTest {
         NaruMessage original = fullyPopulated();
         NaruMessage derived = original.withContent("merged answer");
 
-        Assertions.assertEquals("merged answer", derived.getContent());
+        Assertions.assertEquals(NMsg.ofP("merged answer"), derived.getContent());
         Assertions.assertEquals(original.getRole(), derived.getRole());
         Assertions.assertEquals(original.getSource(), derived.getSource());
         Assertions.assertEquals(original.getSourceName(), derived.getSourceName());

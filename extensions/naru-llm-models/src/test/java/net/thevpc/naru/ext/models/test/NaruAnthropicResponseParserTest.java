@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.ext.models.anthropic.NaruAnthropicResponseParser;
@@ -35,7 +36,7 @@ public class NaruAnthropicResponseParserTest {
                 "}");
         Assertions.assertTrue(r.isDone());
         Assertions.assertEquals("end_turn", r.getStopReason());
-        Assertions.assertEquals("Hello from Anthropic", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("Hello from Anthropic"), r.getMessage().getContent());
         Assertions.assertEquals(25, r.getPromptTokens());
         Assertions.assertEquals(30, r.getEvalTokens());
         Assertions.assertEquals(55, r.getTotalTokens());
@@ -72,7 +73,7 @@ public class NaruAnthropicResponseParserTest {
                 "  \"stop_reason\": \"tool_use\",\n" +
                 "  \"usage\": {}\n" +
                 "}");
-        Assertions.assertEquals("Let me check that.", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("Let me check that."), r.getMessage().getContent());
         Assertions.assertEquals(1, r.getMessage().getToolCalls().size());
     }
 

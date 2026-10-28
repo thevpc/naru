@@ -72,8 +72,8 @@ class NaruContextViewsTest {
         List<NaruMessage> history = List.of(
                 covered("x", "S1"), summary("s", "S1"), NaruMessage.user("y"));
         List<NaruMessage> view = NaruContextViews.contextView(history);
-        assertEquals("s", view.get(0).getContent());
-        assertEquals("y", view.get(1).getContent());
+        assertEquals(NMsg.ofP("s"), view.get(0).getContent());
+        assertEquals(NMsg.ofP("y"), view.get(1).getContent());
     }
 
     @Test
@@ -157,7 +157,7 @@ class NaruContextViewsTest {
         NaruMessage assistant = NaruMessage.assistant("hi");
         List<NaruMessage> wire = NaruContextViews.wireContextView(List.of(user, assistant));
         assertEquals(2, wire.size());
-        assertEquals("hello", wire.get(0).getContent());
+        assertEquals(NMsg.ofP("hello"), wire.get(0).getContent());
         assertEquals(NaruRole.assistant, wire.get(1).getRole());
     }
 
@@ -178,7 +178,7 @@ class NaruContextViewsTest {
                 summary("s", "S1"), NaruMessage.user("d"));
         List<NaruMessage> coveredItems = NaruContextViews.coveredItems(history);
         assertEquals(2, coveredItems.size());
-        assertEquals("b", coveredItems.get(0).getContent());
+        assertEquals(NMsg.ofP("b"), coveredItems.get(0).getContent());
     }
 
     @Test
@@ -187,7 +187,7 @@ class NaruContextViewsTest {
                 summary("one", "S1"), NaruMessage.user("x"), summary("two", "S2"));
         List<NaruMessage> active = NaruContextViews.activeSummaries(history);
         assertEquals(2, active.size());
-        assertEquals("one", active.get(0).getContent());
-        assertEquals("two", active.get(1).getContent());
+        assertEquals(NMsg.ofP("one"), active.get(0).getContent());
+        assertEquals(NMsg.ofP("two"), active.get(1).getContent());
     }
 }

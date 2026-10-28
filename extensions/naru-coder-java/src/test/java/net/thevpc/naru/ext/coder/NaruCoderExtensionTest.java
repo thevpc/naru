@@ -2,6 +2,7 @@ package net.thevpc.naru.ext.coder;
 
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.task.NaruTask;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -86,7 +87,7 @@ public class NaruCoderExtensionTest {
     @Test
     public void theExactCodingPromptIsContributed() {
         NaruMessage m = ext.contribute(task(mode(NaruPromptMode.ModeIntent.EXECUTING), Set.of())).get(0);
-        Assertions.assertEquals(NaruCoderExtension.CODING_PROMPT, m.getContent());
+        Assertions.assertEquals(NMsg.ofP(NaruCoderExtension.CODING_PROMPT), m.getContent());
         Assertions.assertEquals(NaruCoderExtension.NAME, m.getSourceName(),
                 "the source is how /context attributes the message");
     }

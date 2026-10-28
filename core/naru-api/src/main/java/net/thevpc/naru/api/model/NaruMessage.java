@@ -262,7 +262,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     public NElement toElement() {
         NObjectElementBuilder o = NObjectElementBuilder.of();
         o.set("role", role.name());
-        o.set("content", content == null ? null : NText.of(content).length());
+        o.set("content", content == null ? null : content.toElement());
         o.set("toolName", toolName);
         if (toolCallId != null) {
             // omitted when null so existing session files stay byte-identical; without it
@@ -350,8 +350,9 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
                 // not what happened.
                 return NaruSource.SYSTEM;
             case user:
-            default:
                 return NaruSource.USER;
+            default:
+                return NaruSource.SYSTEM;
         }
     }
 

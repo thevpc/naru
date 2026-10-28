@@ -484,7 +484,7 @@ public class NaruTaskInterruptTest {
         List<NaruMessage> history = run.history();
         Assertions.assertEquals(2, history.size(),
                 "prompt plus interrupted answer, nothing else: " + history);
-        Assertions.assertEquals("partial answer", history.get(1).getContent(),
+        Assertions.assertEquals(NMsg.ofP("partial answer"), history.get(1).getContent(),
                 "the partial answer is committed so the next turn continues from it");
         run.cancel();
     }

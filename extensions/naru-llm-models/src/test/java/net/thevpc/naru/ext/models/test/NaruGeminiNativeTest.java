@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.ext.models.gemini.NaruGeminiNativeRequestSerializer;
@@ -161,7 +162,7 @@ public class NaruGeminiNativeTest {
                 "  }],\n" +
                 "  \"usageMetadata\": {\"promptTokenCount\": 10, \"candidatesTokenCount\": 4, \"totalTokenCount\": 14}\n" +
                 "}");
-        Assertions.assertEquals("hi there", r.getMessage().getContent());
+        Assertions.assertEquals(NMsg.ofP("hi there"), r.getMessage().getContent());
         Assertions.assertEquals("STOP", r.getStopReason());
         Assertions.assertTrue(r.isDone());
         Assertions.assertEquals(10, r.getPromptTokens());
