@@ -131,6 +131,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * an extension that wants usage across a reload re-registers in open().
      */
     private final List<NaruSessionUsageListener> usageListeners = new CopyOnWriteArrayList<>();
+    /**
+     * Observers of full model call request/response. Not persisted, and not part of session state:
+     * an extension that wants inspection across a reload re-registers in open().
+     */
+    private final List<NaruModelCallListener> modelCallListeners = new CopyOnWriteArrayList<>();
     private boolean stopped;
     private final Map<String, NaruRoutine> routines = new ConcurrentHashMap<>();
     private NaruSessionScope loadTimeScope;
@@ -2537,6 +2542,18 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         usageListeners.remove(listener);
     }
 
+    @Override
+    public void addModelCallListener(NaruModelCallListener listener) {
+        if (listener != null) {
+            modelCallListeners.add(listener);
+        }
+    }
+
+    @Override
+    public void removeModelCallListener(NaruModelCallListener listener) {
+        modelCallListeners.remove(listener);
+    }
+
     /**
      * Announces a completed model call to every usage listener.
      * <p>
@@ -2552,6 +2569,23 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             } catch (Exception ex) {
                 log(NaruLogMode.SCRIPT, NMsg.ofC(
                         "usage listener %s failed on model call: %s", l.getClass().getSimpleName(), ex.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * Announces a completed model call to every model call listener.
+     * <p>
+     * A listener that throws is skipped rather than allowed to fail the call it is only
+     * observing: inspection must never be able to fail a model call.
+     */
+    public void fireModelCall(NaruTask task, NaruModelKey model, NaruModelRequest request, NaruResponse response, NDuration duration) {
+        for (NaruModelCallListener l : modelCallListeners) {
+            try {
+                l.onModelCall(task, model, request, response, duration);
+            } catch (Exception ex) {
+                log(NaruLogMode.SCRIPT, NMsg.ofC(
+                        "model call listener %s failed on model call: %s", l.getClass().getSimpleName(), ex.getMessage()));
             }
         }
     }

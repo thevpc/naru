@@ -3158,6 +3158,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 r.getCacheReadTokens(),
                 chronometer.stop().duration()
         );
+        ((NaruSessionImpl) session()).fireModelCall(
+                this,
+                model().key(),
+                request,
+                r,
+                chronometer.stop().duration()
+        );
         return r;
     }
 

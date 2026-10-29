@@ -490,6 +490,15 @@ public interface NaruSession {
     void removeUsageListener(NaruSessionUsageListener listener);
 
     /**
+     * Registers a listener for full model call inspection (request and response).
+     * Notifications are delivered on the thread that made the call, so a listener
+     * must not block.
+     */
+    void addModelCallListener(NaruModelCallListener listener);
+
+    void removeModelCallListener(NaruModelCallListener listener);
+
+    /**
      * Announces a provider's self-reported rate limits to every
      * {@link NaruSessionUsageListener}. Called by model protocols that receive limit
      * headers; providers that send none never call it. Observers that throw are ignored.
