@@ -2,8 +2,12 @@ package net.thevpc.naru.desktop.ui;
 
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.nuts.log.NMsgIntent;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.model.NaruMessagePart;
 import net.thevpc.naru.desktop.render.TextHtml;
+import net.thevpc.naru.desktop.util.MsgText;
+import net.thevpc.nuts.text.NText;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -51,6 +55,16 @@ public final class ChatMessageCard extends JPanel {
         Color accent = role == NaruRole.user ? new Color(59, 130, 246)
                 : role == NaruRole.tool ? new Color(139, 92, 246)
                 : role == NaruRole.system ? new Color(245, 158, 11) : UiPalette.LIVE;
+        // A message's level/intent also carries meaning: a warning or a failure must not be
+        // painted in the ordinary role hue, or the reader cannot tell it apart from prose.
+        java.util.logging.Level lvl = level();
+        if (lvl != null) {
+            if (lvl.intValue() >= java.util.logging.Level.SEVERE.intValue()) {
+                accent = UiPalette.ATTENTION;
+            } else if (lvl.intValue() >= java.util.logging.Level.WARNING.intValue()) {
+                accent = UiPalette.PENDING;
+            }
+        }
         this.stripe = accent;
         // Only a tool transcript is a wall of fixed-width data worth setting off from the prose.
         this.tinted = role == NaruRole.tool;
@@ -66,7 +80,7 @@ public final class ChatMessageCard extends JPanel {
         who.setForeground(UiPalette.readable(accent));
         heading.add(who, BorderLayout.WEST);
 
-        String textToCopy = this.message.getFilteredContent();
+        String textToCopy = MsgText.plain(this.message.getFilteredContent());
         boolean hasParts = !this.message.getParts().isEmpty();
         if (textToCopy != null && !textToCopy.isBlank() || hasParts) {
             // A row with only parts — a form, an image — still holds text worth taking, and a card
@@ -113,6 +127,21 @@ public final class ChatMessageCard extends JPanel {
 
     public NaruMessage message() { return message.copy(); }
 
+    /** The NMsg intent of this card's message, when present. */
+    public NMsgIntent intent() {
+        NMsg c = message.getContent();
+        return c == null ? null : c.intent();
+    }
+
+    /** The NMsg level of this card's message, when present. */
+    public java.util.logging.Level level() {
+        NMsg c = message.getContent();
+        return c == null ? null : c.level();
+    }
+
+    public NMsgIntent messageIntent() { return intent(); }
+    public java.util.logging.Level messageLevel() { return level(); }
+
     /**
      * The message text, with everything past the first {@code HtmlPanes.FOLD_AFTER_LINES} lines
      * folded behind a control. A directive result or a tool dump is thousands of lines, and Swing's
@@ -144,10 +173,14 @@ public final class ChatMessageCard extends JPanel {
     }
 
     private String contentHtml() {
-        String content = message.getFilteredContent();
+        String content = MsgText.plain(message.getFilteredContent());
         if (!folded || HtmlPanes.hiddenLines(content, HtmlPanes.FOLD_AFTER_LINES) == 0) {
-            return "<html><body>" + (preparedHtml == null ? TextHtml.paragraphs(content) : preparedHtml)
-                    + "</body></html>";
+            String body = preparedHtml;
+            if (body == null) {
+                NText nt = message.getTextContent();
+                body = (nt == null) ? TextHtml.paragraphs(content) : MsgText.render(nt);
+            }
+            return "<html><body>" + body + "</body></html>";
         }
         return "<html><body>" + TextHtml.paragraphs(
                 HtmlPanes.head(content, HtmlPanes.FOLD_AFTER_LINES)) + "</body></html>";

@@ -18,6 +18,24 @@ package net.thevpc.naru.desktop.util;
  * anything else is passed through untouched — a transcript that shows one odd character is
  * recoverable, a transcript that silently eats model output is not.
  */
+import net.thevpc.naru.desktop.render.TextHtml;
+import net.thevpc.naru.desktop.ui.UiPalette;
+import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.text.NTextAnchor;
+import net.thevpc.nuts.text.NTextCode;
+import net.thevpc.nuts.text.NTextLink;
+import net.thevpc.nuts.text.NTextList;
+import net.thevpc.nuts.text.NTextPlain;
+import net.thevpc.nuts.text.NTextStyled;
+import net.thevpc.nuts.text.NTextStyles;
+import net.thevpc.nuts.text.NTextStyle;
+import net.thevpc.nuts.text.NTextStyleType;
+import net.thevpc.nuts.text.NTextTitle;
+import net.thevpc.nuts.text.NTextType;
+import net.thevpc.nuts.text.NMsg;
+
+import java.awt.Color;
+
 public final class MsgText {
 
     private MsgText() {
@@ -142,4 +160,150 @@ public final class MsgText {
         }
         return -1;
     }
+
+    // ---------------------------------------------------------------- NTF rendering
+
+    /** Render an NTF (Nuts Text Format) node tree as HTML, preserving style/color/accent. */
+    public static String html(NText text) { return render(text); }
+    public static String rich(NText text) { return render(text); }
+    public static String styled(NText text) { return render(text); }
+    public static String toHtml(NText text) { return render(text); }
+    public static String ntfToHtml(NText text) { return render(text); }
+    public static String renderNtf(NText text) { return render(text); }
+    public static String ntf(NText text) { return render(text); }
+
+    public static String html(NMsg msg) { return render(msg == null ? null : NText.of(msg)); }
+    public static String rich(NMsg msg) { return render(msg == null ? null : NText.of(msg)); }
+    public static String styled(NMsg msg) { return render(msg == null ? null : NText.of(msg)); }
+    public static String toHtml(NMsg msg) { return render(msg == null ? null : NText.of(msg)); }
+    public static String ntfToHtml(NMsg msg) { return render(msg == null ? null : NText.of(msg)); }
+    public static String renderNtf(NMsg msg) { return render(msg == null ? null : NText.of(msg)); }
+
+    public static String render(NText text) {
+        if (text == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder();
+        out.append("<p style='margin:0'>");
+        renderNode(out, text, null);
+        out.append("</p>");
+        return out.toString();
+    }
+
+    private static void renderNode(StringBuilder out, NText node, NTextStyles styles) {
+        if (node == null) {
+            return;
+        }
+        NTextType type = node.type();
+        switch (type) {
+            case PLAIN -> appendText(out, ((NTextPlain) node).value(), styles, false);
+            case STYLED -> {
+                NTextStyled s = (NTextStyled) node;
+                renderNode(out, s.child(), appendStyles(styles, s.styles()));
+            }
+            case LIST -> {
+                NTextList list = (NTextList) node;
+                for (int i = 0; i < list.children().size(); i++) {
+                    if (i > 0) out.append("<br>");
+                    renderNode(out, list.children().get(i), styles);
+                }
+            }
+            case TITLE -> {
+                NTextTitle t = (NTextTitle) node;
+                renderNode(out, t.child(), appendStyles(styles, NTextStyles.of(NTextStyle.bold())));
+            }
+            case CODE -> {
+                NTextCode c = (NTextCode) node;
+                appendText(out, c.value(), styles, true);
+            }
+            case LINK -> appendText(out, ((NTextLink) node).value(), styles, false);
+            case ANCHOR -> appendText(out, ((NTextAnchor) node).value(), styles, false);
+            case INCLUDE -> appendText(out, ((net.thevpc.nuts.text.NTextInclude) node).text(), styles, false);
+            default -> appendText(out, node.filteredText(), styles, false);
+        }
+    }
+
+    private static NTextStyles appendStyles(NTextStyles base, NTextStyles add) {
+        if (add == null || add.isPlain()) return base;
+        if (base == null || base.isPlain()) return add;
+        return base.append(add);
+    }
+
+    private static void appendText(StringBuilder out, String text, NTextStyles styles, boolean mono) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        String[] lines = text.split("\\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) out.append("<br>");
+            String escaped = TextHtml.escapeWrap(lines[i]);
+            StringBuilder attr = new StringBuilder();
+            if (mono) attr.append("font-family:monospace");
+            String css = css(styles);
+            if (!css.isEmpty()) {
+                if (attr.length() > 0) attr.append(";");
+                attr.append(css);
+            }
+            if (attr.length() > 0) {
+                out.append("<span style='").append(attr).append("'>").append(escaped).append("</span>");
+            } else {
+                out.append(escaped);
+            }
+        }
+    }
+
+    private static String css(NTextStyles styles) {
+        if (styles == null || styles.isPlain()) return "";
+        StringBuilder css = new StringBuilder();
+        boolean bold = false, italic = false, underline = false, strike = false;
+        for (NTextStyle st : styles) {
+            Color c = colorFor(st);
+            if (c != null) {
+                if (css.length() > 0) css.append(";");
+                css.append("color:").append(UiPalette.css(c));
+            }
+            switch (st.type()) {
+                case BOLD -> bold = true;
+                case ITALIC -> italic = true;
+                case UNDERLINED -> underline = true;
+                case STRIKED -> strike = true;
+                default -> {
+                }
+            }
+        }
+        if (bold) { if (css.length() > 0) css.append(";"); css.append("font-weight:bold"); }
+        if (italic) { if (css.length() > 0) css.append(";"); css.append("font-style:italic"); }
+        if (underline) { if (css.length() > 0) css.append(";"); css.append("text-decoration:underline"); }
+        if (strike) { if (css.length() > 0) css.append(";"); css.append("text-decoration:line-through"); }
+        return css.toString();
+    }
+
+    private static final Color[] ANSI = new Color[] {
+            new Color(0x00,0x00,0x00), new Color(0xCD,0x00,0x00), new Color(0x00,0xCD,0x00),
+            new Color(0xCD,0xCD,0x00), new Color(0x00,0x00,0xEE), new Color(0xCD,0x00,0xCD),
+            new Color(0x00,0xCD,0xCD), new Color(0xE5,0xE5,0xE5), new Color(0x7F,0x7F,0x7F),
+            new Color(0xFF,0x00,0x00), new Color(0x00,0xFF,0x00), new Color(0xFF,0xFF,0x00),
+            new Color(0x5C,0x5C,0xFF), new Color(0xFF,0x00,0xFF), new Color(0x00,0xFF,0xFF),
+            new Color(0xFF,0xFF,0xFF)
+    };
+
+    private static Color colorFor(NTextStyle style) {
+        NTextStyleType type = style.type();
+        int v = style.variant();
+        return switch (type) {
+            case PRIMARY, INFO -> UiPalette.accent();
+            case SECONDARY, CONFIG, COMMENTS, PALE -> UiPalette.muted();
+            case SUCCESS -> new Color(0x10, 0xB9, 0x81);
+            case WARN -> new Color(0xF5, 0x9E, 0x0B);
+            case ERROR, FAIL, DANGER -> new Color(0xEF, 0x44, 0x44);
+            case STRING -> new Color(0xF0, 0xA3, 0x6F);
+            case NUMBER -> new Color(0x6C, 0xD3, 0xC0);
+            case PATH -> new Color(0x9C, 0xDC, 0xFE);
+            case KEYWORD -> new Color(0xC7, 0x92, 0xEA);
+            case FORE_COLOR -> (v >= 0 && v < ANSI.length) ? ANSI[v] : null;
+            case FORE_TRUE_COLOR -> (v >= 0 && v <= 0xFFFFFF) ? new Color(v) : null;
+            default -> null;
+        };
+    }
+
 }

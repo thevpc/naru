@@ -19,6 +19,7 @@ import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
@@ -246,7 +247,7 @@ public class NaruSkillsExtension implements NaruSessionExtension {
                     "⚠ %s untrusted foreign skills root(s): %s. NARU does not read them until "
                             + "trusted; run /skills trust <label> [--read|--write|--exec] once per root "
                             + "(the decision is persisted per root).",
-                    pending.size(), String.join("; ", pending)));
+                    pending.size(), String.join("; ", pending)).asInfoAlert());
         } catch (Exception ignored) {
             // a notice must not fail the session open
         }

@@ -183,6 +183,9 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
             if (e.images != null) {
                 e.images = new ArrayList<>(images);
             }
+            if (e.content != null) {
+                e.content = content.copy();
+            }
             if (e.toolCalls != null) {
                 e.toolCalls = toolCalls.stream().map(x -> x.copy()).collect(Collectors.toList());
             }

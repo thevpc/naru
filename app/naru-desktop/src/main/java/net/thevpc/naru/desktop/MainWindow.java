@@ -33,7 +33,9 @@ import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import java.awt.AWTEvent;
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Color;
 import java.awt.FlowLayout;
 import java.awt.Point;
@@ -108,6 +110,99 @@ public final class MainWindow extends JFrame {
     private InteractionHost host;
     private Point dragOffset;
     private boolean maximized;
+    private boolean resizeListenerInstalled;
+    private final MouseAdapter resizeListener = new MouseAdapter() {
+        private int direction;
+        private Point origin;
+        private java.awt.Rectangle bounds;
+
+        @Override public void mouseMoved(MouseEvent e) { hover(e); }
+
+        @Override public void mouseExited(MouseEvent e) {
+            if (origin != null) return;
+            direction = 0;
+            Component src = e.getComponent();
+            if (isResizeCursor(src.getCursor())) src.setCursor(null);
+        }
+
+        @Override public void mousePressed(MouseEvent e) {
+            Point where = inside(e);
+            direction = e.getButton() == MouseEvent.BUTTON1 && where != null && !onDivider(where)
+                    ? resizeDirection(where) : 0;
+            origin = direction == 0 ? null : e.getLocationOnScreen();
+            bounds = direction == 0 ? null : getBounds();
+        }
+
+        @Override public void mouseDragged(MouseEvent e) {
+            if (origin == null) return;
+            Point now = e.getLocationOnScreen();
+            int dx = now.x - origin.x, dy = now.y - origin.y;
+            java.awt.Rectangle b = new java.awt.Rectangle(bounds);
+            if ((direction & 1) != 0) { b.x += dx; b.width -= dx; }
+            if ((direction & 2) != 0) b.width += dx;
+            if ((direction & 4) != 0) { b.y += dy; b.height -= dy; }
+            if ((direction & 8) != 0) b.height += dy;
+            if (b.width < MIN_WIDTH) b.width = MIN_WIDTH;
+            if (b.height < MIN_HEIGHT) b.height = MIN_HEIGHT;
+            setBounds(b);
+            if (maximized && !b.equals(screenWorkArea())) maximized = false;
+        }
+
+        @Override public void mouseReleased(MouseEvent e) {
+            origin = null;
+            hover(e);
+        }
+
+        private void hover(MouseEvent e) {
+            if (origin != null) return;
+            Point where = inside(e);
+            int newDir = where == null ? 0 : resizeDirection(where);
+            direction = newDir;
+            Component src = e.getComponent();
+            if (newDir != 0) {
+                Cursor c = resizeCursor(newDir);
+                src.setCursor(c);
+                setCursor(c);
+            } else {
+                if (isResizeCursor(src.getCursor())) src.setCursor(null);
+                setCursor(Cursor.getDefaultCursor());
+            }
+        }
+
+        private Point inside(MouseEvent e) {
+            if (!isShowing()) return null;
+            Point onScreen = e.getLocationOnScreen();
+            Point here = getLocationOnScreen();
+            return new Point(onScreen.x - here.x, onScreen.y - here.y);
+        }
+
+        private boolean onDivider(Point where) {
+            if (where.x < EDGE || where.x > getWidth() - EDGE
+                    || where.y < EDGE || where.y > getHeight() - EDGE) {
+                return false;
+            }
+            return findComponentAt(where.x, where.y) instanceof javax.swing.plaf.basic.BasicSplitPaneDivider;
+        }
+    };
+    private final java.awt.event.AWTEventListener resizeAWTListener = new java.awt.event.AWTEventListener() {
+        public void eventDispatched(java.awt.AWTEvent ev) {
+            if (!(ev instanceof MouseEvent)) return;
+            MouseEvent e = (MouseEvent) ev;
+            Component src = e.getComponent();
+            if (src == null) return;
+            java.awt.Window w = javax.swing.SwingUtilities.getWindowAncestor(src);
+            if (w != MainWindow.this && src != MainWindow.this) return;
+            switch (e.getID()) {
+                case MouseEvent.MOUSE_MOVED -> resizeListener.mouseMoved(e);
+                case MouseEvent.MOUSE_EXITED -> resizeListener.mouseExited(e);
+                case MouseEvent.MOUSE_PRESSED -> resizeListener.mousePressed(e);
+                case MouseEvent.MOUSE_DRAGGED -> resizeListener.mouseDragged(e);
+                case MouseEvent.MOUSE_RELEASED -> resizeListener.mouseReleased(e);
+                default -> { }
+            }
+        }
+    };
+
     /** Where the window was before it went full screen, for the restore half of {@link #toggleMaximize()}. */
     private java.awt.Rectangle restoredBounds;
     /** The frame cursor already asked for, so hovering an edge does not re-send the same request. */
@@ -227,6 +322,12 @@ public final class MainWindow extends JFrame {
                 menu.show(sessionList, e.getX(), e.getY());
             }
         });
+    }
+
+    @Override
+    protected void addImpl(Component comp, Object constraints, int index) {
+        super.addImpl(comp, constraints, index);
+        installResizeRecursive(comp);
     }
 
     private JPanel topBar() {
@@ -545,78 +646,37 @@ public final class MainWindow extends JFrame {
      * divider is left to that divider.
      */
     private void installResizeSupport() {
-        MouseAdapter resize = new MouseAdapter() {
-            private int direction;
-            private Point origin;
-            private java.awt.Rectangle bounds;
+        if (!resizeListenerInstalled) {
+            resizeListenerInstalled = true;
+            java.awt.Toolkit.getDefaultToolkit().addAWTEventListener(resizeAWTListener, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK);
+        }
+    }
 
-            @Override public void mouseMoved(MouseEvent e) { hover(e); }
+    private void installResizeRecursive(Component c) {
+        // Resize is handled globally via an AWTEventListener; nothing to install per component.
+    }
 
-            @Override public void mouseExited(MouseEvent e) {
-                // Unconditionally: leaving from an edge used to keep the resize shape, and the frame
-                // cursor then painted over every component the pointer rested on.
-                direction = 0;
-                applyResizeCursor(0);
-            }
+    private Cursor resizeCursor(int d) {
+        return Cursor.getPredefinedCursor(switch (d) {
+            case 1 -> Cursor.W_RESIZE_CURSOR;
+            case 2 -> Cursor.E_RESIZE_CURSOR;
+            case 4 -> Cursor.N_RESIZE_CURSOR;
+            case 8 -> Cursor.S_RESIZE_CURSOR;
+            case 5 -> Cursor.NW_RESIZE_CURSOR;
+            case 6 -> Cursor.NE_RESIZE_CURSOR;
+            case 9 -> Cursor.SW_RESIZE_CURSOR;
+            case 10 -> Cursor.SE_RESIZE_CURSOR;
+            default -> Cursor.DEFAULT_CURSOR;
+        });
+    }
 
-            @Override public void mousePressed(MouseEvent e) {
-                Point where = inside(e);
-                direction = e.getButton() == MouseEvent.BUTTON1 && where != null && !onDivider(where)
-                        ? resizeDirection(where) : 0;
-                origin = direction == 0 ? null : e.getLocationOnScreen();
-                bounds = direction == 0 ? null : getBounds();
-            }
-
-            @Override public void mouseDragged(MouseEvent e) {
-                if (origin == null) return;
-                Point now = e.getLocationOnScreen();
-                int dx = now.x - origin.x, dy = now.y - origin.y;
-                java.awt.Rectangle b = new java.awt.Rectangle(bounds);
-                if ((direction & 1) != 0) { b.x += dx; b.width -= dx; }
-                if ((direction & 2) != 0) b.width += dx;
-                if ((direction & 4) != 0) { b.y += dy; b.height -= dy; }
-                if ((direction & 8) != 0) b.height += dy;
-                if (b.width < MIN_WIDTH) b.width = MIN_WIDTH;
-                if (b.height < MIN_HEIGHT) b.height = MIN_HEIGHT;
-                setBounds(b);
-                // Taking the window out of the full-screen shape is a resize, not a maximize.
-                if (maximized && !b.equals(screenWorkArea())) maximized = false;
-            }
-
-            @Override public void mouseReleased(MouseEvent e) {
-                origin = null;
-                hover(e);
-            }
-
-            private void hover(MouseEvent e) {
-                Point where = inside(e);
-                direction = where == null ? 0 : resizeDirection(where);
-                applyResizeCursor(direction);
-            }
-
-            /**
-             * Where the pointer is inside this window, or null when the window is no longer on screen.
-             * <p>
-             * The event's own point cannot be used: a mouse event travels up from the component under
-             * the pointer, and AWT leaves its x/y in that component's coordinates while it travels. A
-             * split divider is eight pixels wide, so read this way every press on a divider looks like
-             * a press on the window's west edge — and the resize then steals the divider's own drag.
-             * The event's absolute position is the one number that survives the trip.
-             */
-            private Point inside(MouseEvent e) {
-                if (!isShowing()) return null;
-                Point onScreen = e.getLocationOnScreen();
-                Point here = getLocationOnScreen();
-                return new Point(onScreen.x - here.x, onScreen.y - here.y);
-            }
-
-            /** True when the split pane under that point has its divider there, which needs the drag. */
-            private boolean onDivider(Point where) {
-                return findComponentAt(where.x, where.y) instanceof javax.swing.plaf.basic.BasicSplitPaneDivider;
-            }
-        };
-        addMouseListener(resize);
-        addMouseMotionListener(resize);
+    private boolean isResizeCursor(Cursor c) {
+        if (c == null) return false;
+        int t = c.getType();
+        return t == Cursor.W_RESIZE_CURSOR || t == Cursor.E_RESIZE_CURSOR
+                || t == Cursor.N_RESIZE_CURSOR || t == Cursor.S_RESIZE_CURSOR
+                || t == Cursor.NW_RESIZE_CURSOR || t == Cursor.NE_RESIZE_CURSOR
+                || t == Cursor.SW_RESIZE_CURSOR || t == Cursor.SE_RESIZE_CURSOR;
     }
 
     /** The edge the pointer is on, as the bits {@code 1}=west {@code 2}=east {@code 4}=north {@code 8}=south. */

@@ -4,6 +4,8 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.nuts.log.NMsgIntent;
+import net.thevpc.nuts.text.NMsg;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -114,6 +116,28 @@ public final class TranscriptBlock {
     public long messageSequence() { return messageSequence; }
 
     public boolean isChatMessage() { return message != null; }
+
+    /** The NMsg intent carried by this block's message, when it has one. */
+    public NMsgIntent intent() {
+        NaruMessage m = message;
+        if (m == null) return null;
+        NMsg c = m.getContent();
+        return c == null ? null : c.intent();
+    }
+
+    /** The NMsg level carried by this block's message, when it has one. */
+    public java.util.logging.Level level() {
+        NaruMessage m = message;
+        if (m == null) return null;
+        NMsg c = m.getContent();
+        return c == null ? null : c.level();
+    }
+
+    /** True when this block is not tied to a task: session/config style output. */
+    public boolean isLog() { return taskId == NaruOutput.NO_TASK; }
+
+    /** True when this block is tied to a task: conversation history. */
+    public boolean isHistory() { return taskId != NaruOutput.NO_TASK; }
 
     /** True when this block is the result of a {@code /}-directive the user ran. */
     public boolean isDirectiveResult() { return directiveResult; }

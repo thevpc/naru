@@ -39,6 +39,7 @@ import net.thevpc.naru.impl.util.ImplNaruUtils;
 import net.thevpc.nuts.concurrent.NCallable;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.io.*;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.*;
@@ -228,9 +229,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             public void onEventAppended(NaruEvent newEvent) {
                 NaruTask t = findTask(newEvent.sourceTid()).orNull();
                 if (t != null) {
-                    t.addHistory(NaruMessage.engine(NMsg.ofC("[%s] fire %s", newEvent.sourceTid(), newEvent)));
+                    t.addHistory(NaruMessage.engine(NMsg.ofC("[%s] fire %s", newEvent.sourceTid(), newEvent).asDebug().withIntent(NMsgIntent.PROGRESS)));
                 } else {
-                    log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s/dead] fire %s", newEvent.sourceTid(), newEvent));
+                    log(NaruLogMode.SCHEDULER, NMsg.ofC("[%s/dead] fire %s", newEvent.sourceTid(), newEvent).asDebug().withIntent(NMsgIntent.PROGRESS));
                 }
                 if (sessionListener != null) {
                     sessionListener.onEventAppended(newEvent);

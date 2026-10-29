@@ -12,6 +12,7 @@ import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NLiteral;
@@ -71,7 +72,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
     @Override
     public void exec(NaruTask task) {
         if (task.model() == null) {
-            NMsg message = NMsg.ofC("No model is selected. Choose one yourself with /model list and /model use <key>, then submit your request again.");
+            NMsg message = NMsg.ofC("No model is selected. Choose one yourself with /model list and /model use <key>, then submit your request again.").asError();
             task.addHistory(NaruMessage.engine(message));
             task.frame().lastResult(NaruStmtResult.ofError(message));
             task.defaultAdvance(this);
@@ -80,7 +81,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         task.addHistory(NaruMessage.engine(NMsg.ofC("%s Model: %s…",
                 NMsg.ofStyledPrimary8("\uD83E\uDDE0"),
                 task.model().toText()
-        )));
+        ).asFine().withIntent(NMsgIntent.SETTINGS)));
         if (!NBlankable.isBlank(prompt)) {
             task.addHistory(NaruMessage.user(prompt));
         }
@@ -123,11 +124,11 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                 // is a thing the model ever finished saying.
                 task.addHistory(NaruMessage.engine(NMsg.ofC(
                         "%s Interrupted before the tool call completed; discarding it.",
-                        NMsg.ofStyledPrimary8("⏹"))));
+                        NMsg.ofStyledPrimary8("⏹")).asError()));
             } else {
                 task.addHistory(assistantMsg);
                 task.addHistory(NaruMessage.engine(NMsg.ofC(
-                        "%s Interrupted.", NMsg.ofStyledPrimary8("⏹"))));
+                        "%s Interrupted.", NMsg.ofStyledPrimary8("⏹")).asError()));
                 reportAnswer(task, assistantMsg);
                 task.setLastResult(assistantMsg);
             }
@@ -143,7 +144,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             if (repeatsLastToolRound(task)) {
                 task.addHistory(NaruMessage.engine(NMsg.ofC(
                         "%s The model repeated its previous tool call unchanged; ending this turn.",
-                        NMsg.ofStyledPrimary8("⏹"))));
+                        NMsg.ofStyledPrimary8("⏹")).asWarning()));
                 reportAnswer(task, assistantMsg);
                 reportSilentTurn(task, assistantMsg);
                 task.setLastResult(assistantMsg);
@@ -170,7 +171,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, rounds);
             if (rounds >= maxSteps) {
                 task.addHistory(NaruMessage.engine(NMsg.ofC(
-                        "Reached max tool-call rounds (%s); ending agent loop.", maxSteps)));
+                        "Reached max tool-call rounds (%s); ending agent loop.", maxSteps).asWarning()));
                 reportAnswer(task, assistantMsg);
                 reportSilentTurn(task, assistantMsg);
                 task.setLastResult(assistantMsg);
@@ -259,7 +260,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         task.addHistory(NaruMessage.engine(NMsg.ofC(
                 "%s This turn ended in tool calls without an answer. Ask again, or turn off the"
                         + " tools the model keeps calling (/tools, /tag).",
-                NMsg.ofStyledPrimary8("⚠"))));
+                NMsg.ofStyledPrimary8("⚠")).asWarning()));
     }
 
     /**

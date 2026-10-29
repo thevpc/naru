@@ -13,6 +13,7 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.scheduler.*;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.*;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NOptional;
 
@@ -37,7 +38,7 @@ public class NaruTaskInboxImpl implements NaruTaskInbox {
     @Override
     public void push(long seq) {
         if(seqs.add(seq)) {
-            task.addHistory(NaruMessage.engine((NMsg.ofC("[%s] inbox %s", task.id(), seq))));
+            task.addHistory(NaruMessage.engine(NMsg.ofC("[%s] inbox %s", task.id(), seq).asDebug().withIntent(NMsgIntent.PROGRESS)));
         }
     }
 

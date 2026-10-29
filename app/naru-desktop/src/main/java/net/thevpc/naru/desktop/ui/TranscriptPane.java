@@ -29,6 +29,7 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Rectangle;
 import java.util.ArrayList;
+import java.util.logging.Level;
 import java.util.List;
 
 /** Scrollable, selectable chat cards backed by a bounded moving window of transcript blocks. */
@@ -327,6 +328,15 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     }
 
     private boolean shouldDisplay(TranscriptBlock block) {
+        // Fine-grained messages stay out of the default view: they are diagnostic noise unless
+        // the reader has asked for detail or chosen a finer log level.
+        java.util.logging.Level lvl = block.level();
+        boolean internal = internalEvents != null && internalEvents.isSelected();
+        boolean debug = debugEvents != null && debugEvents.isSelected();
+        if (lvl != null && lvl.intValue() < java.util.logging.Level.INFO.intValue()
+                && !internal && !debug) {
+            return false;
+        }
         BlockStyle style = BlockStyle.forBlock(block);
         if (showChatMessages) {
             // The Conversation tab: everything written for the user, plus engine mechanics only

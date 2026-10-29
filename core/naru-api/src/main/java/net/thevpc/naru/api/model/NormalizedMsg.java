@@ -4,13 +4,16 @@ import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.text.NTextPlain;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NCopiable;
 import net.thevpc.nuts.util.NOptional;
+import net.thevpc.nuts.util.NUnexpectedException;
 
 import java.util.logging.Level;
 
-class NormalizedMsg implements NToElement {
+public class NormalizedMsg implements NToElement , NCopiable, Cloneable {
     private NText text;
     private Level level;
     private NMsgIntent intent;
@@ -85,7 +88,9 @@ class NormalizedMsg implements NToElement {
 
     public NMsg toMsg(){
         boolean plain = (intent == null && duration == null
-                && (level == null || level == java.util.logging.Level.INFO));
+                && (level == null || level == java.util.logging.Level.INFO))
+                && (text==null || text instanceof NTextPlain)
+                ;
         if (plain) {
             return NMsg.ofP(text == null ? "" : text.toString());
         }
@@ -101,7 +106,9 @@ class NormalizedMsg implements NToElement {
         // bare string so that session files written before NormalizedMsg existed stay
         // byte-identical and readable as `{"content":"hello"}`.
         boolean plain = (intent == null && duration == null
-                && (level == null || level == java.util.logging.Level.INFO));
+                && (level == null || level == java.util.logging.Level.INFO))
+                && (text==null || text instanceof NTextPlain)
+                ;
         if (plain) {
             return NElement.ofString(text == null ? "" : text.toString());
         }
@@ -117,5 +124,19 @@ class NormalizedMsg implements NToElement {
             b.add("duration", duration.toString());
         }
         return b.build();
+    }
+
+    @Override
+    public NormalizedMsg clone() {
+        try {
+            return (NormalizedMsg) super.clone();
+        } catch (CloneNotSupportedException e) {
+            throw new NUnexpectedException(NMsg.ofC("clone unsupported"),e);
+        }
+    }
+
+    @Override
+    public NormalizedMsg copy() {
+        return clone();
     }
 }

@@ -21,6 +21,7 @@ import net.thevpc.nuts.concurrent.NCallable;
 import net.thevpc.nuts.ext.NServiceLoader;
 import net.thevpc.nuts.io.*;
 import net.thevpc.nuts.log.NLogger;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.reflect.NClassLoader;
 import net.thevpc.nuts.reflect.NMutableClassLoader;
 import net.thevpc.nuts.text.NMsg;
@@ -593,7 +594,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                                 .getResultIds().findFirst().get();
                         nopsClassLoader.add(found);
                         loaded.add(found);
-                        log(NaruLogMode.TRACE, NMsg.ofC("loaded extension %s", found));
+                        log(NaruLogMode.TRACE, NMsg.ofC("loaded extension %s", found).asInfo().withIntent(NMsgIntent.SETTINGS));
                     }
                     effectiveExtensions.addAll(loaded);
                     classLoader = nopsClassLoader;

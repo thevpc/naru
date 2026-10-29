@@ -6,6 +6,7 @@ import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.io.NPrintStream;
 import net.thevpc.nuts.io.NTerminal;
@@ -41,7 +42,7 @@ public class NaruStreamInteractionTest {
 
         interaction.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("first"));
         interaction.write(NaruLogMode.SCRIPT, NMsg.ofC("second"));
-        interaction.write(NaruLogMode.TRACE, NMsg.ofC("third"));
+        interaction.write(NaruLogMode.TRACE, NMsg.ofC("third").asInfo().withIntent(NMsgIntent.SETTINGS));
 
         Assertions.assertEquals(3, got.size());
         Assertions.assertEquals(List.of(1L, 2L, 3L),
