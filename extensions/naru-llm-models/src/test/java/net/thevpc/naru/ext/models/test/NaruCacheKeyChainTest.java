@@ -8,6 +8,7 @@ import net.thevpc.naru.api.model.NaruSegmentContent;
 import net.thevpc.naru.ext.models.cache.NaruCacheBaseline;
 import net.thevpc.naru.ext.models.cache.NaruCacheKeyChain;
 import net.thevpc.naru.ext.models.cache.NaruCachePlan;
+import net.thevpc.nuts.Nuts;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,12 @@ import java.util.List;
  * around the API surface.
  */
 public class NaruCacheKeyChainTest {
+
+    static {
+        // NaruMessage resolution needs a Nuts workspace, and the fixtures below
+        // are built during class initialization, before any @BeforeAll can run.
+        Nuts.require();
+    }
 
     private static NaruContextSegment sys(String id, String text) {
         return NaruContextSegment.cacheable(id, NaruSegmentContent.Messages.of(
@@ -153,7 +160,7 @@ public class NaruCacheKeyChainTest {
     // ── plan-level behaviour ─────────────────────────────────────────────────
 
     @Test
-    @DisplayName("plan reports a full miss without a matching baseline")
+    @DisplayName("a cold plan still marks every cacheable segment so the cache gets written")
     public void planWithoutBaselineIsFullMiss() {
         NaruCacheableContext ctx = NaruCacheableContext.builder()
                 .cacheableMessages("sys", List.of(NaruMessage.system("prompt")))
@@ -162,8 +169,14 @@ public class NaruCacheKeyChainTest {
                 .build();
 
         NaruCachePlan plan = NaruCachePlan.of(ctx, null, "anthropic", "claude", NaruCachingMode.EXPLICIT_INLINE);
+        // read side: nothing is trusted as already cached.
         Assertions.assertEquals(0, plan.validPrefix());
-        Assertions.assertEquals(List.of(), plan.cacheBreakpoints(4));
+        // write side: markers are what *creates* the cache, so a cold request
+        // must still place them — otherwise turn 1 writes nothing and turn 2
+        // misses too, and the conversation never becomes cached.
+        Assertions.assertEquals(List.of(0, 1), plan.cacheBreakpoints(4));
+        Assertions.assertFalse(plan.cacheBreakpoints(4).contains(2),
+                "the in-flight tail is still not worth a marker");
     }
 
     @Test
@@ -182,9 +195,35 @@ public class NaruCacheKeyChainTest {
 
         Assertions.assertEquals(3, plan.validPrefix());
         Assertions.assertEquals(List.of(0, 1), plan.cacheBreakpoints(4),
-                "only the two cacheable segments inside the valid prefix get markers");
+                "both cacheable segments keep their marker; only the volatile tail is skipped");
         Assertions.assertEquals(second.size(), plan.segmentKeys().size(),
                 "the new key sequence covers every segment, including the volatile tail");
+    }
+
+    /**
+     * The case the old prefix-bounded implementation got wrong: content changes
+     * mid-history, so the valid prefix is short, but the request still has to
+     * write the *new* prefix or the next turn misses on everything again.
+     */
+    @Test
+    @DisplayName("a mid-history edit re-writes the new prefix")
+    public void divergenceStillWritesTheNewPrefix() {
+        List<NaruContextSegment> before = List.of(
+                sys("sys", "prompt"), sys("docs", "old wording"), sys("tools", "defs"),
+                turn("u1", "hi"));
+        // the user edits the second block: everything after it diverges
+        List<NaruContextSegment> after = List.of(
+                sys("sys", "prompt"), sys("docs", "new wording"), sys("tools", "defs"),
+                turn("u1", "hi"), turn("u2", "next"));
+
+        NaruCacheBaseline baseline = new NaruCacheBaseline("anthropic", "claude",
+                NaruCachingMode.EXPLICIT_INLINE, NaruCacheKeyChain.chain(before), null, -1, 0);
+        NaruCachePlan plan = NaruCachePlan.of(NaruCacheableContext.of(after), baseline,
+                "anthropic", "claude", NaruCachingMode.EXPLICIT_INLINE);
+
+        Assertions.assertEquals(1, plan.validPrefix(), "only the first block survived");
+        Assertions.assertEquals(List.of(0, 1, 2), plan.cacheBreakpoints(4),
+                "the changed blocks are a cache miss but must still be written as the new prefix");
     }
 
     @Test

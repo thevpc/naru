@@ -111,6 +111,16 @@ public final class NaruCachePlan implements NaruCachePlanView {
     /**
      * Indices after which a client-controlled breakpoint should be placed.
      *
+     * <p>This is the <em>write</em> half of the plan, unlike
+     * {@link #isCacheHit(int)} which is the read half. A marker does not claim
+     * the content is already cached — it asks the provider to cache everything
+     * up to this point from now on. Bounding candidates by the valid prefix
+     * would leave a cold request placing no marker, so it writes no cache and
+     * the next turn misses too, billing the whole conversation at full input
+     * price forever. Every cacheable segment is therefore a candidate, volatile
+     * ones excepted: a marker on the in-flight tail is overwritten by the very
+     * next message and buys no future read.
+     *
      * <p>Anthropic accepts at most {@code maxBreakpoints} per request, but a
      * request can easily contain more cacheable segments than that (system
      * prompt, tools, per-module indexed context, project files, ...). Dropping
@@ -128,7 +138,7 @@ public final class NaruCachePlan implements NaruCachePlanView {
     @Override
     public List<Integer> cacheBreakpoints(int maxBreakpoints) {
         List<Integer> candidates = new ArrayList<>();
-        for (int i = 0; i < validPrefix; i++) {
+        for (int i = 0; i < segments.size(); i++) {
             if (segments.get(i).cacheable()) {
                 candidates.add(i);
             }
