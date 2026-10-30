@@ -916,7 +916,18 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         renderWindow(-1);
     }
     public void registerPartRenderer(ChatPartRenderer renderer) { partRenderers.register(renderer); syncRows(false); }
-    public void setTaskFilter(long taskId) { taskFilter = taskId < 0 ? Long.MIN_VALUE : taskId; syncRows(true); }
+    public void setTaskFilter(long taskId) {
+        long next = taskId < 0 ? Long.MIN_VALUE : taskId;
+        // Re-applying the filter that is already in place is not a request to move the view.
+        // The task monitor re-reports its settled selection whenever the tree rebuilds, and
+        // resetting to the tail for each of those would fight a reader who scrolled up: the
+        // transcript would snap to the newest message on every incoming one.
+        if (next == taskFilter) {
+            return;
+        }
+        taskFilter = next;
+        syncRows(true);
+    }
     /**
      * Jump to the newest row. Deferred by one EDT turn so it runs after the card column has been
      * re-validated and the scrollbar's maximum reflects the rows that were just added — setting

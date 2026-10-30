@@ -4,13 +4,18 @@ import net.thevpc.nuts.Nuts;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruWorkspaceBuilder;
 import net.thevpc.naru.desktop.ui.Typefaces;
+import net.thevpc.nuts.app.NApp;
+import net.thevpc.nuts.app.NAppRun;
+import net.thevpc.nuts.app.NApplication;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.platform.NEnv;
 import net.thevpc.nuts.swing.NSwingUtils;
 import com.formdev.flatlaf.FlatLaf;
 
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import java.awt.Insets;
+import java.util.Map;
 import java.util.prefs.Preferences;
 
 /**
@@ -24,6 +29,7 @@ import java.util.prefs.Preferences;
  * Full packaging — {@code @NAppInstall} launchers, {@code -c/--console} escape, splash,
  * single-instance guard — is Phase 5. This is the smallest thing that runs the v1 UI.
  */
+@NApp
 public final class NaruDesktop {
     private static final String DEFAULT_THEME = "com.formdev.flatlaf.FlatLightLaf";
     private static final String THEME_KEY = "lookAndFeelClass";
@@ -32,10 +38,12 @@ public final class NaruDesktop {
     private static java.awt.Font themeBaseFont;
     private static volatile NaruWorkspace workspace;
 
-    private NaruDesktop() {
+    public NaruDesktop() {
     }
 
-    /** Return the single engine workspace owned by this desktop process. */
+    /**
+     * Return the single engine workspace owned by this desktop process.
+     */
     public static NaruWorkspace workspace(NPath initialProjectDirectory) {
         NaruWorkspace current = workspace;
         if (current != null) return current;
@@ -51,11 +59,27 @@ public final class NaruDesktop {
     }
 
     public static void main(String[] args) {
-        // the workspace must exist before prepareUI resolves anything through Nuts
-        Nuts.require();
         NSwingUtils.prepareUI(args);
+        NApplication.builder(args).run();
+    }
+
+    @NAppRun
+    public void run() {
+        NSwingUtils.setSharedWorkspaceInstance();
+        for (Map.Entry<String, String> e : System.getenv().entrySet()) {
+            if (e.getKey().toLowerCase().contains("api_key")) {
+                System.out.println(e.getKey() + "=" + e.getValue());
+            }
+        }
+        for (Map.Entry<String, String> e : NEnv.of().env().entrySet()) {
+            if (e.getKey().toLowerCase().contains("api_key")) {
+                System.out.println(e.getKey() + "=" + e.getValue());
+            }
+        }
+        NApplication app = NApplication.of();
+        // the workspace must exist before prepareUI resolves anything through Nuts
         applyTheme(preferences().get(THEME_KEY, DEFAULT_THEME), false);
-        NPath project = parseProject(args);
+        NPath project = parseProject(app.cmdLine().toStringArray());
         SwingUtilities.invokeLater(() -> {
             MainWindow w = new MainWindow();
             w.setSize(1280, 800);
@@ -75,13 +99,24 @@ public final class NaruDesktop {
         if (project != null) preferences().put(LAST_PROJECT_KEY, project.toAbsolute().toString());
     }
 
-    private static Preferences preferences() { return Preferences.userNodeForPackage(NaruDesktop.class); }
+    private static Preferences preferences() {
+        return Preferences.userNodeForPackage(NaruDesktop.class);
+    }
 
-    public static String selectedTheme() { return preferences().get(THEME_KEY, DEFAULT_THEME); }
-    /** Smallest / largest interface size the shortcut and the settings slider both allow. */
+    public static String selectedTheme() {
+        return preferences().get(THEME_KEY, DEFAULT_THEME);
+    }
+
+    /**
+     * Smallest / largest interface size the shortcut and the settings slider both allow.
+     */
     public static final int MIN_FONT_SCALE = 50;
     public static final int MAX_FONT_SCALE = 300;
-    public static int fontScale() { return clampFontScale(preferences().getInt(FONT_SCALE_KEY, 100)); }
+
+    public static int fontScale() {
+        return clampFontScale(preferences().getInt(FONT_SCALE_KEY, 100));
+    }
+
     public static int clampFontScale(int percent) {
         return Math.max(MIN_FONT_SCALE, Math.min(MAX_FONT_SCALE, percent));
     }
@@ -103,7 +138,9 @@ public final class NaruDesktop {
         fontScaleBatch.restart();
     }
 
-    /** The size the windows on screen were last laid out for, or -1 before the first pass. */
+    /**
+     * The size the windows on screen were last laid out for, or -1 before the first pass.
+     */
     private static int appliedFontScale = -1;
     private static javax.swing.Timer fontScaleBatch;
 
@@ -126,7 +163,9 @@ public final class NaruDesktop {
         }
     }
 
-    public static void applyTheme(String className) { applyTheme(className, true); }
+    public static void applyTheme(String className) {
+        applyTheme(className, true);
+    }
 
     private static void applyTheme(String className, boolean persist) {
         try {
@@ -137,7 +176,8 @@ public final class NaruDesktop {
             FlatLaf.setPreferredFontFamily(Typefaces.UI);
             FlatLaf.setPreferredMonospacedFontFamily(Typefaces.MONO);
             UIManager.setLookAndFeel(className);
-            themeBaseFont=UIManager.getFont("defaultFont"); if(themeBaseFont==null) themeBaseFont=UIManager.getFont("Label.font");
+            themeBaseFont = UIManager.getFont("defaultFont");
+            if (themeBaseFont == null) themeBaseFont = UIManager.getFont("Label.font");
             UIManager.put("Button.arc", 12);
             UIManager.put("Component.arc", 10);
             UIManager.put("TextComponent.arc", 8);
@@ -149,7 +189,9 @@ public final class NaruDesktop {
                 SwingUtilities.updateComponentTreeUI(window);
                 applyLadderFonts(window);
                 if (window instanceof MainWindow main) main.refreshThemePalette();
-                window.invalidate(); window.validate(); window.repaint();
+                window.invalidate();
+                window.validate();
+                window.repaint();
             }
             applyScaledFontDefaults(fontScale());
             appliedFontScale = fontScale();
@@ -168,8 +210,12 @@ public final class NaruDesktop {
         }
     }
 
-    /** The theme's own font, before any interface size is applied to it. */
-    public static java.awt.Font themeBaseFont() { return themeBaseFont; }
+    /**
+     * The theme's own font, before any interface size is applied to it.
+     */
+    public static java.awt.Font themeBaseFont() {
+        return themeBaseFont;
+    }
 
     public static void initializeFontScale(java.awt.Component c) {
         appliedFontScale = fontScale();
@@ -190,11 +236,15 @@ public final class NaruDesktop {
                 && net.thevpc.naru.desktop.ui.UiFonts.isManaged(j)) {
             j.setFont(net.thevpc.naru.desktop.ui.UiFonts.resolved(j));
         }
-        if(c instanceof java.awt.Container p) for(java.awt.Component child:p.getComponents()) applyLadderFonts(child);
+        if (c instanceof java.awt.Container p)
+            for (java.awt.Component child : p.getComponents()) applyLadderFonts(child);
     }
-    private static void syncFontScaleControl(java.awt.Component c,int percent) {
-        if(c instanceof javax.swing.JSlider s && "naru-font-scale".equals(s.getName()) && s.getValue()!=percent) s.setValue(percent);
-        if(c instanceof java.awt.Container p) for(java.awt.Component child:p.getComponents()) syncFontScaleControl(child,percent);
+
+    private static void syncFontScaleControl(java.awt.Component c, int percent) {
+        if (c instanceof javax.swing.JSlider s && "naru-font-scale".equals(s.getName()) && s.getValue() != percent)
+            s.setValue(percent);
+        if (c instanceof java.awt.Container p)
+            for (java.awt.Component child : p.getComponents()) syncFontScaleControl(child, percent);
     }
 
     private static NPath parseProject(String[] args) {

@@ -301,6 +301,15 @@ class TaskMonitorTest {
 
         assertTrue(selections.contains(firstChild.id()),
                 "the window's panes were told which task is on screen: " + selections);
+        // and a refresh that settles on the same task must not report it a second time: the
+        // window forwards every report to the transcript as a filter change, and the transcript
+        // resets to the newest message for a filter change — a reader who scrolled up to read
+        // history would be yanked back down by the 2 Hz poll alone
+        int reported = onEdtReturn(selections::size);
+        onEdt(model::refreshNow);
+        onEdt(() -> { });
+        assertEquals(reported, onEdtReturn(selections::size),
+                "an unchanged selection is not re-reported: " + selections);
     }
 
     /** Read the row count on the EDT, from the polling thread. */

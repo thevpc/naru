@@ -54,6 +54,15 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
     private final javax.swing.JTextField search = new javax.swing.JTextField(12);
     private boolean interactiveOnly = true;
     private java.util.function.LongConsumer taskSelection = id -> {};
+    /**
+     * The id last handed to {@link #taskSelection}. The session model re-fires its listeners at
+     * 2 Hz and the tree is rebuilt whenever a row changes, so without this the window would be
+     * told "the same task is selected" on every poll — and the transcript's task-filter path
+     * resets the view to the newest message, yanking a reader who scrolled up to read history.
+     */
+    private long lastSelectionNotified = Long.MIN_VALUE;
+    /** True while a rebuild clears and restores the tree selection; intermediate states stay quiet. */
+    private boolean selectionQuiet;
 
     private long shownId = -1;
     private long detailRequest;
@@ -202,7 +211,7 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
             shownId = -1;
             detail.setText("select a task to see its frames");
             updateButtons();
-            taskSelection.accept(-1);
+            notifyTaskSelection(-1);
             return;
         }
         shownId = r.id();
@@ -220,8 +229,24 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
                 }
             }.execute();
         }
-        taskSelection.accept(r.id());
+        notifyTaskSelection(r.id());
         updateButtons();
+    }
+
+    /**
+     * Tell the window which task is on screen. A re-report of the id that is already shown is
+     * dropped: the 2 Hz poll and the tree rebuilds it triggers both land back here with the same
+     * selection, and every notification makes the transcript reset its window to the newest
+     * message — a reader who scrolled up to read history would be yanked back down on every
+     * incoming one. Transient states during a rebuild ({@code selectionQuiet}) are skipped; the
+     * rebuild re-notifies the settled selection itself, once.
+     */
+    private void notifyTaskSelection(long id) {
+        if (selectionQuiet || id == lastSelectionNotified) {
+            return;
+        }
+        lastSelectionNotified = id;
+        taskSelection.accept(id);
     }
 
     private NaruSessionModel.TaskRow selectedRow() {
@@ -254,7 +279,11 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
     public void setTaskSelectionListener(java.util.function.LongConsumer listener) {
         taskSelection = listener == null ? id -> {} : listener;
         NaruSessionModel.TaskRow selected = selectedRow();
-        taskSelection.accept(selected == null ? -1 : selected.id());
+        long id = selected == null ? -1 : selected.id();
+        // the new listener must learn the current task even if a previous (no-op) listener
+        // already consumed the same notification
+        lastSelectionNotified = id;
+        taskSelection.accept(id);
     }
 
     /** Unbind from the session model. A closed window must not stay on the poll's listener list. */
@@ -417,20 +446,28 @@ public final class TaskPane extends JPanel implements NaruSessionModel.Listener 
             return;
         }
         long wasSelected = shownId;
-        rows.clear();
-        for (NaruSessionModel.TaskRow r : current) {
-            rows.addElement(r);
+        selectionQuiet = true;
+        try {
+            rows.clear();
+            for (NaruSessionModel.TaskRow r : current) {
+                rows.addElement(r);
+            }
+            rebuildTaskTree(current, wasSelected);
+            if (interactiveOnly) {
+                int restore = indexOf(wasSelected);
+                if (restore < 0 && !current.isEmpty()) restore = 0;
+                if (restore >= 0) list.setSelectedIndex(restore); else { shownId = -1; showSelected(); }
+            } else if (wasSelected < 0 && !current.isEmpty()) {
+                selectTreeTask(current.get(0).id());
+            } else if (indexOf(wasSelected) >= 0) {
+                selectTreeTask(wasSelected);
+            } else { shownId = -1; showSelected(); }
+        } finally {
+            selectionQuiet = false;
         }
-        rebuildTaskTree(current, wasSelected);
-        if (interactiveOnly) {
-            int restore = indexOf(wasSelected);
-            if (restore < 0 && !current.isEmpty()) restore = 0;
-            if (restore >= 0) list.setSelectedIndex(restore); else { shownId = -1; showSelected(); }
-        } else if (wasSelected < 0 && !current.isEmpty()) {
-            selectTreeTask(current.get(0).id());
-        } else if (indexOf(wasSelected) >= 0) {
-            selectTreeTask(wasSelected);
-        } else { shownId = -1; showSelected(); }
+        // One report for what the rebuild settled on, and only when the task really changed;
+        // the rebuild's clear-and-restore is invisible to the window when it lands where it was.
+        notifyTaskSelection(shownId);
         updateNote(current);
         updateButtons();
     }

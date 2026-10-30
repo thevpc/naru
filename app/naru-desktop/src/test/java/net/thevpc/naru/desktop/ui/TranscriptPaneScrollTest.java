@@ -92,7 +92,10 @@ class TranscriptPaneScrollTest {
      * one layout pass late.
      */
     private void relayout() {
-        pane.setSize(900, 320);
+        // 220, not 320: the fixture must overflow the viewport on every font, and one 30-line
+        // card measures about 270px on the small-font machines where this suite used to fail its
+        // own premise. The scroll rules are about following and staying, not about pixel budgets.
+        pane.setSize(900, 220);
         int maximum = -1;
         for (int pass = 0; pass < 6 && scroll.getVerticalScrollBar().getMaximum() != maximum; pass++) {
             Dimension pref = view.getPreferredSize();
@@ -194,7 +197,7 @@ class TranscriptPaneScrollTest {
         buildPane();
         fillTranscript();
         assertTrue(barMaximum() > barExtent(),
-                "a 30-line transcript overflows the 320px viewport: maximum=" + barMaximum()
+                "a 30-line transcript overflows the 220px viewport: maximum=" + barMaximum()
                         + " extent=" + barExtent());
     }
 
@@ -273,6 +276,29 @@ class TranscriptPaneScrollTest {
         write(6);
         assertTrue(barValue() > before,
                 "a reader at the tail follows the newest line: " + before + " -> " + barValue());
+    }
+
+    /**
+     * The task monitor re-reports the task it is already showing whenever the session model
+     * polls, and the window forwards every report to the transcript as a filter change. Re-applying
+     * the filter that is already in place used to run the whole reset-to-tail path — and because
+     * a scroll done through the viewport itself is not a wheel or a drag, nothing was marked
+     * away, so every incoming message snapped the reader back to the newest row.
+     */
+    @Test
+    void reApplyingTheSameTaskFilterLeavesTheReaderWhereTheyAre() throws Exception {
+        buildPane();
+        fillTranscript();
+        write(6);
+        followToTail();
+        onEdt(() -> scroll.getViewport().setViewPosition(new Point(0, 0)));
+        int parked = barValue();
+        assertTrue(parked < barMaximum(), "the view is off the tail: " + parked + "/" + barMaximum());
+        // the same "no task filter" the pane was built with, reported again the way the poll does
+        onEdt(() -> pane.setTaskFilter(-1));
+        onEdt(() -> { });
+        assertEquals(parked, barValue(),
+                "a re-applied filter must not move the reader back to the tail");
     }
 
     @Test
