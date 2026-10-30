@@ -2278,9 +2278,51 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 userQueriesCount++;
             }
             history.add(assistantMsg);
+            publishToInteraction(assistantMsg);
         }
         fireChanged();
         ((NaruSessionImpl) session).checkpointMessage(id());
+    }
+
+    /**
+     * Draw a message for a host that watches the session rather than the store.
+     *
+     * <p>History is the durable record, but a {@link NaruInteraction} host -- the terminal,
+     * the command line, an embedder -- only ever sees what it is written to, and it does not
+     * tail the stored messages the way the desktop does. Every turn notice and every
+     * non-streamed answer became a history message when the statements stopped calling
+     * {@code log} by hand, which left such a host with an empty transcript for the whole
+     * turn: the session looks like it ignored what the user typed. Publishing at the append
+     * site means a statement cannot forget to report its own output again.
+     *
+     * <p>Severity picks the channel, because the messages already declare it: a warning or
+     * error is agent output the user must see, an informational or {@code fine} line is
+     * progress, and anything below {@code FINE} is engine chatter that belongs in history
+     * only -- it was never printed before either, and printing it would bury the answer.
+     *
+     * <p>Written before persistence on purpose: the desktop reads the same message back from a
+     * checkpoint callback and settles it onto the line already on screen instead of drawing it
+     * twice, so writing first turns that match from a race into a certainty.
+     */
+    private void publishToInteraction(NaruMessage message) {
+        NMsg content = message.getContent();
+        if (content == null || content.isBlank()) {
+            return;
+        }
+        NaruRole role = message.getRole();
+        if (role == NaruRole.assistant) {
+            // chat() drew the answer live, token by token, when the model streams
+            if (!isResponseStreamed()) {
+                log(NaruLogMode.MODEL_RESPONSE, content);
+            }
+        } else if (role == NaruRole.engine) {
+            int level = content.normalizedLevel().intValue();
+            if (level >= java.util.logging.Level.WARNING.intValue()) {
+                log(NaruLogMode.AGENT_RESPONSE, content);
+            } else if (level >= java.util.logging.Level.FINE.intValue()) {
+                log(NaruLogMode.PROGRESS, content);
+            }
+        }
     }
 
     @Override

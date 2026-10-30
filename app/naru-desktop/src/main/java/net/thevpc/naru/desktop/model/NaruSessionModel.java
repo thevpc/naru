@@ -1279,9 +1279,13 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     }
 
     /**
-     * True when the stored assistant message is the durable copy of text already streamed into
-     * the transcript. The streamed block is the live presentation; the stored card would be the
-     * same answer twice.
+     * True when the stored assistant message is the durable copy of text already drawn as a whole
+     * live block. The live block is the presentation; the stored card would be the same answer
+     * twice.
+     *
+     * <p>Raw model streams ({@code MODEL_RESPONSE}) and engine progress lines ({@code PROGRESS}) are
+     * not dropped here: {@link TranscriptModel} settles them onto the live block instead, so the
+     * text keeps the place it already occupies and gains the durable message's card rendering.
      */
     private boolean isShownAsStreamedAnswer(long taskId, NaruMessage stored) {
         String content = stored.getFilteredContent();

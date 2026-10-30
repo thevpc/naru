@@ -97,9 +97,14 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             ));
         } catch (Exception e) {
             String err = "ERROR calling model: " + e.getMessage();
+            // Reported, not swallowed. This branch ends the turn as if the model had
+            // answered nothing, and the exception never leaves this method, so a
+            // provider failure used to look exactly like a session that ignored the
+            // user. History is the record; the task's own log call is what makes a
+            // host see it while the turn is still running.
+            task.addHistory(NaruMessage.engine(NMsg.ofP(err).asError()));
             task.defaultAdvance(this);
             task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
-            NaruStmtResult.ofError(NMsg.ofP(err).asError());
             return;
         }
 
@@ -129,7 +134,6 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                 task.addHistory(assistantMsg);
                 task.addHistory(NaruMessage.engine(NMsg.ofC(
                         "%s Interrupted.", NMsg.ofStyledPrimary8("⏹")).asError()));
-                reportAnswer(task, assistantMsg);
                 task.setLastResult(assistantMsg);
             }
             task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
@@ -145,7 +149,6 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                 task.addHistory(NaruMessage.engine(NMsg.ofC(
                         "%s The model repeated its previous tool call unchanged; ending this turn.",
                         NMsg.ofStyledPrimary8("⏹")).asWarning()));
-                reportAnswer(task, assistantMsg);
                 reportSilentTurn(task, assistantMsg);
                 task.setLastResult(assistantMsg);
                 task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
@@ -172,7 +175,6 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             if (rounds >= maxSteps) {
                 task.addHistory(NaruMessage.engine(NMsg.ofC(
                         "Reached max tool-call rounds (%s); ending agent loop.", maxSteps).asWarning()));
-                reportAnswer(task, assistantMsg);
                 reportSilentTurn(task, assistantMsg);
                 task.setLastResult(assistantMsg);
                 task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
@@ -186,11 +188,9 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             }
             task.addStatement(NaruStatementHelper.ofModelCall(null));
             task.addStatement(new NaruReturnStmt((String)null));
-            reportAnswer(task, assistantMsg);
             task.defaultAdvance(this);
             return;
         }
-        reportAnswer(task, assistantMsg);
         task.setLastResult(assistantMsg);
         task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
         task.defaultAdvance(this);
@@ -229,20 +229,6 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                         "session extension '%s' failed before the model request: %s",
                         extension.name(), e.getMessage()).asError()));
             }
-        }
-    }
-
-    /**
-     * Shows the model's answer, unless {@link NaruTask#chat} already drew it live as it
-     * arrived. Printing it again after a stream would show the user the same words
-     * twice: once token by token, then once whole.
-     */
-    private static void reportAnswer(NaruTask task, NaruMessage assistantMsg) {
-        if (task.isResponseStreamed()) {
-            return;
-        }
-        if (!NBlankable.isBlank(assistantMsg.getContent())) {
-            task.addHistory(NaruMessage.engine(NMsg.ofC("%s", assistantMsg.getContent())));
         }
     }
 

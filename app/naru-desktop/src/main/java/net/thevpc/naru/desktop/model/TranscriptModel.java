@@ -135,8 +135,19 @@ public final class TranscriptModel {
                     // already on screen turns that streaming row into the model's own card — the
                     // answer appears as it is written and settles in the place it already
                     // occupies — where creating a second block would show the same text twice.
-                    TranscriptBlock streamed = (m.message().getRole() == net.thevpc.naru.api.agent.NaruRole.assistant)
-                            ? streamedAnswerFor(m.taskId(), m.message().getFilteredContent()) : null;
+                    // Engine lines work the same way: the live progress or warning line is the copy
+                    // the user saw first, so the stored message promotes that line into a card.
+                    net.thevpc.naru.api.agent.NaruRole role = m.message().getRole();
+                    String live = m.message().getFilteredContent();
+                    TranscriptBlock streamed = null;
+                    if (role == net.thevpc.naru.api.agent.NaruRole.assistant) {
+                        streamed = liveBlockFor(m.taskId(), live, NaruLogMode.MODEL_RESPONSE);
+                    } else if (role == net.thevpc.naru.api.agent.NaruRole.engine) {
+                        streamed = liveBlockFor(m.taskId(), live, NaruLogMode.PROGRESS);
+                        if (streamed == null) {
+                            streamed = liveBlockFor(m.taskId(), live, NaruLogMode.AGENT_RESPONSE);
+                        }
+                    }
                     boolean isNew = streamed == null && byId.get(m.blockId()) == null;
                     NaruLogMode mode = m.message().getRole() == net.thevpc.naru.api.agent.NaruRole.user
                             ? NaruLogMode.SCRIPT : NaruLogMode.AGENT_RESPONSE;
@@ -194,14 +205,14 @@ public final class TranscriptModel {
     }
 
     /**
-     * The still-open raw-model block that the stored assistant message is the durable copy of, or
-     * null when this message has no streamed counterpart to promote.
+     * The still-open live block that the stored message is the durable copy of, or null when this
+     * message has no live counterpart to promote.
      * <p>
-     * Matched by task and text on purpose: the raw stream and the stored message carry different
-     * ids, and the whole point is to end up with one block rather than two. A blank stored body
-     * never matches — a card is still due for a message whose text the stream did not show.
+     * Matched by task, mode and text on purpose: the live output and the stored message carry
+     * different ids, and the whole point is to end up with one block rather than two. A blank
+     * stored body never matches — a card is still due for a message whose text was not shown.
      */
-    private TranscriptBlock streamedAnswerFor(long taskId, String content) {
+    private TranscriptBlock liveBlockFor(long taskId, String content, NaruLogMode mode) {
         if (content == null || content.isBlank()) {
             return null;
         }
@@ -210,7 +221,8 @@ public final class TranscriptModel {
             if (b.taskId() == taskId
                     && !b.isChatMessage()
                     && !b.isToolCard()
-                    && b.mode() == NaruLogMode.MODEL_RESPONSE
+                    && !b.isDirectiveResult()
+                    && b.mode() == mode
                     && b.text().strip().equals(wanted)) {
                 return b;
             }

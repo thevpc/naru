@@ -60,7 +60,7 @@ public record BlockStyle(String label,
 
     static {
         // The answer, as the model wrote it. It streams here, then the durable assistant message
-        // promotes this block (TranscriptModel.streamedAnswerFor) so one answer is one card rather
+        // promotes this block (TranscriptModel.liveBlockFor) so one answer is one card rather
         // than a raw echo plus a message.
         STYLES.put(NaruLogMode.MODEL_RESPONSE,
                 style("Answer", new Color(0x455A64), false, false, false, Audience.CONVERSATION, Lifecycle.DURABLE));

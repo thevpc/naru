@@ -216,6 +216,30 @@ class TranscriptModelTest {
     }
 
     @Test
+    void theStoredEngineLineBecomesTheLiveLineInsteadOfASecondCard() throws Exception {
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            // the engine drew its notice live, as a progress line
+            m.apply(List.of(new TranscriptEvent.Chunk("p1", NaruLogMode.PROGRESS, "the notice", true, 7),
+                    new TranscriptEvent.Closed("p1")));
+            // the durable copy of the same text arrives from the store
+            m.apply(List.of(new TranscriptEvent.Message("stored-7", 7, 3,
+                    net.thevpc.naru.api.model.NaruMessage.engine(
+                            net.thevpc.nuts.text.NMsg.ofC("the notice")))));
+            assertEquals(1, m.blocks().size(), "one block, not the live line plus a stored card");
+            assertEquals("p1", m.blocks().get(0).id(), "the line already on screen is the one kept");
+            assertTrue(m.blocks().get(0).isChatMessage(), "it is now a card carrying the message");
+            assertFalse(m.blocks().get(0).isTransient(), "a durable message is not narration");
+
+            // the point of clearing transient: the answer that lands next must not supersede the
+            // notice away, or promoting it would be worse than the plain live line
+            m.apply(List.of(new TranscriptEvent.Chunk("a1", NaruLogMode.MODEL_RESPONSE, "the answer", true, 7),
+                    new TranscriptEvent.Closed("a1")));
+            assertEquals(2, m.visibleSize(), "the notice keeps its row in the conversation");
+        });
+    }
+
+    @Test
     void anUnstreamedStoredAnswerStillGetsItsOwnCard() throws Exception {
         onEdt(() -> {
             TranscriptModel m = new TranscriptModel();

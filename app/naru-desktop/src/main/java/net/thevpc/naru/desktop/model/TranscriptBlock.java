@@ -111,6 +111,11 @@ public final class TranscriptBlock {
     public void setMessage(NaruMessage message, long sequence) {
         this.message = message == null ? null : message.copy();
         this.messageSequence = sequence;
+        if (this.message != null) {
+            // a block that carries a durable message is no longer narration: it is part of the
+            // record, so the answer that lands after it must not supersede it away
+            this.transientBlock = false;
+        }
     }
 
     public long messageSequence() { return messageSequence; }
