@@ -600,7 +600,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
 
             NMsg extra3 = null;
-            long cl = model.capabilities().contextLength();
+            long cl = model.capabilities() == null ? 0 : model.capabilities().contextLength();
             if (cl > 0) {
                 extra3 = NMsg.ofC(" %s%s%s",
                         NMsg.ofStyledSeparator("["),

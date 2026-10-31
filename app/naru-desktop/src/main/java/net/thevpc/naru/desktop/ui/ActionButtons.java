@@ -1,6 +1,6 @@
 package net.thevpc.naru.desktop.ui;
 
-import javax.swing.JButton;
+import javax.swing.AbstractButton;
 import java.awt.Dimension;
 import java.awt.FontMetrics;
 
@@ -21,16 +21,16 @@ public final class ActionButtons {
     }
 
     /** Keep each button a font-sized square, now and after every font change. */
-    public static void glyphSized(JButton... buttons) {
-        for (JButton b : buttons) {
+    public static void glyphSized(AbstractButton... buttons) {
+        for (AbstractButton b : buttons) {
             b.setMargin(new java.awt.Insets(0, 0, 0, 0));
-            b.addPropertyChangeListener("font", e -> fit((JButton) e.getSource()));
+            b.addPropertyChangeListener("font", e -> fit((AbstractButton) e.getSource()));
             fit(b);
         }
     }
 
     /** The square that shows the glyph this button carries at the size it is drawn. */
-    public static void fit(JButton b) {
+    public static void fit(AbstractButton b) {
         FontMetrics fm = b.getFontMetrics(b.getFont());
         Dimension square = new Dimension(fm.getHeight() + 8, fm.getHeight() + 6);
         b.setPreferredSize(square);

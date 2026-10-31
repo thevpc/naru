@@ -323,13 +323,30 @@ public class NaruRegistryImpl implements NaruRegistry {
             if (p == null) {
                 continue;
             }
-            NaruModelCapabilities c = p.getProtocol(new NaruModelConfig(
-                    p.name(),
-                    k.model()
-            ), session).get().getCapabilities();
-            a.add(p.getModelInfo(k.model(), c, session));
+            a.add(describe(p, k, session));
         }
         return a;
+    }
+
+    /**
+     * The catalog row for one key, or a capability-less row when the provider cannot
+     * describe it.
+     *
+     * <p>Capabilities are listing metadata, so losing them costs one row; letting the throw
+     * escape costs the whole catalog and desynchronises the displayed order from the
+     * positional indexes the host just printed. It is not necessarily a provider fault
+     * either: a host that mixes live {@code nuts-api} classes with a cached {@code nuts-runtime}
+     * jar reaches this through an {@link AbstractMethodError}, which is an {@code Error} and
+     * so walks straight past a {@code catch (RuntimeException)}.
+     */
+    private NaruModelInfo describe(NaruModelProvider p, NaruModelKey k, NaruSession session) {
+        try {
+            NaruModelProtocol protocol = p.getProtocol(new NaruModelConfig(p.name(), k.model()), session).orNull();
+            return p.getModelInfo(k.model(), protocol == null ? null : protocol.getCapabilities(), session);
+        } catch (Throwable t) {
+            session.log(NaruLogMode.DEBUG, NMsg.ofC("could not describe %s : %s", k, t));
+            return new NaruModelInfo(k.provider(), k.model(), null);
+        }
     }
 
     @Override

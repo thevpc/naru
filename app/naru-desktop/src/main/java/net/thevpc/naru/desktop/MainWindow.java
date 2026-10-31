@@ -7,13 +7,12 @@ import net.thevpc.naru.desktop.ui.InputPane;
 import net.thevpc.naru.desktop.ui.StatusBar;
 import net.thevpc.naru.desktop.ui.StatusDot;
 import net.thevpc.naru.desktop.ui.TaskPane;
-import net.thevpc.naru.desktop.ui.ToolsPane;
+import net.thevpc.naru.desktop.ui.InspectorPane;
 import net.thevpc.naru.desktop.ui.TranscriptPane;
 import net.thevpc.naru.desktop.ui.UiPalette;
 import net.thevpc.naru.desktop.ui.WorkbenchPane;
 import net.thevpc.naru.desktop.ui.SettingsPane;
 import net.thevpc.naru.desktop.ui.SplitPanes;
-import net.thevpc.naru.desktop.ui.InspectorPane;
 import net.thevpc.naru.desktop.ui.TextAreas;
 import net.thevpc.nuts.io.NPath;
 
@@ -102,7 +101,6 @@ public final class MainWindow extends JFrame {
     private TranscriptPane sessionLogPane;
     private InputPane input;
     private StatusBar statusBar;
-    private ToolsPane tools;
     private TaskPane taskPane;
     private WorkbenchPane workbench;
     private InspectorPane inspector;
@@ -928,10 +926,10 @@ public final class MainWindow extends JFrame {
         JTabbedPane taskTools = sideTabs(tasks, session);
         tasks.setTaskSelectionListener(id -> {
             transcript.setTaskFilter(id);
-            tools.setTaskFilter(id);
             input.setSelectedTaskId(id);
             taskScopeHeader.setText(id < 0 ? "No task selected" : "Task #" + id);
             if (workbench != null) workbench.setSelectedTaskId(id);
+            // the inspector carries the tools table too, so one call scopes both to this task
             if (inspector != null) inspector.setSelectedTaskId(id);
             conversationViews.setSelectedIndex(0);
         });
@@ -1263,8 +1261,6 @@ public final class MainWindow extends JFrame {
 
     private JTabbedPane sideTabs(TaskPane tasks, NaruSessionModel session) {
         JTabbedPane tabs = new JTabbedPane();
-        tools = new ToolsPane(session.tools());
-        tabs.addTab("Tools", tools);
         // moved from Phase 4 by the owner: §3.3 makes this the v1 answer to an approval prompt,
         // and §6 promises a jump into it from a permission denial
         JPanel taskPermissions = new JPanel(new BorderLayout());
@@ -1273,8 +1269,10 @@ public final class MainWindow extends JFrame {
         pendingPermissions.setForeground(java.awt.Color.GRAY);
         taskPermissions.add(pendingPermissions, BorderLayout.CENTER);
         tabs.addTab("Permissions", taskPermissions);
-        tools.setJumpToPermissions(ruleId -> openPermissions(ruleId));
+        // the tools table lives inside Inspect now: it is an inspection surface, and beside the
+        // requests table its columns and its detail zone read as one instrument instead of two
         inspector = new InspectorPane(session);
+        inspector.setJumpToPermissions(this::openPermissions);
         tabs.addTab("Inspect", inspector);
         workbench = new WorkbenchPane(session);
         tabs.addTab("Workspace", workbench);
@@ -1288,7 +1286,9 @@ public final class MainWindow extends JFrame {
      * row can be selected for it.
      */
     public void openPermissions(String ruleId) {
-        if (!selectSideTab("Task permissions")) {
+        // the tab is titled "Permissions"; asking for "Task permissions" matched nothing, so the
+        // denial jump the pane advertises switched to no tab at all
+        if (!selectSideTab("Permissions")) {
             return;
         }
     }
@@ -1450,12 +1450,8 @@ public final class MainWindow extends JFrame {
             transcript = null;
         }
         if (sessionLogPane != null) { sessionLogPane.dispose(); sessionLogPane = null; }
-        // both panes listen to models the session owns, so they unsubscribe before the shutdown
+        // panes listen to models the session owns, so they unsubscribe before the shutdown
         // rather than leaving a listener on a model that is about to fire one last time
-        if (tools != null) {
-            tools.dispose();
-            tools = null;
-        }
         if (taskPane != null) { taskPane.dispose(); taskPane = null; }
         if (inspector != null) { inspector.dispose(); inspector = null; }
         workbench = null;

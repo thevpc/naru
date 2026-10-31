@@ -77,6 +77,8 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private final InteractionHost host;
     private final TranscriptModel transcript = new TranscriptModel();
     private final ToolCallModel tools = new ToolCallModel();
+    /** Every provider call this session made, kept whole for the Requests tab. */
+    private final ModelCallLog modelCallLog = new ModelCallLog();
     /** What the current turn is doing, fed by the same batches as the transcript. */
     private final TurnActivity turnActivity = new TurnActivity();
     /** The permissions editor's view-model, bound to the session policy once the session exists. */
@@ -297,6 +299,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                             transcript.clear();
                             transcriptHistoryCursors.clear();
                             tools.clear();
+                            modelCallLog.clear();
                             userEchoes.clear();
                             turnActivity.idle();
                             // a reload rewrote the rule set wholesale; the old ids and their counts
@@ -403,6 +406,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             }
         // usage has no builder hook: it is a per-session listener, and the core announces it on
         // the thread that made the call, so everything below marshals before touching state
+        session.addModelCallListener(modelCallLog);
         session.addUsageListener(new NaruSessionUsageListener() {
             @Override
             public void onModelCall(NaruTask task, NaruModelKey m, long p, long c,
@@ -1672,6 +1676,11 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     /** The tool-call list behind the Tools tab, fed by the same batches as the transcript. */
     public ToolCallModel tools() {
         return tools;
+    }
+
+    /** Every provider call this session made, with its request and response kept whole. */
+    public ModelCallLog modelCallLog() {
+        return modelCallLog;
     }
 
     /**

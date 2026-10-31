@@ -112,6 +112,43 @@ public class ModelIndexStabilityTest {
     }
 
     @Test
+    public void aProviderThatCannotDescribeAModelStillLeavesTheCatalogListed() {
+        // the desktop model picker reads modelsInfos, not modelsKeys, so a provider that throws
+        // while describing one model used to blank the whole listing and report it as "no models".
+        // The row degrades to no capabilities; every other row and every index survives.
+        session.registry().registerModelProvider(new FakeProvider("ollama",
+                Arrays.asList("qwen3:latest", "llama3:latest"), true) {
+            @Override
+            public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession s) {
+                throw new AbstractMethodError("stale runtime jar");
+            }
+        });
+        session.registry().registerModelProvider(new FakeProvider("openrouter",
+                Arrays.asList("a-paid", "b-paid"), true) {
+            @Override
+            public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession s) {
+                // an unresolvable protocol is not a catalog-wide failure either
+                return NOptional.ofEmpty();
+            }
+        });
+
+        List<String> keys = session.registry().modelsKeys(session).stream()
+                .map(NaruModelKey::toString).collect(Collectors.toList());
+        List<NaruModelInfo> infos = session.registry().modelsInfos(session);
+
+        Assertions.assertEquals(List.of(
+                "ollama/llama3:latest",
+                "ollama/qwen3:latest",
+                "openrouter/a-paid",
+                "openrouter/b-paid"
+        ), keys);
+        Assertions.assertEquals(keys, infos.stream()
+                .map(x -> x.key().toString()).collect(Collectors.toList()));
+        Assertions.assertNull(infos.get(0).capabilities());
+        Assertions.assertNotNull(infos.get(0).key());
+    }
+
+    @Test
     public void unavailableProvidersAreExcludedFromBothLists() {
         // 'aaa' sorts before 'ollama': if it leaked into modelsKeys only, every index
         // displayed to the user would be shifted by its model count.

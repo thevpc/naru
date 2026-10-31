@@ -24,14 +24,41 @@ import java.util.List;
 import java.util.Map;
 
 public interface NaruSession {
+    /**
+     * Returns the visibility scope of this session (public or private).
+     *
+     * @return the visibility scope, never null
+     */
     NaruVisibility getVisibility();
 
+    /**
+     * Sets a throttle delay applied to each model call in this session.
+     *
+     * @param ms the delay in milliseconds
+     * @return this session for chaining
+     */
     NaruSession throttleDelay(long ms);
 
+    /**
+     * Returns the scheduler managing task execution and timing in this session.
+     *
+     * @return the scheduler, never null
+     */
     NaruScheduler scheduler();
 
+    /**
+     * Sets the visibility scope of this session.
+     *
+     * @param visibility the visibility scope (public or private), must not be null
+     * @return this session for chaining
+     */
     NaruSession setVisibility(NaruVisibility visibility);
 
+    /**
+     * Returns the workspace (agent) that owns this session.
+     *
+     * @return the workspace, never null
+     */
     NaruWorkspace agent();
 
     /**
@@ -56,8 +83,18 @@ public interface NaruSession {
      */
     NaruAccessPolicy accessPolicy();
 
+    /**
+     * Checks whether the session has more statements to execute.
+     *
+     * @return true if there are more statements, false otherwise
+     */
     boolean hasMoreStatements();
 
+    /**
+     * Returns the project directory for this session.
+     *
+     * @return the project directory path, never null
+     */
     NPath projectDir();
 
     /**
@@ -79,8 +116,19 @@ public interface NaruSession {
      */
     NaruSession fireEvent(String eventName, java.util.Map<String, Object> payload);
 
+    /**
+     * Terminates the session, stopping all tasks and releasing resources.
+     *
+     * @return this session for chaining
+     */
     NaruSession terminate();
 
+    /**
+     * Logs a message at the specified log mode.
+     *
+     * @param mode the log mode (e.g., INFO, WARN, ERROR)
+     * @param s the message to log
+     */
     void log(NaruLogMode mode, NMsg s);
 
     /**
@@ -126,12 +174,33 @@ public interface NaruSession {
     default void reportToolCall(NaruToolCallEvent event) {
     }
 
+    /**
+     * Returns the current working directory for this session.
+     *
+     * @return the working directory path, never null
+     */
     NPath workingDir();
 
+    /**
+     * Sets the working directory for this session.
+     *
+     * @param workingDir the working directory path, must not be null
+     * @return this session for chaining
+     */
     NaruSession workingDir(NPath workingDir);
 
+    /**
+     * Converts this session to an NElement representation for serialization.
+     *
+     * @return the element representation, never null
+     */
     NElement toElement();
 
+    /**
+     * Returns the unique identifier of this session.
+     *
+     * @return the UUID string, never null
+     */
     String uuid();
 
     /**
@@ -144,10 +213,21 @@ public interface NaruSession {
      */
     NaruSession restoreFromStore();
 
+/**
+     * Loads another session's state into this session by UUID.
+     *
+     * @param otherUuid the UUID of the session to load
+     * @return this session for chaining
+     */
     NaruSession load(String otherUuid);
 
-//    NaruSession reload();
+    //    NaruSession reload();
 
+    /**
+     * Saves this session's state to the store, waiting for the write to complete.
+     *
+     * @return this session for chaining
+     */
     NaruSession save();
 
     /**
@@ -159,16 +239,48 @@ public interface NaruSession {
      */
     NaruSession persist();
 
+    /**
+     * Creates a copy of this session.
+     *
+     * @return a new session copy
+     */
     NaruSession copy();
 
+    /**
+     * Resets the session to its initial state.
+     *
+     * @param preserveIdentity whether to preserve the session's identity (UUID, name)
+     * @return this session for chaining
+     */
     NaruSession reset(boolean preserveIdentity);
 
+    /**
+     * Returns the creation instant of this session.
+     *
+     * @return the creation instant, never null
+     */
     Instant creationInstant();
 
+    /**
+     * Returns the last modification instant of this session.
+     *
+     * @return the modification instant, never null
+     */
     Instant modificationInstant();
 
+    /**
+     * Returns the name of this session.
+     *
+     * @return the session name, never null
+     */
     String name();
 
+    /**
+     * Sets the name of this session.
+     *
+     * @param name the new name, must not be null
+     * @return this session for chaining
+     */
     NaruSession name(String name);
 
     /**
@@ -192,8 +304,19 @@ public interface NaruSession {
      */
     NaruSessionVersionStore versionStore();
 
+    /**
+     * Returns the registry of this session, providing access to tools, directives, and models.
+     *
+     * @return the registry, never null
+     */
     NaruRegistry registry();
 
+    /**
+     * Finds a model configuration by name or ID.
+     *
+     * @param modelNameOrId the model name or ID to find
+     * @return an optional containing the model config if found, empty otherwise
+     */
     NOptional<NaruModelConfig> findModel(String modelNameOrId);
 
     /**
@@ -248,8 +371,21 @@ public interface NaruSession {
      */
     NOptional<NElement> getProjectEnv(String key, NaruVisibility visibility);
 
+    /**
+     * Sets a project environment variable with the specified visibility.
+     *
+     * @param key the environment variable key, must not be null
+     * @param value the value to set, can be null to unset
+     * @param visibility the visibility scope (public or private), must not be null
+     */
     void setProjectEnv(String key, NElement value, NaruVisibility visibility);
 
+    /**
+     * Gets a session environment variable.
+     *
+     * @param key the environment variable key, must not be null
+     * @return an optional containing the value if present, empty otherwise
+     */
     NOptional<Object> getSessionEnv(String key);
 
     /**
@@ -294,21 +430,53 @@ public interface NaruSession {
         return NOptional.ofNamedEmpty(key);
     }
 
+    /**
+     * Unsets a session environment variable.
+     *
+     * @param key the environment variable key, must not be null
+     * @return this session for chaining
+     */
     NaruSession unsetSessionEnv(String key);
 
+    /**
+     * Sets a session environment variable.
+     *
+     * @param key the environment variable key, must not be null
+     * @param value the value to set
+     * @return this session for chaining
+     */
     NaruSession setSessionEnv(String key, Object value);
 
+    /**
+     * Returns all tasks in this session.
+     *
+     * @return a list of all tasks, never null
+     */
     List<NaruTask> tasks();
 
-    /** Live tasks and retained terminated conversation tasks in this activation. */
+    /**
+     * Returns live tasks and retained terminated conversation tasks in this activation.
+     *
+     * @return a list of conversation tasks, never null
+     */
     List<NaruTask> conversationTasks();
 
     /**
      * Reactivates a retained conversation zombie in this live session, preserving its task id and history.
      * The expected version is the task.version() observed by the caller.
+     *
+     * @param taskId the task ID to reactivate
+     * @param expectedVersion the expected version of the task
+     * @return the reactivated task
      */
     NaruTask reactivateTask(long taskId, long expectedVersion);
 
+    /**
+     * Creates a new task from the given task specification.
+     *
+     * @param taskBuilder the task specification, must not be null
+     * @return the new task
+     */
     NaruTask newTask(NaruTaskSpec taskBuilder);
 
     /**
@@ -319,10 +487,19 @@ public interface NaruSession {
      */
     void defineSpawnPolicy(NaruSpawnPolicy policy);
 
-    /** The named spawn policy, or empty when none was defined for that name. */
+    /**
+     * Finds a named spawn policy.
+     *
+     * @param name the policy name, must not be null
+     * @return an optional containing the policy if found, empty otherwise
+     */
     NOptional<NaruSpawnPolicy> findSpawnPolicy(String name);
 
-    /** The defined spawn policies, name-indexed. */
+    /**
+     * Returns all defined spawn policies, indexed by name.
+     *
+     * @return a map of spawn policies by name, never null
+     */
     Map<String, NaruSpawnPolicy> spawnPolicies();
 
     /**
@@ -376,30 +553,99 @@ public interface NaruSession {
      */
     NaruTask run();
 
+    /**
+     * Finds a task by its ID.
+     *
+     * @param tid the task ID to find
+     * @return an optional containing the task if found, empty otherwise
+     */
     NOptional<NaruTask> findTask(long tid);
 
+    /**
+     * Returns the ID of the foreground task.
+     *
+     * @return the foreground task ID
+     */
     long foregroundTaskId();
 
+    /**
+     * Sets the foreground task ID.
+     *
+     * @param taskId the task ID to set as foreground
+     * @return this session for chaining
+     */
     NaruSession foregroundTaskId(long taskId);
 
+    /**
+     * Checks if the session is currently running.
+     *
+     * @return true if running, false otherwise
+     */
     boolean isRunning();
 
+    /**
+     * Starts the session.
+     *
+     * @return this session for chaining
+     */
     NaruSession start();
 
+    /**
+     * Stops the session.
+     *
+     * @return this session for chaining
+     */
     NaruSession stop();
 
+    /**
+     * Waits for the session to complete.
+     *
+     * @return this session for chaining
+     */
     NaruSession waitFor();
 
+    /**
+     * Returns the system prompt for this session.
+     *
+     * @return the system prompt, or empty string if not set
+     */
     String systemPrompt();
 
+    /**
+     * Sets the system prompt for this session.
+     *
+     * @param systemPrompt the system prompt to set
+     * @return this session for chaining
+     */
     NaruSession systemPrompt(String systemPrompt);
 
+    /**
+     * Finds task IDs by parent task ID.
+     *
+     * @param taskId the parent task ID
+     * @return an array of child task IDs
+     */
     long[] findTaskIdsByParent(long taskId);
 
+    /**
+     * Returns the session event log.
+     *
+     * @return the event log, never null
+     */
     NaruSessionEventLog eventLog();
 
+    /**
+     * Adds a session listener.
+     *
+     * @param listener the listener to add, must not be null
+     */
     void addSessionListener(NaruSessionListener listener);
 
+    /**
+     * Removes a session listener.
+     *
+     * @param listener the listener to remove, must not be null
+     */
     void removeSessionListener(NaruSessionListener listener);
 
     /**
@@ -487,15 +733,27 @@ public interface NaruSession {
      */
     void addUsageListener(NaruSessionUsageListener listener);
 
+    /**
+     * Removes a usage listener.
+     *
+     * @param listener the listener to remove, must not be null
+     */
     void removeUsageListener(NaruSessionUsageListener listener);
 
     /**
      * Registers a listener for full model call inspection (request and response).
      * Notifications are delivered on the thread that made the call, so a listener
      * must not block.
+     *
+     * @param listener the listener to add, must not be null
      */
     void addModelCallListener(NaruModelCallListener listener);
 
+    /**
+     * Removes a model call listener.
+     *
+     * @param listener the listener to remove, must not be null
+     */
     void removeModelCallListener(NaruModelCallListener listener);
 
     /**
@@ -505,9 +763,27 @@ public interface NaruSession {
      */
     void reportProviderRateLimits(NaruProviderRateLimitInfo info);
 
+    /**
+     * Returns all routines available in this session.
+     *
+     * @return a list of routine resource info, never null
+     */
     List<NaruResourceInfo> routines();
 
+    /**
+     * Finds a routine by name or path.
+     *
+     * @param nameOrPath the routine name or path, must not be null
+     * @param task the task context, can be null
+     * @param orCreate whether to create the routine if it doesn't exist
+     * @return an optional containing the routine if found or created, empty otherwise
+     */
     NOptional<NaruRoutine> routine(String nameOrPath, NaruTask task, boolean orCreate);
 
+    /**
+     * Returns all session environment variables as a map.
+     *
+     * @return a map of session environment variables, never null
+     */
     Map<String, Object> sessionEnv();
 }

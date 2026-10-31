@@ -67,6 +67,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private final java.util.Set<String> selectedModelProviders = new java.util.LinkedHashSet<>();
     private net.thevpc.naru.api.agent.NaruSession modelCatalogSession;
     private boolean modelCatalogLoading;
+    private String modelCatalogFailure;
 
     private enum ComposerAction {RUN, SEND, ENQUEUE, STOP, DISABLED}
 
@@ -663,6 +664,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                 String absent = absentProvidersSummary();
                 model.setToolTipText((current == null ? "No model selected" : current.toString())
                         + " · " + modelInfos.size() + " models exposed by providers registered for this session"
+                        + (modelCatalogFailure == null ? "" : " · model list failed: " + modelCatalogFailure)
                         + (absent == null ? "" : " · " + absent));
             }
         }.execute();
@@ -684,8 +686,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                         try {
                             modelInfos = get();
                             modelCatalogSession = owner;
-                        } catch (Exception ignored) {
-                            modelInfos = java.util.List.of();
+                            modelCatalogFailure = null;
+                        } catch (Exception ex) {
+                            modelCatalogFailure = catalogFailure(ex);
                             modelCatalogSession = owner;
                         }
                         model.setEnabled(true);
@@ -773,8 +776,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                 try {
                     modelInfos = get();
                     modelCatalogSession = owner;
-                } catch (Exception ignored) {
-                    modelInfos = java.util.List.of();
+                    modelCatalogFailure = null;
+                } catch (Exception ex) {
+                    modelCatalogFailure = catalogFailure(ex);
                     modelCatalogSession = owner;
                 }
                 model.setEnabled(true);
@@ -921,7 +925,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                 rows.clear();
                 rows.addAll(matches);
                 if (matches.isEmpty()) {
-                    String reason = absentProvidersSummary();
+                    String reason = emptyListingReason();
                     emptyLabel.setText(reason == null ? "No models match the filters." : reason);
                     emptyLabel.setVisible(true);
                 } else {
@@ -1039,6 +1043,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         body.add(centerPanel, BorderLayout.CENTER);
         body.add(select, BorderLayout.SOUTH);
         DesktopDialog.setBody(dialog, body);
+        // run the filter once so the empty-list note states the real reason before the reader
+        // has touched anything; without this the dialog opens claiming no filter matched
+        refilterHolder[0].run();
         DesktopDialog.showCentered(dialog, SwingUtilities.getWindowAncestor(this), 760, 560);
     }
 
@@ -1058,6 +1065,29 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         if (p.contains("ollama") || p.contains("llamacpp") || p.contains("llama-cpp") || p.contains("colibri")) return true;
         if (isDeclaredFree(info)) return true;
         return isLocal(info);
+    }
+
+    /**
+     * Why the listing is empty, or null when the filters are the whole story.
+     *
+     * <p>A failed fetch used to report "No models match the filters", which sent the reader hunting
+     * for a filter they never set. The fetch error comes first because it is the one they can act on.
+     */
+    private String emptyListingReason() {
+        if (modelCatalogFailure != null) {
+            return "The model list could not be built: " + modelCatalogFailure;
+        }
+        return absentProvidersSummary();
+    }
+
+    /**
+     * The engine failure behind a wrapped one. {@code SwingWorker} hands back an
+     * {@code ExecutionException} whose own message names nothing, and the cause's class is the part
+     * worth reading: it is what tells the reader that a provider jar and the API it loads disagree.
+     */
+    private static String catalogFailure(Throwable t) {
+        Throwable c = t.getCause();
+        return (c == null ? t : c).toString();
     }
 
     /**
