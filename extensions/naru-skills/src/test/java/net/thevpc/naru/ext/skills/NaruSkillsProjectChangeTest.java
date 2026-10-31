@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * WP7: {@code /project} re-resolves the skill roots without touching the task's selection.
+ * WP7: {@code /sessiondir} re-resolves the skill roots without touching the task's selection.
  * The manager is rebound to the new project root and reloaded; a task keeps the skills it
  * loaded, so one that disappeared is visible as missing rather than silently unloaded.
  */
@@ -59,7 +59,7 @@ public class NaruSkillsProjectChangeTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         session = agent.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .sessionListener(NOOP_LISTENER)
@@ -105,7 +105,7 @@ public class NaruSkillsProjectChangeTest {
         assertFalse(availableNames().contains(beta), "beta is not available before the change");
         assertTrue(ext.load(task, alpha), "alpha is loaded for the task");
 
-        session.projectDir(other);
+        session.sessionDir(other);
 
         Set<String> after = availableNames();
         assertTrue(after.contains(beta), "beta becomes available at the new root: " + after);

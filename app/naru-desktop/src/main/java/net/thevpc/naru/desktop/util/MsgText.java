@@ -52,6 +52,9 @@ public final class MsgText {
             return null;
         }
         raw = stripTerminalControls(raw);
+        if (raw.indexOf('\\') >= 0) {
+            raw = unescapeMarkers(raw);
+        }
         if (raw.indexOf('#') < 0) {
             // the common case: model output almost never carries markup, and this keeps
             // the hot path a single scan instead of a regex
@@ -80,6 +83,40 @@ public final class MsgText {
                 sb.append(raw.charAt(i));
             }
             i++;
+        }
+        return sb == null ? raw : sb.toString();
+    }
+
+    /**
+     * Strip NTF markup whose delimiters were escaped.
+     *
+     * <p>A message that has been through normalization re-escapes the markup it carries, so the
+     * transcript is handed {@code \##{p9:ollama}\#\#} instead of {@code ##{p9:ollama}##}. That is the
+     * same leak in a shape the scanner below cannot see, and it is what put a literal
+     * {@code ##{p9:🔧}##} into a restored conversation. Undoing the escape first means both forms
+     * render as the text they decorate.
+     *
+     * <p>Only a backslash before a {@code #} is dropped. A message about a Windows path or a
+     * markdown heading keeps every other backslash it contains.
+     */
+    private static String unescapeMarkers(String raw) {
+        if (raw.indexOf('\\') < 0) {
+            return raw;
+        }
+        StringBuilder sb = null;
+        for (int i = 0; i < raw.length(); i++) {
+            if (raw.charAt(i) == '\\' && i + 1 < raw.length() && raw.charAt(i + 1) == '#') {
+                if (sb == null) {
+                    sb = new StringBuilder(raw.length());
+                    sb.append(raw, 0, i);
+                }
+                // the backslash alone is dropped: the # it protected is markup the scanner below
+                // has to see, and consuming it here would leave a single-hash marker behind
+                continue;
+            }
+            if (sb != null) {
+                sb.append(raw.charAt(i));
+            }
         }
         return sb == null ? raw : sb.toString();
     }
@@ -233,7 +270,11 @@ public final class MsgText {
         if (text == null || text.isEmpty()) {
             return;
         }
-        String[] lines = text.split("\\n", -1);
+        // A node that is PLAIN here can still carry markup: a token that reached the message through
+        // a %s parameter was never parsed into a styled node, so it survives as literal characters
+        // inside a plain run. Rendering the node tree is not enough to keep ##{p9:ollama}## out of
+        // the transcript — the same strip the plain path uses has to run on the leaf text.
+        String[] lines = plain(text).split("\\n", -1);
         for (int i = 0; i < lines.length; i++) {
             if (i > 0) out.append("<br>");
             String escaped = TextHtml.escapeWrap(lines[i]);

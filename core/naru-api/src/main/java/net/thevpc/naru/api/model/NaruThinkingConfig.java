@@ -29,7 +29,7 @@ public final class NaruThinkingConfig {
 
     /**
      * Configuration key, read through {@link NaruTaskConfig} so it obeys the same
-     * task/session/project/system-property precedence as every other setting.
+     * task/session/sessiondir/system-property precedence as every other setting.
      */
     public static final String THINKING_KEY = "model.thinking";
 

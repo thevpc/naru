@@ -215,6 +215,15 @@ class TranscriptModelTest {
         });
     }
 
+    /**
+     * A stored engine line settles onto the live line it repeats instead of adding a second row.
+     *
+     * <p>The last assertions are the point of doing this at all: a restored transcript has to behave
+     * like the live one it came from. An engine line below WARNING is narration — the engine puts it
+     * on {@code PROGRESS}, where the answer it announced supersedes it — so the durable copy of it
+     * must not become something that outranks that answer. A line the user has to be able to act on
+     * is logged at WARNING, and the case below shows that one keeps its row.
+     */
     @Test
     void theStoredEngineLineBecomesTheLiveLineInsteadOfASecondCard() throws Exception {
         onEdt(() -> {
@@ -228,14 +237,32 @@ class TranscriptModelTest {
                             net.thevpc.nuts.text.NMsg.ofC("the notice")))));
             assertEquals(1, m.blocks().size(), "one block, not the live line plus a stored card");
             assertEquals("p1", m.blocks().get(0).id(), "the line already on screen is the one kept");
-            assertTrue(m.blocks().get(0).isChatMessage(), "it is now a card carrying the message");
-            assertFalse(m.blocks().get(0).isTransient(), "a durable message is not narration");
+            assertTrue(m.blocks().get(0).isTransient(),
+                    "and it is still narration: the durable copy of a progress line is no more "
+                            + "durable than the line the engine drew while the turn ran");
 
-            // the point of clearing transient: the answer that lands next must not supersede the
-            // notice away, or promoting it would be worse than the plain live line
             m.apply(List.of(new TranscriptEvent.Chunk("a1", NaruLogMode.MODEL_RESPONSE, "the answer", true, 7),
                     new TranscriptEvent.Closed("a1")));
-            assertEquals(2, m.visibleSize(), "the notice keeps its row in the conversation");
+            assertEquals(1, m.visibleSize(),
+                    "the answer supersedes the narration it announced, exactly as it did live");
+            assertEquals("a1", m.visible().get(0).id());
+        });
+    }
+
+    @Test
+    void aStoredWarningKeepsItsRowAgainstTheAnswerThatFollows() throws Exception {
+        onEdt(() -> {
+            TranscriptModel m = new TranscriptModel();
+            m.apply(List.of(new TranscriptEvent.Chunk("w1", NaruLogMode.AGENT_RESPONSE,
+                    "the request failed", true, 7), new TranscriptEvent.Closed("w1")));
+            m.apply(List.of(new TranscriptEvent.Message("stored-8", 7, 4,
+                    net.thevpc.naru.api.model.NaruMessage.engine(
+                            net.thevpc.nuts.text.NMsg.ofC("the request failed")
+                                    .withLevel(java.util.logging.Level.WARNING)))));
+            m.apply(List.of(new TranscriptEvent.Chunk("a1", NaruLogMode.MODEL_RESPONSE,
+                    "the answer", true, 7), new TranscriptEvent.Closed("a1")));
+            assertEquals(2, m.visibleSize(), "a failure the user must act on is never narration");
+            assertTrue(m.visible().get(0).isChatMessage(), "and it is drawn as a message, with its role");
         });
     }
 

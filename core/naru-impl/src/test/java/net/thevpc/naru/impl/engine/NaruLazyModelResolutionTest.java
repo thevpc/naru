@@ -49,7 +49,7 @@ public class NaruLazyModelResolutionTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(tempProject());
         NaruSession session = agent.newSession()
-                .directory(tempProject())
+                .sessionDir(tempProject())
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)
@@ -131,7 +131,7 @@ public class NaruLazyModelResolutionTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         NaruSession session = agent.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

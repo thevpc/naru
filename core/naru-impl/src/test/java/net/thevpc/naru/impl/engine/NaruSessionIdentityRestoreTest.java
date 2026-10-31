@@ -37,7 +37,7 @@ public class NaruSessionIdentityRestoreTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         return agent.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .id(id)
                 .scope(NaruSessionScope.PRIVATE)
                 .interaction(new NaruStreamInteraction(o -> {

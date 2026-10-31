@@ -196,9 +196,9 @@ public class NaruModelUtils {
         }
 
         // 1. Session audit folder in projectDir
-        if (finalSession != null && finalSession.projectDir() != null) {
-            paths.add(finalSession.projectDir().resolve(".naru/local/sessions").resolve(sessionUuid).resolve("audit").resolve("task-" + taskId + ".tson"));
-//            paths.add(finalSession.projectDir().resolve(".naru/local/logs").resolve("task-" + sessionUuid + "-" + taskId + "-llm-audit.tson"));
+        if (finalSession != null && finalSession.sessionDir() != null) {
+            paths.add(finalSession.sessionDir().resolve(".naru/local/sessions").resolve(sessionUuid).resolve("audit").resolve("task-" + taskId + ".tson"));
+//            paths.add(finalSession.sessionDir().resolve(".naru/local/logs").resolve("task-" + sessionUuid + "-" + taskId + "-llm-audit.tson"));
         } else {
             // 2. Workspace log fallback
             paths.add(NPath.of(NStoreKey.of(

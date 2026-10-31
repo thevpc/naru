@@ -83,7 +83,7 @@ concatenation.
 | Precedence | Kind | Path | Visibility | Trust |
 |---|---|---|---|---|
 | 10 | `PROJECT_PRIVATE` | `<project>/.naru/local/skills` | private | native |
-| 100 + distance | `FOLDER_PUBLIC` | `<dir>/.naru/skills` for each `dir` from `projectDir` down to `workingDir` | public | native |
+| 100 + distance | `FOLDER_PUBLIC` | `<dir>/.naru/skills` for each `dir` from `sessionDir` down to `workingDir` | public | native |
 | 5000 | `USER` | `~/.naru/skills` | private | native |
 | 6000 | `FOREIGN_PROJECT` | `<project>/.claude/skills` | public | opt-in |
 | 6001 | `FOREIGN_PROJECT` | `<project>/.agents/skills` | public | opt-in |
@@ -158,7 +158,7 @@ The manager reads two ways:
 - **Live folder walk.** Roots between the project and the task's current
   `workingDir` are read at request time, because they depend on the task.
 
-`/project` re-resolves the base snapshot: the extension recreates the manager bound
+`/sessiondir` re-resolves the base snapshot: the extension recreates the manager bound
 to the new project root and reloads it, keeping each task's flat `LOADED` selection.
 A skill that disappears at the new root is therefore reported by `/skill doctor`
 rather than silently unloaded.

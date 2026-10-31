@@ -25,7 +25,8 @@ public class NaruStreamPipelineTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        Nuts.require();    }
+        Nuts.require();
+    }
 
     private static final class Recorder implements NaruStreamHandler {
         final List<NaruStreamChunk> chunks = new ArrayList<>();
@@ -109,6 +110,49 @@ public class NaruStreamPipelineTest {
         assertEquals(NaruThinkingExtraction.TAG_DELIMITED, segments.get(1).getExtraction());
         assertEquals("tagged thoughts", segments.get(1).getText());
         assertEquals(NMsg.ofP("xy"), m.getContent());
+    }
+
+    /**
+     * A provider that carries one thought twice on the same stream — as deltas and
+     * again complete in a trailing field, or as cumulative frames — must not put it
+     * on the transcript twice. This is the duplicate the reported session showed as
+     * two identical THINKING rows above the same answer.
+     */
+    @Test
+    public void aReEmittedReasoningSummaryIsNotDeliveredTwice() {
+        Recorder r = new Recorder();
+        NaruStreamPipeline p = new NaruStreamPipeline("test-provider", r, NaruThinkingTags.NATIVE_ONLY);
+        String thought = "The user wants the email corrected. Two typos and a wrong time.";
+        p.feedNativeThinking(thought);
+        p.feedNativeThinking(thought);
+        p.feed("the answer");
+        NaruMessage m = p.finish();
+        assertEquals(thought, r.thinking(), "the reader hears the thought once");
+        assertEquals(1, m.getThinkingSegments().size());
+        assertEquals(thought, m.getThinkingSegments().get(0).getText());
+    }
+
+    @Test
+    public void aCumulativeReasoningFrameContributesOnlyItsNewTail() {
+        Recorder r = new Recorder();
+        NaruStreamPipeline p = new NaruStreamPipeline("test-provider", r, NaruThinkingTags.NATIVE_ONLY);
+        String first = "The user wants the email corrected,";
+        p.feedNativeThinking(first);
+        p.feedNativeThinking(first + " and the time is wrong.");
+        p.finish();
+        assertEquals(first + " and the time is wrong.", r.thinking());
+    }
+
+    @Test
+    public void aShortRepeatedPhraseIsStillDelivered() {
+        // below the floor, two identical feeds are more likely two thoughts than one
+        // echo: swallowing the second would lose reasoning the model really produced
+        Recorder r = new Recorder();
+        NaruStreamPipeline p = new NaruStreamPipeline("test-provider", r, NaruThinkingTags.NATIVE_ONLY);
+        p.feedNativeThinking("Let's think.");
+        p.feedNativeThinking("Let's think.");
+        p.finish();
+        assertEquals("Let's think.Let's think.", r.thinking());
     }
 
     @Test

@@ -237,8 +237,8 @@ public interface NaruTask extends NToElement {
      * statements (WP7). The trigger names the explicit hook event:
      * {@link net.thevpc.naru.api.scheduler.NaruEvent#SESSION_START},
      * {@link net.thevpc.naru.api.scheduler.NaruEvent#TASK_SPAWNED} or
-     * {@link net.thevpc.naru.api.scheduler.NaruEvent#PROJECT_CHANGE}. {@code /cd} never
-     * calls this; {@code /project} calls it once.
+     * {@link net.thevpc.naru.api.scheduler.NaruEvent#SESSION_DIR_CHANGE}. {@code /cd} never
+     * calls this; {@code /sessiondir} calls it once.
      */
     NaruTask runInitHooks(String trigger);
 

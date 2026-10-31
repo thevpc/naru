@@ -2,7 +2,10 @@ package net.thevpc.naru.desktop.model;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruOutput;
+import net.thevpc.naru.api.agent.NaruReplayItem;
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
+import net.thevpc.naru.api.agent.NaruTranscriptReplay;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
 import net.thevpc.naru.desktop.util.EDT;
 import net.thevpc.naru.desktop.util.MsgText;
@@ -77,6 +80,11 @@ public final class TranscriptModel {
      * only ordering the engine gives us to match them by.
      */
     private final Map<String, Deque<String>> openCards = new HashMap<>();
+    /**
+     * Calls this activation already drew from the live stream, so the durable echo of a tool the
+     * user watched run does not open a second card for it. Shared with the tools list.
+     */
+    private final DrawnCalls drawnCalls = new DrawnCalls();
 
     // ── feeding ───────────────────────────────────────────────────────────────
 
@@ -124,49 +132,38 @@ public final class TranscriptModel {
             } else if (e instanceof TranscriptEvent.Closed cl) {
                 structural |= close(cl.blockId()) != null;
             } else if (e instanceof TranscriptEvent.ToolCall tc) {
-                structural |= toolCard(tc.call());
+                structural |= toolCard(tc.call(), false);
                 // every lifecycle event appends its header line to a row, so a repaint is due
                 // whether or not a row was added
                 text = true;
             } else if (e instanceof TranscriptEvent.Message m) {
                 if (m.message() != null) {
-                    // An assistant answer is streamed as the raw model turn and later arrives
-                    // again as the durable message. Attaching the message to the block that is
-                    // already on screen turns that streaming row into the model's own card — the
-                    // answer appears as it is written and settles in the place it already
-                    // occupies — where creating a second block would show the same text twice.
-                    // Engine lines work the same way: the live progress or warning line is the copy
-                    // the user saw first, so the stored message promotes that line into a card.
-                    net.thevpc.naru.api.agent.NaruRole role = m.message().getRole();
-                    String live = m.message().getFilteredContent();
-                    TranscriptBlock streamed = null;
-                    if (role == net.thevpc.naru.api.agent.NaruRole.assistant) {
-                        streamed = liveBlockFor(m.taskId(), live, NaruLogMode.MODEL_RESPONSE);
-                    } else if (role == net.thevpc.naru.api.agent.NaruRole.engine) {
-                        streamed = liveBlockFor(m.taskId(), live, NaruLogMode.PROGRESS);
-                        if (streamed == null) {
-                            streamed = liveBlockFor(m.taskId(), live, NaruLogMode.AGENT_RESPONSE);
+                    // A stored message is drawn through the engine's own split (NaruTranscriptReplay)
+                    // rather than guessed at here: an assistant turn holds reasoning, an answer and
+                    // its tool calls, and a host that flattens that into one card is what makes a
+                    // reloaded session read as one voice.
+                    List<NaruReplayItem> items = NaruTranscriptReplay.replay(
+                            m.taskId(), List.of(m.message()));
+                    if (items.isEmpty()) {
+                        // A message the replay classifies as nothing to draw — a system notice the
+                        // host raised itself. It is still content the user was owed, so an event that
+                        // asks for a message gets a block.
+                        structural |= replayBlock(m.blockId(), m.taskId(), m.sequence(),
+                                NaruReplayItem.ofMessage(NaruLogMode.AGENT_RESPONSE, m.message()));
+                    } else {
+                        for (int i = 0; i < items.size(); i++) {
+                            structural |= replayBlock(items.size() == 1
+                                            ? m.blockId() : m.blockId() + "-" + i,
+                                    m.taskId(), m.sequence(), items.get(i));
                         }
                     }
-                    boolean isNew = streamed == null && byId.get(m.blockId()) == null;
-                    NaruLogMode mode = m.message().getRole() == net.thevpc.naru.api.agent.NaruRole.user
-                            ? NaruLogMode.SCRIPT : NaruLogMode.AGENT_RESPONSE;
-                    TranscriptBlock b = streamed != null ? streamed : blockFor(m.blockId(), mode, m.taskId());
-                    b.setMessage(m.message(), m.sequence());
-                    String body = m.message().getFilteredContent();
-                    if (body == null) body = "";
-                    if (!m.message().getParts().isEmpty()) {
-                        for (var part : m.message().getParts()) body += "\n" + part.type() + ": " + part.payload();
-                    }
-                    if (streamed == null) {
-                        appendText(b, body.endsWith("\n") || body.isEmpty() ? body : body + "\n");
-                    }
-                    noteTextChanged(b);
-                    close(b.id());
-                    structural |= isNew;
                     messagesChanged = true;
                     text = true;
                 }
+            } else if (e instanceof TranscriptEvent.Replay r) {
+                structural |= replayBlock(r.blockId(), r.taskId(), r.sequence(), r.item());
+                messagesChanged = true;
+                text = true;
             } else if (e instanceof TranscriptEvent.Lagged) {
                 // the host already told us it dropped chunks; a resync line is structural
                 structural = true;
@@ -202,6 +199,58 @@ public final class TranscriptModel {
             openBlockId = null;
         }
         return b;
+    }
+
+    /**
+     * Draw one replayed item: a tool card, or a run of text on the channel the engine classified.
+     *
+     * <p>A live turn and its durable echo are drawn by the same code. An assistant answer streams as
+     * {@code MODEL_RESPONSE} and is later checkpointed as the message that holds it, so a restored
+     * item that matches an open live block settles onto that block instead of adding a copy — the
+     * answer keeps the place it already occupies.
+     *
+     * @return true when a row was added
+     */
+    private boolean replayBlock(String blockId, long taskId, long sequence, NaruReplayItem item) {
+        if (item == null) {
+            return false;
+        }
+        if (item.isToolCall()) {
+            return toolCard(item.toolCall(), true);
+        }
+        StringBuilder body = new StringBuilder();
+        if (item.text() != null) {
+            body.append(MsgText.plain(item.text().toString()));
+        }
+        NaruMessage message = item.message();
+        if (message != null && body.length() == 0) {
+            body.append(MsgText.plain(message.getFilteredContent()));
+        }
+        if (message != null) {
+            for (var part : message.getParts()) {
+                if (body.length() > 0) {
+                    body.append('\n');
+                }
+                body.append(part.type()).append(": ").append(part.payload());
+            }
+        }
+        String text = body.toString();
+        TranscriptBlock b = liveBlockFor(taskId, text, item.mode());
+        boolean isNew = b == null;
+        if (b == null) {
+            b = blockFor(blockId, item.mode(), taskId);
+            if (!text.isEmpty()) {
+                appendText(b, text.endsWith("\n") ? text : text + "\n");
+            }
+            if (message != null) {
+                b.setMessage(message, sequence);
+            }
+            close(b.id());
+        } else if (message != null) {
+            b.setMessage(message, sequence);
+        }
+        noteTextChanged(b);
+        return isNew;
     }
 
     /**
@@ -260,9 +309,18 @@ public final class TranscriptModel {
      * verbose on — a tool call is not noise — and the widget tells it apart by
      * {@link TranscriptBlock#isToolCard()}.
      *
+     * <p>{@code fromReplay} says where the event came from: the live lifecycle stream, or durable
+     * history being drawn. A call seen live is remembered as soon as it opens, and a call that
+     * history repeats is dropped. That provenance test is the only reliable one — a call id is
+     * a model's invention, and nothing in the event itself says whether the user already watched it
+     * run. Marking on the opening event rather than only on the final one matters because the store
+     * checkpoints the assistant message that carries the call separately from the message that
+     * carries its result: a replay that only skipped settled calls would open a second card from
+     * the first of those echoes and then settle that new card, leaving the live one on screen too.
+     *
      * @return true when a row was added or a row's open/closed state moved
      */
-    private boolean toolCard(NaruToolCallEvent event) {
+    private boolean toolCard(NaruToolCallEvent event, boolean fromReplay) {
         if (event == null) {
             return false;
         }
@@ -282,10 +340,18 @@ public final class TranscriptModel {
             }
             boolean added = false;
             if (b == null) {
+                if (fromReplay && drawnCalls.isMarked(event)) {
+                    // the checkpoint echoing a call the user already watched open: this card would
+                    // be the same tool drawn twice, and its own result settles on the live copy
+                    return false;
+                }
                 b = cardBlock(event);
                 openCards.computeIfAbsent(key, k -> new ArrayDeque<>()).addLast(b.id());
                 b.setToolCall(event);
                 added = true;
+            }
+            if (!fromReplay) {
+                drawnCalls.mark(event);
             }
             appendText(b, ToolCardText.header(event));
             noteTextChanged(b);
@@ -299,8 +365,14 @@ public final class TranscriptModel {
         TranscriptBlock b = openId == null ? null : byId.get(openId);
         boolean added = false;
         if (b == null || b.isClosed()) {
-            // a final event with no open card: the call was rejected before it dispatched, or the
-            // STARTED belonged to an activation that has since been trimmed away
+            if (fromReplay && drawnCalls.isMarked(event)) {
+                // the checkpoint echoing a call the user already watched settle: the live card is
+                // the copy that was drawn first, and a second one says the tool ran twice
+                return false;
+            }
+            // a final event with no open card: the call was rejected before it dispatched, the
+            // STARTED belonged to an activation that has since been trimmed away, or this is a
+            // session reloaded from the store, where the whole call arrives as one settled event
             b = cardBlock(event);
             added = true;
         }
@@ -312,6 +384,11 @@ public final class TranscriptModel {
         }
         noteTextChanged(b);
         close(b.id());
+        if (!fromReplay) {
+            // a call the user watched run is one the checkpoint must not add again, whether it
+            // reached its result or was cut short on the way
+            drawnCalls.mark(event);
+        }
         if (b.length() > TOOL_CARD_COLLAPSE_CHARS) {
             b.setCollapsed(true);
         }
@@ -382,6 +459,15 @@ public final class TranscriptModel {
             n += q.size();
         }
         return n;
+    }
+
+    /**
+     * The calls this transcript already drew from the live stream. The tools list is fed the same
+     * batch and shares the answer, so the two views cannot disagree about whether a tool that ran
+     * is new or is the checkpoint repeating itself.
+     */
+    public DrawnCalls drawnCalls() {
+        return drawnCalls;
     }
 
     /**
@@ -615,6 +701,7 @@ public final class TranscriptModel {
         byId.clear();
         view.clear();
         openCards.clear();
+        drawnCalls.clear();
         changedText.clear();
         openBlockId = null;
         retainedChars = 0;

@@ -67,7 +67,7 @@ public class NaruBudgetDirectiveTest {
         NPath dir = NPath.ofTempFolder("naru-budget-directive-" + System.nanoTime());
         agent.projectDirectory(dir);
         session = (NaruSessionImpl) agent.newSession()
-                .directory(dir)
+                .sessionDir(dir)
                 .interaction(null)
                 .sessionListener(null)
                 .directiveFilter(null)

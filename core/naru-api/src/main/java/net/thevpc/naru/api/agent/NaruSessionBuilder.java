@@ -48,10 +48,10 @@ import java.util.function.Predicate;
 public interface NaruSessionBuilder {
 
     /**
-     * Where the session keeps its state. Defaults to the agent's project directory, or the
+     * The directory this session uses to resolve project-relative files and skills. Defaults to the agent's workspace directory, or the
      * user's home directory when the agent has none.
      */
-    NaruSessionBuilder directory(NPath directory);
+    NaruSessionBuilder sessionDir(NPath sessionDir);
 
     /**
      * The principal that owns the session. Defaults to the OS user

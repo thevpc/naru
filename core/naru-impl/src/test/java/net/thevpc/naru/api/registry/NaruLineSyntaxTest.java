@@ -32,7 +32,7 @@ public class NaruLineSyntaxTest {
         NPath dir = NPath.ofTempFolder("naru-line-syntax");
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
-        NaruSession s = agent.newSession().directory(dir).configureDefaults(false).build();
+        NaruSession s = agent.newSession().sessionDir(dir).configureDefaults(false).build();
         s.registry().registerDirectiveProvider(new net.thevpc.naru.impl.registry.NaruBuiltinDirectiveProvider());
         return s;
     }
@@ -104,10 +104,10 @@ public class NaruLineSyntaxTest {
 
     @Test
     public void aPathShapeWinsOverTheSubCommandGuess() {
-        // nothing here knows /project's grammar, so the only signal is that the word looks like a path
-        assertSpans("/project /tmp/work", "DIRECTIVE@0-8('/project')", "PATH@9-18('/tmp/work')");
-        assertSpans("/project ~/work", "DIRECTIVE@0-8('/project')", "PATH@9-15('~/work')");
-        assertSpans("/project list", "DIRECTIVE@0-8('/project')", "SUBCOMMAND@9-13('list')");
+        // nothing here knows /sessiondir's grammar, so the only signal is that the word looks like a path
+        assertSpans("/sessiondir /tmp/work", "DIRECTIVE@0-11('/sessiondir')", "PATH@12-21('/tmp/work')");
+        assertSpans("/sessiondir ~/work", "DIRECTIVE@0-11('/sessiondir')", "PATH@12-18('~/work')");
+        assertSpans("/sessiondir list", "DIRECTIVE@0-11('/sessiondir')", "SUBCOMMAND@12-16('list')");
     }
 
     @Test

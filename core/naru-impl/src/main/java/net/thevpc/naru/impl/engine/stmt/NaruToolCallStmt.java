@@ -64,9 +64,6 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
         if (NBlankable.isBlank(call.getName())) {
             String err = "ERROR: Empty tool name. Available tools: "
                     + task.session().registry().tools().keySet().stream().sorted().collect(Collectors.joining(", "));
-//            task.addHistory(NaruMessage.engine(NMsg.ofC("  %s Result: %s",
-//                    NMsg.ofStyledPrimary6("📤"),
-//                    ImplNaruUtils.abbreviate(err, 300))));
             task.reportToolCall(NaruToolCallEvent.failed(task.id(), call, err, NaruToolCallEvent.UNKNOWN_DURATION));
             task.addHistory(NaruMessage.tool(call.getName(), call.getId(), err));
             task.defaultAdvance(this);
@@ -90,16 +87,11 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
             }
         }
 
-        NObjectElementBuilder t = NElement.ofObjectBuilder(call.getName());
-        for (Map.Entry<String, Object> e : call.getArguments().entrySet()) {
-            t.set(e.getKey(), NElement.of(e.getValue()));
-        }
-
-        task.addHistory(NaruMessage.engine(NMsg.ofC("%s Tool: %s",
-                        NMsg.ofStyledPrimary9("🔧"),
-                        NText.ofCode("tson", t.build().toString())
-                ).withIntent(NMsgIntent.PROGRESS)
-        ));
+        // The call is not written into history as a prose line. It is already the durable record
+        // twice over: the assistant message carries the tool call, and finishToolCall appends its
+        // role=tool result. A host shows both through NaruToolCallEvent, and a reloaded session
+        // rebuilds the same card with NaruTranscriptReplay — so a "Tool: …" line in the store is a
+        // third copy of one fact, which is what made a tool read as the agent narrating itself.
         task.reportToolCall(NaruToolCallEvent.started(task.id(), call));
         long t0 = System.nanoTime();
         String result = task.session().registry().dispatch(call, task);
@@ -117,12 +109,9 @@ public class NaruToolCallStmt extends NaruStatement implements Cloneable {
     }
 
     private void finishToolCall(NaruTask task, String result, long durationMillis) {
-        task.addHistory(NaruMessage.engine(NMsg.ofC("  %s Result: %s",
-                NMsg.ofStyledPrimary6("📤"),
-                ImplNaruUtils.abbreviate(result, 300)).withIntent(NMsgIntent.PROGRESS)));
         // The engine's failure convention is a result string that starts with ERROR (unknown
         // tool, permission denial, a tool that threw). Tools have no other way to report it,
-        // so this is the same classification the log line and the model's history already get.
+        // so this is the same classification the card and the model's history already get.
         boolean failed = result != null && result.startsWith("ERROR");
         task.reportToolCall(failed
                 ? NaruToolCallEvent.failed(task.id(), call, result, durationMillis)

@@ -12,26 +12,26 @@ import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 
 /**
- * {@code /project <dir>} -- the explicit project switch (WP7).
+ * {@code /sessiondir <dir>} -- the explicit session-directory switch (WP7).
  * <p>
  * Unlike {@code /cd}, which only moves the working directory, this changes the project
  * root. That makes it the one directive entitled to side effects: it re-resolves what is
  * rooted at the project (skill roots, context files, model defaults), runs the
- * workspace-level {@code init.naru} exactly once, and fires the {@code project-change}
+ * workspace-level {@code init.naru} exactly once, and fires the {@code sessiondir-change}
  * event. Per-task selections and granted tag sets are kept; only availability is
  * re-resolved (an existing task's selected model is fixed at task creation, so "models"
  * here means the model <em>defaults</em> the new root provides), so a loaded skill that
  * no longer exists at the new root is reported by {@code /skill doctor} rather than
  * silently unloaded.
  */
-public class NaruProjectDirective extends NaruDirectiveBase {
+public class NaruSessionDirDirective extends NaruDirectiveBase {
 
-    public NaruProjectDirective() {
-        super("project", "session", "change the project directory");
+    public NaruSessionDirDirective() {
+        super("sessiondir", "session", "change the session directory");
         register(new AbstractSubCommand(new SubCommandHelp("<dir>",
                 "change the project root to <dir>, re-resolve roots/context files/model defaults, run the "
-                        + "workspace init.naru once and fire project-change.\n"
-                        + "ex:\n/project /path/to/other/project")) {
+                        + "workspace init.naru once and fire sessiondir-change.\n"
+                        + "ex:\n/sessiondir /path/to/other/sessiondir")) {
             @Override
             public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
@@ -39,21 +39,21 @@ public class NaruProjectDirective extends NaruDirectiveBase {
                 String arg = context.argument();
                 if (NBlankable.isBlank(arg)) {
                     NMsg msg = NMsg.ofC("project: missing <dir> (current project is %s)",
-                            session.projectDir()).asError();
+                            session.sessionDir()).asError();
                     task.addResultMessage(msg);
                     return NaruStmtResult.ofError(msg);
                 }
-                NPath target = NPath.of(arg.trim()).toAbsolute(session.projectDir()).normalize();
+                NPath target = NPath.of(arg.trim()).toAbsolute(session.sessionDir()).normalize();
                 if (!target.isDirectory()) {
                     NMsg msg = NMsg.ofC("project directory not found: %s", target).asError();
                     task.addResultMessage(msg);
                     return NaruStmtResult.ofError(msg);
                 }
-                NPath old = session.projectDir();
-                session.projectDir(target);
-                // exactly once per /project: the workspace init, read from the new root
-                task.runInitHooks(NaruEvent.PROJECT_CHANGE);
-                NPath now = session.projectDir();
+                NPath old = session.sessionDir();
+                session.sessionDir(target);
+                // exactly once per /sessiondir: the workspace init, read from the new root
+                task.runInitHooks(NaruEvent.SESSION_DIR_CHANGE);
+                NPath now = session.sessionDir();
                 if (now.equals(old)) {
                     task.addResultMessage(NMsg.ofC("project is already %s", now));
                 } else {

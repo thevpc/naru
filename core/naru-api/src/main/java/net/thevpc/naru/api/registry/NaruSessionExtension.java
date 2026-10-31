@@ -224,7 +224,7 @@ public interface NaruSessionExtension extends NComponent {
     }
 
     /**
-     * Called after the session's project directory changed through {@code /project}, with
+     * Called after the session directory changed through {@code /sessiondir}, with
      * the old and new roots (WP7). A feature that snapshotted anything rooted at the
      * project -- skill roots, for instance -- re-resolves it here. Per-task selections and
      * grants are deliberately <em>not</em> reset: only availability is re-resolved, so a
@@ -233,7 +233,7 @@ public interface NaruSessionExtension extends NComponent {
      * <p>
      * Must not throw: a broken extension may not break the navigation.
      */
-    default void onProjectChanged(NaruSession session, NPath oldProjectDir, NPath newProjectDir) {
+    default void onSessionDirChanged(NaruSession session, NPath oldSessionDir, NPath newSessionDir) {
     }
 
     /** Called when the session is terminated. */

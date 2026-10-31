@@ -441,7 +441,7 @@ claims off widgets and two of them were lying.
    `TaskSmoke` and feeds hop 1's gate (`side-tabs-laid-out=6` problems `=0`).
 2. *Closing a session threw from a pane.* `NaruSessionModel.shutdown()` ends with one more
    `fireChanged()`, and `InspectorPane.sessionModelChanged()` answered that paint by reading
-   `s.projectDir()` off a session the engine had already stopped: `IllegalStateException: session is
+   `s.sessionDir()` off a session the engine had already stopped: `IllegalStateException: session is
    stopped`. The fix is one line in the model — `session()` returns null once closed, documented as
    "no engine left to inspect" — and `TaskMonitorTest` order 7 pins it by closing a session while a
    `TaskPane`, `InspectorPane` and `WorkbenchPane` are all listening, with no try/catch to swallow the

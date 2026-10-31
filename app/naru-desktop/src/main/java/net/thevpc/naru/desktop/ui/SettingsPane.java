@@ -12,7 +12,6 @@ import javax.swing.JPanel;
 import javax.swing.JSlider;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
-import java.awt.Color;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.util.List;
@@ -65,9 +64,7 @@ public final class SettingsPane extends JPanel {
                         .stringWidth("Input & shortcuts") + 56), 100));
 
         JPanel appearance = new JPanel(new BorderLayout(10, 12));
-        Color borderColor = javax.swing.UIManager.getColor("Component.borderColor");
-        appearance.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(borderColor == null ? new Color(120,120,120) : borderColor),
-                BorderFactory.createEmptyBorder(20, 22, 22, 22)));
+        appearance.setBorder(BorderFactory.createEmptyBorder(20, 22, 22, 22));
         JLabel heading = new JLabel("Appearance"); UiFonts.apply(heading, UiFonts.SUBTITLE, Font.BOLD);
         JLabel copy = new JLabel("Choose a comfortable theme. NARU remembers your choice for the next launch.");
         JComboBox<Theme> theme = new JComboBox<>(THEMES.toArray(Theme[]::new));
@@ -107,9 +104,7 @@ public final class SettingsPane extends JPanel {
         shortcuts.add(shortcutsNote);
         pageArea.add(shortcuts, "Input & shortcuts");
         WorkspaceEnvPane envPane = new WorkspaceEnvPane(workspace, liveSession);
-        envPane.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(borderColor == null ? new Color(120, 120, 120) : borderColor),
-                BorderFactory.createEmptyBorder(20, 22, 22, 22)));
+        envPane.setBorder(BorderFactory.createEmptyBorder(20, 22, 22, 22));
         pageArea.add(envPane, "Workspace");
         sections.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {

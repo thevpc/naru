@@ -123,7 +123,7 @@ public class NaruToolCallLifecycleTest {
         dir.mkdirs();
         agent.projectDirectory(dir);
         NaruSession s = agent.newSession()
-                .directory(dir)
+                .sessionDir(dir)
                 .interaction(interaction)
                 .configureDefaults(false)
                 .sessionListener(null)
@@ -382,7 +382,7 @@ public class NaruToolCallLifecycleTest {
         dir.mkdirs();
         agent.projectDirectory(dir);
         NaruSession s = agent.newSession()
-                .directory(dir)
+                .sessionDir(dir)
                 .interaction(stream)
                 .configureDefaults(false)
                 .sessionListener(null)

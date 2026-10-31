@@ -80,6 +80,7 @@ public final class NaruDesktop {
         // the workspace must exist before prepareUI resolves anything through Nuts
         applyTheme(preferences().get(THEME_KEY, DEFAULT_THEME), false);
         NPath project = parseProject(app.cmdLine().toStringArray());
+        String openSession = parseSession(app.cmdLine().toStringArray());
         SwingUtilities.invokeLater(() -> {
             MainWindow w = new MainWindow();
             w.setSize(1280, 800);
@@ -91,8 +92,24 @@ public final class NaruDesktop {
                     : rememberedProject == null || rememberedProject.isBlank()
                     ? NPath.of(System.getProperty("user.dir", ".")).toAbsolute()
                     : NPath.of(rememberedProject).toAbsolute();
+            // set before the catalog is listed: the reopen is a request about the listing that
+            // has not finished yet, not an action the window can take afterwards
+            w.openSessionWhenCatalogLoads(openSession);
             w.loadProjectCatalog(startupProject);
         });
+    }
+
+    /**
+     * The session to reopen at startup, from {@code --session <uuid>} / {@code -s <uuid>}, or null.
+     * The same flag the cmdline REPL takes, so one saved conversation can be picked up in either host.
+     */
+    private static String parseSession(String[] args) {
+        for (int i = 0; i < args.length; i++) {
+            if (("--session".equals(args[i]) || "-s".equals(args[i])) && i + 1 < args.length) {
+                return args[i + 1];
+            }
+        }
+        return null;
     }
 
     public static void rememberProject(NPath project) {
@@ -178,9 +195,14 @@ public final class NaruDesktop {
             UIManager.setLookAndFeel(className);
             themeBaseFont = UIManager.getFont("defaultFont");
             if (themeBaseFont == null) themeBaseFont = UIManager.getFont("Label.font");
-            UIManager.put("Button.arc", 12);
-            UIManager.put("Component.arc", 10);
-            UIManager.put("TextComponent.arc", 8);
+            // Keep the platform themes intact, but give their common controls one shared, softer
+            // shape language. Content panels use spacing and surface tone for grouping; these arcs
+            // apply to the controls FlatLaf knows how to paint (buttons, fields, scrollbars, etc.).
+            UIManager.put("Button.arc", 16);
+            UIManager.put("Component.arc", 14);
+            UIManager.put("TextComponent.arc", 12);
+            UIManager.put("ScrollBar.trackArc", 999);
+            UIManager.put("ScrollBar.thumbArc", 999);
             UIManager.put("Button.margin", new Insets(4, 9, 4, 9));
             UIManager.put("Component.focusWidth", 1);
             applyScaledFontDefaults(100);

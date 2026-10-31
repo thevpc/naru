@@ -344,14 +344,14 @@ This is not fussiness. A task is deregistered as soon as it ends, so the object 
 hand may be the only remaining record of what happened — and a record that a later write
 can edit is not a record.
 
-The *descriptive* setters (`projectDir`, `taskMode`, `promptMode`, …) stay live, because
+The *descriptive* setters (`sessionDir`, `taskMode`, `promptMode`, …) stay live, because
 those describe the task rather than its run. So `NaruTask` is not a value type: do not
 cache one expecting immutability. Ask it again when you need to know.
 
 ## 11. What the core can run
 
 The core jar ships these directives: `/exit`, `/print`, `/help`, `/buffer`, `/assert`,
-`/goto`, `/project`. And these statement keywords, which are parsed by the engine rather than looked
+`/goto`, `/sessiondir`. And these statement keywords, which are parsed by the engine rather than looked
 up as directives:
 
 `/return` · `/if` · `/else` · `/elseif` · `/end` · `/for` · `/while` · `/goto` · `:` (label)
@@ -367,8 +367,8 @@ jar. Add it to the classpath and it appears; remove it and the feature is gone, 
 nothing in `naru-api` or `naru-impl` referring to it. See
 [Planning](planning.md) for `naru-tools-plan`.
 
-`/cd` and `/project` are the two navigation directives, and they differ in side effects:
-`/cd` only moves the working directory, while `/project` changes the project root, re-resolves
+`/cd` and `/sessiondir` are the two navigation directives, and they differ in side effects:
+`/cd` only moves the working directory, while `/sessiondir` changes the project root, re-resolves
 what is rooted there and runs the workspace `init.naru` once. See
 [Projects, navigation and hooks](projects-and-hooks.md).
 

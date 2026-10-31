@@ -8,6 +8,7 @@ import net.thevpc.naru.desktop.ui.StatusBar;
 import net.thevpc.naru.desktop.ui.StatusDot;
 import net.thevpc.naru.desktop.ui.TaskPane;
 import net.thevpc.naru.desktop.ui.InspectorPane;
+import net.thevpc.naru.desktop.ui.PlanPane;
 import net.thevpc.naru.desktop.ui.TranscriptPane;
 import net.thevpc.naru.desktop.ui.UiPalette;
 import net.thevpc.naru.desktop.ui.WorkbenchPane;
@@ -96,6 +97,11 @@ public final class MainWindow extends JFrame {
      */
     private final java.util.Set<String> catalogLoadedProjects = new java.util.HashSet<>();
     private NPath projectDirectory;
+    /**
+     * A session uuid handed in on the command line. It is consumed by the first catalog load that
+     * finishes, because the reopen is a request about a listing that has not been built yet.
+     */
+    private String openSessionUuid;
 
     private TranscriptPane transcript;
     private TranscriptPane sessionLogPane;
@@ -104,6 +110,7 @@ public final class MainWindow extends JFrame {
     private TaskPane taskPane;
     private WorkbenchPane workbench;
     private InspectorPane inspector;
+    private PlanPane planPane;
     private NaruSessionModel session;
     private InteractionHost host;
     private Point dragOffset;
@@ -586,6 +593,32 @@ public final class MainWindow extends JFrame {
         openProject(dir);
     }
 
+    /**
+     * Ask the first catalog load to open this saved session instead of just selecting the top row.
+     * Passing null (the common case) leaves the window on the plain listing behaviour.
+     */
+    public void openSessionWhenCatalogLoads(String uuid) {
+        openSessionUuid = (uuid == null || uuid.isBlank()) ? null : uuid.trim();
+    }
+
+    /**
+     * Consume the requested reopen: the field is cleared on the first load that has rows, so a
+     * later project switch is not held hostage by a uuid from the command line. A uuid that names
+     * no row in this project is reported and dropped rather than silently opening someone else.
+     */
+    private SessionEntry takeRequestedSession() {
+        if (openSessionUuid == null) return null;
+        String uuid = openSessionUuid;
+        openSessionUuid = null;
+        for (SessionEntry e : sessions) {
+            if (uuid.equals(e.id)) return e;
+        }
+        net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, "Open session",
+                "No saved session " + uuid + " in " + projectDirectory + ". The listing shows this "
+                        + "project's sessions instead.");
+        return null;
+    }
+
     /** Load durable rows without building or starting a session. */
     public void loadProjectCatalog(NPath dir) {
         projectDirectory = dir.toAbsolute();
@@ -613,7 +646,16 @@ public final class MainWindow extends JFrame {
                         showActiveSession("No session", null);
                         addWelcome();
                     } else {
-                        sessionList.setSelectedIndex(0);
+                        // A --session uuid from the command line opens that row rather than the
+                        // first one in the listing: the same conversation the REPL resumes with
+                        // -s, so a run started in either host continues in the other.
+                        SessionEntry requested = takeRequestedSession();
+                        if (requested == null) {
+                            sessionList.setSelectedIndex(0);
+                        } else {
+                            sessionList.setSelectedIndex(sessions.indexOf(requested));
+                            activateSession(requested);
+                        }
                     }
                 } catch (Exception ex) {
                     addWelcome();
@@ -938,7 +980,7 @@ public final class MainWindow extends JFrame {
             if (pending != null) tasks.selectTask(pending.task().id());
         };
         session.addListener(selectionSync);
-        JSplitPane sessionAndConversation = SplitPanes.horizontal(sessionRail(tasks), conversationViews);
+        JSplitPane sessionAndConversation = SplitPanes.horizontal(sessionRail(), conversationViews);
         sessionAndConversation.setResizeWeight(0.33);
         JSplitPane whole = SplitPanes.horizontal(sessionAndConversation, taskTools);
         whole.setResizeWeight(0.78);
@@ -1012,7 +1054,7 @@ public final class MainWindow extends JFrame {
         } else addWelcome();
     }
 
-    private JPanel sessionRail(TaskPane tasks) {
+    private JPanel sessionRail() {
         JPanel rail = new JPanel(new BorderLayout());
         sessionRailPanel = rail;
         rail.setPreferredSize(new java.awt.Dimension(railWidth(), 100));
@@ -1103,16 +1145,7 @@ public final class MainWindow extends JFrame {
         sessionFilter.setOpaque(true);
         JPanel top=new JPanel(new BorderLayout(0,5)); JPanel heading=new JPanel(new BorderLayout(0,5)); heading.add(sessionHeader,BorderLayout.NORTH); heading.add(sessionFilter,BorderLayout.SOUTH);
         top.add(heading,BorderLayout.NORTH); top.add(new JScrollPane(sessionList),BorderLayout.CENTER);
-        if (tasks == null) {
-            rail.add(top, BorderLayout.CENTER);
-        } else {
-            // A ratio, not a pixel: a pixel location set here is clamped against the rail's
-            // still-zero height and the divider lands on top of the list.
-            JSplitPane left = SplitPanes.vertical(top, tasks);
-            left.setResizeWeight(.25);
-            left.setDividerLocation(0.45);
-            rail.add(left, BorderLayout.CENTER);
-        }
+        rail.add(top, BorderLayout.CENTER);
         return rail;
     }
 
@@ -1183,7 +1216,7 @@ public final class MainWindow extends JFrame {
         content.add(details, BorderLayout.CENTER);
         content.add(actions, BorderLayout.SOUTH);
         preview.add(content, BorderLayout.NORTH);
-        JSplitPane split = SplitPanes.horizontal(sessionRail(null), preview);
+        JSplitPane split = SplitPanes.horizontal(sessionRail(), preview);
         split.setResizeWeight(0.24);
         center.removeAll(); center.setLayout(new BorderLayout()); center.add(split, BorderLayout.CENTER);
         showActiveSession(entry.toString(), entry);
@@ -1258,9 +1291,15 @@ public final class MainWindow extends JFrame {
 
     private JTabbedPane sideTabs;
     private JTabbedPane conversationTabs;
+    /** The inspector's own strip: Tools, Requests, Context, Budget and Skills are its children. */
+    private JTabbedPane inspectorTabs;
 
     private JTabbedPane sideTabs(TaskPane tasks, NaruSessionModel session) {
         JTabbedPane tabs = new JTabbedPane();
+        // the plan board leads the rail: it says what the run is for, where the two tabs after it
+        // answer questions about a run that already happened
+        planPane = new PlanPane(session);
+        tabs.addTab("Plan", planPane);
         // moved from Phase 4 by the owner: §3.3 makes this the v1 answer to an approval prompt,
         // and §6 promises a jump into it from a permission denial
         JPanel taskPermissions = new JPanel(new BorderLayout());
@@ -1271,8 +1310,9 @@ public final class MainWindow extends JFrame {
         tabs.addTab("Permissions", taskPermissions);
         // the tools table lives inside Inspect now: it is an inspection surface, and beside the
         // requests table its columns and its detail zone read as one instrument instead of two
-        inspector = new InspectorPane(session);
+        inspector = new InspectorPane(session, tasks);
         inspector.setJumpToPermissions(this::openPermissions);
+        inspectorTabs = inspector.tabStrip();
         tabs.addTab("Inspect", inspector);
         workbench = new WorkbenchPane(session);
         tabs.addTab("Workspace", workbench);
@@ -1307,8 +1347,19 @@ public final class MainWindow extends JFrame {
      */
     public boolean selectSideTab(String title) {
         JTabbedPane tabs = tabsHolding(title);
+        if (tabs == null && sideTabs != null && sideTabs.indexOfTab("Inspect") >= 0) {
+            // the inspector's own strip is only populated once Inspect has been shown, so a harness
+            // that asks for a child first has to raise the parent before the child can be found
+            sideTabs.setSelectedIndex(sideTabs.indexOfTab("Inspect"));
+            tabs = tabsHolding(title);
+        }
         if (tabs == null) {
             return false;
+        }
+        // an inspector child is only on screen once Inspect itself is showing: a harness that asks
+        // for "Tools · task" gets that child photographed, not the parent's blank remainder
+        if (tabs == inspectorTabs && sideTabs != null) {
+            sideTabs.setSelectedIndex(sideTabs.indexOfTab("Inspect"));
         }
         tabs.setSelectedIndex(tabs.indexOfTab(title));
         lastTabbedPane = tabs;
@@ -1316,11 +1367,12 @@ public final class MainWindow extends JFrame {
     }
 
     /**
-     * Which tabbed pane owns a title. The window has two — the rail's tool tabs and the conversation
-     * tabs beside the transcript — and a caller that asks for {@code "Conversation"} must be told the
-     * truth about it, not about whichever side tab happened to be selected. Before this, selecting a
-     * conversation tab worked while {@code selectedSideComponent()} still returned the Workspace pane,
-     * so a gate run's screenshot of "Conversation" was a screenshot of the wrong thing.
+     * Which tabbed pane owns a title. The window has three — the rail's tool tabs, the conversation
+     * tabs beside the transcript, and the inspector's own strip — and a caller that asks for
+     * {@code "Conversation"} must be told the truth about it, not about whichever side tab happened
+     * to be selected. Before this, selecting a conversation tab worked while
+     * {@code selectedSideComponent()} still returned the Workspace pane, so a gate run's screenshot
+     * of "Conversation" was a screenshot of the wrong thing.
      */
     private JTabbedPane tabsHolding(String title) {
         JTabbedPane tabs = sideTabs;
@@ -1328,6 +1380,10 @@ public final class MainWindow extends JFrame {
             return tabs;
         }
         tabs = conversationTabs;
+        if (tabs != null && tabs.indexOfTab(title) >= 0) {
+            return tabs;
+        }
+        tabs = inspectorTabs;
         return tabs != null && tabs.indexOfTab(title) >= 0 ? tabs : null;
     }
 
@@ -1454,12 +1510,14 @@ public final class MainWindow extends JFrame {
         // rather than leaving a listener on a model that is about to fire one last time
         if (taskPane != null) { taskPane.dispose(); taskPane = null; }
         if (inspector != null) { inspector.dispose(); inspector = null; }
+        if (planPane != null) { planPane.dispose(); planPane = null; }
         workbench = null;
         if (input != null) { input.dispose(); input = null; }
         if (statusBar != null) { statusBar.dispose(); statusBar = null; }
         composerSplit = null;
         sideTabs = null;
         conversationTabs = null;
+        inspectorTabs = null;
     }
 
     public NaruSessionModel session() {

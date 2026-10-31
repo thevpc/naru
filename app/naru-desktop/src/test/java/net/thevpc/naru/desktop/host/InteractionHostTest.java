@@ -223,7 +223,7 @@ class InteractionHostTest {
         onEdt(() -> {
             host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("No model is selected."), 4);
             host.beginDirectiveBlock();
-            host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("/home/user/project"), 4);
+            host.write(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("/home/user/sessiondir"), 4);
             host.endDirectiveBlock();
             host.flushOnce();
         });

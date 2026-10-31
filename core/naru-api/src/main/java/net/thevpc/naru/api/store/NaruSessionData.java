@@ -23,7 +23,7 @@ public class NaruSessionData implements NToElement {
     private Instant creationInstant;
     private Instant modificationInstant;
     private NElement model;
-    private String projectDir;
+    private String sessionDir;
     private String workingDir;
     private long version;
     private final Map<String, Object> env = new LinkedHashMap<>();
@@ -42,7 +42,7 @@ public class NaruSessionData implements NToElement {
         if (d.model != null && d.model.isNull()) {
             d.model = null;
         }
-        d.projectDir = o.getStringValue("projectDir").orNull();
+        d.sessionDir = o.getStringValue("sessionDir").orNull();
         d.workingDir = o.getStringValue("workingDir").orNull();
         d.version = o.getLongValue("version").orElse(0L);
         NElement e = o.get("env").orNull();
@@ -131,12 +131,12 @@ public class NaruSessionData implements NToElement {
         return this;
     }
 
-    public String projectDir() {
-        return projectDir;
+    public String sessionDir() {
+        return sessionDir;
     }
 
-    public NaruSessionData projectDir(String projectDir) {
-        this.projectDir = projectDir;
+    public NaruSessionData sessionDir(String sessionDir) {
+        this.sessionDir = sessionDir;
         return this;
     }
 
@@ -177,7 +177,7 @@ public class NaruSessionData implements NToElement {
         o.set("creationDate", NElement.ofInstant(creationInstant));
         o.set("modificationDate", NElement.ofInstant(modificationInstant));
         o.set("model", model);
-        o.set("projectDir", projectDir);
+        o.set("sessionDir", sessionDir);
         o.set("workingDir", workingDir);
         o.set("version", version);
         NObjectElementBuilder envBuilder = NObjectElementBuilder.of();

@@ -181,7 +181,7 @@ public class NaruWorkspaceSessionsTest {
         NaruSessionBuilder builder = agent.newSession().interaction(silent());
         NaruSession session = builder.task(NaruTaskSpec.of().statements("noop")).build();
         Assertions.assertNotNull(session.uuid());
-        Assertions.assertEquals(agent.projectDirectory(), session.projectDir(),
+        Assertions.assertEquals(agent.projectDirectory(), session.sessionDir(),
                 "a session with no explicit directory belongs to the project");
     }
 }

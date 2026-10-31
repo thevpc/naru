@@ -134,9 +134,9 @@ public final class ChatPartRenderers implements AutoCloseable {
 
         public javax.swing.JComponent render(NaruMessagePart part, Consumer<String> actionHandler) {
             JPanel panel = new JPanel(new BorderLayout(8, 4));
-            panel.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(panel.getForeground().darker()),
-                    BorderFactory.createEmptyBorder(8, 10, 8, 10)));
+            // This form sits inside a message card already; another hard rectangle makes it read
+            // like a card inside a card. Let the spacing separate it from the surrounding text.
+            panel.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
             panel.add(new JLabel(field(part, "title", "Input required")), BorderLayout.NORTH);
             JPanel fields = new JPanel(new java.awt.GridLayout(0, 2, 8, 5));
             fields.setOpaque(false);

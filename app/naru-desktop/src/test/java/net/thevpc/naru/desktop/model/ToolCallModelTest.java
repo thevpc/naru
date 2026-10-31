@@ -64,7 +64,7 @@ class ToolCallModelTest {
     @Test
     void aCallGoesThroughItsStatesInOneRow() throws Exception {
         onEdt(() -> {
-            ToolCallModel m = new ToolCallModel();
+            ToolCallModel m = new ToolCallModel(new DrawnCalls());
             m.apply(List.of(started(6, "c1", "bash")));
             assertEquals(1, m.size());
             assertEquals(ToolCallModel.Status.RUNNING, m.rowAt(0).status());
@@ -88,7 +88,7 @@ class ToolCallModelTest {
     @Test
     void twoTasksUsingTheSameCallIdAreTwoRows() throws Exception {
         onEdt(() -> {
-            ToolCallModel m = new ToolCallModel();
+            ToolCallModel m = new ToolCallModel(new DrawnCalls());
             // models reuse ids like "0" across tasks; the task is part of the key for exactly this
             m.apply(List.of(started(1, "0", "echo"), started(2, "0", "echo")));
             m.apply(List.of(result(1, "0", "echo", "one", 5), result(2, "0", "echo", "two", 5)));
@@ -102,7 +102,7 @@ class ToolCallModelTest {
     @Test
     void aFailureWithoutAStartStillGetsARow() throws Exception {
         onEdt(() -> {
-            ToolCallModel m = new ToolCallModel();
+            ToolCallModel m = new ToolCallModel(new DrawnCalls());
             m.apply(List.of(new TranscriptEvent.ToolCall(NaruToolCallEvent.failed(
                     9, call("c7", "secret_tool"), "ERROR: permission denied by rule 'deny-secret'", 2))));
             assertEquals(1, m.size());
@@ -115,7 +115,7 @@ class ToolCallModelTest {
     @Test
     void theHostClosingSettlesWhateverIsStillRunning() throws Exception {
         onEdt(() -> {
-            ToolCallModel m = new ToolCallModel();
+            ToolCallModel m = new ToolCallModel(new DrawnCalls());
             m.apply(List.of(started(3, "c1", "slow"), started(3, "c2", "slow")));
             m.apply(List.of(result(3, "c1", "slow", "back", 10)));
             m.apply(List.of(new TranscriptEvent.HostClosed("session closed")));
@@ -133,7 +133,7 @@ class ToolCallModelTest {
             batch.add(result(1, "c" + i, "echo", "r" + i, 1));
         }
         onEdt(() -> {
-            ToolCallModel m = new ToolCallModel();
+            ToolCallModel m = new ToolCallModel(new DrawnCalls());
             m.apply(batch);
             assertEquals(ToolCallModel.MAX_ROWS, m.size(), "the list is bounded");
             assertEquals(25, m.droppedRows(), "and the eviction is counted, not silent");
@@ -145,7 +145,7 @@ class ToolCallModelTest {
     void anOversizedResultEvictsHistoryButNeverTheCurrentCall() throws Exception {
         String huge = "y".repeat(ToolCallModel.MAX_RETAINED_RESULT_CHARS + 1024);
         onEdt(() -> {
-            ToolCallModel m = new ToolCallModel();
+            ToolCallModel m = new ToolCallModel(new DrawnCalls());
             m.apply(List.of(result(1, "c1", "read", "small", 1)));
             m.apply(List.of(new TranscriptEvent.ToolCall(
                     NaruToolCallEvent.failed(1, call("c2", "read"), huge, 3))));
@@ -160,7 +160,7 @@ class ToolCallModelTest {
     @Test
     void aPlainTextChunkIsNotAToolCall() throws Exception {
         onEdt(() -> {
-            ToolCallModel m = new ToolCallModel();
+            ToolCallModel m = new ToolCallModel(new DrawnCalls());
             m.apply(List.of(new TranscriptEvent.Chunk("b1", NaruLogMode.SCRIPT, "output", true, 1)));
             assertEquals(0, m.size(), "the panel lists calls, not output lines");
         });

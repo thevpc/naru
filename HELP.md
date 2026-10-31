@@ -596,12 +596,12 @@ Available Native Core Directives:
     -----------------------------------------
 
   session Directives:
-    /project : change the project directory
+    /sessiondir : change the project directory
     | Detailed Specification :
-/project   <dir>
-           change the project root to <dir>, re-resolve roots/context files/model defaults, run the workspace init.naru once and fire project-change.
+/sessiondir   <dir>
+           change the project root to <dir>, re-resolve roots/context files/model defaults, run the workspace init.naru once and fire sessiondir-change.
            ex:
-           /project /path/to/other/project
+           /sessiondir /path/to/other/project
     -----------------------------------------
     /session : manage sessions
     | Detailed Specification :

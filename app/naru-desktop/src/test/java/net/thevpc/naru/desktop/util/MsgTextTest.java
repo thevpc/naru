@@ -33,6 +33,20 @@ class MsgTextTest {
         assertEquals("Selected model : ollama/qwen2.5-coder:14b", MsgText.plain(raw));
     }
 
+    /**
+     * A message that has been through normalization re-escapes the markup it carries, so the same
+     * line reaches the transcript as {@code \##{p9:ollama}\#\#}. Both spellings have to render as
+     * the text they decorate — a restored transcript that shows half a marker is the bug the user
+     * reported as "what is that ok".
+     */
+    @Test
+    void stripsTheReEscapedFormOfTheSameLine() {
+        String escaped = "Selected model : \\##{p9:ollama}\\#\\#\\##{separator:/}"
+                + "\\#\\#\\##{p6:qwen2.5-coder:14b}\\##";
+        assertEquals("Selected model : ollama/qwen2.5-coder:14b", MsgText.plain(escaped));
+        assertEquals("a # b", MsgText.plain("a \\# b"));
+    }
+
     @Test
     void keepsAmbiguousTextIntact() {
         // a lone marker pair, a token with no terminator, and a bare brace group are all

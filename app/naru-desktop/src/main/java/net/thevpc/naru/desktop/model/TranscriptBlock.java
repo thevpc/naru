@@ -111,9 +111,13 @@ public final class TranscriptBlock {
     public void setMessage(NaruMessage message, long sequence) {
         this.message = message == null ? null : message.copy();
         this.messageSequence = sequence;
-        if (this.message != null) {
-            // a block that carries a durable message is no longer narration: it is part of the
-            // record, so the answer that lands after it must not supersede it away
+        if (this.message != null
+                && BlockStyle.of(mode).lifecycle() == BlockStyle.Lifecycle.DURABLE) {
+            // a block on a durable channel that carries its stored message is part of the record,
+            // so the answer that lands after it must not supersede it away. Narration keeps its
+            // transience even when a message is attached: "Tool: file_read" gets a message the
+            // moment the checkpoint echoes it back, and making that durable would leave every
+            // progress line of every turn permanently on screen.
             this.transientBlock = false;
         }
     }

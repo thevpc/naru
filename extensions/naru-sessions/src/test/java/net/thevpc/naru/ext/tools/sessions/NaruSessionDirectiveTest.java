@@ -94,7 +94,7 @@ public class NaruSessionDirectiveTest {
     /** A session sharing this test's project directory, and so its saved-session catalog. */
     private NaruSession newSession(String name) {
         NaruSession s = agent.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

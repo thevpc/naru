@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
 import net.thevpc.naru.desktop.model.ToolCallModel;
+import net.thevpc.naru.desktop.model.DrawnCalls;
 import net.thevpc.naru.desktop.util.EDT;
 import net.thevpc.naru.desktop.util.PermissionsText;
 import org.junit.jupiter.api.AfterEach;
@@ -119,7 +120,7 @@ class ToolsPaneTest {
 
     @Test
     void theHeadIsTheNewestCallAndItIsSelected() throws Exception {
-        ToolCallModel model = new ToolCallModel();
+        ToolCallModel model = new ToolCallModel(new DrawnCalls());
         ToolsPane pane = new ToolsPane(model);
         JTable t = table(pane);
         onEdt(() -> model.apply(List.of(started(6, "c1", "bash"))));
@@ -136,7 +137,7 @@ class ToolsPaneTest {
 
     @Test
     void aChosenCallSurvivesTheNextOne() throws Exception {
-        ToolCallModel model = new ToolCallModel();
+        ToolCallModel model = new ToolCallModel(new DrawnCalls());
         ToolsPane pane = new ToolsPane(model);
         JTable t = table(pane);
         onEdt(() -> {
@@ -156,7 +157,7 @@ class ToolsPaneTest {
 
     @Test
     void sortingByDurationBringsTheSlowestFirst() throws Exception {
-        ToolCallModel model = new ToolCallModel();
+        ToolCallModel model = new ToolCallModel(new DrawnCalls());
         ToolsPane pane = new ToolsPane(model);
         JTable t = table(pane);
         onEdt(() -> model.apply(List.of(
@@ -177,7 +178,7 @@ class ToolsPaneTest {
 
     @Test
     void oneTaskNarrowsTheTableAndDropsItsOwnColumn() throws Exception {
-        ToolCallModel model = new ToolCallModel();
+        ToolCallModel model = new ToolCallModel(new DrawnCalls());
         ToolsPane pane = new ToolsPane(model);
         JTable t = table(pane);
         onEdt(() -> model.apply(List.of(
@@ -198,7 +199,7 @@ class ToolsPaneTest {
 
     @Test
     void aDenialReadsAsDenyAndSortsAboveAnOkCall() throws Exception {
-        ToolCallModel model = new ToolCallModel();
+        ToolCallModel model = new ToolCallModel(new DrawnCalls());
         ToolsPane pane = new ToolsPane(model);
         JTable t = table(pane);
         // the denial lands first, so the newest-first order puts it second: the row a plain
@@ -218,7 +219,7 @@ class ToolsPaneTest {
 
     @Test
     void theFilterSearchesTheResultTextNotJustTheToolName() throws Exception {
-        ToolCallModel model = new ToolCallModel();
+        ToolCallModel model = new ToolCallModel(new DrawnCalls());
         ToolsPane pane = new ToolsPane(model);
         JTable t = table(pane);
         JTextField box = search(pane);
@@ -239,7 +240,7 @@ class ToolsPaneTest {
 
     @Test
     void theWorstCaseNumbersStillFitTheirColumns() throws Exception {
-        ToolCallModel model = new ToolCallModel();
+        ToolCallModel model = new ToolCallModel(new DrawnCalls());
         ToolsPane pane = new ToolsPane(model);
         JTable t = table(pane);
         onEdt(() -> model.apply(List.of(
@@ -261,7 +262,7 @@ class ToolsPaneTest {
 
     @Test
     void aHugeResultPastesOnlyWhatOneFrameCanPaint() throws Exception {
-        ToolCallModel model = new ToolCallModel();
+        ToolCallModel model = new ToolCallModel(new DrawnCalls());
         ToolsPane pane = new ToolsPane(model);
         JTable t = table(pane);
         String huge = "x".repeat(150_000);

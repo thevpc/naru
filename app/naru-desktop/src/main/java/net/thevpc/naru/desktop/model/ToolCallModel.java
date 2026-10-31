@@ -73,8 +73,14 @@ public final class ToolCallModel {
     private final List<Row> rows = new ArrayList<>();
     private final Map<String, Deque<Integer>> openByCall = new HashMap<>();
     private final List<Listener> listeners = new ArrayList<>();
+    /** Calls this activation already drew live, so the checkpoint of the same call adds no row. */
+    private final DrawnCalls drawnCalls;
     private long resultChars;
     private int droppedRows;
+
+    public ToolCallModel(DrawnCalls drawnCalls) {
+        this.drawnCalls = drawnCalls;
+    }
 
     /** Apply one coalesced host batch. Called on the EDT. */
     public void apply(List<TranscriptEvent> batch) {
@@ -82,7 +88,13 @@ public final class ToolCallModel {
         boolean changed = false;
         for (TranscriptEvent e : batch) {
             if (e instanceof TranscriptEvent.ToolCall tc) {
-                changed |= update(tc.call());
+                changed |= update(tc.call(), false);
+            } else if (e instanceof TranscriptEvent.Replay r) {
+                // only the tool cards a restored conversation holds: its answers, reasoning and
+                // narration belong to the transcript, not to this list
+                if (r.item() != null && r.item().isToolCall()) {
+                    changed |= update(r.item().toolCall(), true);
+                }
             } else if (e instanceof TranscriptEvent.HostClosed hc) {
                 // the activation is over, so a row still marked RUNNING never settled. Say so
                 // rather than leave the list lying about a call that will never come back
@@ -95,7 +107,7 @@ public final class ToolCallModel {
         }
     }
 
-    private boolean update(NaruToolCallEvent event) {
+    private boolean update(NaruToolCallEvent event, boolean fromReplay) {
         if (event == null) {
             return false;
         }
@@ -119,6 +131,12 @@ public final class ToolCallModel {
                         null, NaruToolCallEvent.UNKNOWN_DURATION, old.startedAt(), null));
                 return true;
             }
+            if (fromReplay && drawnCalls.isMarked(event)) {
+                return false;
+            }
+            if (!fromReplay) {
+                drawnCalls.mark(event);
+            }
             rows.add(new Row(event.taskId(), event.callId(), event.toolName(), event.arguments(),
                     st, null, NaruToolCallEvent.UNKNOWN_DURATION, Instant.now(), null));
             openByCall.computeIfAbsent(key, k -> new ArrayDeque<>()).addLast(rows.size() - 1);
@@ -131,6 +149,10 @@ public final class ToolCallModel {
         }
         Status st = event.kind() == NaruToolCallEvent.Kind.FAILED ? Status.FAILED : Status.OK;
         String result = event.result();
+        if (!fromReplay) {
+            // a call that settles while the user watches it is one the checkpoint must not add again
+            drawnCalls.mark(event);
+        }
         if (at != null && at < rows.size() && rows.get(at).status() != Status.OK
                 && rows.get(at).status() != Status.FAILED) {
             Row old = rows.get(at);
@@ -139,8 +161,14 @@ public final class ToolCallModel {
             resultChars += length(result);
             return true;
         }
-        // no open row for it: the call was rejected before dispatch, or its STARTED was in an
-        // activation whose rows have since been dropped
+        // no open row for it: the call was rejected before dispatch, its STARTED was in an
+        // activation whose rows have since been dropped, or this is a session reloaded from the
+        // store, where the settled call arrives whole as one replayed item
+        if (fromReplay) {
+            if (drawnCalls.isMarked(event)) {
+                return false;
+            }
+        }
         rows.add(new Row(event.taskId(), event.callId(), event.toolName(), event.arguments(), st,
                 result, event.durationMillis(), null, Instant.now()));
         resultChars += length(result);

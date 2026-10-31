@@ -60,7 +60,7 @@ public class NaruPermissionsRuleStore {
     }
 
     public NPath projectFile() {
-        NPath dir = session.projectDir();
+        NPath dir = session.sessionDir();
         return dir == null ? null : dir.resolve(PROJECT_FILE);
     }
 

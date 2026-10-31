@@ -342,7 +342,7 @@ public class NaruCompactExtension implements NaruSessionExtension, NaruSessionUs
     }
 
     private static NPath cacheFile(NaruSession session) {
-        return session.projectDir().resolve(".naru/cache/compact.tson");
+        return session.sessionDir().resolve(".naru/cache/compact.tson");
     }
 
     private void log(NaruLogMode mode, NMsg msg) {

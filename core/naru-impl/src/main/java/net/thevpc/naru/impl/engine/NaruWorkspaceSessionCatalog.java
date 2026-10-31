@@ -49,7 +49,7 @@ final class NaruWorkspaceSessionCatalog implements NaruSessionStoreManager {
             if (store == null) {
                 NPath dir = workspace.projectDirectory() != null
                         ? workspace.projectDirectory()
-                        : workspace.defaultSessionDirectory();
+                        : workspace.defaultSessionDir();
                 NaruEnv env = workspace.env();
                 store = NaruStoreFactory.open(
                         NaruStoreConfigs.forProject(dir, env),

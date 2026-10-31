@@ -471,7 +471,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
      * Where a session lives when the caller does not say: the project directory, or the
      * user's home directory when the agent has none.
      */
-    NPath defaultSessionDirectory() {
+    NPath defaultSessionDir() {
         if (projectDirectory != null) {
             return projectDirectory;
         }

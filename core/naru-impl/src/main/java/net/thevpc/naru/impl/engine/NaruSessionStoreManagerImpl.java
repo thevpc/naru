@@ -84,9 +84,9 @@ public class NaruSessionStoreManagerImpl implements NaruSessionStoreManager {
 
     private NPath sessionDir(boolean publicSession) {
         if (publicSession) {
-            return adapter.projectDir().resolve(".naru/sessions/");
+            return adapter.sessionDir().resolve(".naru/sessions/");
         }
-        return adapter.projectDir().resolve(".naru/local/sessions/");
+            return adapter.sessionDir().resolve(".naru/local/sessions/");
     }
 
     public String findByUuidOrName(String uuidOrName) {

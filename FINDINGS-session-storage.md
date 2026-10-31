@@ -5,7 +5,7 @@ Read before any change. Facts, with the code that establishes each one.
 ## 1. `.naru/local/sessions/snapshot.tson` — NOT a pointer, and nothing reads it
 
 It is a **whole older-format session state document**, not an index. Shape (2.7K in this
-repo): `uuid`, `name`, `creationDate`, `modificationDate`, `model`, `projectDir`,
+repo): `uuid`, `name`, `creationDate`, `modificationDate`, `model`, `sessionDir`,
 `workingDir`, and a `tasks` array holding **full inline task elements** (including
 `history`, `frames` inline). Its `uuid` is `6442acf3-…`, different from
 `.naru/local/sessions/snapshot/session.tson`'s `6c602730-…`.
@@ -66,7 +66,7 @@ Semantics of `.naru/local/sessions/<uuid>/audit/task-<id>.tson`:
   `attempt`, `durationMs`, `statusCode`, `statusMessage`, `responseHeaders`,
   `responseBody`, `error{type,message}`.
 - Two override paths, both of which must survive: env `audit.dir` / `llm.audit.dir`
-  replaces the location entirely, and with no session and no projectDir it falls back to
+  replaces the location entirely, and with no session and no sessionDir it falls back to
   the Nuts workspace log store.
 
 **This is the quadratic term section 5 attacks:** `requestBody.messages` is the whole

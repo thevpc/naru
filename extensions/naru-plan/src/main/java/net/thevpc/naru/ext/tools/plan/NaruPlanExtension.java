@@ -6,6 +6,11 @@ import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruPromptMode.ModeIntent;
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.naru.api.plan.NaruPlanItemSnapshot;
+import net.thevpc.naru.api.plan.NaruPlanItemState;
+import net.thevpc.naru.api.plan.NaruPlanReader;
+import net.thevpc.naru.api.plan.NaruPlanSnapshot;
+import net.thevpc.naru.api.plan.NaruPlanState;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.elem.NElement;
@@ -28,7 +33,7 @@ import java.util.Set;
  * classpath removes planning entirely; nothing in {@code naru-api} or {@code naru-impl}
  * refers to it.
  */
-public class NaruPlanExtension implements NaruSessionExtension {
+public class NaruPlanExtension implements NaruSessionExtension, NaruPlanReader {
 
     public static final String NAME = "plan";
 
@@ -59,6 +64,54 @@ public class NaruPlanExtension implements NaruSessionExtension {
      */
     public NaruPlanManager plans() {
         return plans;
+    }
+
+    @Override
+    public List<NaruPlanSnapshot> allPlans() {
+        String activeId = plans.activePlanId();
+        List<NaruPlanSnapshot> out = new ArrayList<>();
+        for (NaruPlan p : plans.plans().values()) {
+            out.add(snapshot(p, p.id().equals(activeId)));
+        }
+        return out;
+    }
+
+    @Override
+    public NaruPlanSnapshot activePlan() {
+        NaruPlan p = plans.activePlan().orNull();
+        return p == null ? null : snapshot(p, true);
+    }
+
+    /**
+     * Copy the live graph into immutable API values.
+     *
+     * <p>The enums cross by name, and that is deliberate: {@code NaruPlanItemState} declares exactly
+     * what {@link NaruPlanItemStatus} declares, so a host reads the same seven states the tools
+     * write. An item is copied rather than referenced for the same reason the record is — a plan is
+     * mutated by the task running it, and a panel repainting on the EDT must not walk that.
+     */
+    private static NaruPlanSnapshot snapshot(NaruPlan p, boolean active) {
+        List<NaruPlanItemSnapshot> items = new ArrayList<>();
+        for (NaruPlanItem i : p.items()) {
+            List<String> deps = new ArrayList<>();
+            for (String depId : i.dependsOn()) {
+                deps.add(labelOf(p, depId));
+            }
+            items.add(new NaruPlanItemSnapshot(i.id(), labelOf(p, i.id()), i.description(),
+                    NaruPlanItemState.valueOf(i.status().name()), deps,
+                    i.notes(), i.taskId(), i.attempts()));
+        }
+        return new NaruPlanSnapshot(p.id(), p.goal(), NaruPlanState.valueOf(p.status().name()),
+                items, active);
+    }
+
+    /** The declaration key if the plan has one, otherwise the short id prefix {@link #contribute} prints. */
+    private static String labelOf(NaruPlan p, String itemId) {
+        String key = p.keyOf(itemId);
+        if (key != null) {
+            return key;
+        }
+        return itemId == null ? "" : itemId.substring(0, Math.min(8, itemId.length()));
     }
 
     /**

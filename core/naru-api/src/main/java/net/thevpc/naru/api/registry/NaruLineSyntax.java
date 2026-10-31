@@ -111,7 +111,7 @@ public final class NaruLineSyntax {
             } else if (number) {
                 out.add(new Span(Role.NUMBER, t.start(), t.end()));
             } else if (looksLikePath(w)) {
-                // before the sub-command rule: "/project /tmp/x" takes a path, and a shape test is
+                // before the sub-command rule: "/sessiondir /tmp/x" takes a path, and a shape test is
                 // the only thing here that can tell the two apart without knowing the directive
                 out.add(new Span(Role.PATH, t.start(), t.end()));
             } else if (i == 1 && known) {

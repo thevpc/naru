@@ -26,12 +26,12 @@ public class NaruEvent {
      */
     public static final String SESSION_START = "session-start";
     /**
-     * Fired when the session's project directory changes through {@code /project}. The
+     * Fired when the session directory changes through {@code /sessiondir}. The
      * payload carries the old and new directories. Task selections and tag sets are kept;
      * availability is re-resolved by each feature, and a loaded skill that disappeared is
      * reported by {@code /skill doctor} rather than silently dropped.
      */
-    public static final String PROJECT_CHANGE = "project-change";
+    public static final String SESSION_DIR_CHANGE = "sessiondir-change";
     private final long seq;
     private final String name;
     private final Map<String, Object> payload;

@@ -39,7 +39,7 @@ import java.util.function.Predicate;
 class NaruSessionBuilderImpl implements NaruSessionBuilder {
 
     private final NaruWorkspaceImpl agent;
-    private NPath directory;
+    private NPath sessionDir;
     private NaruInteraction interaction;
     private NaruTaskSpec task;
     private boolean interactive;
@@ -121,8 +121,8 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     }
 
     @Override
-    public NaruSessionBuilder directory(NPath directory) {
-        this.directory = directory;
+    public NaruSessionBuilder sessionDir(NPath sessionDir) {
+        this.sessionDir = sessionDir;
         return this;
     }
 
@@ -282,7 +282,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
             printBanner();
         }
         agent.classLoader();
-        NPath dir = directory != null ? directory : agent.defaultSessionDirectory();
+        NPath dir = sessionDir != null ? sessionDir : agent.defaultSessionDir();
         NaruInteraction useInteraction = interaction != null
                 ? interaction
                 : new NaruTerminalInteraction();
@@ -349,7 +349,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     @Override
     public NaruSessionHandle buildHandle() {
         return new NaruSessionHandleImpl(agent,
-                directory != null ? directory : agent.defaultSessionDirectory(),
+                sessionDir != null ? sessionDir : agent.defaultSessionDir(),
                 interaction, task, id, store, scope, inputBlockPolicy, hibernateAfter,
                 streaming, busyPolicy, turnListener, maxLiveSessions,
                 checkpointEachMessage, capacityTimeout, agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter(),

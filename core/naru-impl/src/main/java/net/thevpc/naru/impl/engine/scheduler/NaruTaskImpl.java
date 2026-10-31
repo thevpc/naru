@@ -156,6 +156,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
      * {@link #isResponseStreamed()}.
      */
     private boolean responseStreamed;
+    /**
+     * Whether the last {@link #chat} drew that model's reasoning live as well. The answer and the
+     * reasoning are separate channels and a stream can carry one without the other, so a single
+     * flag would either re-print a thought the reader already watched or drop the reasoning of a
+     * batch response entirely.
+     */
+    private boolean reasoningStreamed;
     private final List<NaruEvent> awaitReceived = new ArrayList<>();
     private final Map<String, NaruEventSubscription> eventSubscriptions = new ConcurrentHashMap<>();
     private final Map<String, NOptional<Object>> env = new ConcurrentHashMap<>();
@@ -2311,17 +2318,32 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         NaruRole role = message.getRole();
         if (role == NaruRole.assistant) {
-            // chat() drew the answer live, token by token, when the model streams
-            if (!isResponseStreamed()) {
-                log(NaruLogMode.MODEL_RESPONSE, content);
+            // chat() drew the channels live, token by token, whenever the model streamed them.
+            // What it did not draw is expanded here by the same rule that classifies a reloaded
+            // session: a batch response then puts its reasoning on the reasoning channel instead
+            // of losing it, and the terminal cannot disagree with the desktop about which channel
+            // a turn's text belongs to.
+            for (NaruReplayItem item : NaruTranscriptReplay.replay(id(), List.of(message))) {
+                NaruLogMode mode = item.mode();
+                if (mode == NaruLogMode.MODEL_THINKING && !reasoningStreamed) {
+                    log(mode, item.text());
+                } else if (mode == NaruLogMode.MODEL_RESPONSE && !responseStreamed) {
+                    log(mode, item.text());
+                }
             }
         } else if (role == NaruRole.engine) {
-            int level = content.normalizedLevel().intValue();
-            if (level >= java.util.logging.Level.WARNING.intValue()) {
-                log(NaruLogMode.AGENT_RESPONSE, content);
-            } else if (level >= java.util.logging.Level.FINE.intValue()) {
-                log(NaruLogMode.PROGRESS, content);
+            // one rule, shared with the restored transcript: the intent says reasoning, the level
+            // says whether the reader has to act on it. A second copy of that decision written here
+            // is how a line can come out of the desktop as narration and out of a reload as prose.
+            NaruLogMode mode = NaruTranscriptReplay.modeOf(message);
+            if (mode == NaruLogMode.PROGRESS
+                    && content.normalizedLevel().intValue() < java.util.logging.Level.FINE.intValue()) {
+                // the live stream keeps its own floor: modeOf has to classify every stored line,
+                // including the FINEST chatter a log view can show, while printing it here would
+                // bury the answer the way it always was
+                return;
             }
+            log(mode, content);
         }
     }
 
@@ -2720,7 +2742,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
      *                       is the project root, which is the historical task-spawn rule
      * @param hookBase       directory whose {@code .naru/hooks} and {@code .naru/local/hooks}
      *                       are searched for {@code init.naru}; the task's working directory
-     *                       at task-spawn, the new project root on {@code /project}
+     *                       at task-spawn, the new project root on {@code /sessiondir}
      */
     public void _prependInitHooks(boolean forceWorkspace, NPath hookBase) {
         List<NaruStatement> all = new ArrayList<>();
@@ -2751,8 +2773,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     /**
-     * Explicit hook entry point (WP7). {@code /project} calls this once with
-     * {@link NaruEvent#PROJECT_CHANGE}, which forces the shared workspace init and reads the
+     * Explicit hook entry point (WP7). {@code /sessiondir} calls this once with
+     * {@link NaruEvent#SESSION_DIR_CHANGE}, which forces the shared workspace init and reads the
      * hooks from the new project root. Task creation calls it with
      * {@link NaruEvent#TASK_SPAWNED}, which keeps the historical rule: the shared workspace
      * init is included only when the working directory is the project root. {@code /cd}
@@ -2760,8 +2782,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
      */
     @Override
     public NaruTask runInitHooks(String trigger) {
-        boolean forceWorkspace = NaruEvent.PROJECT_CHANGE.equals(trigger);
-        NPath hookBase = forceWorkspace ? session.projectDir() : workingDir;
+        boolean forceWorkspace = NaruEvent.SESSION_DIR_CHANGE.equals(trigger);
+        NPath hookBase = forceWorkspace ? session.sessionDir() : workingDir;
         _prependInitHooks(forceWorkspace, hookBase);
         return this;
     }
@@ -3054,6 +3076,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         NaruResponse r;
         responseStreamed = false;
+        reasoningStreamed = false;
         if (isStreamingEnabled(protocol)) {
             // Both channels are drawn as they arrive. The answer is included: a
             // non-thinking model produces no thinking at all, so streaming only the
@@ -3078,6 +3101,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 // unparsed prose
                 NaruLogMode mode;
                 if (chunk.kind() == NaruChunkKind.THINKING) {
+                    reasoningStreamed = true;
                     mode = NaruLogMode.MODEL_THINKING;
                 } else if (chunk.kind() == NaruChunkKind.ANSWER) {
                     sawAnswer.set(true);

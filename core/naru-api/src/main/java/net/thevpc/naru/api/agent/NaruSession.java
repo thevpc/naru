@@ -91,27 +91,27 @@ public interface NaruSession {
     boolean hasMoreStatements();
 
     /**
-     * Returns the project directory for this session.
+     * Returns the session directory used to resolve project-relative configuration and skills.
      *
      * @return the project directory path, never null
      */
-    NPath projectDir();
+    NPath sessionDir();
 
     /**
-     * Changes the project root and re-resolves everything that depends on it (WP7):
+     * Changes the session directory and re-resolves everything that depends on it (WP7):
      * skill roots, context files, model defaults and init hooks. Per-task selections and
      * tag sets are kept; only availability is re-resolved, and a feature's doctor reports
-     * what disappeared. Fires the {@code project-change} event.
+     * what disappeared. Fires the {@code sessiondir-change} event.
      * <p>
      * Storage is not migrated: a session keeps writing to the store it was created with
-     * (O9). {@code /project} is a navigation change, not a move of the session.
+     * (O9). {@code /sessiondir} is a navigation change, not a move of the session.
      */
-    NaruSession projectDir(NPath projectDir);
+    NaruSession sessionDir(NPath sessionDir);
 
     /**
      * Appends an explicitly named event to the session event log, with no task as its
      * source. Used for session-scoped hooks such as {@code session-start} and
-     * {@code project-change}; task-scoped events go through
+     * {@code sessiondir-change}; task-scoped events go through
      * {@link NaruTask#fireEvent(String, java.util.Map, net.thevpc.naru.api.scheduler.NaruEventTarget, net.thevpc.naru.api.scheduler.NaruRetentionPolicy)}.
      */
     NaruSession fireEvent(String eventName, java.util.Map<String, Object> payload);

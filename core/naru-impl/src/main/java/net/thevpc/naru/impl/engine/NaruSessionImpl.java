@@ -97,7 +97,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     /**
      * Root directory of the project being worked on.
      */
-    private NPath projectDir;
+    private NPath sessionDir;
     private final NaruScheduler scheduler;
     // session has one dedicated readline thread, parked until needed
     private boolean running = false;
@@ -189,28 +189,28 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private final NaruAccessPolicyImpl accessPolicy = new NaruAccessPolicyImpl();
 
 
-    public NaruSessionImpl(NaruWorkspace workspace, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
+    public NaruSessionImpl(NaruWorkspace workspace, NPath sessionDir, NaruInteraction interaction, boolean configureDefaults
             , NaruSessionListener sessionListener
             , Predicate<NaruDirective> directiveFilter
             , Predicate<NaruTool> toolFilter
             , Predicate<NaruToolTag> tagFilter
     ) {
-        this(workspace, projectDir, interaction, configureDefaults, sessionListener,
+        this(workspace, sessionDir, interaction, configureDefaults, sessionListener,
                 directiveFilter, toolFilter, tagFilter, null, null);
     }
 
-    public NaruSessionImpl(NaruWorkspace workspace, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
+    public NaruSessionImpl(NaruWorkspace workspace, NPath sessionDir, NaruInteraction interaction, boolean configureDefaults
             , NaruSessionListener sessionListener
             , Predicate<NaruDirective> directiveFilter
             , Predicate<NaruTool> toolFilter
             , Predicate<NaruToolTag> tagFilter
             , NaruModelFilter modelFilter
     ) {
-        this(workspace, projectDir, interaction, configureDefaults, sessionListener,
+        this(workspace, sessionDir, interaction, configureDefaults, sessionListener,
                 directiveFilter, toolFilter, tagFilter, modelFilter, null);
     }
 
-    public NaruSessionImpl(NaruWorkspace workspace, NPath projectDir, NaruInteraction interaction, boolean configureDefaults
+    public NaruSessionImpl(NaruWorkspace workspace, NPath sessionDir, NaruInteraction interaction, boolean configureDefaults
             , NaruSessionListener sessionListener
             , Predicate<NaruDirective> directiveFilter
             , Predicate<NaruTool> toolFilter
@@ -222,8 +222,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         // a session created without a stated preference gets the desktop one, which is
         // what every caller did before this seam existed
         this.interaction = interaction == null ? new NaruTerminalInteraction() : interaction;
-        this.projectDir = projectDir.normalize();
-        this.workingDir = projectDir.normalize();
+        this.sessionDir = sessionDir.normalize();
+        this.workingDir = sessionDir.normalize();
         this.sessionStoreManager = new NaruSessionStoreManagerImpl(this);
         this.store = storeOverride == null ? NaruStoreFactory.open(storeConfig(), storeName(), workspace.classLoader()) : storeOverride;
         this.registry = new NaruRegistryImpl(this, directiveFilter, toolFilter, tagFilter, modelFilter, workspace.classLoader());
@@ -444,7 +444,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (parent == null) {
             natuTask._setInputMode(NaruInputMode.LINE);
             natuTask._setWorkingDir(plan.workingDir != null ? plan.workingDir : (cwd == null ? workingDir : cwd));
-            natuTask._setProjectDir(projectDir);
+            natuTask._setProjectDir(sessionDir);
             natuTask._setMode(NUtils.firstNonNull(plan.promptMode, taskBuilder.promptMode(), registry().mode(NaruPromptMode.DEFAULT).get()));
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
@@ -569,7 +569,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      */
     private void notifySessionStart() {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("projectDir", projectDir == null ? null : projectDir.toString());
+        payload.put("sessionDir", sessionDir == null ? null : sessionDir.toString());
         payload.put("workingDir", workingDir == null ? null : workingDir.toString());
         for (NaruSessionExtension extension : registry.sessionExtensions()) {
             try {
@@ -1155,7 +1155,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.pendingInputRequests.clear();
         NElement mv = o.get("model").orElse(null);
         this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
-        this.projectDir = data.projectDir() == null ? projectDir : NPath.of(data.projectDir());
+        this.sessionDir = data.sessionDir() == null ? sessionDir : NPath.of(data.sessionDir());
         this.workingDir = data.workingDir() == null ? workingDir : NPath.of(data.workingDir());
         env.clear();
         for (Map.Entry<String, Object> e : data.env().entrySet()) {
@@ -1502,7 +1502,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 .creationInstant(creationInstant)
                 .modificationInstant(modificationInstant)
                 .model(model == null ? null : model.toElement())
-                .projectDir(projectDir.toString())
+                .sessionDir(sessionDir.toString())
                 .workingDir(workingDir == null ? null : workingDir.toString())
                 .version(storeVersion)
                 .env(values);
@@ -1638,7 +1638,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         o.set("creationDate", NElement.ofInstant(creationInstant));
         o.set("modificationDate", NElement.ofInstant(modificationInstant));
         o.set("model", model == null ? null : model.toElement());
-        o.set("projectDir", NElement.ofString(projectDir.toString()));
+        o.set("sessionDir", NElement.ofString(sessionDir.toString()));
         o.set("workingDir", workingDir == null ? null : NElement.ofString(workingDir.toString()));
         NObjectElementBuilder _props = NObjectElementBuilder.of();
         for (Map.Entry<String, NOptional<Object>> e : env.entrySet()) {
@@ -2036,7 +2036,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * private, and a project that wants its sessions shared says so in one line.
      */
     private NaruStoreConfig storeConfig() {
-        return NaruStoreConfigs.forProject(projectDir, workspace.env());
+        return NaruStoreConfigs.forProject(sessionDir, workspace.env());
     }
 
     /**
@@ -2052,31 +2052,31 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     @Override
-    public NPath projectDir() {
+    public NPath sessionDir() {
         ensureNotStopped();
-        return projectDir;
+        return sessionDir;
     }
 
     /**
      * Changes the project root (WP7). Every live task follows the new root, each feature is
-     * told through {@link NaruSessionExtension#onProjectChanged} so it can re-resolve what
-     * is rooted at the project (skill roots, for one), and {@code project-change} is fired.
+     * told through {@link NaruSessionExtension#onSessionDirChanged} so it can re-resolve what
+     * is rooted at the session directory (skill roots, for one), and {@code sessiondir-change} is fired.
      * <p>
      * Per-task selections and granted tag sets are deliberately untouched: only
      * <em>availability</em> is re-resolved, so a loaded skill that disappeared at the new
      * root is reported by the feature's own doctor instead of being silently dropped.
      * <p>
      * Storage is not migrated: this session keeps writing to the store it was created with
-     * (O9). Running the workspace init is the caller's job -- {@code /project} calls
+     * (O9). Running the workspace init is the caller's job -- {@code /sessiondir} calls
      * {@link NaruTask#runInitHooks} once after this returns.
      */
     @Override
-    public NaruSession projectDir(NPath projectDir) {
+    public NaruSession sessionDir(NPath sessionDir) {
         ensureNotStopped();
-        NPath nf = projectDir.toAbsolute(this.projectDir).normalize();
-        NPath old = this.projectDir;
+        NPath nf = sessionDir.toAbsolute(this.sessionDir).normalize();
+        NPath old = this.sessionDir;
         if (!nf.equals(old)) {
-            this.projectDir = nf;
+            this.sessionDir = nf;
             // live tasks follow the root; the setProjectDir setter fires their change too,
             // so each task's projectDir() answer stays consistent between this call and
             // the next tick
@@ -2085,7 +2085,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             }
             for (NaruSessionExtension extension : registry.sessionExtensions()) {
                 try {
-                    extension.onProjectChanged(this, old, nf);
+                    extension.onSessionDirChanged(this, old, nf);
                 } catch (Exception e) {
                     // one broken feature must not break the navigation
                     log(NaruLogMode.SCRIPT, NMsg.ofC(
@@ -2094,9 +2094,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 }
             }
             Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("oldProjectDir", old == null ? null : old.toString());
-            payload.put("newProjectDir", nf.toString());
-            fireEvent(NaruEvent.PROJECT_CHANGE, payload);
+            payload.put("oldSessionDir", old == null ? null : old.toString());
+            payload.put("newSessionDir", nf.toString());
+            fireEvent(NaruEvent.SESSION_DIR_CHANGE, payload);
             fireChanged();
         }
         return this;
@@ -2104,7 +2104,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     /**
      * Appends a session-scoped event with no task as its source. Used for
-     * {@link NaruEvent#SESSION_START} and {@link NaruEvent#PROJECT_CHANGE}, which are
+     * {@link NaruEvent#SESSION_START} and {@link NaruEvent#SESSION_DIR_CHANGE}, which are
      * notifications about the session itself rather than about a task.
      */
     @Override
@@ -2162,7 +2162,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (!initOnCdWarned) {
             initOnCdWarned = true;
             warn(NMsg.ofC("⚠ init-on-cd is deprecated: '/cd' no longer runs "
-                    + ".naru/hooks/init.naru. Use '/project <dir>' to switch project (it runs "
+                    + ".naru/hooks/init.naru. Use '/sessiondir <dir>' to switch project (it runs "
                     + "the workspace init once), or set naru.initOnCd=true to keep the old "
                     + "behaviour temporarily."));
         }

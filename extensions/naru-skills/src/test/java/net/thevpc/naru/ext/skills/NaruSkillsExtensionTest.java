@@ -77,7 +77,7 @@ public class NaruSkillsExtensionTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         session = agent.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(null)
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)

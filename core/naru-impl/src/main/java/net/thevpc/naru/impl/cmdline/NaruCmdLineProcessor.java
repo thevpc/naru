@@ -50,6 +50,7 @@ import java.util.List;
 public class NaruCmdLineProcessor {
 
     private String projectDir = ".";
+    private String sessionId;
     private boolean help = false;
     private boolean helpCommands = false;
     private String[] helpCommandsArgs = new String[0];
@@ -70,6 +71,7 @@ public class NaruCmdLineProcessor {
                 .when("--file", "-f").asEntry(a -> precommands.add("/source " + a.value()))
                 .when("--interactive", "-i").asFlag(a -> forceInteractive = a.booleanValue())
                 .when("--project", "-d").asEntry(a -> projectDir = a.value())
+                .when("--session", "-s").asEntry(a -> sessionId = a.value())
                 .when("--extension", "-e").asEntry(a -> extensions.add(a.value()))
                 .when("--help", "-h").asFlag(a -> {
                     help = a.booleanValue();
@@ -101,27 +103,47 @@ public class NaruCmdLineProcessor {
         NaruWorkspace runner = createWorkspace(NPath.of(projectDir));
         boolean interactive = (forceInteractive == null ? precommands.isEmpty() : forceInteractive);
         if (interactive) {
-            runner.newSession()
+            NaruSession session = runner.newSession()
                     .statements(precommands.toArray(new String[0]))
                     .interactive()
                     .banner(true)
                     .richTerm(true)
-                    .build()
-                    .start()
-                    .waitFor();
+                    .id(sessionId)
+                    .build();
+            printRestoredConversation(session);
+            session.start().waitFor();
         } else {
             if (precommands.isEmpty()) {
                 throw new NIllegalArgumentException(NMsg.ofC("no task specified"));
             }
             try {
-                runner.newSession()
+                NaruSession session = runner.newSession()
                         .statements(precommands.toArray(new String[0]))
-                        .build()
-                        .start()
-                        .waitFor();
+                        .id(sessionId)
+                        .build();
+                printRestoredConversation(session);
+                session.start().waitFor();
             } catch (NCancelException e) {
                 // just exit
             }
+        }
+    }
+
+    /**
+     * Reprint the conversation a {@code --session} reopen hydrated, so the terminal does not open on
+     * a blank screen over a session that has a history.
+     * <p>
+     * The items come from the engine's one expander, not from a second reading of the messages here:
+     * reasoning, tool cards and progress lines land on the channels the live turn used, which is what
+     * makes the same session read the same way in this terminal and in the desktop. A session with no
+     * {@code --session} id has nothing stored, so nothing prints.
+     */
+    private void printRestoredConversation(NaruSession session) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        for (NaruTask t : session.conversationTasks()) {
+            NaruTranscriptReplay.publishTo(session, t.id(), t.history());
         }
     }
 
@@ -156,6 +178,8 @@ public class NaruCmdLineProcessor {
                         "  -f|--file <text>          task file to run\n" +
                         "  -i|--interactive          force interactive mode\n" +
                         "  -d|--project <directory>  select project folder\n" +
+                "  -s|--session <uuid>     reopen a session saved in that project's store and\n" +
+                "                            reprint its conversation before the prompt\n" +
                         "  -p|--profile <name|id>    load a profile (a bundle of extensions);\n" +
                         "                            repeatable. bare names resolve under\n" +
                         "                            net.thevpc.naru.profiles:naru-profile-<name>\n" +
@@ -201,7 +225,7 @@ public class NaruCmdLineProcessor {
         // manual lists whatever a configured naru would actually offer
         NaruWorkspace agent = createWorkspace(projectDir);
         NaruSession session = agent.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(o -> {
                     // help renders through the directive result; session output is discarded
                 }))

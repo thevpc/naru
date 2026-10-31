@@ -81,8 +81,8 @@ public final class DiffPanel extends JPanel {
     private final JPanel cards = new JPanel(new BorderLayout());
     private final JPanel sideCard;
     private final JScrollPane unifiedCard = scrolling(unifiedPane, true);
-    private final JButton sideButton = GlyphButton.of("⊞", "Side by side", true);
-    private final JButton unifiedButton = GlyphButton.of("☰", "Unified", true);
+    private final JButton sideButton = GlyphButton.of("⊞", "Side by side");
+    private final JButton unifiedButton = GlyphButton.of("☰", "Unified");
     private final Map<Path, Map<String, FileDiff[]>> byRepo = new LinkedHashMap<>();
     private String query = "";
     private SummaryRow.File selected;
@@ -208,7 +208,9 @@ public final class DiffPanel extends JPanel {
         JScrollPane s = new JScrollPane(view);
         s.setHorizontalScrollBarPolicy(wrapWidth ? ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
                 : ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        s.setBorder(BorderFactory.createLineBorder(UiPalette.border()));
+        // Diff columns are already separated by the surrounding split layout. Avoid boxing each
+        // scrolling pane independently.
+        s.setBorder(BorderFactory.createEmptyBorder(1, 1, 1, 1));
         return s;
     }
 

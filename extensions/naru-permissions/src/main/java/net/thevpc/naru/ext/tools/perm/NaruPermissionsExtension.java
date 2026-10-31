@@ -148,7 +148,7 @@ public class NaruPermissionsExtension implements NaruSessionExtension, NaruSessi
     }
 
     @Override
-    public void onProjectChanged(NaruSession session, NPath oldProjectDir, NPath newProjectDir) {
+    public void onSessionDirChanged(NaruSession session, NPath oldSessionDir, NPath newSessionDir) {
         NaruPermissionsRuleStore s = initStore(session);
         if (!isEnabled(session)) {
             return;

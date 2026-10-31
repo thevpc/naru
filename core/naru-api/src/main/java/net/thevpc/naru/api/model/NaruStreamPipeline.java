@@ -99,6 +99,15 @@ public class NaruStreamPipeline {
      * <p>Delivered as its own chunks rather than appended to the answer, so the
      * transcript can interleave reasoning and answer in the order the model
      * produced them.
+     *
+     * <p>A re-emission of what this channel already carried contributes nothing.
+     * Some OpenAI-compatible providers send one thought twice on a single stream:
+     * once as {@code reasoning_content} deltas and again complete in a trailing
+     * {@code reasoning} field, or as a cumulative frame that repeats the whole
+     * stream so far. Nothing downstream can tell the second copy from a new
+     * thought — the reader sees the same paragraph twice, which is the duplicate
+     * this refuses. The length floor keeps a short phrase the model legitimately
+     * repeats ("Let's think.") from being swallowed as a copy of an earlier one.
      */
     public NaruStreamPipeline feedNativeThinking(String text) {
         if (text == null || text.isEmpty()) {
@@ -107,12 +116,45 @@ public class NaruStreamPipeline {
         if (finished) {
             throw new IllegalStateException("pipeline already finished");
         }
-        nativeThinking.append(text);
+        String fresh = newNativeContent(text);
+        if (fresh.isEmpty()) {
+            return this;
+        }
+        nativeThinking.append(fresh);
         if (handler != null) {
             handler.onChunk(NaruStreamChunkData.thinking(
-                    text, chunkIndex++, provider, NaruThinkingExtraction.NATIVE_FIELD, false));
+                    fresh, chunkIndex++, provider, NaruThinkingExtraction.NATIVE_FIELD, false));
         }
         return this;
+    }
+
+    /** Below this, two identical feeds are more likely two thoughts than one echo. */
+    private static final int DUPLICATE_MIN_CHARS = 16;
+
+    private String newNativeContent(String text) {
+        int have = nativeThinking.length();
+        if (have < DUPLICATE_MIN_CHARS || text.length() < DUPLICATE_MIN_CHARS) {
+            return text;
+        }
+        if (text.length() <= have
+                && nativeThinking.indexOf(text, have - text.length()) == have - text.length()) {
+            // the whole of this feed is the tail of what already arrived
+            return "";
+        }
+        if (text.length() > have && startsWithBuffer(text)) {
+            // a cumulative frame: everything up to now, plus what is new
+            return text.substring(have);
+        }
+        return text;
+    }
+
+    private boolean startsWithBuffer(String text) {
+        for (int i = 0; i < nativeThinking.length(); i++) {
+            if (nativeThinking.charAt(i) != text.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

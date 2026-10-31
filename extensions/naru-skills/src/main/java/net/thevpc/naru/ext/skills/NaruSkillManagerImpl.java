@@ -61,9 +61,9 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     NaruSkillManagerImpl(NaruSession session) {
         this.session = session;
         this.userHome = resolveUserHome();
-        NaruDataStore projectTrust = session.agent().dataStore("skills/trust/project", session.projectDir());
+        NaruDataStore projectTrust = session.agent().dataStore("skills/trust/sessiondir", session.sessionDir());
         NaruDataStore userTrust = session.agent().dataStore("skills/trust/user", userHome);
-        this.trust = new NaruSkillTrustStore(session.projectDir(), userHome, projectTrust, userTrust);
+        this.trust = new NaruSkillTrustStore(session.sessionDir(), userHome, projectTrust, userTrust);
     }
 
     private static NPath resolveUserHome() {
@@ -99,7 +99,7 @@ class NaruSkillManagerImpl implements NaruSkillManager {
      */
     List<NaruSkillRoot> rootsFor(NPath workingDir) {
         List<NaruSkillRoot> out = new ArrayList<>();
-        NPath project = session.projectDir();
+        NPath project = session.sessionDir();
         boolean privateSession = session.getVisibility() != net.thevpc.naru.api.agent.NaruVisibility.PUBLIC;
         // Public sessions are shareable: keep project-local and user-home skill sources private.
         if (privateSession) {
@@ -313,7 +313,7 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     // ── root scanning ──────────────────────────────────────────────────────
 
     private List<NaruSkillRoot> baseRoots() {
-        return rootsFor(session.projectDir());
+        return rootsFor(session.sessionDir());
     }
 
     /**

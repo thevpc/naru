@@ -29,8 +29,15 @@ public class NaruNvidiaProvider extends AbstractOpenAICompatProvider {
 
     @Override
     protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
+        // a name match is a guess, and for this provider it is only ever a guess about whether
+        // the reasoning channel exists at all: unlike Ollama, an OpenAI-compatible endpoint is
+        // asked nothing from this flag, so a wrong answer costs a tool's presence in the schema.
+        // nemotron and gpt-oss both stream reasoning_content here, and the scratchpad tool
+        // consults the conversation too, so a name missing from this list degrades to a
+        // duplicate thought rather than a lost one.
         boolean thinking = modelName.contains("thinking") || modelName.contains("qwq")
-                || modelName.contains("deepseek-r1");
+                || modelName.contains("deepseek-r1") || modelName.contains("nemotron")
+                || modelName.contains("gpt-oss");
         long contextLength = modelName.contains("qwen3-next") ? 262144L : 131072L;
         return new NaruModelCapabilitiesImpl(false, true, thinking, false, contextLength,
                 NaruCachingMode.AUTOMATIC_PREFIX);

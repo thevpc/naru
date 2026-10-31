@@ -39,7 +39,7 @@ public class NaruPermissionsRuleStoreTest {
     @Test
     public void projectFileIsLoadedAndReplacesPreviousProjectRules() {
         NaruSessionImpl session = NaruPermissionsTestSupport.session();
-        NPath file = session.projectDir().resolve(NaruPermissionsRuleStore.PROJECT_FILE);
+        NPath file = session.sessionDir().resolve(NaruPermissionsRuleStore.PROJECT_FILE);
 
         NaruPermissionRule fromFile = new NaruPermissionRule()
                 .id("devs-rw-src")

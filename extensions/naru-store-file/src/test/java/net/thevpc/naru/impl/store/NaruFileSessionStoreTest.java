@@ -61,7 +61,7 @@ public class NaruFileSessionStoreTest {
                 .name(name)
                 .creationInstant(Instant.parse("2024-01-01T00:00:00Z"))
                 .modificationInstant(Instant.parse("2024-01-02T00:00:00Z"))
-                .projectDir("/tmp/p")
+                .sessionDir("/tmp/p")
                 .workingDir("/tmp/p")
                 .env(env);
     }
@@ -121,6 +121,10 @@ public class NaruFileSessionStoreTest {
         Assertions.assertEquals("renamed", back.name());
         Assertions.assertEquals("test", back.env().get("mode"));
         Assertions.assertEquals(Instant.parse("2024-01-01T00:00:00Z"), back.creationInstant());
+        NObjectElement saved = NElementReader.ofTson().read(
+                projectDir.resolve(".naru/local/sessions/s1/session.tson")).asObject().get();
+        Assertions.assertEquals("/tmp/p", saved.getStringValue("sessionDir").orNull());
+        Assertions.assertTrue(saved.get("projectDir").isEmpty());
     }
 
     @Test

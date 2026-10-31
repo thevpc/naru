@@ -113,7 +113,9 @@ public final class WorkspaceEnvPane extends JPanel {
         table.getSelectionModel().addListSelectionListener(this::rowSelected);
         JScrollPane scroll = new JScrollPane(table);
         UiFonts.apply(scroll.getViewport(), UiFonts.BODY, Font.PLAIN);
-        scroll.setBorder(BorderFactory.createLineBorder(UiPalette.border()));
+        // The scroll pane is nested inside the Workspace settings page; its own outline only
+        // repeats the page boundary, so keep the content inset without drawing another box.
+        scroll.setBorder(BorderFactory.createEmptyBorder(1, 1, 1, 1));
 
         add(texts, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);

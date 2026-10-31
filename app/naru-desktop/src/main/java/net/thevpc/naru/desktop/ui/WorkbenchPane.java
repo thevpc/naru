@@ -43,7 +43,7 @@ public final class WorkbenchPane extends JPanel {
     }
     public void setSelectedTaskId(long id) { taskId = id; tags.setSelectedTaskId(id); refresh(); }
     public void showToolTagsTab() { tabs.setSelectedComponent(tags); }
-    private Path projectRoot() { NaruTask t = selectedTask(); return path(t == null ? model.projectDir() : t.projectDir()); }
+    private Path projectRoot() { NaruTask t = selectedTask(); return path(t == null ? model.sessionDir() : t.projectDir()); }
 
     private JSplitPane explorer() {
         tree.setRootVisible(true); tree.setShowsRootHandles(true);
@@ -66,7 +66,7 @@ public final class WorkbenchPane extends JPanel {
         });
         tree.addTreeSelectionListener(e -> { Object node = tree.getLastSelectedPathComponent(); Object value = node instanceof DefaultMutableTreeNode ? ((DefaultMutableTreeNode) node).getUserObject() : null; if (value instanceof Path p && Files.isRegularFile(p)) openFile(p); });
         fileView.setEditable(false); UiFonts.applyMono(fileView, UiFonts.BODY, Font.PLAIN);
-        JScrollPane preview = new JScrollPane(fileView); preview.setBorder(BorderFactory.createTitledBorder("File preview"));
+        JScrollPane preview = new JScrollPane(fileView); preview.setBorder(BorderFactory.createEmptyBorder());
         JPanel navigation = new JPanel(new BorderLayout(0, 4));
         fileSearch.putClientProperty("JTextField.placeholderText", "Filter workspace files…");
         fileSearch.addActionListener(e -> searchFiles());

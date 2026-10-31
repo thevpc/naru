@@ -112,10 +112,10 @@ public final class ChatMessageCard extends JPanel {
                 body.add(partComponent);
             }
         }
-        if (this.message.getToolCalls() != null) {
-            this.message.getToolCalls().forEach(call -> body.add(selectableMonoText("Tool · " + call.getName()
-                    + "\n" + String.valueOf(call.getArguments()))));
-        }
+        // No tool-call dump here on purpose: the transcript draws each call as its own card, with
+        // its arguments formatted once and its result folded. Repeating them as raw map text inside
+        // the answer is what made a restored turn read as the agent reciting its own calls, and an
+        // unbounded Map.toString() of a 200-line argument is the one thing a card must not do.
         add(body, BorderLayout.CENTER);
     }
 

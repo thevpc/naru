@@ -1,6 +1,7 @@
 package net.thevpc.naru.desktop.ui;
 
 import javax.swing.JComponent;
+import javax.swing.BorderFactory;
 import javax.swing.JSplitPane;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -16,9 +17,9 @@ import java.awt.Dimension;
  * way the divider stops a little short of the end and the pane beside it keeps more room than it was
  * given any part in choosing.
  * <p>
- * So the children of a split built here get an explicit zero floor and can be dragged shut. That
- * needs a way back, which is what the one-touch arrows on the divider are for: a pane collapsed to
- * nothing is still one click from coming whole again.
+ * The divider stays draggable, but does not advertise itself with the look-and-feel's bulky handle
+ * and one-touch arrows. A thin hit area keeps resizing available without drawing another strong line
+ * through the workspace.
  */
 public final class SplitPanes {
 
@@ -38,7 +39,9 @@ public final class SplitPanes {
         for (Component c : new Component[]{first, second}) {
             if (c instanceof JComponent component) component.setMinimumSize(new Dimension(0, 0));
         }
-        pane.setOneTouchExpandable(true);
+        pane.setOneTouchExpandable(false);
+        pane.setDividerSize(3);
+        pane.setBorder(BorderFactory.createEmptyBorder());
         pane.setContinuousLayout(true);
         return pane;
     }

@@ -32,7 +32,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     });
 
     private final NaruWorkspaceImpl agent;
-    private final NPath directory;
+    private final NPath sessionDir;
     private final NaruInteraction customInteraction;
     private final NaruTaskSpec task;
     private final String id;
@@ -52,7 +52,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     private final Predicate<NaruToolTag> tagFilter;
     private final NaruModelFilter modelFilter;
 
-    NaruSessionHandleImpl(NaruWorkspaceImpl agent, NPath directory, NaruInteraction interaction,
+    NaruSessionHandleImpl(NaruWorkspaceImpl agent, NPath sessionDir, NaruInteraction interaction,
                           NaruTaskSpec task, String id, NaruSessionStore store, NaruSessionScope scope,
                           NaruInputBlockPolicy inputPolicy, Duration grace, boolean streaming,
                           NaruBusyPolicy busy, NaruTurnEventListener listener, int maxLive,
@@ -61,7 +61,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                           NaruSessionListener sessionListener, Predicate<NaruDirective> directiveFilter,
                           Predicate<NaruTool> toolFilter, Predicate<NaruToolTag> tagFilter,
                           NaruModelFilter modelFilter) {
-        this.agent = agent; this.directory = directory; this.customInteraction = interaction;
+        this.agent = agent; this.sessionDir = sessionDir; this.customInteraction = interaction;
         this.task = task; this.id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id;
         this.requestedStore = store; this.newScope = scope == null ? NaruSessionScope.PRIVATE : scope;
         this.inputPolicy = inputPolicy == null ? NaruInputBlockPolicy.HIBERNATE : inputPolicy;
@@ -155,7 +155,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
 
     private Live activate() {
         TurnInteraction interaction = new TurnInteraction(customInteraction, listener, streaming, this::onInputRequested);
-        NaruSessionImpl session = new NaruSessionImpl(agent, directory, interaction, true,
+        NaruSessionImpl session = new NaruSessionImpl(agent, sessionDir, interaction, true,
                 sessionListener, directiveFilter, toolFilter, tagFilter, modelFilter, requestedStore);
         session.configureTurnPersistence(true, checkpointEachMessage);
         NaruSessionStore store = requestedStore == null ? session.rawSessionStore() : requestedStore;

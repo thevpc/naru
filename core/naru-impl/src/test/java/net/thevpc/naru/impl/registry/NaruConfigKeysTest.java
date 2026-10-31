@@ -32,7 +32,7 @@ public class NaruConfigKeysTest {
         NPath dir = NPath.ofTempFolder("naru-configkeys-" + System.nanoTime());
         agent.projectDirectory(dir);
         return agent.newSession()
-                .directory(dir)
+                .sessionDir(dir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .sessionListener(null)

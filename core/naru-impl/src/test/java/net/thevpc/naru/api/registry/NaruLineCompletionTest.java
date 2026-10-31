@@ -33,7 +33,7 @@ public class NaruLineCompletionTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
         NaruSession s = agent.newSession()
-                .directory(dir)
+                .sessionDir(dir)
                 .configureDefaults(false)
                 .build();
         // completion is a question about the registry, and a session built with

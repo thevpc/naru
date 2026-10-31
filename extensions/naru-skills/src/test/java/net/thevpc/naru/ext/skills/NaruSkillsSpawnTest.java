@@ -73,7 +73,7 @@ public class NaruSkillsSpawnTest {
         agent.projectDirectory(projectDir);
         outputs.clear();
         session = agent.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(o -> outputs.add(o)))
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)

@@ -263,7 +263,7 @@ public class NaruInteractiveDeliverTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
         NaruSession session = agent.newSession()
-                .directory(dir)
+                .sessionDir(dir)
                 .id(id)
                 .scope(NaruSessionScope.PRIVATE)
                 .interaction(host)

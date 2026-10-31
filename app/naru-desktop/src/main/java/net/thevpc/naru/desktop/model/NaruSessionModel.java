@@ -1,6 +1,8 @@
 package net.thevpc.naru.desktop.model;
 
 import net.thevpc.naru.api.access.NaruPermissionStore;
+import net.thevpc.naru.api.agent.NaruReplayItem;
+import net.thevpc.naru.api.agent.NaruTranscriptReplay;
 import net.thevpc.naru.api.agent.NaruInputMode;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruLogMode;
@@ -71,12 +73,17 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private static final int TASK_POLL_MILLIS = 500;
 
     private final java.util.function.Supplier<NaruWorkspace> workspaceFactory;
-    private final NPath projectDir;
+    private final NPath sessionDir;
     private final String restoreId;
     private final net.thevpc.naru.api.store.NaruSessionScope restoreScope;
     private final InteractionHost host;
     private final TranscriptModel transcript = new TranscriptModel();
-    private final ToolCallModel tools = new ToolCallModel();
+    /**
+     * The same calls, as a table. Shares the transcript's record of what the live stream already
+     * drew, so the two views cannot disagree about whether a checkpoint repeats a tool the user
+     * watched run.
+     */
+    private final ToolCallModel tools = new ToolCallModel(transcript.drawnCalls());
     /** Every provider call this session made, kept whole for the Requests tab. */
     private final ModelCallLog modelCallLog = new ModelCallLog();
     /** What the current turn is doing, fed by the same batches as the transcript. */
@@ -208,21 +215,21 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     }
 
     public NaruSessionModel(java.util.function.Supplier<NaruWorkspace> workspaceFactory,
-                            NPath projectDir, InteractionHost host) {
-        this(workspaceFactory, projectDir, host, null, net.thevpc.naru.api.store.NaruSessionScope.PRIVATE);
+                            NPath sessionDir, InteractionHost host) {
+        this(workspaceFactory, sessionDir, host, null, net.thevpc.naru.api.store.NaruSessionScope.PRIVATE);
     }
 
     public NaruSessionModel(java.util.function.Supplier<NaruWorkspace> workspaceFactory,
-                            NPath projectDir, InteractionHost host, String restoreId) {
-        this(workspaceFactory, projectDir, host, restoreId, net.thevpc.naru.api.store.NaruSessionScope.PRIVATE);
+                            NPath sessionDir, InteractionHost host, String restoreId) {
+        this(workspaceFactory, sessionDir, host, restoreId, net.thevpc.naru.api.store.NaruSessionScope.PRIVATE);
     }
 
     public NaruSessionModel(java.util.function.Supplier<NaruWorkspace> workspaceFactory,
-                            NPath projectDir, InteractionHost host, String restoreId,
+                            NPath sessionDir, InteractionHost host, String restoreId,
                             net.thevpc.naru.api.store.NaruSessionScope restoreScope) {
         EDT.check("NaruSessionModel construct");
         this.workspaceFactory = workspaceFactory;
-        this.projectDir = projectDir;
+        this.sessionDir = sessionDir;
         this.host = host;
         this.restoreId = restoreId;
         this.restoreScope = restoreScope;
@@ -262,7 +269,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         try {
             NaruWorkspace workspace = workspaceFactory.get();
             var builder = workspace.newSession()
-                .directory(projectDir)
+                .sessionDir(sessionDir)
                 .id(restoreId == null ? java.util.UUID.randomUUID().toString() : restoreId)
                 .scope(restoreScope)
                 .interaction(host)
@@ -349,27 +356,32 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                                         onEdt(() -> {
                                             // The store is allowed to echo a message that the
                                             // transcript already shows: user lines are echoed
-                                            // immediately, assistant text arrives as a stream, and
-                                            // tool results arrive as typed cards. Only add a card
-                                            // when nothing on screen represents this message yet.
+                                            // immediately and assistant text arrives as a stream.
+                                            // The expander settles an echoed answer onto the live
+                                            // block it matches, so nothing here has to guess which
+                                            // messages are already on screen -- except a user line,
+                                            // which has no durable block to settle onto because it
+                                            // was drawn from the keystroke, not from the engine.
                                             if (stored.getRole() == NaruRole.user
                                                     && consumeUserEcho(taskId, stored.getFilteredContent())) {
                                                 return;
                                             }
-                                            if (stored.getRole() == NaruRole.system) return;
-                                            if (stored.getRole() == NaruRole.tool) return;
-                                            if (stored.getRole() == NaruRole.assistant
-                                                    && isShownAsStreamedAnswer(taskId, stored)) {
+                                            if (stored.getRole() == NaruRole.system
+                                                    || stored.getRole() == NaruRole.tool) {
+                                                // context the model was given is not conversation
+                                                // output, and a tool result is the body of the card
+                                                // the assistant turn opened -- drawn here it would
+                                                // be a second card for one call
                                                 return;
                                             }
-                                            if (stored.getRole() == NaruRole.assistant
-                                                    && (stored.getContent() == null || stored.getContent().isBlank())
-                                                    && stored.getParts().isEmpty()) {
+                                            List<TranscriptEvent> events = replayEvents(
+                                                    "stored-" + taskId + "-" + item.id(),
+                                                    taskId, item.creationSequence(), List.of(stored));
+                                            if (events.isEmpty()) {
                                                 return;
                                             }
-                                            String id = "stored-" + taskId + "-" + item.id();
-                                            transcript.apply(List.of(new TranscriptEvent.Message(
-                                                    id, taskId, item.creationSequence(), stored)));
+                                            transcript.apply(events);
+                                            tools.apply(events);
                                             fireChanged();
                                         });
                                     }
@@ -508,12 +520,23 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                     continue;
                 }
                 java.util.Collections.reverse(items);
+                List<NaruMessage> messages = new ArrayList<>(items.size());
+                long sequence = 0;
+                String firstId = "0";
                 for (var item : items) {
-                    NaruMessage message = item.message();
-                    if (message == null || message.getRole() == null || message.getRole() == NaruRole.system) continue;
-                    String id = "restored-" + task.id() + "-" + item.id();
-                    events.add(new TranscriptEvent.Message(id, task.id(), item.creationSequence(), message));
+                    if (item.message() == null) {
+                        continue;
+                    }
+                    if (messages.isEmpty()) {
+                        firstId = String.valueOf(item.id());
+                    }
+                    messages.add(item.message());
+                    sequence = item.creationSequence();
                 }
+                // expanded for the whole page at once, not message by message: a call and its
+                // result are two messages, and pairing them is what makes one card instead of two
+                events.addAll(replayEvents("restored-" + task.id() + "-" + firstId,
+                        task.id(), sequence, messages));
                 if (page.hasMore()) nextCursors.put(task.id(), page.nextCursor());
             } catch (UnsupportedOperationException ignored) {
                 appendRestoredHistory(events, task, task.history(), limit);
@@ -525,19 +548,47 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private static void appendRestoredHistory(List<TranscriptEvent> events, NaruTask task,
                                               List<NaruMessage> history, int limit) {
         int start = Math.max(0, history.size() - limit);
-        for (int i = start; i < history.size(); i++) {
-            NaruMessage message = history.get(i);
-            if (message == null || message.getRole() == null || message.getRole() == NaruRole.system) continue;
-            events.add(new TranscriptEvent.Message("restored-" + task.id() + "-" + i,
-                    task.id(), i, message));
+        events.addAll(replayEvents("restored-" + task.id() + "-" + start, task.id(), start,
+                history.subList(start, history.size())));
+    }
+
+    /**
+     * The drawable items of a stored conversation, as events for one transcript page.
+     *
+     * <p>The engine's own expander decides what each message is — reasoning, an answer, a tool card,
+     * progress, nothing — because a host that re-derives that from the role is how a reloaded session
+     * came to show every restored block as the same generic agent message, with the think tool's
+     * scratchpad and a bare {@code ok} among them.
+     *
+     * @param baseId unique to this page of this task: items are numbered from it, and a host keys
+     *               blocks by id, so two pages of one task must not both open with item zero
+     */
+    private static List<TranscriptEvent> replayEvents(String baseId, long taskId, long sequence,
+                                                      List<NaruMessage> messages) {
+        List<NaruReplayItem> items = NaruTranscriptReplay.replay(taskId, messages);
+        List<TranscriptEvent> events = new ArrayList<>(items.size());
+        for (int i = 0; i < items.size(); i++) {
+            events.add(new TranscriptEvent.Replay(baseId + "-" + i, taskId, sequence, items.get(i)));
         }
+        return events;
+    }
+
+    /** Feed one restored batch to both views of it: the transcript and the tools list. */
+    private void applyRestored(List<TranscriptEvent> events) {
+        if (events.isEmpty()) {
+            return;
+        }
+        transcript.apply(events);
+        tools.apply(events);
     }
 
     private void restoreTranscript(TranscriptRestore page) {
         EDT.check("NaruSessionModel.restoreTranscript");
         transcriptHistoryCursors.clear();
         transcriptHistoryCursors.putAll(page.cursors());
-        if (!page.events().isEmpty()) transcript.apply(page.events());
+        // both views of the same conversation: the tools list is part of the transcript, and a
+        // session that ran tools used to come back with an empty one
+        applyRestored(page.events());
         updateStreamingOutput();
     }
 
@@ -557,7 +608,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                     }
                     transcriptHistoryCursors.clear();
                     transcriptHistoryCursors.putAll(page.cursors());
-                    if (!page.events().isEmpty()) transcript.apply(page.events());
+                    applyRestored(page.events());
                     updateStreamingOutput();
                     callback.accept(!page.events().isEmpty());
                 }));
@@ -1282,30 +1333,6 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         return false;
     }
 
-    /**
-     * True when the stored assistant message is the durable copy of text already drawn as a whole
-     * live block. The live block is the presentation; the stored card would be the same answer
-     * twice.
-     *
-     * <p>Raw model streams ({@code MODEL_RESPONSE}) and engine progress lines ({@code PROGRESS}) are
-     * not dropped here: {@link TranscriptModel} settles them onto the live block instead, so the
-     * text keeps the place it already occupies and gains the durable message's card rendering.
-     */
-    private boolean isShownAsStreamedAnswer(long taskId, NaruMessage stored) {
-        String content = stored.getFilteredContent();
-        if (content == null || content.isBlank()) return false;
-        String wanted = content.strip();
-        for (TranscriptBlock block : transcript.blocks()) {
-            if (block.taskId() == taskId
-                    && !block.isChatMessage()
-                    && block.mode() == NaruLogMode.AGENT_RESPONSE
-                    && block.text().strip().equals(wanted)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     public void cancelPendingInput(String reason) {
         NaruInputRequest r = pending;
         if (r != null) {
@@ -1691,9 +1718,9 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         return permissions;
     }
 
-    /** The project directory, for widgets that read or write project files. */
-    public NPath projectDir() {
-        return projectDir;
+    /** The session directory, for widgets that read or write project files. */
+    public NPath sessionDir() {
+        return sessionDir;
     }
 
     public List<TaskRow> tasks() {
@@ -1892,7 +1919,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     }
 
     public String projectPath() {
-        return projectDir == null ? "—" : projectDir.toString();
+        return sessionDir == null ? "—" : sessionDir.toString();
     }
 
     public String sessionName() {

@@ -71,7 +71,7 @@
 //        NaruWorkspace agent = NaruWorkspace.of();
 //        agent.projectDirectory(NPath.ofTempFolder("naru-desktop-park-" + System.nanoTime()));
 //        NaruSession session = agent.newSession()
-//                .directory(agent.projectDirectory())
+//                .sessionDir(agent.projectDirectory())
 //                .interaction(host)
 //                .configureDefaults(false)
 //                .build();

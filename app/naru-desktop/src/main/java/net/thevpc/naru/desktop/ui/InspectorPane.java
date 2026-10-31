@@ -2,7 +2,9 @@ package net.thevpc.naru.desktop.ui;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.desktop.model.ModelCallLog;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
+import net.thevpc.naru.desktop.util.BudgetText;
 
 import javax.swing.*;
 import java.awt.*;
@@ -10,10 +12,10 @@ import java.nio.file.*;
 import java.util.Comparator;
 
 /** Compact inspector: task/session facts stay in one place, with explicit scope labels. */
-public final class InspectorPane extends JPanel implements NaruSessionModel.Listener {
+public final class InspectorPane extends JPanel implements NaruSessionModel.Listener, ModelCallLog.Listener {
     private final NaruSessionModel model;
     private final JTabbedPane tabs = new JTabbedPane();
-    private final JTextArea context = area(), budget = area(), skills = area(), tags = area(), plans = area();
+    private final JTextArea context = area(), budget = area(), skills = area();
     private final RequestsPane requests;
     private final ToolsPane tools;
     private long taskId = -1;
@@ -23,9 +25,14 @@ public final class InspectorPane extends JPanel implements NaruSessionModel.List
     private long detailGeneration;
 
     public InspectorPane(NaruSessionModel model) {
+        this(model, null);
+    }
+
+    public InspectorPane(NaruSessionModel model, TaskPane tasks) {
         super(new BorderLayout()); this.model = model;
-        // the two live tabs first: the rail is narrow, so a tab that is off the end of the strip
-        // costs the reader a click on every use, and these are the ones opened while a run is going
+        // Put task monitoring beside the other technical views instead of below the session list.
+        // Keep the live task and tool views first, ahead of the less frequently opened summaries.
+        if (tasks != null) tabs.addTab("Tasks", tasks);
         tools = new ToolsPane(model.tools());
         tabs.addTab("Tools · task", tools);
         requests = new RequestsPane(model.modelCallLog());
@@ -33,11 +40,22 @@ public final class InspectorPane extends JPanel implements NaruSessionModel.List
         tabs.addTab("Context · task", scroll(context));
         tabs.addTab("Budget · session", scroll(budget));
         tabs.addTab("Skills · task", scroll(skills));
-        tabs.addTab("Tags · task", scroll(tags));
-        tabs.addTab("Plans · session", scroll(plans));
         add(tabs); model.addListener(this);
+        model.modelCallLog().addListener(this);
         detailRefresh.setRepeats(false);
         sessionModelChanged();
+    }
+
+    /**
+     * The child strip, so the window can address one of these panels by title.
+     *
+     * <p>A tool card in the transcript and a row of this table describe the same call, and a jump
+     * between them has to be provable from outside the class: the window's by-title selector reaches
+     * in here, and a gate run photographs the child it asked for rather than whichever tab happened
+     * to be selected.
+     */
+    public JTabbedPane tabStrip() {
+        return tabs;
     }
 
     private static JTextArea area() { return TextAreas.readOnly(); }
@@ -59,7 +77,7 @@ public final class InspectorPane extends JPanel implements NaruSessionModel.List
     }
 
     @Override public void sessionModelChanged() {
-        budget.setText(model.tokensLabel() + "\n\nSession totals reflect calls observed by this desktop session.\nMessage-type percentages will appear when the budget service exposes those aggregates.");
+        showBudget();
         if (model.session() == null) return;
         context.setText("Loading task and project details…");
         if (skillsForTask != taskId) {
@@ -67,7 +85,16 @@ public final class InspectorPane extends JPanel implements NaruSessionModel.List
             skills.setText(taskId < 0 ? "Select a task to inspect available skills." : "Loading skills…");
         }
         detailRefresh.restart();
-        plans.setText("Plans are session scoped.\n\nThe desktop project does not statically depend on the optional plan extension. This panel is reserved for its active plan, items, dependencies, and progress when a runtime adapter is available.");
+    }
+
+    /** The budget counts calls as they arrive, and the engine records one on its own thread. */
+    @Override public void modelCallsChanged() {
+        showBudget();
+    }
+
+    private void showBudget() {
+        ModelCallLog log = model.modelCallLog();
+        budget.setText(BudgetText.render(model.tokensLabel(), log.summary(), log.calls()));
     }
 
     private void loadDetails() {
@@ -81,25 +108,21 @@ public final class InspectorPane extends JPanel implements NaruSessionModel.List
                 if (requestedTask >= 0) try { t = owner.findTask(requestedTask).orNull(); } catch (RuntimeException ignored) { }
                 if (t == null) {
                     return new String[]{"Select a live task to inspect its project context.\n\nSession project: "
-                            + owner.projectDir() + "\nSession working directory: " + owner.workingDir(),
-                            "Select a task to inspect its granted tool tags.", "Select a task to inspect available skills."};
+                            + owner.sessionDir() + "\nSession working directory: " + owner.workingDir(),
+                            "Select a task to inspect available skills."};
                 }
                 String contextText = "Task #" + t.id() + "\nMode: " + t.taskMode() + "\nProject: " + t.projectDir()
                         + "\nWorking directory: " + t.workingDir() + "\n\nContext messages: "
                         + safeContextSize(t) + "\nHistory messages: " + safeHistorySize(t);
-                String tagsText;
-                try { tagsText = String.join("\n", t.findToolTagNames()); }
-                catch (RuntimeException ex) { tagsText = "Task tags are temporarily unavailable."; }
-                return new String[]{contextText, tagsText, readSkills(t)};
+                return new String[]{contextText, readSkills(t)};
             }
             protected void done() {
                 if (generation != detailGeneration || owner != model.session() || requestedTask != taskId) return;
                 try {
                     String[] values = get();
-                    context.setText(values[0]); tags.setText(values[1]); skillsText = values[2]; skills.setText(skillsText);
+                    context.setText(values[0]); skillsText = values[1]; skills.setText(skillsText);
                 } catch (Exception ex) {
                     context.setText("Task details are temporarily unavailable.");
-                    tags.setText("Task tags are temporarily unavailable.");
                     skills.setText("Skills are temporarily unavailable.");
                 }
             }
@@ -118,6 +141,7 @@ public final class InspectorPane extends JPanel implements NaruSessionModel.List
         detailRefresh.stop();
         detailGeneration++;
         model.removeListener(this);
+        model.modelCallLog().removeListener(this);
         tools.dispose();
         requests.dispose();
     }

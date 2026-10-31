@@ -24,7 +24,7 @@ enforcement choke points — and section 9 tracks delivery.
    rule (by id, or find by pattern), **reorder** rules (first match wins),
    **query effective permission** for `resource + action + actor`.
 4. Rules can be added dynamically by an **event-driven extension** reacting to
-   `SESSION_START`, `TASK_SPAWNED`, `PROJECT_CHANGE`, `TASK_TERMINATED`, and
+   `SESSION_START`, `TASK_SPAWNED`, `SESSION_DIR_CHANGE`, `TASK_TERMINATED`, and
    custom permission events.
 5. Enforcement lives in core seams that every feature already flows through, so
    FS/Web/Tools/Directives are covered by a small number of hooks.
@@ -774,7 +774,7 @@ like `tag_add`/`tag_remove` today.
 
 - **Project file** `.naru/permissions.tson` — human-editable, committable,
   shared across sessions of the project. Loaded on `SESSION_START` and
-  `PROJECT_CHANGE`. Rules get `source="perm:project"`.
+  `SESSION_DIR_CHANGE`. Rules get `source="perm:project"`.
 - **Session state** `ext/permissions.tson` (via `save`/`load`) — dynamic rules
   added at runtime with `source="perm:session"` or `perm:spawn:<task>`.
 - **Built-ins** live in code (`source="core"`), always present.
@@ -967,7 +967,7 @@ Implemented and tested: **M0–M6**. Not started: **M7**.
   visibility rule — the policy filter (#4) is additive.
 - **Pattern base.** Project-relative patterns are resolved at check time against
   `task.projectDir()`; a rule added under one project and evaluated under another
-  must re-resolve (handled by `PROJECT_CHANGE` rebase).
+  must re-resolve (handled by `SESSION_DIR_CHANGE` rebase).
 - **Performance.** `check` is called on every tool/directive/FS/web/shell call.
   The snapshot-iteration design keeps it O(rules) with no allocation beyond the
   decision object; rules are expected to number in the tens.

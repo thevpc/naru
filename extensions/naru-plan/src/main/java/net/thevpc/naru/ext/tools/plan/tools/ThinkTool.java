@@ -1,6 +1,8 @@
 package net.thevpc.naru.ext.tools.plan.tools;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruRole;
+import net.thevpc.naru.api.agent.NaruTranscriptReplay;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
@@ -9,6 +11,8 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
+
+import java.util.List;
 
 /**
  * No-op scratchpad tool for models without a native thinking/reasoning channel.
@@ -39,6 +43,11 @@ public class ThinkTool extends DefaultNaruTool {
         if (!NaruThinkingConfig.isEnabled(task)) {
             return false;
         }
+        // the observation beats the claim: a model that just reasoned on its own has
+        // no use for a scratchpad, whatever its catalogue entry says
+        if (lastAssistantTurnReasoned(task.history())) {
+            return false;
+        }
         // otherwise only expose to models that lack a native thinking/reasoning channel
         NaruModelConfig mc = task.model();
         if (mc == null) {
@@ -48,6 +57,31 @@ public class ThinkTool extends DefaultNaruTool {
                 .flatMap(p -> p.getProtocol(mc, task.session()))
                 .map(p -> !p.getCapabilities().isThinking())
                 .orElse(true);
+    }
+
+    /**
+     * Whether the turn this model produced immediately before this one carried reasoning of
+     * its own.
+     *
+     * <p>A catalogue flag is a claim about an endpoint; the history is what the endpoint did.
+     * nemotron on NVIDIA NIM streams its reasoning while that provider's capability heuristic
+     * reports no reasoning channel, so the scratchpad stayed in the schema and the transcript
+     * showed the same thought twice: once as the model's reasoning, once as a {@code think}
+     * call whose text was the reasoning again. Only the newest assistant turn is consulted --
+     * it is the answer the current model produced, so a mid-conversation model switch cannot
+     * make one model's reasoning hide another's tool.
+     */
+    /** Package-private: the newest assistant turn decides, nothing earlier. */
+    static boolean lastAssistantTurnReasoned(List<NaruMessage> history) {
+        for (int i = history.size() - 1; i >= 0; i--) {
+            NaruMessage m = history.get(i);
+            if (m.getRole() == NaruRole.assistant) {
+                // getThinking covers both shapes: the legacy string, and the segments a
+                // streamed reasoning channel is stored as
+                return !NBlankable.isBlank(m.getThinking());
+            }
+        }
+        return false;
     }
 
     @Override
@@ -69,8 +103,11 @@ public class ThinkTool extends DefaultNaruTool {
     public String execute(NaruToolCallContext context) {
         Object thought = context.arg("thought").orNull();
         if (!NBlankable.isBlank(thought)) {
-            //thinking...
-            context.task().addHistory(NaruMessage.engine(NMsg.ofC("%s", thought)));
+            // the intent is what puts this on the reasoning channel: a host that classifies a
+            // stored engine line by intent alone would otherwise draw a private scratchpad as
+            // another sentence the agent chose to say out loud
+            context.task().addHistory(NaruMessage.engine(
+                    NMsg.ofC("%s", thought).withIntent(NaruTranscriptReplay.THINKING)));
         }
         return "ok";
     }

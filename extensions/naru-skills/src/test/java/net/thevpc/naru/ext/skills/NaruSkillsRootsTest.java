@@ -75,7 +75,7 @@ public class NaruSkillsRootsTest {
         workspace.projectDirectory(projectDir);
         outputs.clear();
         session = workspace.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(o -> outputs.add(o)))
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)
@@ -290,7 +290,7 @@ public class NaruSkillsRootsTest {
         NaruWorkspace a = NaruWorkspace.of();
         a.projectDirectory(projectDir);
         NaruSession fresh = a.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(freshOutputs::add))
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)
@@ -321,7 +321,7 @@ public class NaruSkillsRootsTest {
         NaruWorkspace a = NaruWorkspace.of();
         a.projectDirectory(projectDir);
         NaruSession fresh = a.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(freshOutputs::add))
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)
@@ -401,7 +401,7 @@ public class NaruSkillsRootsTest {
     }
 
     private net.thevpc.naru.api.store.NaruDataStore projectStore() {
-        return workspace.dataStore("skills/trust/project", projectDir);
+        return workspace.dataStore("skills/trust/sessiondir", projectDir);
     }
 
     private net.thevpc.naru.api.store.NaruDataStore userStore() {

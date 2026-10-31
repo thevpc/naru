@@ -130,7 +130,7 @@ class RichTermInvariantTest {
             NaruWorkspace agent = NaruWorkspace.of();
             agent.projectDirectory(dir);
             NaruSession session = agent.newSession()
-                    .directory(dir)
+                    .sessionDir(dir)
                     // not a NaruTerminalInteraction: only a terminal interaction installs the
                     // completer and the highlighter, and this test is about the global swap
                     .interaction(silentHost())

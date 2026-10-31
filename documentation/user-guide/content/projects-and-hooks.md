@@ -16,7 +16,7 @@ This page is about the **navigation** directives and the **init scripts** they t
 - [4. What runs when](#4-what-runs-when)
 - [5. The deprecated init-on-cd behaviour](#5-the-deprecated-init-on-cd-behaviour)
 - [6. Session-wide defaults](#6-session-wide-defaults)
-- [7. What survives a project change](#7-what-survives-a-project-change)
+- [7. What survives a project change](#7-what-survives-a-sessiondir-change)
 
 ---
 
@@ -25,13 +25,13 @@ This page is about the **navigation** directives and the **init scripts** they t
 | Directive          | Changes        | Side effects |
 |--------------------|----------------|--------------|
 | `/cd <dir>`        | working dir    | **none** — pure navigation |
-| `/project <dir>`   | project root   | re-resolves roots/context files/model defaults, runs the workspace `init.naru` once, fires `project-change` |
+| `/sessiondir <dir>`   | project root   | re-resolves roots/context files/model defaults, runs the workspace `init.naru` once, fires `sessiondir-change` |
 
 `/cd` is the cheap one: it moves where relative paths and folder-scoped context are
 resolved, and does nothing else. In particular it **does not run any init script** and
 does not change the task's loaded skills or granted tags.
 
-`/project <dir>` is the deliberate one. It changes the session's project root, so every
+`/sessiondir <dir>` is the deliberate one. It changes the session's project root, so every
 feature that was rooted at the old project (skill roots, context files, model defaults)
 re-resolves against the new one. Per-task selections and granted tag sets are **kept** —
 only *availability* changes. A skill a task had loaded that no longer exists under the new
@@ -41,7 +41,7 @@ The directory argument may be absolute or relative; a relative path resolves aga
 current project root, not the process working directory.
 
 ```
-/project /srv/services/billing
+/sessiondir /srv/services/billing
 ```
 
 When the argument is missing or not a directory, the directive reports an error and the
@@ -50,7 +50,7 @@ project root is unchanged.
 ## 2. Init scripts: where they live
 
 An **init script** is a plain NARU script named `init.naru`. On task creation and on
-`/project`, the engine looks for it in two places, in this order:
+`/sessiondir`, the engine looks for it in two places, in this order:
 
 | Scope     | Location |
 |-----------|----------|
@@ -58,8 +58,8 @@ An **init script** is a plain NARU script named `init.naru`. On task creation an
 | project   | `<root>/.naru/hooks/init.naru`, with `<root>/.naru/local/hooks/init.naru` overriding it |
 
 The project copy is read from the **task's working directory** (`/cd` root) at task
-creation, and from the **new project root** on `/project`. The shared copy is included
-when the working directory is the project root, and is always included on `/project`.
+creation, and from the **new project root** on `/sessiondir`. The shared copy is included
+when the working directory is the project root, and is always included on `/sessiondir`.
 
 Lines are parsed like any other script and are **prepended** to the task, so an init script
 runs before the task's own statements. An absent file is simply nothing.
@@ -76,11 +76,11 @@ ordinary events, so a task can observe any of them with `/on`:
 
 | Event            | Fired when | Payload |
 |------------------|------------|---------|
-| `session-start`  | the session starts serving, once | `projectDir`, `workingDir` |
+| `session-start`  | the session starts serving, once | `sessionDir`, `workingDir` |
 | `task-spawn`     | a task is created (the historical event is `TaskSpawned`) | resolved spawn sets and provenance |
-| `project-change` | the project root changes through `/project` | `oldProjectDir`, `newProjectDir` |
+| `sessiondir-change` | the project root changes through `/sessiondir` | `oldSessionDir`, `newSessionDir` |
 
-Events **carry no grants**. Observing `task-spawn` or `project-change` never confers a
+Events **carry no grants**. Observing `task-spawn` or `sessiondir-change` never confers a
 tag, a tool exclusion or a skill; it only tells a listener that the transition happened.
 
 ## 4. What runs when
@@ -90,7 +90,7 @@ tag, a tool exclusion or a skill; it only tells a listener that the transition h
 | session starts                | no (no task exists yet) | `session-start` |
 | task created                  | yes, once         | `task-spawn` |
 | `/cd <dir>`                   | **no**            | none |
-| `/project <dir>`              | yes, once         | `project-change` |
+| `/sessiondir <dir>`              | yes, once         | `sessiondir-change` |
 
 The workspace-level `init.naru` is a script, and a script needs a task to carry its
 statements. A session has no task at the moment `session-start` fires, so the workspace
@@ -101,7 +101,7 @@ defaults.
 ## 5. The deprecated init-on-cd behaviour
 
 Before WP7, `/cd` ran the destination directory's init hooks. That coupling of navigation
-and execution is gone: `/cd` is pure navigation, and `/project` is the one navigation with
+and execution is gone: `/cd` is pure navigation, and `/sessiondir` is the one navigation with
 side effects.
 
 If a setup depended on the old behaviour, it can be restored for a migration window. Set
@@ -121,7 +121,7 @@ migration switch, not a per-command option.
 
 **Migration:** move the work that used to happen on `/cd` into one of:
 
-- a `/project` (which already runs the workspace init once), or
+- a `/sessiondir` (which already runs the workspace init once), or
 - `session-start` / the workspace `init.naru` (session-wide setup), or
 - an explicit script invoked where you need it.
 
@@ -151,7 +151,7 @@ warned about, never an error.
 
 ## 7. What survives a project change
 
-`/project` re-resolves availability but does not reset state:
+`/sessiondir` re-resolves availability but does not reset state:
 
 | Kept                                  | Re-resolved |
 |---------------------------------------|-------------|
@@ -161,9 +161,9 @@ warned about, never an error.
 | tasks' working directories            | init hooks (new root) |
 
 "Model defaults" re-resolve (what the new root's config would default a fresh model
-selection to); a task's *selected model* is fixed at task creation and `/project` does
+selection to); a task's *selected model* is fixed at task creation and `/sessiondir` does
 not switch it.
 
-Storage follows the session: `/project` does **not** migrate the session to another store.
+Storage follows the session: `/sessiondir` does **not** migrate the session to another store.
 The session keeps writing to the store it was created with, so a project switch is about
 what the session *reads*, not where it *saves*.

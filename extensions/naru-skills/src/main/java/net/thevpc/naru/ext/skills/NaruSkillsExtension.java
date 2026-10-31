@@ -203,14 +203,14 @@ public class NaruSkillsExtension implements NaruSessionExtension {
     }
 
     /**
-     * Re-resolves the skill roots after {@code /project} (WP7). The manager is recreated so
-     * both its base snapshot (the projectDir-root set) and its trust store are bound to the
+     * Re-resolves the skill roots after {@code /sessiondir} (WP7). The manager is recreated so
+     * both its base snapshot (the sessionDir-root set) and its trust store are bound to the
      * new root, then reloaded. The per-task LOADED selection is deliberately kept: only
      * availability changed, and a loaded skill that disappeared is reported by
      * {@code /skill doctor} rather than silently dropped from a task.
      */
     @Override
-    public void onProjectChanged(NaruSession session, NPath oldProjectDir, NPath newProjectDir) {
+    public void onSessionDirChanged(NaruSession session, NPath oldSessionDir, NPath newSessionDir) {
         if (manager == null) {
             return;
         }
@@ -223,7 +223,7 @@ public class NaruSkillsExtension implements NaruSessionExtension {
      * The one-time untrusted-foreign-root notice (WP6). A foreign skills root is read only
      * after the user opts in per root, and a root that exists without that decision is
      * silently contributing nothing — so the first time the extension looks at the root set
-     * (session open, or {@code /project} which re-resolves the roots) it says so once per
+     * (session open, or {@code /sessiondir} which re-resolves the roots) it says so once per
      * root, with the command that fixes it. The decision itself is persisted per root by
      * {@link NaruSkillTrustStore}; this is only the prompt that surfaces the decision was
      * never made. Must never throw: it runs during session open.

@@ -3,6 +3,7 @@ package net.thevpc.naru.desktop.host;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruOutput;
+import net.thevpc.naru.api.agent.NaruReplayItem;
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.api.model.NaruMessage;
 
@@ -92,6 +93,18 @@ public sealed interface TranscriptEvent {
         }
 
         @Override public NaruMessage message() { return message == null ? null : message.copy(); }
+    }
+
+    /**
+     * One item of durable history, already classified into the channel it should be drawn on.
+     * <p>
+     * A stored message is a storage unit, not a display unit: one assistant turn holds reasoning,
+     * an answer and several tool calls. {@link NaruTranscriptReplay} performs that split in the
+     * engine, so the restored transcript, the live echo and the terminal agree about which of the
+     * three a given message was — the disagreement that used to redraw every restored item as the
+     * same generic agent card.
+     */
+    record Replay(String blockId, long taskId, long sequence, NaruReplayItem item) implements TranscriptEvent {
     }
 
     /**

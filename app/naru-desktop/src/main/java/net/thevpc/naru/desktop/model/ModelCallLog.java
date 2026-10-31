@@ -150,7 +150,11 @@ public final class ModelCallLog implements NaruModelCallListener {
         }
     }
 
-    /** Session totals for the summary strip, over the calls still held. */
+    /**
+     * Session totals for the summary strip, over the calls still held. Both latency figures are
+     * {@code -1} when no call in view was timed — never a {@code 0}, which a reader would take for a
+     * sub-millisecond call.
+     */
     public record Summary(int calls, int tasks, int models, long promptTokens, long completionTokens,
                           long cacheReadTokens, long cacheWriteTokens, boolean cacheAccounted,
                           long averageMillis, long slowestMillis, int droppedCalls) {
@@ -232,7 +236,7 @@ public final class ModelCallLog implements NaruModelCallListener {
             }
         }
         return new Summary(calls.size(), tasks.size(), models.size(), in, out, read, write,
-                cacheAccounted, timed == 0 ? -1 : total / timed, slowest, droppedCalls);
+                cacheAccounted, timed == 0 ? -1 : total / timed, timed == 0 ? -1 : slowest, droppedCalls);
     }
 
     /** Forget every call; used when the window switches session. */

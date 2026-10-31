@@ -244,7 +244,7 @@ final class TurnActivityBar extends JPanel
 
     private Path projectPath() {
         try {
-            var dir = session.projectDir();
+            var dir = session.sessionDir();
             return dir == null ? null : Paths.get(dir.toString());
         } catch (RuntimeException e) {
             return null;
