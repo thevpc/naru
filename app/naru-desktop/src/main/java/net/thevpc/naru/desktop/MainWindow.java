@@ -337,6 +337,12 @@ public final class MainWindow extends JFrame {
                 menu.addSeparator();
                 javax.swing.JMenuItem delete = new javax.swing.JMenuItem("Delete session…");
                 delete.addActionListener(x -> deleteSession(entry)); menu.add(delete);
+                // In the flat listing (no projects yet) there is no group header to
+                // right-click for "New project…", so the session menu is the one place
+                // that must be able to start the tree.
+                menu.addSeparator();
+                javax.swing.JMenuItem newProject = new javax.swing.JMenuItem("New project…");
+                newProject.addActionListener(x -> createProjectUI()); menu.add(newProject);
                 menu.show(sessionList, e.getX(), e.getY());
             }
             private void showProjectMenu(javax.swing.JPopupMenu menu, SessionEntry group) {
@@ -716,6 +722,19 @@ public final class MainWindow extends JFrame {
 
     private static String htmlEscape(String s) {
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /**
+     * The group a dropped row targets: the header at or above {@code row} — dropping on a
+     * session row means the group that row sits in — or null above the first header (the
+     * flat, projectless listing has nowhere to move to).
+     */
+    private net.thevpc.naru.desktop.model.SessionGrouping.Header headerAtOrAbove(int row) {
+        for (int i = Math.min(row, sessionList.getModel().getSize() - 1); i >= 0; i--) {
+            SessionEntry candidate = sessionList.getModel().getElementAt(i);
+            if (candidate.isGroup()) return candidate.header;
+        }
+        return null;
     }
 
     /** The sidebar row for the session this window is reading, or null. */
@@ -1426,6 +1445,54 @@ public final class MainWindow extends JFrame {
         sessionList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
         applySessionRowHeight();
         installSessionHover();
+        // Drag a session row onto a group header to move it; dropping onto another
+        // session means "the group that row sits in". The drop runs the same
+        // projectId-only move as the context menu — never a directory change, never a
+        // storage move — so a running session can be re-parented mid-flight.
+        sessionList.setDragEnabled(true);
+        sessionList.setDropMode(javax.swing.DropMode.ON);
+        sessionList.setTransferHandler(new javax.swing.TransferHandler() {
+            @Override
+            protected java.awt.datatransfer.Transferable createTransferable(javax.swing.JComponent c) {
+                SessionEntry dragged = sessionList.getSelectedValue();
+                if (dragged == null || dragged.isGroup()) return null;
+                return new java.awt.datatransfer.StringSelection(dragged.id);
+            }
+
+            @Override
+            public int getSourceActions(javax.swing.JComponent c) {
+                return javax.swing.TransferHandler.MOVE;
+            }
+
+            @Override
+            public boolean canImport(javax.swing.TransferHandler.TransferSupport support) {
+                return support.isDrop()
+                        && support.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.stringFlavor);
+            }
+
+            @Override
+            public boolean importData(javax.swing.TransferHandler.TransferSupport support) {
+                if (!canImport(support)) return false;
+                String sessionId;
+                try {
+                    sessionId = (String) support.getTransferable().getTransferData(
+                            java.awt.datatransfer.DataFlavor.stringFlavor);
+                } catch (Exception e) {
+                    return false;
+                }
+                if (sessionId == null || sessionId.isBlank()) return false;
+                int row = ((javax.swing.JList.DropLocation) support.getDropLocation()).getIndex();
+                net.thevpc.naru.desktop.model.SessionGrouping.Header target = headerAtOrAbove(row);
+                // the unknown-project bucket is a view of dangling ids, not a place a
+                // session can be moved to; and a row dropped on itself is a no-op
+                if (target == null || target.unknown()) return false;
+                SessionEntry droppedOn = row >= 0 && row < sessionList.getModel().getSize()
+                        ? sessionList.getModel().getElementAt(row) : null;
+                if (droppedOn != null && !droppedOn.isGroup() && sessionId.equals(droppedOn.id)) return false;
+                moveSessionTo(sessionId, target.projectId(), target.title());
+                return true;
+            }
+        });
         sessionList.setCellRenderer((list, value, index, selected, focus) -> {
             if (value.isGroup()) {
                 // a section label, not a session: no dot, no state, no dates, and it
