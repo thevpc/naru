@@ -1,63 +1,7 @@
 # naru-desktop todos
-T1 (header chrome) and T2 (rail tab glyphs + tooltips) are done — see `../done/todo-ui-t1-header.md`, `../done/todo-ui-t2-rail-tabs.md`.
+T1 (header chrome), T2 (rail tab glyphs + tooltips) and T3 (plan select + edit) are done — see
+`../done/todo-ui-t1-header.md`, `../done/todo-ui-t2-rail-tabs.md`, `../done/todo-ui-t3-plans.md`.
 please for each of the following, take one, define a plan (replace kthe content with more details), tehn implement, test and finally move this todo item to done folder
-
-## T3 plans
-
-must have a way to edit plans (and/edit plan items)
-see/select current plan
-
-### The fork found while researching
-
-`NaruPlanReader` (naru-api) is deliberately read-only — its javadoc says a host that edited
-plans through that seam "would bypass the dependency and validator rules that keep a plan
-honest", and `PlanPane` repeats the rule. So "edit plans" has two possible homes:
-
-1. widen `naru-api` with a writer seam the desktop calls directly — breaks the stated rule and
-   splits graph validation across two modules;
-2. give `/plan` the edit verbs it does not have today (it only does show/list/activate/
-   deactivate/reopen/clear) and let the desktop speak that directive — validation stays inside
-   `naru-plan`, and a UI edit is the same statement a human would type.
-
-**Choice: 2.** It is also what the extension already promises: `PROGRESS_RULES` tells the model
-"if the plan turns out to be wrong, say so and let the user re-plan" — and today the user has no
-way to. No `naru-api` change; no second write path.
-
-### Grammar (active-plan scope)
-
-Every edit acts on the **active** plan, so "see/select current plan" is not a separate feature
-but the gate in front of editing: you point at a plan, then you change it. `/plan show`-style
-prefix lookup is reused for item refs. Bash-style parsing, `cmdLine.matcher()`, positional text
-joined with a space — the conventions `NaruProjectDirective` established.
-
-- `/plan goal <text...>` — restate what the plan is for.
-- `/plan add <text...> [--after=<item>]... [--key=<k>] [--validator=<none|model-review|user-approval>]`
-  — append one item; `--after` repeats, readiness recomputed after.
-- `/plan edit <item> [<text...>] [--notes=<text>|--no-notes] [--validator=<k>]` — patch the item;
-  text with no `--` option changes only the description.
-- `/plan remove <item>` — drop the item and every edge pointing at it, then recompute.
-
-Guards, all enforced in the manager rather than in the UI: a `RUNNING`/`VALIDATING` item cannot
-have its description changed or be removed (a live task is doing the work that text describes —
-stop the task first, same reasoning as `reopenItem`'s non-terminal branch); readiness stays
-derived, so no verb sets `READY`; completion still goes through the validator, so no verb sets
-`DONE`. Cycle checks reuse `NaruPlan.assertAcyclic()`.
-
-### Desktop
-
-`PlanPane` grows affordances that compose those lines and hand them to
-`NaruSessionModel.submitDirective` — the composer's own path, so a click lands in the transcript
-as a statement and the panel stays a reader of `NaruPlanReader`, never a writer. Free text is
-quoted for the parser (a description containing `--x` or a quote must survive the round trip).
-Active plan gets an "active" marker plus deactivate; every other plan gets "activate" — that is
-the "select" half.
-
-### Cut from this pass, on purpose
-
-Dependency *edges* are editable by text through `/plan add --after` and `/plan edit`'s validator,
-but adding/removing an edge on an existing item (`depend`/`undepend`) has no verb yet and no UI:
-an honest affordance for a DAG is a graph editor, not two more buttons on a row, and the row
-already shows `after <keys>`. Recorded here rather than left as a silent gap.
 
 ## T4 tasks
 we need to restore a panel that shows current session's tasks and marks current taskk (hence current conversation) and allows swapping to other tasks

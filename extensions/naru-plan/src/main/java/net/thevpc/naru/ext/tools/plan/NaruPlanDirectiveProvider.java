@@ -291,11 +291,10 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                 }
             });
             register(new AbstractSubCommand("edit", NText.ofPlain("change an item's text or validator")
-                    , new SubCommandHelp("<item> [<text...>] [--no-notes] "
+                    , new SubCommandHelp("<item> [<text...>] [--notes=<text>|--no-notes] "
                             + "[--validator=<none|model-review|user-approval>]",
                     "edit one item of the active plan; positional text becomes the new description. "
-                            + "A note is free text too, so it is set with /plan note rather than an option: "
-                            + "the parser takes one token per --option value")
+                            + "Quote a multi-word value (--notes=\"asked the reviewer\") or use /plan note")
             ) {
                 @Override
                 public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
@@ -311,6 +310,7 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                                         clearNotes[0] = true;
                                     }
                                 })
+                                .when("--notes").asEntry(a -> patch.notes(a.stringValue()))
                                 .when("--validator").asEntry(a -> validator[0] = a.stringValue())
                                 .whenNonOption().asArg(a -> positionals.add(a.image()))
                                 .requireAll();
@@ -318,7 +318,7 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                         return fail(context, String.valueOf(e.getMessage()));
                     }
                     if (positionals.isEmpty()) {
-                        return fail(context, "usage: /plan edit <item> [<text...>] [--no-notes] "
+                        return fail(context, "usage: /plan edit <item> [<text...>] [--notes=<text>|--no-notes] "
                                 + "[--validator=<k>]");
                     }
                     String itemRef = positionals.remove(0);

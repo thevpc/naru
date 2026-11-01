@@ -9,10 +9,17 @@ import net.thevpc.naru.desktop.model.NaruSessionModel;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
- * The plan board: every plan this session holds, with its items and their states.
+ * The plan board: every plan this session holds, with its items and their states, and the controls
+ * that change the one the reader is pointing at.
  *
  * <p>It sits in the rail rather than inside Inspect because a plan is what the run is for. The
  * inspector answers "what happened"; this answers "what is supposed to happen next", and a reader who
@@ -20,12 +27,18 @@ import java.util.List;
  *
  * <p>The desktop does not compile against the plan extension — it reads plans through
  * {@link NaruPlanReader}, so a session without that feature shows an honest empty panel instead of a
- * stack trace. Nothing here writes: a plan's shape belongs to {@code /plan} and to the model's own
- * tools, and a panel that could edit it would drift from the rules that keep the graph honest.
+ * stack trace. Writing is a different matter and goes the only way a host is allowed to write: the
+ * board composes {@code /plan} lines and hands them to the session, so the graph's rules — readiness
+ * derived from dependencies, completion gated on a validator, a running item's text owned by its
+ * task — stay in the extension that enforces them. A click is a statement the transcript also shows.
  */
 public final class PlanPane extends JPanel implements NaruSessionModel.Listener {
 
     private final NaruSessionModel model;
+    /** The snapshots, read the way a session reads them; a test installs its own board. */
+    private final Supplier<List<NaruPlanSnapshot>> source;
+    /** The one write path: a directive line, handed to the engine. */
+    private final Director director;
     private final Column stack = new Column();
     /** Debounced: a streaming turn fires the model listener on every chunk, and a plan is not urgent. */
     private final Timer refresh = new Timer(250, e -> reload());
@@ -33,10 +46,22 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
     /** Whether the column currently shows a real board rather than a placeholder line. */
     private boolean drawn;
     private long generation;
+    /** The board as it was last drawn, so closing an editor can put it back without a fresh read. */
+    private List<NaruPlanSnapshot> last = List.of();
+    /** The row an editor has replaced: a repaint while the reader is typing would swallow the text. */
+    private JComponent openEditor;
+    /** Where a new item row goes, so "add an item" does not have to find it by counting. */
+    private JPanel activeItems;
 
     public PlanPane(NaruSessionModel model) {
+        this(model, null, null);
+    }
+
+    PlanPane(NaruSessionModel model, Supplier<List<NaruPlanSnapshot>> source, Director director) {
         super(new BorderLayout());
         this.model = model;
+        this.source = source;
+        this.director = director == null ? this::sendToSession : director;
         JScrollPane scroll = new JScrollPane(stack);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.getVerticalScrollBar().setUnitIncrement(14);
@@ -74,7 +99,12 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
     private enum Read {ABSENT, RETRY}
 
     private void reload() {
-        if (model.session() == null) {
+        if (openEditor != null) {
+            // the reader is mid-sentence in a field; repainting now would replace the row under them
+            refresh.restart();
+            return;
+        }
+        if (source == null && model.session() == null) {
             show("No session is open.");
             return;
         }
@@ -87,12 +117,9 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         new SwingWorker<Object, Void>() {
             @Override
             protected Object doInBackground() {
-                NaruPlanReader reader = NaruPlanReader.of(model.session());
-                if (reader == null) {
-                    return Read.ABSENT;
-                }
                 try {
-                    return reader.allPlans();
+                    List<NaruPlanSnapshot> plans = source == null ? readSession() : source.get();
+                    return plans == null ? Read.ABSENT : (Object) plans;
                 } catch (RuntimeException e) {
                     // the graph is a live structure the running task mutates; the next debounce
                     // gets a consistent one, so say nothing rather than show a half-read plan
@@ -133,12 +160,19 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         }.execute();
     }
 
+    /** The session's own board; null when no feature reads plans for this session. */
+    private List<NaruPlanSnapshot> readSession() {
+        NaruPlanReader reader = NaruPlanReader.of(model.session());
+        return reader == null ? null : reader.allPlans();
+    }
+
     @SuppressWarnings("unchecked")
     private static List<NaruPlanSnapshot> cast(Object plans) {
         return (List<NaruPlanSnapshot>) plans;
     }
 
     private void render(List<NaruPlanSnapshot> plans) {
+        last = plans;
         stack.removeAll();
         for (NaruPlanSnapshot p : plans) {
             addPlan(p);
@@ -166,7 +200,8 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         JPanel text = new JPanel();
         text.setOpaque(false);
         text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
-        JLabel goal = new JLabel(p.goal() == null || p.goal().isBlank() ? "(no goal)" : p.goal());
+        String goalText = p.goal() == null || p.goal().isBlank() ? "(no goal)" : p.goal();
+        JLabel goal = new JLabel(goalText);
         UiFonts.apply(goal, UiFonts.BODY, Font.BOLD);
         goal.setAlignmentX(Component.LEFT_ALIGNMENT);
         text.add(goal);
@@ -179,6 +214,9 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         text.add(tally);
         header.add(text, BorderLayout.CENTER);
         header.setToolTipText("Plan " + p.id() + " · " + tallyText);
+        // Only the active plan can be edited, because the directive edits the active plan: a board
+        // that offered a pencil on a dormant plan would send a line the engine refuses.
+        header.add(planActions(p, goal), BorderLayout.EAST);
         stack.add(header);
 
         JPanel items = new JPanel();
@@ -187,13 +225,75 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         items.setBorder(BorderFactory.createEmptyBorder(2, 18, 8, 8));
         items.setAlignmentX(Component.LEFT_ALIGNMENT);
         for (NaruPlanItemSnapshot i : p.items()) {
-            items.add(itemRow(i));
+            items.add(itemRow(i, p.active()));
+        }
+        if (p.active()) {
+            activeItems = items;
+            items.add(addItemHint());
         }
         stack.add(items);
         stack.add(Box.createVerticalStrut(6));
     }
 
-    private static Component itemRow(NaruPlanItemSnapshot i) {
+    private JComponent planActions(NaruPlanSnapshot p, JLabel goal) {
+        JPanel east = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+        east.setOpaque(false);
+        if (p.active()) {
+            clickToEdit(goal, "click to restate what this plan is for", () ->
+                    editor(p.goal() == null ? "" : p.goal(), PlanPane::isNotBlank, text -> {
+                        String line = PlanDirectives.goal(text);
+                        if (line != null) {
+                            director.send(line);
+                        }
+                    }));
+            east.add(action("⏸", "Stop dispatching this plan", () -> director.send(PlanDirectives.deactivate())));
+            east.add(action("＋", "Add an item to this plan", this::appendItemEditor));
+        } else {
+            goal.setToolTipText("Activate this plan to edit it");
+            east.add(action("▶", "Activate this plan; its ready items start dispatching",
+                    () -> director.send(PlanDirectives.activate(p.id()))));
+        }
+        return east;
+    }
+
+    /** A quiet row that becomes the field, so "add an item" is not a dialog nobody asked for. */
+    private JComponent addItemHint() {
+        JLabel hint = new JLabel("＋ add an item, or type /plan add in the composer");
+        UiFonts.apply(hint, UiFonts.CAPTION, Font.PLAIN);
+        hint.setForeground(UiPalette.muted());
+        hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        hint.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        hint.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                appendItemEditor();
+            }
+        });
+        return hint;
+    }
+
+    /** Insert a blank item field just above the hint row of the active plan. */
+    private void appendItemEditor() {
+        if (activeItems == null) {
+            return;
+        }
+        JPanel row = editor("", PlanPane::isNotBlank, text -> {
+            String line = PlanDirectives.addItem(text);
+            if (line != null) {
+                director.send(line);
+            }
+        });
+        // the hint is the last row, and a new item belongs above it rather than below it — the
+        // hint is a prompt, not a footer of the plan
+        activeItems.add(row, Math.max(0, activeItems.getComponentCount() - 1));
+        openAndFocus(row);
+    }
+
+    private static boolean isNotBlank(String text) {
+        return !PlanDirectives.flatten(text).isEmpty();
+    }
+
+    private JComponent itemRow(NaruPlanItemSnapshot i, boolean planActive) {
         JPanel row = new JPanel(new BorderLayout(6, 0));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -225,10 +325,164 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
             text.add(note);
         }
         row.add(text, BorderLayout.CENTER);
+        row.add(itemActions(i, planActive, row, line), BorderLayout.EAST);
         // a clipped description is only a clipped description if the reader cannot get at the whole
         row.setToolTipText(i.state().name().toLowerCase() + " · " + i.description()
                 + (aside.isEmpty() ? "" : " · " + aside));
         return row;
+    }
+
+    private JComponent itemActions(NaruPlanItemSnapshot i, boolean planActive, JPanel row, JLabel label) {
+        JPanel east = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+        east.setOpaque(false);
+        if (!planActive) {
+            return east;
+        }
+        boolean inSomeonesHands = i.state() == NaruPlanItemState.RUNNING
+                || i.state() == NaruPlanItemState.VALIDATING;
+        if (inSomeonesHands) {
+            JLabel busy = new JLabel("…");
+            UiFonts.apply(busy, UiFonts.CAPTION, Font.PLAIN);
+            busy.setForeground(UiPalette.muted());
+            busy.setToolTipText(i.state().name().toLowerCase()
+                    + " — a task is working from this text, so the plan will not let it change");
+            east.add(busy);
+            return east;
+        }
+        clickToEdit(label, "click to rewrite this item", () ->
+                editor(i.description(), PlanPane::isNotBlank, text -> {
+                    String line = PlanDirectives.editItem(i.id(), text);
+                    if (line != null) {
+                        director.send(line);
+                    }
+                }));
+        east.add(action("×", "Remove this item from the plan",
+                () -> director.send(PlanDirectives.removeItem(i.id()))));
+        return east;
+    }
+
+    /**
+     * A field with commit and cancel, replacing whatever it was editing. Blank text is refused
+     * here — an empty description is an error the extension would answer, and the reader should not
+     * have to see a transcript card to learn that the Enter key did nothing.
+     */
+    private JPanel editor(String initial, java.util.function.Predicate<String> accept, Consumer<String> commit) {
+        JPanel row = new JPanel(new BorderLayout(4, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JTextField field = new JTextField(initial);
+        UiFonts.apply(field, UiFonts.BODY, Font.PLAIN);
+        field.putClientProperty("JTextField.placeholderText", "the whole sentence, not a fragment");
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+        buttons.setOpaque(false);
+        Runnable finish = () -> {
+            String text = field.getText();
+            closeEditor();
+            if (accept.test(text)) {
+                commit.accept(text);
+            }
+        };
+        field.addActionListener(e -> finish.run());
+        field.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
+                    closeEditor();
+                }
+            }
+        });
+        buttons.add(action("✓", "Send this change", finish::run));
+        buttons.add(action("×", "Cancel — nothing is sent", this::closeEditor));
+        row.add(field, BorderLayout.CENTER);
+        row.add(buttons, BorderLayout.EAST);
+        return row;
+    }
+
+    private void closeEditor() {
+        openEditor = null;
+        if (!last.isEmpty()) {
+            render(last);
+        }
+    }
+
+    private static JTextField findField(JComponent root) {
+        for (Component c : ((Container) root).getComponents()) {
+            if (c instanceof JTextField f) {
+                return f;
+            }
+            if (c instanceof JComponent jc) {
+                JTextField found = findField(jc);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void clickToEdit(JLabel label, String hint, Supplier<JComponent> build) {
+        label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        String existing = label.getToolTipText();
+        label.setToolTipText(existing == null ? hint : existing + " · " + hint);
+        label.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                JComponent editor = build.get();
+                Container parent = label.getParent();
+                int index = indexOf(parent, label);
+                if (index < 0) {
+                    return;
+                }
+                parent.remove(index);
+                parent.add(editor, index);
+                if (parent instanceof JComponent jc) {
+                    jc.revalidate();
+                }
+                openAndFocus(editor);
+            }
+        });
+    }
+
+    private void openAndFocus(JComponent row) {
+        openEditor = row;
+        row.revalidate();
+        SwingUtilities.invokeLater(() -> {
+            JTextField f = findField(row);
+            if (f != null) {
+                f.requestFocusInWindow();
+                f.selectAll();
+            }
+        });
+    }
+
+    private static int indexOf(Container parent, Component child) {
+        if (parent == null) {
+            return -1;
+        }
+        for (int i = 0; i < parent.getComponentCount(); i++) {
+            if (parent.getComponent(i) == child) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private JButton action(String glyph, String tip, Runnable onClick) {
+        JButton b = GlyphButton.of(glyph, tip);
+        b.addActionListener(e -> onClick.run());
+        return b;
+    }
+
+    /** The line goes to the engine the way the composer sends it: as a directive, on the EDT. */
+    private void sendToSession(String line) {
+        String rejection = model.submitDirective(line, failure -> {
+            if (failure != null) {
+                DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Plan", failure);
+            }
+        });
+        if (rejection != null) {
+            DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Plan", rejection);
+        }
     }
 
     /** The small truth beside the item: what gates it, what it is waiting on, who holds it. */
@@ -308,6 +562,11 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         drawn = false;
         stack.revalidate();
         stack.repaint();
+    }
+
+    /** What the board does when a reader acts: hand the engine a {@code /plan} line. */
+    interface Director {
+        void send(String line);
     }
 
     /**

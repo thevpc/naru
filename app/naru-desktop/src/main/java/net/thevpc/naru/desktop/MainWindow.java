@@ -281,6 +281,9 @@ public final class MainWindow extends JFrame {
         sessionList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 SessionEntry item = sessionList.getSelectedValue();
+                // group rows are labels, not sessions: they cannot be opened, hibernated
+                // or renamed; the context menu on a row is the project's own
+                if (item != null && item.isGroup()) return;
                 // Selecting a hibernated row is intentionally inert. Users may want to
                 // rename or delete it without starting its engine; opening is a separate action.
                 if (item != null && item.model != null && item.model != session) {
@@ -304,7 +307,7 @@ public final class MainWindow extends JFrame {
             @Override public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2 && sessionList.locationToIndex(e.getPoint()) >= 0) {
                     SessionEntry entry = sessionList.getSelectedValue();
-                    if (entry != null) activateSession(entry);
+                    if (entry != null && !entry.isGroup()) activateSession(entry);
                 }
             }
             @Override public void mousePressed(MouseEvent e) { showMenu(e); }
@@ -316,6 +319,11 @@ public final class MainWindow extends JFrame {
                 sessionList.setSelectedIndex(row);
                 javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
                 SessionEntry entry = sessionList.getSelectedValue();
+                if (entry != null && entry.isGroup()) {
+                    showProjectMenu(menu, entry);
+                    menu.show(sessionList, e.getX(), e.getY());
+                    return;
+                }
                 javax.swing.JMenuItem openClose = new javax.swing.JMenuItem(entry.isOpen() ? "Close session" : "Open session");
                 openClose.addActionListener(x -> {
                     if (entry.isOpen()) hibernateSession(entry);
@@ -324,10 +332,49 @@ public final class MainWindow extends JFrame {
                 menu.add(openClose);
                 javax.swing.JMenuItem rename = new javax.swing.JMenuItem("Rename session…");
                 rename.addActionListener(x -> renameSelectedSession()); menu.add(rename);
+                javax.swing.JMenuItem move = new javax.swing.JMenuItem("Move to project…");
+                move.addActionListener(x -> moveSessionToProject(entry)); menu.add(move);
                 menu.addSeparator();
                 javax.swing.JMenuItem delete = new javax.swing.JMenuItem("Delete session…");
                 delete.addActionListener(x -> deleteSession(entry)); menu.add(delete);
                 menu.show(sessionList, e.getX(), e.getY());
+            }
+            private void showProjectMenu(javax.swing.JPopupMenu menu, SessionEntry group) {
+                String projectId = group.header.projectId();
+                if (projectId != null) {
+                    JMenuItem rename = new JMenuItem("Rename project…");
+                    rename.addActionListener(x -> renameProjectUI(group));
+                    JMenuItem remove = new JMenuItem("Remove project…");
+                    remove.addActionListener(x -> removeProjectUI(group));
+                    JMenuItem detachAll = new JMenuItem("Move all sessions out (detach)");
+                    detachAll.addActionListener(x -> detachProjectSessions(group));
+                    JMenuItem moveHere = new JMenuItem("Move current session here");
+                    moveHere.addActionListener(x -> {
+                        SessionEntry current = activeSessionEntry();
+                        if (current != null) {
+                            moveSessionTo(current.id, projectId, group.header.title());
+                        }
+                    });
+                    menu.add(rename); menu.add(detachAll); menu.add(remove); menu.addSeparator(); menu.add(moveHere);
+                } else if (group.header.unknown()) {
+                    JMenuItem refresh = new JMenuItem("Refresh");
+                    refresh.addActionListener(x -> refreshProjectSnapshot());
+                    menu.add(refresh);
+                } else {
+                    // the "No project" bucket: adopt the selected (or active) session out of a project
+                    JMenuItem moveOut = new JMenuItem("Move selected session here");
+                    moveOut.addActionListener(x -> {
+                        SessionEntry selected = sessionList.getSelectedValue();
+                        SessionEntry subject = selected != null && !selected.isGroup() ? selected : activeSessionEntry();
+                        if (subject != null) moveSessionTo(subject.id, null, "No project");
+                    });
+                    menu.add(moveOut);
+                }
+                JMenuItem newProject = new JMenuItem("New project…");
+                newProject.addActionListener(x -> createProjectUI());
+                JMenuItem refresh = new JMenuItem("Refresh");
+                refresh.addActionListener(x -> refreshProjectSnapshot());
+                menu.addSeparator(); menu.add(newProject); menu.add(refresh);
             }
         });
     }
@@ -619,6 +666,7 @@ public final class MainWindow extends JFrame {
                                 projectDirectory, info, null, null));
                     }
                     rebuildSessionList();
+                    refreshProjectSnapshot();
                     if (sessions.isEmpty()) {
                         showActiveSession("No session", null);
                         addWelcome();
@@ -653,6 +701,197 @@ public final class MainWindow extends JFrame {
      */
     private static net.thevpc.naru.api.agent.NaruSessionStoreManager catalog(NPath dir) {
         return NaruDesktop.workspace(dir).sessionCatalog();
+    }
+
+    /** The group row's caption: a caret, the name, and how many visible sessions it holds. */
+    private static String groupTitleHtml(SessionEntry group) {
+        String title = htmlEscape(group.header.title());
+        int n = group.header.count();
+        String count = n > 0
+                ? "<span style='color:" + UiPalette.css(UiPalette.muted()) + ";'> &middot; "
+                + n + " session" + (n == 1 ? "" : "s") + "</span>"
+                : "";
+        return "&#9656;&nbsp;&nbsp;<b>" + title + "</b>" + count;
+    }
+
+    private static String htmlEscape(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    /** The sidebar row for the session this window is reading, or null. */
+    private SessionEntry activeSessionEntry() {
+        for (SessionEntry entry : sessions) {
+            if (entry.model == session) return entry;
+        }
+        return null;
+    }
+
+    private void createProjectUI() {
+        String name = javax.swing.JOptionPane.showInputDialog(this, "Project name:");
+        if (name == null || name.isBlank()) return;
+        String suggested = projectDirectory == null ? System.getProperty("user.dir", ".")
+                : projectDirectory.resolve(name.trim()).toString();
+        String folder = javax.swing.JOptionPane.showInputDialog(this,
+                "Project folder — the directory new sessions under this project start in (it may not exist yet):",
+                suggested);
+        if (folder == null || folder.isBlank()) return;
+        final String fname = name;
+        final String ffolder = folder;
+        final java.util.concurrent.atomic.AtomicReference<String> warnings = new java.util.concurrent.atomic.AtomicReference<>();
+        runProjectAction("Add project", () -> {
+            var result = projectService().add(fname, NPath.of(ffolder), null);
+            if (!result.warnings().isEmpty()) warnings.set(String.join("\n", result.warnings()));
+        }, () -> {
+            if (warnings.get() != null) {
+                net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this, "Add project", warnings.get());
+            }
+        });
+    }
+
+    private void renameProjectUI(SessionEntry group) {
+        String name = javax.swing.JOptionPane.showInputDialog(this, "New project name:",
+                group.header.title());
+        if (name == null || name.isBlank() || name.equals(group.header.title())) return;
+        final String newName = name;
+        runProjectAction("Rename project", () -> {
+            var service = projectService();
+            var current = service.find(group.header.projectId()).get();
+            service.edit(current.id(), current.version(),
+                    net.thevpc.naru.api.project.NaruProjectPatch.of().name(newName));
+        }, null);
+    }
+
+    private void detachProjectSessions(SessionEntry group) {
+        runProjectAction("Detach sessions", () -> {
+            var service = projectService();
+            ProjectSnapshot snap = projectSnapshot;
+            if (snap == null) return;
+            List<String> ids = new ArrayList<>();
+            snap.projectOf().forEach((uuid, pid) -> {
+                if (pid.equals(group.header.projectId())) ids.add(uuid);
+            });
+            if (!ids.isEmpty()) service.moveSessions(ids, net.thevpc.naru.api.project.NaruProjectService.NO_PROJECT);
+        }, null);
+    }
+
+    private void removeProjectUI(SessionEntry group) {
+        ProjectSnapshot snap = projectSnapshot;
+        int memberCount = 0;
+        if (snap != null) {
+            for (String pid : snap.projectOf().values()) {
+                if (pid.equals(group.header.projectId())) memberCount++;
+            }
+        }
+        Object choice;
+        if (memberCount == 0) {
+            choice = javax.swing.JOptionPane.showConfirmDialog(this,
+                    "Remove the project “" + group.header.title() + "”?\nIts sessions keep working; they simply belong to no project.",
+                    "Remove project", javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.QUESTION_MESSAGE);
+            if (choice == null || ((Integer) choice) != javax.swing.JOptionPane.OK_OPTION) return;
+            choice = net.thevpc.naru.api.project.NaruProjectDeletePolicy.REJECT;
+        } else {
+            choice = javax.swing.JOptionPane.showInputDialog(this,
+                    "This project still has " + memberCount + " session(s). What should happen to them?",
+                    "Remove project", javax.swing.JOptionPane.QUESTION_MESSAGE, null,
+                    new Object[]{"Detach — keep the sessions, they move to “No project”",
+                            "Cascade — delete the sessions with the project",
+                            "Cancel"},
+                    "Detach — keep the sessions, they move to “No project”");
+            if (choice == null || String.valueOf(choice).startsWith("Cancel")) return;
+            boolean cascade = String.valueOf(choice).startsWith("Cascade");
+            if (cascade) {
+                int sure = javax.swing.JOptionPane.showConfirmDialog(this,
+                        "Cascade deletes every session of “" + group.header.title() + "” — conversations, tasks and history — and then the project. Continue?",
+                        "Remove project — cascade", javax.swing.JOptionPane.OK_CANCEL_OPTION,
+                        javax.swing.JOptionPane.WARNING_MESSAGE);
+                if (sure != javax.swing.JOptionPane.OK_OPTION) return;
+            }
+            choice = cascade ? net.thevpc.naru.api.project.NaruProjectDeletePolicy.CASCADE
+                    : net.thevpc.naru.api.project.NaruProjectDeletePolicy.DETACH;
+        }
+        final net.thevpc.naru.api.project.NaruProjectDeletePolicy policy =
+                (net.thevpc.naru.api.project.NaruProjectDeletePolicy) choice;
+        runProjectAction("Remove project", () -> {
+            var service = projectService();
+            var current = service.find(group.header.projectId()).get();
+            var report = service.remove(current.id(), current.version(), policy);
+            if (!report.projectDeleted()) {
+                throw new IllegalStateException("partial removal: " + report.failedSessions().size()
+                        + " session(s) could not be moved out of the way; the project was kept");
+            }
+        }, null);
+    }
+
+    private void moveSessionToProject(SessionEntry entry) {
+        ProjectSnapshot snap = projectSnapshot;
+        if (snap == null) {
+            refreshProjectSnapshot();
+            return;
+        }
+        String currentId = snap.projectOf().get(entry.id);
+        java.util.List<net.thevpc.naru.desktop.model.SessionGrouping.Project> projects = snap.projects();
+        String[] labels = new String[projects.size() + 1];
+        labels[0] = net.thevpc.naru.desktop.model.SessionGrouping.NO_PROJECT;
+        for (int i = 0; i < projects.size(); i++) {
+            labels[i + 1] = projects.get(i).name();
+        }
+        int selectedLabel = 0;
+        for (int i = 0; i < projects.size(); i++) {
+            if (projects.get(i).id().equals(currentId)) selectedLabel = i + 1;
+        }
+        Object choice = javax.swing.JOptionPane.showInputDialog(this,
+                "Move “" + entry + "” to which project?", "Move to project",
+                javax.swing.JOptionPane.QUESTION_MESSAGE, null, labels, labels[selectedLabel]);
+        if (choice == null) return;
+        int idx = java.util.Arrays.asList(labels).indexOf(choice);
+        if (idx == selectedLabel) return;
+        moveSessionTo(entry.id, idx <= 0 ? null : projects.get(idx - 1).id(), String.valueOf(choice));
+    }
+
+    /** The move is a projectId change only: directories, storage and content never move. */
+    private void moveSessionTo(String sessionId, String targetProjectId, String targetLabel) {
+        runProjectAction("Move session", () -> {
+            var report = projectService().moveSession(sessionId,
+                    targetProjectId == null ? net.thevpc.naru.api.project.NaruProjectService.NO_PROJECT : targetProjectId);
+            if (!report.failed().isEmpty()) {
+                throw new IllegalStateException(String.join("\n", report.failed().values()));
+            }
+        }, null);
+    }
+
+    /**
+     * Runs a project-store action off the EDT and refreshes the sidebar when it lands;
+     * failures surface as a message rather than a stack trace into the console.
+     */
+    private void runProjectAction(String title, Runnable action, Runnable onSuccess) {
+        if (projectService() == null) {
+            net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, title, "No workspace is open yet.");
+            return;
+        }
+        new javax.swing.SwingWorker<Void, Void>() {
+            private Exception failure;
+
+            @Override
+            protected Void doInBackground() {
+                try {
+                    action.run();
+                } catch (Exception e) {
+                    failure = e;
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                if (failure != null) {
+                    net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this, title,
+                            String.valueOf(failure.getMessage()));
+                } else if (onSuccess != null) {
+                    onSuccess.run();
+                }
+                refreshProjectSnapshot();
+            }
+        }.execute();
     }
 
     /**
@@ -862,6 +1101,7 @@ public final class MainWindow extends JFrame {
                                     }
                                 }
                                 rebuildSessionList();
+                                refreshProjectSnapshot();
                                 if (!saved.isEmpty()) SwingUtilities.invokeLater(() -> {
                                     if (sessionRows.size() > 0) sessionList.setSelectedIndex(0);
                                 });
@@ -881,11 +1121,28 @@ public final class MainWindow extends JFrame {
         SessionEntry selected = sessionList.getSelectedValue();
         DefaultListModel<SessionEntry> replacement = new DefaultListModel<>();
         String query = sessionFilter.getText().trim().toLowerCase(java.util.Locale.ROOT);
-        int selectedIndex = -1;
+        List<SessionEntry> visible = new ArrayList<>();
         for (SessionEntry entry : sessions) {
             if (query.isEmpty() || entry.toString().toLowerCase(java.util.Locale.ROOT).contains(query)) {
-                replacement.addElement(entry);
-                if (entry == selected || entry.model == session) selectedIndex = replacement.size() - 1;
+                visible.add(entry);
+            }
+        }
+        ProjectSnapshot snap = projectSnapshot;
+        if (snap == null || snap.projects().isEmpty()) {
+            // the flat catalog: no projects exist (or the service is unreachable), and a
+            // window that invents a "No project" folder over a list that is entirely
+            // sessions-without-projects would only be noise
+            for (SessionEntry entry : visible) replacement.addElement(entry);
+        } else {
+            net.thevpc.naru.desktop.model.SessionGrouping.Header last = null;
+            for (var line : net.thevpc.naru.desktop.model.SessionGrouping.layout(
+                    snap.projects(), visible, snap.projectOf(), e -> e.id)) {
+                if (line.item() == null && !query.isEmpty()) continue; // empty project while filtering
+                if (line.header() != last) {
+                    replacement.addElement(SessionEntry.group(line.header()));
+                    last = line.header();
+                }
+                if (line.item() != null) replacement.addElement(line.item());
             }
         }
         // Populate off-list, then publish once. DefaultListModel emits one event per insertion;
@@ -893,10 +1150,103 @@ public final class MainWindow extends JFrame {
         // O(n²) EDT task (the thread dump showed it stuck in updateLayoutState here).
         sessionRows = replacement;
         sessionList.setModel(replacement);
-        if (selectedIndex >= 0) sessionList.setSelectedIndex(selectedIndex);
+        SessionEntry keep = selected != null && !selected.isGroup() ? selected : null;
+        if (keep == null) {
+            for (int i = 0; i < replacement.size(); i++) {
+                if (replacement.get(i).model == session) {
+                    keep = replacement.get(i);
+                    break;
+                }
+            }
+        }
+        if (keep != null) {
+            int index = replacement.indexOf(keep);
+            if (index >= 0) sessionList.setSelectedIndex(index);
+        }
+    }
+
+    // ── project grouping ─────────────────────────────────────────────────────────
+
+    /**
+     * The sidebar's project view: the tree's project rows in service order, and which
+     * project each session header names. Refreshed off the EDT — it is a scan of the
+     * session headers — and consumed by {@link #rebuildSessionList()}.
+     */
+    private record ProjectSnapshot(
+            java.util.List<net.thevpc.naru.desktop.model.SessionGrouping.Project> projects,
+            java.util.Map<String, String> projectOf) {
+    }
+
+    private volatile ProjectSnapshot projectSnapshot;
+    /** Workspaces whose project service already carries a refresh listener from this window. */
+    private final java.util.Set<String> projectListenersOwned = new java.util.HashSet<>();
+
+    private net.thevpc.naru.api.project.NaruProjectService projectService() {
+        if (projectDirectory == null) return null;
+        return NaruDesktop.workspace(projectDirectory).projects();
+    }
+
+    private void refreshProjectSnapshot() {
+        if (projectDirectory == null) return;
+        final NPath dir = projectDirectory;
+        new javax.swing.SwingWorker<ProjectSnapshot, Void>() {
+            @Override
+            protected ProjectSnapshot doInBackground() {
+                net.thevpc.naru.api.project.NaruProjectService service =
+                        NaruDesktop.workspace(dir).projects();
+                synchronized (projectListenersOwned) {
+                    if (projectListenersOwned.add(dir.toString())) {
+                        service.addListener(new net.thevpc.naru.api.project.NaruProjectListener() {
+                            @Override public void onProjectCreated(net.thevpc.naru.api.project.NaruProject p) { onEvent(); }
+                            @Override public void onProjectUpdated(net.thevpc.naru.api.project.NaruProject b, net.thevpc.naru.api.project.NaruProject a) { onEvent(); }
+                            @Override public void onProjectRemoved(net.thevpc.naru.api.project.NaruProject p) { onEvent(); }
+                            @Override public void onSessionMoved(String sessionId, String from, String to) { onEvent(); }
+                            private void onEvent() {
+                                SwingUtilities.invokeLater(MainWindow.this::refreshProjectSnapshot);
+                            }
+                        });
+                    }
+                }
+                java.util.List<net.thevpc.naru.desktop.model.SessionGrouping.Project> projects = new ArrayList<>();
+                String cursor = null;
+                do {
+                    var page = service.tree(new net.thevpc.naru.api.project.NaruProjectQuery(
+                            cursor, null, null, null, 200));
+                    for (var node : page.items()) {
+                        projects.add(new net.thevpc.naru.desktop.model.SessionGrouping.Project(
+                                node.project().id(), node.project().name()));
+                    }
+                    cursor = page.nextCursor();
+                } while (cursor != null);
+                java.util.Map<String, String> projectOf = new java.util.HashMap<>();
+                cursor = null;
+                do {
+                    var page = service.sessions(new net.thevpc.naru.api.store.NaruSessionQuery(
+                            cursor, null, null, null, 500));
+                    for (var s : page.items()) {
+                        if (s.projectId() != null) projectOf.put(s.uuid(), s.projectId());
+                    }
+                    cursor = page.nextCursor();
+                } while (cursor != null);
+                return new ProjectSnapshot(projects, projectOf);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    projectSnapshot = get();
+                } catch (Exception e) {
+                    // a failed read leaves the last view (or the flat one) standing: the
+                    // sidebar must never empty because a store lookup hiccuped
+                    projectSnapshot = null;
+                }
+                rebuildSessionList();
+            }
+        }.execute();
     }
 
     private void activateSession(SessionEntry selected) {
+        if (selected == null || selected.isGroup()) return;
         disposeSessionViews();
         if (selected.model == null) {
             InteractionHost selectedHost = new InteractionHost();
@@ -1077,6 +1427,17 @@ public final class MainWindow extends JFrame {
         applySessionRowHeight();
         installSessionHover();
         sessionList.setCellRenderer((list, value, index, selected, focus) -> {
+            if (value.isGroup()) {
+                // a section label, not a session: no dot, no state, no dates, and it
+                // never borrows the selection hue — painting a picked project looked like
+                // a picked session
+                JLabel head = new JLabel("<html><div style='padding:3px 4px 1px 6px;'>"
+                        + "<span style='color:" + UiPalette.css(UiPalette.muted()) + ";'>"
+                        + groupTitleHtml(value) + "</span></div></html>");
+                head.setOpaque(true);
+                head.setBackground(list.getBackground());
+                return head;
+            }
             String dates = value.dateSummary();
             String state = value.stateLabel();
             // one dot in the state's hue, the same hue the title row uses for the session being read:
@@ -1221,8 +1582,23 @@ public final class MainWindow extends JFrame {
                      NPath projectDir, net.thevpc.naru.api.agent.NaruResourceInfo savedInfo,
                      NaruSessionModel model, InteractionHost host) {
             this.number = number; this.id = id; this.scope = scope; this.projectDir = projectDir;
-            this.savedInfo = savedInfo; this.model = model; this.host = host;
+            this.savedInfo = savedInfo; this.model = model; this.host = host; this.header = null;
         }
+
+        /** A group row: it names a project (or the standalone/unknown buckets) and holds no session. */
+        private SessionEntry(net.thevpc.naru.desktop.model.SessionGrouping.Header header) {
+            this.number = 0; this.id = null; this.scope = null; this.projectDir = null;
+            this.savedInfo = null; this.model = null; this.host = null; this.header = header;
+        }
+
+        final net.thevpc.naru.desktop.model.SessionGrouping.Header header;
+
+        static SessionEntry group(net.thevpc.naru.desktop.model.SessionGrouping.Header header) {
+            return new SessionEntry(header);
+        }
+
+        /** True for the project/no-project/unknown rows interleaved with the sessions. */
+        boolean isGroup() { return header != null; }
 
         boolean isOpen() { return model != null && model.isRunning(); }
         boolean isOpening() { return model != null && model.isBooting(); }
@@ -1244,6 +1620,10 @@ public final class MainWindow extends JFrame {
         }
 
         @Override public String toString(){
+            if (isGroup()) {
+                int n = header.count();
+                return header.title() + (header.projectId() == null && !header.unknown() && n == 0 ? "" : " (" + n + ")");
+            }
             String name = model != null && model.session() != null ? model.session().name() : null;
             if (model == null || model.session() == null) name = savedInfo != null ? savedInfo.getName()
                     : null;
@@ -1434,7 +1814,7 @@ public final class MainWindow extends JFrame {
     }
 
     private void deleteSession(SessionEntry entry) {
-        if (entry == null) return;
+        if (entry == null || entry.isGroup()) return;
         if (entry.model != null && entry.model.isBooting()) {
             net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, "Delete session", "Wait for the session to finish opening before deleting it.");
             return;

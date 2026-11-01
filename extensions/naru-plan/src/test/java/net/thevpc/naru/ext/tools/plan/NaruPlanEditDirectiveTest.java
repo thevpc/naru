@@ -151,8 +151,18 @@ public class NaruPlanEditDirectiveTest {
     }
 
     @Test
-    public void editWithNothingMentionedIsAnErrorNotASilentNoOp() {
+    public void aQuotedOptionValueIsOneArgument() {
+        // NCmdLine used to reject --opt="a b" outright; now that the BASH tokenizer quotes inside a
+        // word, the documented /plan grammar works as written
         NaruPlan plan = activePlan("a", "design it");
+        String itemId = plan.items().get(0).id();
+        NaruStmtResult r = plan("edit " + itemId + " --notes=\"asked the reviewer, twice\"");
+        assertTrue(!r.isError(), err(r));
+        assertEquals("asked the reviewer, twice", plans().findItem(plan.id(), itemId).orNull().notes());
+    }
+
+    @Test
+    public void editWithNothingMentionedIsAnErrorNotASilentNoOp() {        NaruPlan plan = activePlan("a", "design it");
         NaruStmtResult r = plan("edit " + plan.items().get(0).id());
         assertTrue(isErr(r));
         assertTrue(err(r).contains("nothing to change"), err(r));
