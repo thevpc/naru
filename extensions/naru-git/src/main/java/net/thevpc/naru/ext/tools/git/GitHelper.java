@@ -13,7 +13,7 @@ import java.nio.file.Paths;
 public class GitHelper {
 
     public static Git openGit(NaruTask task) throws IOException {
-        Path projectPath = Paths.get(task.projectDir().toString());
+        Path projectPath = Paths.get(task.sessionDir().toString());
         FileRepositoryBuilder builder = new FileRepositoryBuilder();
         Repository repository = builder.findGitDir(projectPath.toFile())
                 .build();

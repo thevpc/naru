@@ -56,7 +56,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NaruTask setProjectDir(NPath projectDir) {
+    public NaruTask setSessionDir(NPath sessionDir) {
         throw new NUnsupportedOperationException();
     }
 
@@ -86,7 +86,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NPath projectDir() {
+    public NPath sessionDir() {
         throw new NUnsupportedOperationException();
     }
 

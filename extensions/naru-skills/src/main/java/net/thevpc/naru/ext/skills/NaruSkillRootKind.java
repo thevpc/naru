@@ -16,7 +16,7 @@ public enum NaruSkillRootKind {
     PROJECT_PRIVATE("project-local", "naru", false, false),
 
     /**
-     * {@code <ancestor>/.naru/skills} along the projectDir → workingDir walk. The closest
+     * {@code <ancestor>/.naru/skills} along the sessionDir → workingDir walk. The closest
      * directory wins; the project's own public root is the weakest of the walk (its distance
      * is the number of levels from the task's working directory).
      */

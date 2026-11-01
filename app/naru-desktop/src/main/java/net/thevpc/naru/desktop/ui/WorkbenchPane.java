@@ -43,7 +43,7 @@ public final class WorkbenchPane extends JPanel {
     }
     public void setSelectedTaskId(long id) { taskId = id; tags.setSelectedTaskId(id); refresh(); }
     public void showToolTagsTab() { tabs.setSelectedComponent(tags); }
-    private Path projectRoot() { NaruTask t = selectedTask(); return path(t == null ? model.sessionDir() : t.projectDir()); }
+    private Path projectRoot() { NaruTask t = selectedTask(); return path(t == null ? model.sessionDir() : t.sessionDir()); }
 
     private JSplitPane explorer() {
         tree.setRootVisible(true); tree.setShowsRootHandles(true);

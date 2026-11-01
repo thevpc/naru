@@ -32,7 +32,7 @@ public class NaruLineSyntaxTest {
         NPath dir = NPath.ofTempFolder("naru-line-syntax");
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
-        NaruSession s = agent.newSession().directory(dir).configureDefaults(false).build();
+        NaruSession s = agent.newSession().sessionDir(dir).configureDefaults(false).build();
         s.registry().registerDirectiveProvider(new net.thevpc.naru.impl.registry.NaruBuiltinDirectiveProvider());
         return s;
     }

@@ -59,7 +59,7 @@ public class NaruTaskStatePersistenceTest {
             }
         });
         session = agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .interaction(interaction)
                 .configureDefaults(true)
                 .sessionListener(NOOP_LISTENER)

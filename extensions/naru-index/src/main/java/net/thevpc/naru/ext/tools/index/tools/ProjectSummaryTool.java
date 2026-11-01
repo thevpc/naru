@@ -32,7 +32,7 @@ public class ProjectSummaryTool extends DefaultNaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
-        Path root = Paths.get(context.task().projectDir().toString());
+        Path root = Paths.get(context.task().sessionDir().toString());
         StringBuilder sb = new StringBuilder();
         sb.append("Project Summary for ").append(root.getFileName()).append(":\n");
         

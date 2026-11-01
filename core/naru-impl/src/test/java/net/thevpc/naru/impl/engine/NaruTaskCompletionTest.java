@@ -132,7 +132,7 @@ public class NaruTaskCompletionTest {
         Assertions.assertEquals(id, run.id());
         Assertions.assertEquals("seven", run.name());
         Assertions.assertNotNull(run.session());
-        Assertions.assertNotNull(run.projectDir());
+        Assertions.assertNotNull(run.sessionDir());
         Assertions.assertTrue(run.isCompleted());
         Assertions.assertTrue(run.endTime().isPresent(), "run.endTime() should be set once the task has finished");
         Assertions.assertTrue(run.duration().isPresent(), "run.duration() should be set once the task has finished");

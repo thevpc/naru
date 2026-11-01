@@ -111,7 +111,7 @@ public final class InspectorPane extends JPanel implements NaruSessionModel.List
                             + owner.sessionDir() + "\nSession working directory: " + owner.workingDir(),
                             "Select a task to inspect available skills."};
                 }
-                String contextText = "Task #" + t.id() + "\nMode: " + t.taskMode() + "\nProject: " + t.projectDir()
+                String contextText = "Task #" + t.id() + "\nMode: " + t.taskMode() + "\nProject: " + t.sessionDir()
                         + "\nWorking directory: " + t.workingDir() + "\n\nContext messages: "
                         + safeContextSize(t) + "\nHistory messages: " + safeHistorySize(t);
                 return new String[]{contextText, readSkills(t)};
@@ -132,7 +132,7 @@ public final class InspectorPane extends JPanel implements NaruSessionModel.List
     private static int safeHistorySize(NaruTask t) { try { return t.history().size(); } catch (RuntimeException e) { return 0; } }
     private static String readSkills(NaruTask t) {
         if (t == null) return "Select a task to inspect available skills.";
-        Path p; try { p = Paths.get(t.projectDir().toString()).resolve(".naru/skills"); } catch (Exception e) { return "Skills are managed by the skills extension and project .naru/skills roots."; }
+        Path p; try { p = Paths.get(t.sessionDir().toString()).resolve(".naru/skills"); } catch (Exception e) { return "Skills are managed by the skills extension and project .naru/skills roots."; }
         if (!Files.isDirectory(p)) return "No project .naru/skills folder found.\n\nThe skills extension may also provide user and store roots.";
         try (var f = Files.list(p)) { StringBuilder b = new StringBuilder("Project skills · ").append(p).append("\n\n"); f.sorted(Comparator.comparing(x -> x.getFileName().toString())).forEach(x -> b.append(Files.isDirectory(x) ? "▸ " : "• ").append(x.getFileName()).append('\n')); return b.toString(); }
         catch (Exception e) { return "Could not list project skills: " + e.getMessage(); }

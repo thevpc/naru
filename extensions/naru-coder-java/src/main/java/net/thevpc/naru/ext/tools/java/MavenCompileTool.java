@@ -48,21 +48,21 @@ public class MavenCompileTool extends DefaultNaruTool {
     @Override
     public String execute(NaruToolCallContext context) {
         String projectDirArg = context.stringArg("project_dir").orNull();
-        NPath projectDir = NBlankable.isNonBlank(projectDirArg)
+        NPath sessionDir = NBlankable.isNonBlank(projectDirArg)
                 ? context.task().resolve(projectDirArg)
-                : context.task().projectDir();
+                : context.task().sessionDir();
 
-        return runMaven(projectDir, "compile");
+        return runMaven(sessionDir, "compile");
     }
 
-    static String runMaven(NPath projectDir, String... goals) {
+    static String runMaven(NPath sessionDir, String... goals) {
         StringBuilder output = new StringBuilder();
         NExec exec;
         try {
             exec = NExec.ofSystem(buildCmd(goals))
                     .failFast(false)
                     .maxLines(500)
-                    .directory(projectDir);
+                    .directory(sessionDir);
             String raw = exec.grabbedAll();
             int exitCode = exec.exitCode();
 

@@ -63,7 +63,7 @@ public interface NaruTask extends NToElement {
      * {@link #duration()}, {@link #value()}, {@link #exitCode()} and
      * {@link #vars()}. It is frozen because a task outlives its own registration, so it may be
      * the only remaining record of what happened, and a record that a later write can edit is
-     * not a record. The descriptive setters ({@link #setProjectDir}, {@link #taskMode} and the
+     * not a record. The descriptive setters ({@link #setSessionDir}, {@link #taskMode} and the
      * rest) stay live, because those describe the task rather than its run -- this type is not a
      * value type, so do not cache one expecting immutability. Ask it again when you need to know.
      * <p>
@@ -230,7 +230,14 @@ public interface NaruTask extends NToElement {
 
     NPath workingDir();
 
-    NaruTask setProjectDir(NPath projectDir);
+    /**
+     * Sets the session directory this task is anchored to — the directory used to load
+     * skills and configuration, and the base that relative permission patterns resolve
+     * against. It is seeded from the owning session's {@code sessionDir()} and follows it
+     * when the session's directory changes. Not the working directory: shell and file
+     * tools operate in {@link #workingDir()}.
+     */
+    NaruTask setSessionDir(NPath sessionDir);
 
     /**
      * Prepends the {@code init.naru} hooks selected by {@code trigger} to this task's
@@ -260,7 +267,8 @@ public interface NaruTask extends NToElement {
     /** Stored task-record version token, used for optimistic lifecycle operations. */
     long version();
 
-    NPath projectDir();
+    /** The session directory this task is anchored to; see {@link #setSessionDir}. */
+    NPath sessionDir();
 
     String getExtraContext();
 

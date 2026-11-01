@@ -14,9 +14,9 @@ import net.thevpc.nuts.util.NBlankable;
 /**
  * {@code /sessiondir <dir>} -- the explicit session-directory switch (WP7).
  * <p>
- * Unlike {@code /cd}, which only moves the working directory, this changes the project
+ * Unlike {@code /cd}, which only moves the working directory, this changes the session directory
  * root. That makes it the one directive entitled to side effects: it re-resolves what is
- * rooted at the project (skill roots, context files, model defaults), runs the
+ * rooted at the session directory (skill roots, context files, model defaults), runs the
  * workspace-level {@code init.naru} exactly once, and fires the {@code sessiondir-change}
  * event. Per-task selections and granted tag sets are kept; only availability is
  * re-resolved (an existing task's selected model is fixed at task creation, so "models"
@@ -29,7 +29,7 @@ public class NaruSessionDirDirective extends NaruDirectiveBase {
     public NaruSessionDirDirective() {
         super("sessiondir", "session", "change the session directory");
         register(new AbstractSubCommand(new SubCommandHelp("<dir>",
-                "change the project root to <dir>, re-resolve roots/context files/model defaults, run the "
+                "change the session directory to <dir>, re-resolve roots/context files/model defaults, run the "
                         + "workspace init.naru once and fire sessiondir-change.\n"
                         + "ex:\n/sessiondir /path/to/other/sessiondir")) {
             @Override
@@ -38,14 +38,14 @@ public class NaruSessionDirDirective extends NaruDirectiveBase {
                 NaruSession session = task.session();
                 String arg = context.argument();
                 if (NBlankable.isBlank(arg)) {
-                    NMsg msg = NMsg.ofC("project: missing <dir> (current project is %s)",
+                    NMsg msg = NMsg.ofC("sessiondir: missing <dir> (current session directory is %s)",
                             session.sessionDir()).asError();
                     task.addResultMessage(msg);
                     return NaruStmtResult.ofError(msg);
                 }
                 NPath target = NPath.of(arg.trim()).toAbsolute(session.sessionDir()).normalize();
                 if (!target.isDirectory()) {
-                    NMsg msg = NMsg.ofC("project directory not found: %s", target).asError();
+                    NMsg msg = NMsg.ofC("session directory not found: %s", target).asError();
                     task.addResultMessage(msg);
                     return NaruStmtResult.ofError(msg);
                 }
@@ -55,9 +55,9 @@ public class NaruSessionDirDirective extends NaruDirectiveBase {
                 task.runInitHooks(NaruEvent.SESSION_DIR_CHANGE);
                 NPath now = session.sessionDir();
                 if (now.equals(old)) {
-                    task.addResultMessage(NMsg.ofC("project is already %s", now));
+                    task.addResultMessage(NMsg.ofC("session directory is already %s", now));
                 } else {
-                    task.addResultMessage(NMsg.ofC("project changed to %s", now));
+                    task.addResultMessage(NMsg.ofC("session directory changed to %s", now));
                 }
                 return NaruStmtResult.ofSuccess(NElement.of(now.toString()), NMsg.ofC("%s", now));
             }

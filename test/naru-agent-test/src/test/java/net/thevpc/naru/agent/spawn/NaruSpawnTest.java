@@ -76,7 +76,7 @@ public class NaruSpawnTest {
         agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-spawn"));
         session = agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .interaction(null)
                 .configureDefaults(true)
                 .sessionListener(NOOP_LISTENER)

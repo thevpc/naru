@@ -115,7 +115,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     /**
      * Root directory of the project being worked on.
      */
-    private NPath projectDir;
+    private NPath sessionDir;
     private NaruPromptMode promptMode;
     private NaruTaskMode taskMode = NaruTaskMode.BATCH;
     private boolean conversation;
@@ -1154,7 +1154,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         o.set("creationDate", NElement.ofInstant(creationDate));
         o.set("modificationDate", NElement.ofInstant(modificationDate));
         o.set("model", model == null ? null : model.toElement());
-        o.set("projectDir", NElement.ofString(projectDir.toString()));
+        o.set("sessionDir", NElement.ofString(sessionDir.toString()));
         o.set("workingDir", workingDir == null ? null : NElement.ofString(workingDir.toString()));
         o.set("userQueriesCount", userQueriesCount);
         // the granted tag names and the excluded tool names are the task's standing
@@ -1259,7 +1259,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         NElement mv = o.get("model").orElse(null);
         this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
         this.extraContext = o.getStringValue("extraContext").orElse(null);
-        this.projectDir = o.getStringValue("projectDir").map(x -> NPath.of(x)).orElse(projectDir);
+        this.sessionDir = o.getStringValue("sessionDir").map(x -> NPath.of(x)).orElse(sessionDir);
         this.workingDir = o.getStringValue("workingDir").map(x -> NPath.of(x)).orElse(workingDir);
         this.lastResult = o.get("lastResult").map(x -> NaruMessage.of(x)).orNull();
         this.inputMode = o.get("inputMode").map(x -> NaruInputMode.parse(x).orElse(NaruInputMode.LINE)).orNull();
@@ -1344,8 +1344,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public NPath projectDir() {
-        return projectDir;
+    public NPath sessionDir() {
+        return sessionDir;
     }
 
     @Override
@@ -1376,8 +1376,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         return this;
     }
 
-    public NaruTaskImpl _setProjectDir(NPath projectDir) {
-        this.projectDir = projectDir;
+    public NaruTaskImpl _setSessionDir(NPath sessionDir) {
+        this.sessionDir = sessionDir;
         return this;
     }
 
@@ -1413,8 +1413,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public NaruTask setProjectDir(NPath projectDir) {
-        this.projectDir = projectDir;
+    public NaruTask setSessionDir(NPath sessionDir) {
+        this.sessionDir = sessionDir;
         fireChanged();
         return this;
     }
@@ -1833,7 +1833,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                     case FOLDER: {
                         all.add(
                                 NaruMessage.system(
-                                        "### PROJECT FOLDER CONTEXT: " + h.source().relativize(projectDir) + "\n" + h.body()
+                                        "### PROJECT FOLDER CONTEXT: " + h.source().relativize(sessionDir) + "\n" + h.body()
                                 ).setSource(NaruSource.PROJECT).setSourceName(h.source().toString())
                         );
                         break;
@@ -1860,7 +1860,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                     if (!h.body().isEmpty()) {
                         all.add(
                                 NaruMessage.user(
-                                        "### USER LOCAL SPECIFIC CONTEXT: " + h.source().relativize(projectDir) + "\n" + h.body()
+                                        "### USER LOCAL SPECIFIC CONTEXT: " + h.source().relativize(sessionDir) + "\n" + h.body()
                                 ).setSource(NaruSource.PROJECT).setSourceName(h.source().toString())
                         );
                     }
@@ -1869,11 +1869,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         // add project/folder level agent files
         if (sourcesOk.contains(NaruSource.PROJECT) || sourcesOk.contains(NaruSource.FOLDER)) {
-            if (!workingDir.startsWith(projectDir)) {
+            if (!workingDir.startsWith(sessionDir)) {
                 if (sourcesOk.contains(NaruSource.PROJECT)) {
                     for (NPath p : ((NaruSessionImpl) session).listOverridablePaths(
-                            projectDir.resolve(".naru/agent"),
-                            projectDir.resolve(".naru/local/agent"),
+                            sessionDir.resolve(".naru/agent"),
+                            sessionDir.resolve(".naru/local/agent"),
                             namePredicate
                     )) {
                         MarkdownWithHeader h = MarkdownWithHeader.of(p, NaruSource.USER_HOME).orNull();
@@ -1883,7 +1883,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                             if (!h.body().isEmpty()) {
                                 all.add(
                                         NaruMessage.user(
-                                                "### USER PROJECT SPECIFIC CONTEXT: " + h.source().relativize(projectDir) + "\n" + h.body()
+                                                "### USER PROJECT SPECIFIC CONTEXT: " + h.source().relativize(sessionDir) + "\n" + h.body()
                                         ).setSource(NaruSource.PROJECT).setSourceName(h.source().toString())
                                 );
                             }
@@ -1893,15 +1893,15 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             } else {
                 List<NPath> dirs = new ArrayList<>();
                 NPath p = workingDir;
-                while ((p != null && (p.equals(projectDir) || p.startsWith(projectDir)))) {
+                while ((p != null && (p.equals(sessionDir) || p.startsWith(sessionDir)))) {
                     dirs.add(p);
-                    if (p.equals(projectDir)) break;
+                    if (p.equals(sessionDir)) break;
                     p = p.parent();
                 }
-                // reverse: projectDir first, workingDir last (specific wins)
+                // reverse: sessionDir first, workingDir last (specific wins)
                 Collections.reverse(dirs);
                 for (NPath dir : dirs) {
-                    NaruSource st = dir.equals(projectDir) ? NaruSource.PROJECT : NaruSource.FOLDER;
+                    NaruSource st = dir.equals(sessionDir) ? NaruSource.PROJECT : NaruSource.FOLDER;
 
                     for (NPath pp : ((NaruSessionImpl) session).listOverridablePaths(
                             dir.resolve(".naru/agent"),
@@ -1917,7 +1917,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                                         NaruMessage.user(
                                                 st == NaruSource.PROJECT ?
                                                         ("### USER PROJECT SPECIFIC CONTEXT: \n" + h.body())
-                                                        : ("### USER FOLDER SPECIFIC CONTEXT: " + h.source().relativize(projectDir) + "\n" + h.body())
+                                                        : ("### USER FOLDER SPECIFIC CONTEXT: " + h.source().relativize(sessionDir) + "\n" + h.body())
                                         ).setSource(st).setSourceName(h.source().toString())
                                 );
                             }
@@ -2746,7 +2746,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
      */
     public void _prependInitHooks(boolean forceWorkspace, NPath hookBase) {
         List<NaruStatement> all = new ArrayList<>();
-        if (forceWorkspace || (hookBase != null && hookBase.equals(projectDir))) {
+        if (forceWorkspace || (hookBase != null && hookBase.equals(sessionDir))) {
             NPath p = NPath.of(NStoreKey.ofShared(NId.of("net.thevpc.naru:naru"))).resolve("init.naru");
             if (p.exists() && p.isFile()) {
                 List<NaruStatement> c = parseFile(p).orNull();
@@ -3226,27 +3226,27 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 NPath u = agents.resolve(fileName);
                 toLoad.add(MarkdownWithHeader.of(u, NaruSource.WORKSPACE).orNull());
             }
-            NPath workingDir = this.workingDir == null ? projectDir : this.workingDir;
+            NPath workingDir = this.workingDir == null ? sessionDir : this.workingDir;
             if (sourcesOk.contains(NaruSource.PROJECT) || sourcesOk.contains(NaruSource.FOLDER)) {
-                if (!workingDir.startsWith(projectDir)) {
+                if (!workingDir.startsWith(sessionDir)) {
                     if (sourcesOk.contains(NaruSource.PROJECT)) {
-                        NPath u = projectDir.resolve(".naru/models").resolve(fileName);
+                        NPath u = sessionDir.resolve(".naru/models").resolve(fileName);
                         toLoad.add(MarkdownWithHeader.of(u, NaruSource.PROJECT).orNull());
                     }
                 } else {
                     List<NPath> dirs = new ArrayList<>();
                     NPath p = workingDir;
-                    while ((p != null && (p.equals(projectDir) || p.startsWith(projectDir)))) {
+                    while ((p != null && (p.equals(sessionDir) || p.startsWith(sessionDir)))) {
                         dirs.add(p);
-                        if (p.equals(projectDir)) break;
+                        if (p.equals(sessionDir)) break;
                         p = p.parent();
                     }
-                    // reverse: projectDir first, workingDir last (specific wins)
+                    // reverse: sessionDir first, workingDir last (specific wins)
                     Collections.reverse(dirs);
                     for (NPath dir : dirs) {
                         NPath u = dir.resolve(".naru/models").resolve(fileName);
                         if (u.isRegularFile()) {
-                            if (dir.equals(projectDir)) {
+                            if (dir.equals(sessionDir)) {
                                 toLoad.add(MarkdownWithHeader.of(u, NaruSource.PROJECT).orNull());
                             } else {
                                 toLoad.add(MarkdownWithHeader.of(u, NaruSource.FOLDER).orNull());

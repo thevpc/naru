@@ -40,7 +40,7 @@ public class NaruProbeRunner {
         agent.projectDirectory(NPath.of(tempDir.toString()));
 
         NaruSession session = agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .sessionListener(NOOP)
                 .build();
 

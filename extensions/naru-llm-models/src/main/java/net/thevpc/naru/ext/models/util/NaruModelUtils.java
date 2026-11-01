@@ -195,7 +195,7 @@ public class NaruModelUtils {
             }
         }
 
-        // 1. Session audit folder in projectDir
+        // 1. Session audit folder in sessionDir
         if (finalSession != null && finalSession.sessionDir() != null) {
             paths.add(finalSession.sessionDir().resolve(".naru/local/sessions").resolve(sessionUuid).resolve("audit").resolve("task-" + taskId + ".tson"));
 //            paths.add(finalSession.sessionDir().resolve(".naru/local/logs").resolve("task-" + sessionUuid + "-" + taskId + "-llm-audit.tson"));

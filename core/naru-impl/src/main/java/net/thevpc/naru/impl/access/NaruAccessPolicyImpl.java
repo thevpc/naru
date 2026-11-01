@@ -468,7 +468,7 @@ public class NaruAccessPolicyImpl implements NaruAccessPolicy {
             return null;
         }
         NaruTask task = request.task();
-        return task.projectDir() == null ? null : task.projectDir().toString();
+        return task.sessionDir() == null ? null : task.sessionDir().toString();
     }
 
     private static List<String> resolvePatterns(List<String> patterns, String base, NaruResourceType type) {
@@ -487,7 +487,7 @@ public class NaruAccessPolicyImpl implements NaruAccessPolicy {
         return changed ? resolved : patterns;
     }
 
-    static String resolvePattern(String pattern, String projectDir) {
+    static String resolvePattern(String pattern, String sessionDir) {
         if (NBlankable.isBlank(pattern)) {
             return pattern;
         }
@@ -502,7 +502,7 @@ public class NaruAccessPolicyImpl implements NaruAccessPolicy {
         if (pattern.startsWith("**") || pattern.startsWith("*")) {
             return pattern;
         }
-        String base = projectDir;
+        String base = sessionDir;
         if (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }

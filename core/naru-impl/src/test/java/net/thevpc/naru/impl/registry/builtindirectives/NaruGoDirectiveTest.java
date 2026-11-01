@@ -58,7 +58,7 @@ public class NaruGoDirectiveTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-go-" + System.nanoTime()));
         session = agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

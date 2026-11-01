@@ -225,7 +225,7 @@ public class NaruCmdLineProcessor {
         // manual lists whatever a configured naru would actually offer
         NaruWorkspace agent = createWorkspace(projectDir);
         NaruSession session = agent.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(o -> {
                     // help renders through the directive result; session output is discarded
                 }))

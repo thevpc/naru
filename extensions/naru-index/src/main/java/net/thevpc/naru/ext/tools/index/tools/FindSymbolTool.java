@@ -52,7 +52,7 @@ public class FindSymbolTool extends DefaultNaruTool {
             try { kind = SymbolKind.valueOf(kindStr.toUpperCase()); } catch (Exception e) {}
         }
 
-        Path projPath = Paths.get(context.task().projectDir().toString());
+        Path projPath = Paths.get(context.task().sessionDir().toString());
         CodeIndex index = ProjectScanner.getCachedOrScan(projPath);
         
         List<CodeSymbol> results = index.findByName(name, kind, match);

@@ -55,7 +55,7 @@ public class NaruProjectInitializationTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         session = agent.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(interaction)
                 .configureDefaults(false)
                 .sessionListener(null)
@@ -80,7 +80,7 @@ public class NaruProjectInitializationTest {
     private NaruTaskImpl newTask(NPath workingDir) {
         NaruTaskImpl task = new NaruTaskImpl(1, -1, session);
         task._setWorkingDir(workingDir);
-        task._setProjectDir(projectDir);
+        task._setSessionDir(projectDir);
         return task;
     }
 

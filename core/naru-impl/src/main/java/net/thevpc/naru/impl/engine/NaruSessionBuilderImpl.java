@@ -121,7 +121,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     }
 
     @Override
-    public NaruSessionBuilder directory(NPath sessionDir) {
+    public NaruSessionBuilder sessionDir(NPath sessionDir) {
         this.sessionDir = sessionDir;
         return this;
     }

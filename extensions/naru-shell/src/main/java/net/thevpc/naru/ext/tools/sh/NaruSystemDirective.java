@@ -71,7 +71,7 @@ public class NaruSystemDirective extends NaruDirectiveBase {
                         NExec e = NEnv.of().osFamily() == NOsFamily.WINDOWS
                                 ? NExec.of("cmd", "/c", runCmd)
                                 : NExec.ofSystem("/bin/sh", "-c", runCmd);
-                        e.directory(task.projectDir() == null ? task.workingDir() : task.projectDir())
+                        e.directory(task.sessionDir() == null ? task.workingDir() : task.sessionDir())
                                 .failFast(false)
                                 // Pass the full environment (PATH, HOME, JAVA_HOME, ...):
                                 // nuts' NExec otherwise spawns the child with a near-empty

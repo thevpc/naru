@@ -39,7 +39,7 @@ public class NaruSessionUsageReportingTest {
         agent.projectDirectory(NPath.ofTempFolder("naru-usage-reporting"));
         // configureDefaults=false keeps SPI discovery and the network out of it
         return (NaruSessionImpl) agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .interaction(null)
                 .configureDefaults(false)
                 .sessionListener(null)

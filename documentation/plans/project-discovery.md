@@ -274,3 +274,21 @@ each module.
   `documentation/todo/todo-ui.md`; those files are **not** part of this task's commits and
   must not be staged (Phase 1 only touches `WorkbenchPane.java`/`InspectorPane.java`, which
   are clean).
+- **Test-loop trap (learned in Phase 1):** extension resolution goes through the Nuts
+  profile, which reads jars from `~/.m2` — cross-module test runs must be preceded by
+  `mvn -q -DskipTests install` (or use `-am` so the reactor wins), otherwise module tests
+  silently run against stale installed jars and mix two generations of the API.
+- **Baseline test failures at 889fb39 (pre-existing, NOT caused by the project work —
+  reproduced in a clean worktree of that commit):** naru-impl: `NaruGoDirectiveTest.
+  aContextWithNothingInItAtAllIsStillNothingToDo`, `NaruModelResourceResolutionTest` (2),
+  `NaruToolCallLifecycleTest` (2), `NaruTaskInterruptTest` (2),
+  `NaruTaskCompletionTest.cancelSettlesTheRunAsKilled`, `NaruNArgCompleteResolverTest.
+  anAliasedDirectiveStillDelegatesArguments`, `NaruLineCompletionTest.
+  anArgumentGoesToTheDirectiveThatOwnsIt` (10 total). naru-skills:
+  `NaruSkillDirectiveTest` (8) + `NaruSkillsRootsTest.theTrustCommandTogglesAForeignRootAndListShowsItsState`
+  (1). naru-budget: `NaruBudgetDirectiveTest` (27). naru-sessions:
+  `NaruSessionDirectiveTest` (3: ambiguousNameIsReported, resetOnASavedOnlySessionAsksForARunningOne,
+  subcommandsThatActOnEverythingRejectSelectors). naru-plan: `NaruPlanWorkflowTest` (11)
+  + `NaruPlanGraphTest` (2) + `NaruPlanModeSwitchTest` (1). naru-tasks:
+  `NaruSpawnDirectiveTest` (3). All other suites green, including store-file, fs, shell,
+  coder-java, index, git, semantic, compact, routines, tags, permissions, api.

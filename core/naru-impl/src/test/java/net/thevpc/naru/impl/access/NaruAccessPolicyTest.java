@@ -259,7 +259,7 @@ public class NaruAccessPolicyTest {
                 new Class[]{NaruTask.class},
                 (proxy, method, args) -> {
                     switch (method.getName()) {
-                        case "projectDir":
+                        case "sessionDir":
                             return NPath.of(dir);
                         case "toString":
                             return "task(" + dir + ")";

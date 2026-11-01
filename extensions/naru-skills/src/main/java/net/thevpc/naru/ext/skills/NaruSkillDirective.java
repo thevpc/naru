@@ -773,7 +773,7 @@ public class NaruSkillDirective extends NaruDirectiveBase {
             return "?";
         }
         String path = root.path().toString();
-        String project = task.projectDir() == null ? null : task.projectDir().toString();
+        String project = task.sessionDir() == null ? null : task.sessionDir().toString();
         if (project != null && path.startsWith(project)) {
             String rel = path.substring(project.length());
             while (rel.startsWith("/")) {

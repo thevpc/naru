@@ -42,10 +42,10 @@ public class MavenPackageTool extends DefaultNaruTool {
     @Override
     public String execute(NaruToolCallContext context) {
         String projectDirArg = context.stringArg("project_dir").orNull();
-        NPath projectDir = NBlankable.isNonBlank(projectDirArg)
+        NPath sessionDir = NBlankable.isNonBlank(projectDirArg)
                 ? context.task().resolve(projectDirArg)
-                : context.task().projectDir();
+                : context.task().sessionDir();
 
-        return MavenCompileTool.runMaven(projectDir, "package", "-DskipTests");
+        return MavenCompileTool.runMaven(sessionDir, "package", "-DskipTests");
     }
 }

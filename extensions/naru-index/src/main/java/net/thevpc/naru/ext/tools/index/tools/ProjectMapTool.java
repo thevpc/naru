@@ -44,10 +44,10 @@ public class ProjectMapTool extends DefaultNaruTool {
         boolean includeHidden = context.booleanArg("include_hidden").orElse(false);
 
         NaruTask task = context.task();
-        NPath projectDir = NBlankable.isNonBlank(pathArg)
+        NPath sessionDir = NBlankable.isNonBlank(pathArg)
             ? context.task().resolve(pathArg)
-            : context.task().projectDir();
-        Path rootPath = Paths.get(projectDir.toString());
+            : context.task().sessionDir();
+        Path rootPath = Paths.get(sessionDir.toString());
 
         StringBuilder sb = new StringBuilder();
         sb.append(rootPath.getFileName()).append("/\n");

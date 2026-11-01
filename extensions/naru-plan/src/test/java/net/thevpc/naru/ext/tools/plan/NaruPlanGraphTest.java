@@ -50,7 +50,7 @@ public class NaruPlanGraphTest {
         // configureDefaults must be on: the plan graph is now provided by a session
         // extension discovered through the registry, not by the session itself
         session = agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .interaction(null)
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)

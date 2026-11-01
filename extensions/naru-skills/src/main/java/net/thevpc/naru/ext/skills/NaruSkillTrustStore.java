@@ -29,15 +29,15 @@ import java.util.Map;
  * far".
  */
 final class NaruSkillTrustStore {
-    private final NPath projectDir;
+    private final NPath sessionDir;
     private final NPath userHome;
     private final NaruDataStore projectStore;
     private final NaruDataStore userStore;
     private final Map<String, NaruSkillTrustLevel> projectTrusted = new LinkedHashMap<>();
     private final Map<String, NaruSkillTrustLevel> userTrusted = new LinkedHashMap<>();
 
-    NaruSkillTrustStore(NPath projectDir, NPath userHome, NaruDataStore projectStore, NaruDataStore userStore) {
-        this.projectDir = projectDir == null ? null : projectDir.normalize();
+    NaruSkillTrustStore(NPath sessionDir, NPath userHome, NaruDataStore projectStore, NaruDataStore userStore) {
+        this.sessionDir = sessionDir == null ? null : sessionDir.normalize();
         this.userHome = userHome == null ? null : userHome.normalize();
         this.projectStore = projectStore;
         this.userStore = userStore;
@@ -91,7 +91,7 @@ final class NaruSkillTrustStore {
     }
 
     private String key(NaruSkillRoot root) {
-        NPath base = root.kind().userLevel() ? userHome : projectDir;
+        NPath base = root.kind().userLevel() ? userHome : sessionDir;
         String rel = null;
         if (base != null && root.path() != null && root.path().startsWith(base)) {
             NOptional<String> r = base.relativize(root.path());

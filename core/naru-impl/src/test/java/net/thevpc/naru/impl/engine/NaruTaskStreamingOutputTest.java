@@ -283,7 +283,7 @@ public class NaruTaskStreamingOutputTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-stream-" + System.nanoTime()));
         NaruSession session = agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .interaction(new RecordingInteraction())
                 .configureDefaults(false)
                 .sessionListener(null)

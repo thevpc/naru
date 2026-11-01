@@ -57,7 +57,7 @@ public class NaruPlanModeToolGateTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-plan-mode-gate"));
         session = agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .interaction(null)
                 .configureDefaults(true)
                 .sessionListener(NOOP_LISTENER)

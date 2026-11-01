@@ -82,7 +82,7 @@ public class NaruSkillDirectiveTest {
         workspace.projectDirectory(projectDir);
         outputs.clear();
         session = workspace.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(o -> outputs.add(o)))
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)

@@ -444,7 +444,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (parent == null) {
             natuTask._setInputMode(NaruInputMode.LINE);
             natuTask._setWorkingDir(plan.workingDir != null ? plan.workingDir : (cwd == null ? workingDir : cwd));
-            natuTask._setProjectDir(sessionDir);
+            natuTask._setSessionDir(sessionDir);
             natuTask._setMode(NUtils.firstNonNull(plan.promptMode, taskBuilder.promptMode(), registry().mode(NaruPromptMode.DEFAULT).get()));
             natuTask._setInputBuffer("");
             natuTask._setLastResult(null);
@@ -457,7 +457,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         } else {
             natuTask._setInputMode(NaruInputMode.LINE);
             natuTask._setWorkingDir(plan.workingDir != null ? plan.workingDir : (cwd == null ? parent.workingDir() : cwd));
-            natuTask._setProjectDir(parent.projectDir());
+            natuTask._setSessionDir(parent.sessionDir());
             // an explicit mode on the spec wins over the inherited one, so that a
             // plan can spawn implement-type executors from a PLANNING parent
             natuTask._setMode(NUtils.firstNonNull(plan.promptMode, taskBuilder.promptMode(), parent.promptMode(), registry().mode(NaruPromptMode.DEFAULT).get()));
@@ -709,8 +709,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (NBlankable.isBlank(s)) {
             StringBuilder sb = new StringBuilder();
             sb.append("You are NARU (Nuts AI Reasoning Unit), a durable actor-model based multi-task agent.\n");
-            if (task.projectDir() != null) {
-                sb.append("Project directory: ").append(task.projectDir()).append('\n');
+            if (task.sessionDir() != null) {
+                sb.append("Session directory: ").append(task.sessionDir()).append('\n');
             }
             // No "Available tools" line here: the tool list is already part of the
             // request sent to the model, and a spawn-time snapshot would go stale as
@@ -2077,11 +2077,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         NPath old = this.sessionDir;
         if (!nf.equals(old)) {
             this.sessionDir = nf;
-            // live tasks follow the root; the setProjectDir setter fires their change too,
-            // so each task's projectDir() answer stays consistent between this call and
+            // live tasks follow the root; the setSessionDir setter fires their change too,
+            // so each task's sessionDir() answer stays consistent between this call and
             // the next tick
             for (NaruTask t : tasks.values()) {
-                t.setProjectDir(nf);
+                t.setSessionDir(nf);
             }
             for (NaruSessionExtension extension : registry.sessionExtensions()) {
                 try {

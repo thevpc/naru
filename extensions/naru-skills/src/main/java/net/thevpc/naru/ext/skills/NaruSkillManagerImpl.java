@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
  * <p>
  * Skills are read from a list of roots ordered by {@link NaruSkillRoot#precedence()}:
  * {@code <project>/.naru/local/skills} (strongest), the {@code .naru/skills} walk from
- * {@code projectDir} down to the task's {@code workingDir} (closest wins),
+ * {@code sessionDir} down to the task's {@code workingDir} (closest wins),
  * {@code ~/.naru/skills}, then the foreign project roots ({@code .claude}, {@code .agents},
  * {@code .opencode}) and the foreign user roots. The first copy of a name wins; every other
  * copy stays visible, marked shadowed, through {@link #entries(NaruTask)}.
@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
  * A skill lives in the open-standard folder form {@code <root>/<name>/SKILL.md}
  * (falling back to {@code skill.md}). Every
  * {@link NaruSkill} is an immutable snapshot carrying the content hash and body as read when
- * the snapshot was built; the base (projectDir) roots are snapshotted by {@link #reload()}
+ * the snapshot was built; the base (sessionDir) roots are snapshotted by {@link #reload()}
  * so request-time contribution is disk-free. Folder-scoped roots beyond the project
  * directory are read at request time, because they depend on the task's working directory.
  */
@@ -52,7 +52,7 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     private final NPath userHome;
     private final NaruSkillTrustStore trust;
 
-    /** Base snapshot: copies keyed by the root that owns them (projectDir-root set). */
+    /** Base snapshot: copies keyed by the root that owns them (sessionDir-root set). */
     private Map<NaruSkillRoot, List<SkillCopy>> baseCopies = new LinkedHashMap<>();
     private Map<String, List<SkillCopy>> baseByName = new LinkedHashMap<>();
     private Map<String, NaruSkill> baseWinners = new LinkedHashMap<>();
@@ -106,7 +106,7 @@ class NaruSkillManagerImpl implements NaruSkillManager {
             out.add(root(NaruSkillRootKind.PROJECT_PRIVATE, project.resolve(".naru/local/skills"), "naru", 10));
         }
 
-        // the .naru/skills walk: projectDir first (weakest) to workingDir last (strongest
+        // the .naru/skills walk: sessionDir first (weakest) to workingDir last (strongest
         // within the walk). Closedness is expressed by the precedence: distance 0 is the
         // task's own directory.
         List<NPath> dirs = walkDirs(project, workingDir);
@@ -135,7 +135,7 @@ class NaruSkillManagerImpl implements NaruSkillManager {
     }
 
     /**
-     * The directories from {@code projectDir} down to {@code workingDir}, projectDir first.
+     * The directories from {@code sessionDir} down to {@code workingDir}, sessionDir first.
      * When the working directory leaves the project, only the project directory is used
      * (the same fallback the model-context walk uses).
      */
@@ -157,7 +157,7 @@ class NaruSkillManagerImpl implements NaruSkillManager {
             }
             p = p.parent();
         }
-        // walkDirs expects projectDir first (weakest), workingDir last (strongest)
+        // walkDirs expects sessionDir first (weakest), workingDir last (strongest)
         Collections.reverse(dirs);
         return dirs;
     }

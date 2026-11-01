@@ -56,7 +56,7 @@ public class SemanticSearchTool extends DefaultNaruTool {
         Integer topK = context.intArg("top_k").orNull();
         if (topK == null || topK <= 0) topK = 5;
 
-        Path projectPath = Paths.get(context.task().projectDir().toString());
+        Path projectPath = Paths.get(context.task().sessionDir().toString());
         InMemoryVectorStore store = getOrBuildStore(projectPath);
 
         float[] queryVec = EMBEDDER.embed(query);

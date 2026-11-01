@@ -46,7 +46,7 @@ public class SetWorkingDirTool extends DefaultNaruTool {
         String workingDirArg = context.stringArg("work_dir").orNull();
         NPath neworkDir = NBlankable.isNonBlank(workingDirArg)
                 ? context.task().resolve(workingDirArg)
-                : context.task().projectDir();
+                : context.task().sessionDir();
 
         context.task().setWorkingDir(neworkDir);
         return context.task().workingDir().toString();

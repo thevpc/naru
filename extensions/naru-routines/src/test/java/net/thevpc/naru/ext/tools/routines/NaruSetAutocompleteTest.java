@@ -42,7 +42,7 @@ public class NaruSetAutocompleteTest {
         NPath dir = NPath.ofTempFolder("naru-set-complete-" + System.nanoTime());
         agent.projectDirectory(dir);
         session = agent.newSession()
-                .directory(dir)
+                .sessionDir(dir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .sessionListener(null)

@@ -67,7 +67,7 @@ public class NaruDelegateSpawnTest {
         agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-delegate-spawn"));
         session = agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .interaction(null)
                 .configureDefaults(true)
                 .sessionListener(NOOP_LISTENER)

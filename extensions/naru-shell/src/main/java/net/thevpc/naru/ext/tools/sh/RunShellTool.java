@@ -68,7 +68,7 @@ public class RunShellTool extends DefaultNaruTool {
             return NaruAccessGuard.denyMessage(context.task(), shell, NaruAction.EXECUTE, access);
         }
 
-        NPath cwdPath = !NBlankable.isBlank(workDir) ? context.task().resolve(workDir) : context.task().projectDir();
+        NPath cwdPath = !NBlankable.isBlank(workDir) ? context.task().resolve(workDir) : context.task().sessionDir();
         File cwd = cwdPath != null ? new File(cwdPath.toString()) : new File(".");
 
         try {

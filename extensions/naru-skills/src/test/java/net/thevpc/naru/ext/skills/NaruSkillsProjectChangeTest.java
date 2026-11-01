@@ -59,7 +59,7 @@ public class NaruSkillsProjectChangeTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         session = agent.newSession()
-                .directory(projectDir)
+                .sessionDir(projectDir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .sessionListener(NOOP_LISTENER)

@@ -269,7 +269,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         try {
             NaruWorkspace workspace = workspaceFactory.get();
             var builder = workspace.newSession()
-                .directory(sessionDir)
+                .sessionDir(sessionDir)
                 .id(restoreId == null ? java.util.UUID.randomUUID().toString() : restoreId)
                 .scope(restoreScope)
                 .interaction(host)

@@ -41,7 +41,7 @@ public class CodeSymbolsTool extends DefaultNaruTool {
     @Override
     public String execute(NaruToolCallContext context) {
         NaruTask task = context.task();
-        Path projPath = Paths.get(task.projectDir().toString());
+        Path projPath = Paths.get(task.sessionDir().toString());
         CodeIndex index = ProjectScanner.getCachedOrScan(projPath);
 
         String pathArg = context.stringArg("path").orNull();

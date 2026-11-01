@@ -32,7 +32,7 @@ public class SemanticIndexTool extends DefaultNaruTool {
 
     @Override
     public String execute(NaruToolCallContext context) {
-        Path projectPath = Paths.get(context.task().projectDir().toString());
+        Path projectPath = Paths.get(context.task().sessionDir().toString());
         InMemoryVectorStore store = SemanticSearchTool.buildIndex(projectPath);
         return String.format("SUCCESS: Built semantic index with %d code chunks.", store.size());
     }

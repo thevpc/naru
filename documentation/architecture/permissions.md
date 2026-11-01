@@ -579,7 +579,7 @@ A small `NaruGlob` (or reuse a Nuts path matcher) supporting `*`, `**`, `?`,
   path (`task.resolve(path).normalize().toString()`); URL resources keep
   `scheme://host/path`; tool/directive resources use the bare name.
 - Patterns that are **not absolute** are resolved against the request's
-  `task.projectDir()` before matching. A pattern starting with `~` expands to the
+  `task.sessionDir()` before matching. A pattern starting with `~` expands to the
   user home. A pattern starting with `**/` matches anywhere.
 - `resource.scope()` carries the project-relative rendering so `/permission list`
   can show friendly rules while matching happens on absolute locators.
@@ -966,7 +966,7 @@ Implemented and tested: **M0–M6**. Not started: **M7**.
   Both may hide a tool. Keeping tag behaviour intact avoids a second, conflicting
   visibility rule — the policy filter (#4) is additive.
 - **Pattern base.** Project-relative patterns are resolved at check time against
-  `task.projectDir()`; a rule added under one project and evaluated under another
+  `task.sessionDir()`; a rule added under one project and evaluated under another
   must re-resolve (handled by `SESSION_DIR_CHANGE` rebase).
 - **Performance.** `check` is called on every tool/directive/FS/web/shell call.
   The snapshot-iteration design keeps it O(rules) with no allocation beyond the

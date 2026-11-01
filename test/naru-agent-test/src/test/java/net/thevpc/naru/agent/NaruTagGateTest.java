@@ -62,7 +62,7 @@ public class NaruTagGateTest {
                 .build()
         ;
         session = agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .interaction(null)
                 .configureDefaults(true)
                 .sessionListener(NOOP_LISTENER)
@@ -226,7 +226,7 @@ public class NaruTagGateTest {
                 .projectDirectory(NPath.ofTempFolder("naru-tag-events"))
                 .build();
         NaruSession s = ws.newSession()
-                .directory(ws.projectDirectory())
+                .sessionDir(ws.projectDirectory())
                 .interaction(null)
                 .configureDefaults(true)
                 .sessionListener(listener)

@@ -298,7 +298,7 @@ public class NaruRepeatedToolCallGuardTest {
         dir.mkdirs();
         agent.projectDirectory(dir);
         NaruSession s = agent.newSession()
-                .directory(dir)
+                .sessionDir(dir)
                 .interaction(recorder)
                 .configureDefaults(false)
                 .sessionListener(null)

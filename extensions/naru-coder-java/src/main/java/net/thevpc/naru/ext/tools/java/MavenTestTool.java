@@ -44,14 +44,14 @@ public class MavenTestTool extends DefaultNaruTool {
         String projectDirArg = context.stringArg("project_dir").orNull();
         String testClass = context.stringArg("test_class").orNull();
 
-        NPath projectDir = NBlankable.isNonBlank(projectDirArg)
+        NPath sessionDir = NBlankable.isNonBlank(projectDirArg)
                 ? context.task().resolve(projectDirArg)
-                : context.task().projectDir();
+                : context.task().sessionDir();
 
         if (!NBlankable.isBlank(testClass)) {
-            return MavenCompileTool.runMaven(projectDir, "test", "-Dtest=" + testClass, "-DfailIfNoTests=false");
+            return MavenCompileTool.runMaven(sessionDir, "test", "-Dtest=" + testClass, "-DfailIfNoTests=false");
         }
-        return MavenCompileTool.runMaven(projectDir, "test");
+        return MavenCompileTool.runMaven(sessionDir, "test");
     }
 
     private static String getString(Map<String, Object> args, String key) {

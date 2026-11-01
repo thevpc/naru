@@ -22,7 +22,7 @@ public class NaruCdDirective extends NaruDirectiveBase {
             @Override
             public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                NPath p2 = NBlankable.isBlank(context.argument()) ? context.task().projectDir() : NPath.of(context.argument());
+                NPath p2 = NBlankable.isBlank(context.argument()) ? context.task().sessionDir() : NPath.of(context.argument());
                 String denied = NaruFsGuard.deny(task, p2, NaruResourceType.DIR, NaruAction.LIST);
                 if (denied != null) {
                     NMsg msg = NMsg.ofC("%s", denied).asError();

@@ -34,7 +34,7 @@ public class NaruMcpGuardTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
         return agent.newSession()
-                .directory(dir)
+                .sessionDir(dir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

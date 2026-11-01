@@ -79,7 +79,7 @@ public class NaruEffectTagAndTest {
         }
         outputs.clear();
         session = (NaruSessionImpl) agent.newSession()
-                .directory(agent.projectDirectory())
+                .sessionDir(agent.projectDirectory())
                 .interaction(new NaruStreamInteraction(o -> outputs.add(String.valueOf(o.message()))))
                 .configureDefaults(true)
                 .sessionListener(NOOP_LISTENER)
