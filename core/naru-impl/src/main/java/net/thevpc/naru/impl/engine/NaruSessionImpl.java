@@ -98,6 +98,16 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * Root directory of the project being worked on.
      */
     private NPath sessionDir;
+    /**
+     * The project this session belongs to, or null. A grouping label: storage, session
+     * directory and user are untouched by it after creation.
+     */
+    private String projectId;
+    /**
+     * The opaque user string, or null. A filter label, distinct from the {@link #user}
+     * principal and persisted in the session header beside {@code projectId}.
+     */
+    private String userName;
     private final NaruScheduler scheduler;
     // session has one dedicated readline thread, parked until needed
     private boolean running = false;
@@ -1157,6 +1167,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
         this.sessionDir = data.sessionDir() == null ? sessionDir : NPath.of(data.sessionDir());
         this.workingDir = data.workingDir() == null ? workingDir : NPath.of(data.workingDir());
+        this.projectId = data.projectId();
+        this.userName = data.user();
         env.clear();
         for (Map.Entry<String, Object> e : data.env().entrySet()) {
             env.put(e.getKey(), NOptional.ofNullable(e.getValue()));
@@ -1504,6 +1516,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 .model(model == null ? null : model.toElement())
                 .sessionDir(sessionDir.toString())
                 .workingDir(workingDir == null ? null : workingDir.toString())
+                .projectId(projectId)
+                .user(userName)
                 .version(storeVersion)
                 .env(values);
     }
@@ -1640,6 +1654,12 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         o.set("model", model == null ? null : model.toElement());
         o.set("sessionDir", NElement.ofString(sessionDir.toString()));
         o.set("workingDir", workingDir == null ? null : NElement.ofString(workingDir.toString()));
+        if (projectId != null) {
+            o.set("projectId", NElement.ofString(projectId));
+        }
+        if (userName != null) {
+            o.set("user", NElement.ofString(userName));
+        }
         NObjectElementBuilder _props = NObjectElementBuilder.of();
         for (Map.Entry<String, NOptional<Object>> e : env.entrySet()) {
             _props.add(e.getKey(), NElement.of(e.getValue().orNull()));
@@ -2026,17 +2046,75 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return this;
     }
 
+    @Override
+    public String projectId() {
+        ensureNotStopped();
+        return projectId;
+    }
+
+    @Override
+    public NaruSession projectId(String projectId) {
+        ensureNotStopped();
+        String value = projectId == null || projectId.trim().isEmpty() ? null : projectId.trim();
+        if (!Objects.equals(value, this.projectId)) {
+            this.projectId = value;
+            fireChanged();
+        }
+        return this;
+    }
+
+    @Override
+    public String userName() {
+        ensureNotStopped();
+        return userName;
+    }
+
+    @Override
+    public NaruSession user(String user) {
+        ensureNotStopped();
+        String value = user == null || user.trim().isEmpty() ? null : user.trim();
+        if (!Objects.equals(value, this.userName)) {
+            this.userName = value;
+            fireChanged();
+        }
+        return this;
+    }
+
+    /** Plain assignment for the builder's seed-before-start path: no change event, no persist. */
+    void _setProjectId(String projectId) {
+        this.projectId = projectId == null || projectId.trim().isEmpty() ? null : projectId.trim();
+    }
+
+    /** Plain assignment for the builder's seed-before-start path: no change event, no persist. */
+    void _setUserName(String user) {
+        this.userName = user == null || user.trim().isEmpty() ? null : user.trim();
+    }
+
 
     /**
      * The store configuration for this project.
      *
-     * <p>The store directory is derived from the project directory, so a store can be
-     * relocated wholesale without touching anything above it. Scope comes from project
-     * configuration, which is the only place a default belongs -- the brief calls for
-     * private, and a project that wants its sessions shared says so in one line.
+     * <p>The store directory is anchored at the <b>workspace's</b> project directory, not
+     * at this session's session directory: the session directory is the directory the
+     * session is anchored <em>to</em> (skills, configuration), while session storage is
+     * the workspace's own flat catalog — sessions of several project folders live in one
+     * store and a project move never moves a directory. Falling back to the session
+     * directory is only the pre-workspace shape, kept for a workspace without a stated
+     * project directory. Scope comes from project configuration, which is the only place
+     * a default belongs — the brief calls for private, and a project that wants its
+     * sessions shared says so in one line.
      */
     private NaruStoreConfig storeConfig() {
-        return NaruStoreConfigs.forProject(sessionDir, workspace.env());
+        return NaruStoreConfigs.forProject(storeAnchor(), workspace.env());
+    }
+
+    /**
+     * The directory whose {@code .naru} holds this session's storage: the workspace's
+     * project directory when it has one, else this session's own directory.
+     */
+    NPath storeAnchor() {
+        NPath root = workspace.projectDirectory();
+        return root != null ? root : sessionDir;
     }
 
     /**

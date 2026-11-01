@@ -41,4 +41,12 @@ public record NaruSessionSummary(String uuid, String name, NaruSessionScope scop
         return new NaruSessionSummary(uuid, name, scope, creationInstant, modificationInstant,
                 sessionDir, workingDir, projectId, user, version, missing);
     }
+
+    /** The header view of a stored row, straight from the store: {@code projectMissing} starts false. */
+    public static NaruSessionSummary of(NaruSessionData data, NaruSessionScope scope) {
+        return new NaruSessionSummary(data.uuid(), data.name(), scope,
+                data.creationInstant(), data.modificationInstant(),
+                data.sessionDir(), data.workingDir(),
+                data.projectId(), data.user(), data.version(), false);
+    }
 }

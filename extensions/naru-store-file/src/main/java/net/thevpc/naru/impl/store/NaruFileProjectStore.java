@@ -19,10 +19,8 @@ import net.thevpc.nuts.util.NOptional;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -300,8 +298,7 @@ public class NaruFileProjectStore implements NaruProjectStore {
                 return key(p.name());
             case UPDATED_DESC:
             default:
-                Instant t = p.updatedAt();
-                return String.format("%020d.%09d", t.getEpochSecond(), t.getNano());
+                return net.thevpc.naru.api.store.NaruPageCursor.instantKey(p.updatedAt());
         }
     }
 
@@ -318,30 +315,12 @@ public class NaruFileProjectStore implements NaruProjectStore {
     }
 
     private static String encodeCursor(NaruProjectSort sort, String sortKey, String id) {
-        String raw = sort.name() + "\n" + sortKey + "\n" + id;
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
+        return net.thevpc.naru.api.store.NaruPageCursor.encode(sort.name(), sortKey, id);
     }
 
     /** null for no cursor; otherwise [sortTag, sortKey, id]. A cursor from another sort is a clear error. */
     private static String[] decodeCursor(String cursor, NaruProjectSort expected) {
-        if (cursor == null || cursor.isBlank()) {
-            return null;
-        }
-        String[] parts;
-        try {
-            parts = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8).split("\n", 3);
-        } catch (IllegalArgumentException e) {
-            throw new NIllegalArgumentException(NMsg.ofC("invalid project page cursor: %s", cursor));
-        }
-        if (parts.length != 3) {
-            throw new NIllegalArgumentException(NMsg.ofC("invalid project page cursor: %s", cursor));
-        }
-        if (!parts[0].equals(expected.name())) {
-            throw new NIllegalArgumentException(NMsg.ofC(
-                    "this cursor was produced by a %s listing; it cannot page a %s listing — restart with a null cursor",
-                    parts[0], expected.name()));
-        }
-        return parts;
+        return net.thevpc.naru.api.store.NaruPageCursor.decode(cursor, expected.name());
     }
 
     @Override

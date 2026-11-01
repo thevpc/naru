@@ -283,6 +283,127 @@ public class NaruFileSessionStore implements NaruSessionStore {
         });
     }
 
+    // ---------------------------------------------------------------- project-aware queries
+
+    /**
+     * One pass over the session headers, no task/message counting: a listing of the tree
+     * pays for metadata only. Corrupt headers are skipped with a warning, exactly like
+     * {@link #list} skips a corrupt folder — one bad file must not break the tree.
+     *
+     * <p>v1 cost note: this is an O(all sessions) directory scan per page; keyset
+     * pagination saves the caller from loading everything, not the store from looking at
+     * every header once.
+     */
+    @Override
+    public NaruPage<NaruSessionSummary> findByQuery(NaruSessionQuery query) {
+        final NaruSessionQuery q = query == null ? NaruSessionQuery.first() : query;
+        if (q.sort() != NaruSessionSort.UPDATED_DESC) {
+            throw new net.thevpc.nuts.util.NIllegalArgumentException(
+                    net.thevpc.nuts.text.NMsg.ofC("unsupported session sort: %s", q.sort()));
+        }
+        List<NaruSessionSummary> rows = headerRows();
+        rows.removeIf(s -> !q.projectFilter().matches(s.projectId()) || !q.user().matches(s.user()));
+        rows.sort(java.util.Comparator.comparing(
+                (NaruSessionSummary s) -> NaruPageCursor.instantKey(s.modificationInstant())).reversed()
+                .thenComparing(NaruSessionSummary::uuid));
+        String[] cursor = NaruPageCursor.decode(q.cursor(), NaruSessionSort.UPDATED_DESC.name());
+        if (cursor != null) {
+            rows.removeIf(s -> !NaruPageCursor.isAfter(NaruPageCursor.instantKey(s.modificationInstant()),
+                    s.uuid(), cursor, true));
+        }
+        List<NaruSessionSummary> items = rows.size() <= q.limit()
+                ? new ArrayList<>(rows) : new ArrayList<>(rows.subList(0, q.limit()));
+        String next = rows.size() > q.limit() && !items.isEmpty()
+                ? NaruPageCursor.encode(NaruSessionSort.UPDATED_DESC.name(),
+                NaruPageCursor.instantKey(items.get(items.size() - 1).modificationInstant()),
+                items.get(items.size() - 1).uuid())
+                : null;
+        return new NaruPage<>(items, next);
+    }
+
+    @Override
+    public NaruProjectSessionCounts countByProject() {
+        java.util.Map<String, Long> counts = new java.util.HashMap<>();
+        long none = 0;
+        for (NaruSessionSummary s : headerRows()) {
+            if (s.projectId() == null) none++;
+            else counts.merge(s.projectId(), 1L, Long::sum);
+        }
+        return new NaruProjectSessionCounts(counts, none);
+    }
+
+    /** Every readable header in both scopes, parsed once, no task or message counting. */
+    private List<NaruSessionSummary> headerRows() {
+        List<NaruSessionSummary> out = new ArrayList<>();
+        for (NaruSessionScope scope : NaruSessionScope.values()) {
+            for (NPath dir : NaruFileIo.children(rootOf(scope))) {
+                String name = dir.name();
+                if (name == null || RESERVED_DIRS.contains(name) || name.startsWith(".")) {
+                    continue;
+                }
+                NPath meta = dir.resolve("session.tson");
+                if (!NaruFileIo.isFile(meta)) {
+                    continue;
+                }
+                try {
+                    out.add(NaruSessionSummary.of(NaruSessionData.of(read(meta)), scope));
+                } catch (Exception e) {
+                    net.thevpc.nuts.io.NErr.println(net.thevpc.nuts.text.NMsg.ofC(
+                            "naru session store: skipping unreadable session header %s: %s",
+                            meta, String.valueOf(e.getMessage())));
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Reassigns the project id by rewriting only the header keys it owns. The element is
+     * rebuilt from the pairs it already had — so anything a future reader wrote that this
+     * store does not know about survives — and the swap happens under the same metadata
+     * lock as {@link #compareAndSetData}, with the same version check.
+     */
+    @Override
+    public NaruSessionData reassignProject(String uuid, NaruSessionScope scope,
+                                           long expectedVersion, String projectIdOrNull) {
+        NPath dir = requireDir(uuid, scope);
+        return withMetadataLock(dir, () -> {
+            NElement element;
+            try {
+                element = NaruContentAddressedStore.parse(NaruFileIo.readString(dir.resolve("session.tson")));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            NObjectElement o = element.asObject().get();
+            long current = o.getLongValue("version").orElse(0L);
+            if (current != expectedVersion) {
+                throw new NaruSessionConflictException(uuid, expectedVersion, current);
+            }
+            NObjectElementBuilder rebuilt = NObjectElementBuilder.of();
+            for (NElement child : o.children()) {
+                if (child.isNamedPair()) {
+                    String key = child.asPair().get().key().asStringValue().orNull();
+                    if ("projectId".equals(key) || "version".equals(key)) {
+                        continue;
+                    }
+                    rebuilt.add(child.asPair().get());
+                }
+            }
+            String projectId = projectIdOrNull == null || projectIdOrNull.trim().isEmpty()
+                    ? null : projectIdOrNull.trim();
+            if (projectId != null) {
+                rebuilt.set("projectId", projectId);
+            }
+            rebuilt.set("version", expectedVersion + 1);
+            try {
+                NaruFileIo.writeAtomic(dir.resolve("session.tson"), pretty(rebuilt.build()));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            return NaruSessionData.of(rebuilt.build());
+        });
+    }
+
     /** Cross-process metadata lock; static synchronization also avoids overlapping JVM locks. */
     private static synchronized <T> T withMetadataLock(NPath dir, java.util.function.Supplier<T> action) {
         try {

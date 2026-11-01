@@ -25,6 +25,8 @@ public class NaruSessionData implements NToElement {
     private NElement model;
     private String sessionDir;
     private String workingDir;
+    private String projectId;
+    private String user;
     private long version;
     private final Map<String, Object> env = new LinkedHashMap<>();
 
@@ -44,6 +46,8 @@ public class NaruSessionData implements NToElement {
         }
         d.sessionDir = o.getStringValue("sessionDir").orNull();
         d.workingDir = o.getStringValue("workingDir").orNull();
+        d.projectId = blankToNull(o.getStringValue("projectId").orNull());
+        d.user = blankToNull(o.getStringValue("user").orNull());
         d.version = o.getLongValue("version").orElse(0L);
         NElement e = o.get("env").orNull();
         if (e != null && e.isAnyObject()) {
@@ -55,6 +59,10 @@ public class NaruSessionData implements NToElement {
             }
         }
         return d;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.trim().isEmpty() ? null : value;
     }
 
     /**
@@ -149,6 +157,26 @@ public class NaruSessionData implements NToElement {
         return this;
     }
 
+    /** The owning project id, or null for a standalone session. A label only: storage never moves with it. */
+    public String projectId() {
+        return projectId;
+    }
+
+    public NaruSessionData projectId(String projectId) {
+        this.projectId = blankToNull(projectId);
+        return this;
+    }
+
+    /** The opaque owner string, or null. Stored and filterable only: no authentication, no permissions. */
+    public String user() {
+        return user;
+    }
+
+    public NaruSessionData user(String user) {
+        this.user = blankToNull(user);
+        return this;
+    }
+
     /** Monotonic checkpoint version; absent legacy values are interpreted as zero. */
     public long version() { return version; }
 
@@ -179,6 +207,15 @@ public class NaruSessionData implements NToElement {
         o.set("model", model);
         o.set("sessionDir", sessionDir);
         o.set("workingDir", workingDir);
+        if (projectId != null) {
+            // new optional keys are omitted rather than nulled when absent: a missing key
+            // and a stored null mean the same thing to readers, and the omission keeps
+            // session.tson honest about what the session actually carries
+            o.set("projectId", projectId);
+        }
+        if (user != null) {
+            o.set("user", user);
+        }
         o.set("version", version);
         NObjectElementBuilder envBuilder = NObjectElementBuilder.of();
         for (Map.Entry<String, Object> e : env.entrySet()) {

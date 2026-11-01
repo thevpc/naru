@@ -190,6 +190,34 @@ public interface NaruSession {
     NaruSession workingDir(NPath workingDir);
 
     /**
+     * The id of the project this session belongs to, or null when it is standalone.
+     * A project is a grouping label plus creation-time initial values: this field is the
+     * only link between the two, and moving a session changes nothing else — not
+     * {@code sessionDir}, not {@code userName}, not {@code workingDir}, not the on-disk
+     * location of the session's storage.
+     */
+    String projectId();
+
+    /**
+     * Re-points this session at a project (null detaches it). Changes only the
+     * {@code projectId}; legal on a live session, where the write goes through this
+     * session's own state and persists on the normal checkpoint path.
+     */
+    NaruSession projectId(String projectId);
+
+    /**
+     * The opaque user string carried by this session — a filter label, <b>not</b> the
+     * {@link #user()} principal: no authentication, no permissions. Seeded from the
+     * project at creation (or set explicitly) and never read through afterwards.
+     *
+     * @return the stored user string, or null
+     */
+    String userName();
+
+    /** Sets the opaque {@link #userName()} string; blank clears it. Unrelated to {@link #user()}. */
+    NaruSession user(String user);
+
+    /**
      * Converts this session to an NElement representation for serialization.
      *
      * @return the element representation, never null

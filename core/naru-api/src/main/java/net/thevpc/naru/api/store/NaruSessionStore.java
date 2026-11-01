@@ -2,8 +2,11 @@ package net.thevpc.naru.api.store;
 
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NOptional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -190,6 +193,113 @@ public interface NaruSessionStore extends AutoCloseable {
         data.version(expectedVersion + 1);
         saveData(data, scope);
         return data.version();
+    }
+
+    // ---------------------------------------------------------------- project-aware queries
+
+    /**
+     * One keyset page of session headers. The default implementation scans the catalog and
+     * loads headers row by row — correct on every backend, lazy on none; file stores
+     * should override with a single header pass.
+     *
+     * <p>Pagination is keyset over {@code (modificationInstant, uuid)}, stable under
+     * concurrent inserts: no duplicates, and no row that existed for the whole traversal
+     * is skipped. The cursor belongs to the sort that minted it.
+     */
+    default NaruPage<NaruSessionSummary> findByQuery(NaruSessionQuery query) {
+        final NaruSessionQuery q = query == null ? NaruSessionQuery.first() : query;
+        if (q.sort() != NaruSessionSort.UPDATED_DESC) {
+            throw new NIllegalArgumentException(NMsg.ofC("unsupported session sort: %s", q.sort()));
+        }
+        List<NaruSessionSummary> rows = new ArrayList<>();
+        for (NaruSessionRef ref : list()) {
+            NaruSessionData data = loadData(ref.uuid(), ref.scope()).orNull();
+            if (data == null) continue;
+            NaruSessionSummary s = NaruSessionSummary.of(data, ref.scope());
+            if (!q.projectFilter().matches(s.projectId())) continue;
+            if (!q.user().matches(s.user())) continue;
+            rows.add(s);
+        }
+        rows.sort(java.util.Comparator.comparing(
+                (NaruSessionSummary s) -> NaruPageCursor.instantKey(s.modificationInstant())).reversed()
+                .thenComparing(NaruSessionSummary::uuid));
+        String[] cursor = NaruPageCursor.decode(q.cursor(), NaruSessionSort.UPDATED_DESC.name());
+        if (cursor != null) {
+            rows.removeIf(s -> !NaruPageCursor.isAfter(NaruPageCursor.instantKey(s.modificationInstant()),
+                    s.uuid(), cursor, true));
+        }
+        List<NaruSessionSummary> items = rows.size() <= q.limit()
+                ? new ArrayList<>(rows) : new ArrayList<>(rows.subList(0, q.limit()));
+        String next = rows.size() > q.limit() && !items.isEmpty()
+                ? NaruPageCursor.encode(NaruSessionSort.UPDATED_DESC.name(),
+                NaruPageCursor.instantKey(items.get(items.size() - 1).modificationInstant()),
+                items.get(items.size() - 1).uuid())
+                : null;
+        return new NaruPage<>(items, next);
+    }
+
+    /**
+     * How many sessions name each project, plus the standalone count. The default pages
+     * through {@link #findByQuery}; stores are expected to answer this with one pass over
+     * their session headers, because the tree calls it for every listing.
+     */
+    default NaruProjectSessionCounts countByProject() {
+        java.util.Map<String, Long> counts = new java.util.HashMap<>();
+        long none = 0;
+        String cursor = null;
+        while (true) {
+            NaruPage<NaruSessionSummary> page = findByQuery(
+                    new NaruSessionQuery(cursor, NaruSessionSort.UPDATED_DESC,
+                            NaruProjectFilter.any(), NaruUserFilter.any(), NaruSessionQuery.MAX_LIMIT));
+            for (NaruSessionSummary s : page.items()) {
+                if (s.projectId() == null) none++;
+                else counts.merge(s.projectId(), 1L, Long::sum);
+            }
+            if (page.nextCursor() == null) break;
+            cursor = page.nextCursor();
+        }
+        return new NaruProjectSessionCounts(counts, none);
+    }
+
+    /**
+     * Re-points one session at a project — a metadata change only: never the directory,
+     * never the location, never any task, message, or environment content. The header is
+     * rewritten under the store's own version check and the version token is bumped.
+     *
+     * @return the stored row after the move
+     */
+    default NaruSessionData reassignProject(String uuid, NaruSessionScope scope,
+                                            long expectedVersion, String projectIdOrNull) {
+        NaruSessionData current = loadData(uuid, scope).orElseThrow(
+                () -> new NIllegalArgumentException(NMsg.ofC("no session %s in scope %s", uuid, scope)));
+        current.projectId(projectIdOrNull);
+        compareAndSetData(current, scope, expectedVersion);
+        return current;
+    }
+
+    /** Same, resolving the scope from the location. */
+    default NaruSessionData reassignProject(String uuid, long expectedVersion, String projectIdOrNull) {
+        NaruSessionScope scope = scopeOf(uuid).orNull();
+        if (scope == null) {
+            throw new NIllegalArgumentException(NMsg.ofC("no session %s", uuid));
+        }
+        return reassignProject(uuid, scope, expectedVersion, projectIdOrNull);
+    }
+
+    /** The ids of the sessions of one project (null for the standalone ones). */
+    default List<String> findSessionIdsByProject(String projectIdOrNull) {
+        List<String> out = new ArrayList<>();
+        String cursor = null;
+        while (true) {
+            NaruPage<NaruSessionSummary> page = findByQuery(
+                    new NaruSessionQuery(cursor, NaruSessionSort.UPDATED_DESC,
+                            projectIdOrNull == null ? NaruProjectFilter.none() : NaruProjectFilter.ofId(projectIdOrNull),
+                            NaruUserFilter.any(), NaruSessionQuery.MAX_LIMIT));
+            for (NaruSessionSummary s : page.items()) out.add(s.uuid());
+            if (page.nextCursor() == null) break;
+            cursor = page.nextCursor();
+        }
+        return out;
     }
 
     // ---------------------------------------------------------------- tasks

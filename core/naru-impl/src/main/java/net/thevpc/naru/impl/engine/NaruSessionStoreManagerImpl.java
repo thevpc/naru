@@ -82,11 +82,17 @@ public class NaruSessionStoreManagerImpl implements NaruSessionStoreManager {
         return count;
     }
 
+    /**
+     * Session storage is rooted at the workspace's store anchor, not at the session's
+     * own directory: the catalog is workspace state, and {@code sessionDir} is the
+     * directory the session is anchored <em>to</em>, never a storage path ingredient.
+     */
     private NPath sessionDir(boolean publicSession) {
+        NPath storeDir = adapter.storeAnchor().resolve(".naru");
         if (publicSession) {
-            return adapter.sessionDir().resolve(".naru/sessions/");
+            return storeDir.resolve("sessions/");
         }
-            return adapter.sessionDir().resolve(".naru/local/sessions/");
+            return storeDir.resolve("local/sessions/");
     }
 
     public String findByUuidOrName(String uuidOrName) {
