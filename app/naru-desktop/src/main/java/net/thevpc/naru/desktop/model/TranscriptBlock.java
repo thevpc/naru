@@ -38,6 +38,14 @@ public final class TranscriptBlock {
     private NaruMessage message;
     private long messageSequence = Long.MAX_VALUE;
     /**
+     * Severity of a derived row — an engine line the replay classified but did not attach a stored
+     * message to. A block that carries a message reads the level from that message instead, because
+     * the durable copy is the authority; this field keeps the level of a narration line that has no
+     * message of its own, so a view can filter it (the "inbox" line is logged below INFO and must
+     * not read as ordinary conversation).
+     */
+    private java.util.logging.Level level;
+    /**
      * Output the host produced while running a {@code /}-directive for the user. It is conversation
      * content — a reply to something typed — so the conversation view shows it even though it
      * carries the same {@link NaruLogMode#AGENT_RESPONSE} the engine also uses for a plain error.
@@ -134,12 +142,21 @@ public final class TranscriptBlock {
         return c == null ? null : c.intent();
     }
 
-    /** The NMsg level carried by this block's message, when it has one. */
+    /** The NMsg level carried by this block's message, or its own stored severity for a derived row. */
     public java.util.logging.Level level() {
         NaruMessage m = message;
-        if (m == null) return null;
-        NMsg c = m.getContent();
-        return c == null ? null : c.level();
+        if (m != null) {
+            NMsg c = m.getContent();
+            if (c != null && c.level() != null) {
+                return c.level();
+            }
+        }
+        return level;
+    }
+
+    /** Record the severity of a derived row: the engine line this block was replayed from. */
+    void setLevel(java.util.logging.Level value) {
+        this.level = value;
     }
 
     /** True when this block is not tied to a task: session/config style output. */

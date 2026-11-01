@@ -92,6 +92,35 @@ public class NaruFileProjectStoreTest {
     }
 
     @Test
+    public void presentationFieldsRoundTripAndClearIndependently() {
+        NaruProject p = store.create(NaruProjectDraft.of("Alpha", NPath.of("/tmp/a"), null)
+                .icon("rocket").color("#3b82f6").description("the api work"));
+        NaruProject found = store.findById(p.id()).get();
+        Assertions.assertEquals("rocket", found.icon());
+        // the colour is normalised on the way in, so a later edit that keeps it is not a change
+        Assertions.assertEquals("#3B82F6", found.color());
+        Assertions.assertEquals("the api work", found.description());
+
+        // a props-only patch leaves the name and the folder alone
+        NaruProject recolored = store.update(p.id(), 1, NaruProjectPatch.of().color("#22C55E"));
+        Assertions.assertEquals("Alpha", recolored.name());
+        Assertions.assertEquals("rocket", recolored.icon());
+        Assertions.assertEquals("#22C55E", recolored.color());
+        Assertions.assertEquals("the api work", recolored.description());
+
+        // clearing one prop is a write, not an omission: the key leaves the row entirely
+        NaruProject stripped = store.update(p.id(), 2, NaruProjectPatch.of().clearIcon().clearDescription());
+        Assertions.assertNull(stripped.icon());
+        Assertions.assertNull(stripped.description());
+        Assertions.assertEquals("#22C55E", stripped.color(), "the fields this patch did not name stay put");
+        Assertions.assertNull(store.findById(p.id()).get().icon());
+        Assertions.assertEquals("#22C55E", store.findById(p.id()).get().color());
+
+        Assertions.assertThrows(NIllegalArgumentException.class,
+                () -> store.update(p.id(), 3, NaruProjectPatch.of().color("green")));
+    }
+
+    @Test
     public void staleVersionIsRefusedOnUpdateAndDelete() {
         NaruProject p = create("Alpha", "/tmp/a", null);
         store.update(p.id(), 1, NaruProjectPatch.of().name("Beta")); // now version 2

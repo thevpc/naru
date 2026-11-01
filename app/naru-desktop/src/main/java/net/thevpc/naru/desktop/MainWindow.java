@@ -3,6 +3,7 @@ package net.thevpc.naru.desktop;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.desktop.host.InteractionHost;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
+import net.thevpc.naru.desktop.model.SessionGrouping;
 import net.thevpc.naru.desktop.ui.InputPane;
 import net.thevpc.naru.desktop.ui.StatusBar;
 import net.thevpc.naru.desktop.ui.StatusDot;
@@ -20,9 +21,11 @@ import net.thevpc.naru.desktop.ui.HeaderBar;
 import net.thevpc.naru.desktop.ui.HoverTint;
 import net.thevpc.naru.desktop.ui.TabGlyphs;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.reflect.NClassLoader;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
+import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JProgressBar;
@@ -35,6 +38,8 @@ import javax.swing.JScrollPane;
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import java.awt.AWTEvent;
@@ -89,7 +94,25 @@ public final class MainWindow extends JFrame {
 
     private final JPanel center = new JPanel(new BorderLayout());
     private DefaultListModel<SessionEntry> sessionRows = new DefaultListModel<>();
-    private final JList<SessionEntry> sessionList = new JList<>(sessionRows);
+    private final JList<SessionEntry> sessionList = new JList<>(sessionRows) {
+        /**
+         * A {@code JList} owns one tooltip for the whole widget, so a row's own words never
+         * reach the pointer. Group rows use this for the description the user typed for the
+         * project; every other row keeps the default.
+         */
+        @Override
+        public String getToolTipText(java.awt.event.MouseEvent e) {
+            int row = locationToIndex(e.getPoint());
+            if (row >= 0 && row < getModel().getSize()) {
+                SessionEntry entry = getModel().getElementAt(row);
+                if (entry != null && entry.isGroup() && entry.header.project() != null) {
+                    String text = entry.header.project().description();
+                    if (text != null && !text.isBlank()) return text;
+                }
+            }
+            return super.getToolTipText(e);
+        }
+    };
     /** The sessions sidebar, kept so its width can follow the interface size like everything else. */
     private JPanel sessionRailPanel;
     private final javax.swing.JTextField sessionFilter = new javax.swing.JTextField();
@@ -299,9 +322,14 @@ public final class MainWindow extends JFrame {
                 }
             }
         });
-        sessionList.getInputMap().put(javax.swing.KeyStroke.getKeyStroke("F2"), "rename-session");
-        sessionList.getActionMap().put("rename-session", new javax.swing.AbstractAction() {
-            public void actionPerformed(java.awt.event.ActionEvent e) { renameSelectedSession(); }
+        sessionList.getInputMap().put(javax.swing.KeyStroke.getKeyStroke("F2"), "rename-row");
+        sessionList.getActionMap().put("rename-row", new javax.swing.AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                // F2 follows the row: a group header renames its project, a session row its name.
+                SessionEntry entry = sessionList.getSelectedValue();
+                if (entry != null && entry.isGroup()) renameProjectUI(entry);
+                else renameSelectedSession();
+            }
         });
         sessionList.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
@@ -310,79 +338,182 @@ public final class MainWindow extends JFrame {
                     if (entry != null && !entry.isGroup()) activateSession(entry);
                 }
             }
-            @Override public void mousePressed(MouseEvent e) { showMenu(e); }
+            @Override public void mousePressed(MouseEvent e) {
+                GroupAction action = javax.swing.SwingUtilities.isLeftMouseButton(e)
+                        && !e.isPopupTrigger() ? groupActionAt(e.getPoint()) : null;
+                if (action != null) {
+                    SessionEntry group = groupRowAt(e.getPoint());
+                    if (group != null) {
+                        if (action == GroupAction.NEW_SESSION) createSession(group.header.projectId());
+                        else groupPropsUI(group);
+                        e.consume();
+                        return;
+                    }
+                }
+                showMenu(e);
+            }
             @Override public void mouseReleased(MouseEvent e) { showMenu(e); }
             private void showMenu(MouseEvent e) {
                 if (!e.isPopupTrigger()) return;
                 int row = sessionList.locationToIndex(e.getPoint());
                 if (row < 0) return;
                 sessionList.setSelectedIndex(row);
-                javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
                 SessionEntry entry = sessionList.getSelectedValue();
-                if (entry != null && entry.isGroup()) {
-                    showProjectMenu(menu, entry);
-                    menu.show(sessionList, e.getX(), e.getY());
-                    return;
-                }
-                javax.swing.JMenuItem openClose = new javax.swing.JMenuItem(entry.isOpen() ? "Close session" : "Open session");
-                openClose.addActionListener(x -> {
-                    if (entry.isOpen()) hibernateSession(entry);
-                    else activateSession(entry);
-                });
-                menu.add(openClose);
-                javax.swing.JMenuItem rename = new javax.swing.JMenuItem("Rename session…");
-                rename.addActionListener(x -> renameSelectedSession()); menu.add(rename);
-                javax.swing.JMenuItem move = new javax.swing.JMenuItem("Move to project…");
-                move.addActionListener(x -> moveSessionToProject(entry)); menu.add(move);
-                menu.addSeparator();
-                javax.swing.JMenuItem delete = new javax.swing.JMenuItem("Delete session…");
-                delete.addActionListener(x -> deleteSession(entry)); menu.add(delete);
-                // In the flat listing (no projects yet) there is no group header to
-                // right-click for "New project…", so the session menu is the one place
-                // that must be able to start the tree.
-                menu.addSeparator();
-                javax.swing.JMenuItem newProject = new javax.swing.JMenuItem("New project…");
-                newProject.addActionListener(x -> createProjectUI()); menu.add(newProject);
+                if (entry == null) return;
+                javax.swing.JPopupMenu menu = entry.isGroup() ? groupMenu(entry) : sessionMenu(entry);
                 menu.show(sessionList, e.getX(), e.getY());
             }
-            private void showProjectMenu(javax.swing.JPopupMenu menu, SessionEntry group) {
-                String projectId = group.header.projectId();
-                if (projectId != null) {
-                    JMenuItem rename = new JMenuItem("Rename project…");
-                    rename.addActionListener(x -> renameProjectUI(group));
-                    JMenuItem remove = new JMenuItem("Remove project…");
-                    remove.addActionListener(x -> removeProjectUI(group));
-                    JMenuItem detachAll = new JMenuItem("Move all sessions out (detach)");
-                    detachAll.addActionListener(x -> detachProjectSessions(group));
-                    JMenuItem moveHere = new JMenuItem("Move current session here");
-                    moveHere.addActionListener(x -> {
-                        SessionEntry current = activeSessionEntry();
-                        if (current != null) {
-                            moveSessionTo(current.id, projectId, group.header.title());
-                        }
-                    });
-                    menu.add(rename); menu.add(detachAll); menu.add(remove); menu.addSeparator(); menu.add(moveHere);
-                } else if (group.header.unknown()) {
-                    JMenuItem refresh = new JMenuItem("Refresh");
-                    refresh.addActionListener(x -> refreshProjectSnapshot());
-                    menu.add(refresh);
-                } else {
-                    // the "No project" bucket: adopt the selected (or active) session out of a project
-                    JMenuItem moveOut = new JMenuItem("Move selected session here");
-                    moveOut.addActionListener(x -> {
-                        SessionEntry selected = sessionList.getSelectedValue();
-                        SessionEntry subject = selected != null && !selected.isGroup() ? selected : activeSessionEntry();
-                        if (subject != null) moveSessionTo(subject.id, null, "No project");
-                    });
-                    menu.add(moveOut);
-                }
-                JMenuItem newProject = new JMenuItem("New project…");
-                newProject.addActionListener(x -> createProjectUI());
-                JMenuItem refresh = new JMenuItem("Refresh");
-                refresh.addActionListener(x -> refreshProjectSnapshot());
-                menu.addSeparator(); menu.add(newProject); menu.add(refresh);
-            }
         });
+    }
+
+    /**
+     * The width of one action painted at the right edge of a group row. The renderer lays its
+     * chips out in bands of exactly this size and the hit-test reads the same constant, so a
+     * click target cannot drift away from the glyph it belongs to.
+     */
+    private static final int GROUP_ACTION_BAND = 26;
+
+    /** The two actions a group row offers at its right edge. */
+    private enum GroupAction { NEW_SESSION, SETTINGS }
+
+    /** Which group action the point lands on, or null when it is not on one. */
+    private GroupAction groupActionAt(java.awt.Point p) {
+        SessionEntry group = groupRowAt(p);
+        if (group == null || group.header.unknown()) {
+            return null;
+        }
+        int row = sessionList.locationToIndex(p);
+        java.awt.Rectangle bounds = sessionList.getCellBounds(row, row);
+        if (bounds == null || p.x < bounds.x + bounds.width - 2 * GROUP_ACTION_BAND) {
+            return null;
+        }
+        return p.x >= bounds.x + bounds.width - GROUP_ACTION_BAND
+                ? GroupAction.NEW_SESSION : GroupAction.SETTINGS;
+    }
+
+    /** The group row at a point, or null when the point is not on one. */
+    private SessionEntry groupRowAt(java.awt.Point p) {
+        int row = sessionList.locationToIndex(p);
+        if (row < 0 || row >= sessionList.getModel().getSize()) return null;
+        SessionEntry entry = sessionList.getModel().getElementAt(row);
+        return entry != null && entry.isGroup() ? entry : null;
+    }
+
+    /** The popup of a session row: open/close, rename, move, delete, and the way into the tree. */
+    private javax.swing.JPopupMenu sessionMenu(SessionEntry entry) {
+        javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
+        javax.swing.JMenuItem openClose = new javax.swing.JMenuItem(entry.isOpen() ? "Close session" : "Open session");
+        openClose.addActionListener(x -> {
+            if (entry.isOpen()) hibernateSession(entry);
+            else activateSession(entry);
+        });
+        menu.add(openClose);
+        javax.swing.JMenuItem rename = new javax.swing.JMenuItem("Rename session…");
+        rename.addActionListener(x -> renameSelectedSession()); menu.add(rename);
+        javax.swing.JMenuItem move = new javax.swing.JMenuItem("Move to group…");
+        move.addActionListener(x -> moveSessionToProject(entry)); menu.add(move);
+        menu.addSeparator();
+        javax.swing.JMenuItem delete = new javax.swing.JMenuItem("Delete session…");
+        delete.addActionListener(x -> deleteSession(entry)); menu.add(delete);
+        menu.addSeparator();
+        javax.swing.JMenuItem newProject = new javax.swing.JMenuItem("New group…");
+        newProject.addActionListener(x -> createProjectUI(null)); menu.add(newProject);
+        return menu;
+    }
+
+    /**
+     * The popup of a group header, shared by the right-click on the row and the group button
+     * in the rail so the two paths cannot drift apart.
+     */
+    private javax.swing.JPopupMenu groupMenu(SessionEntry group) {
+        javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
+        String projectId = group.header.projectId();
+        if (projectId != null) {
+            JMenuItem newSession = new JMenuItem("New session here");
+            newSession.addActionListener(x -> createSession(projectId));
+            JMenuItem props = new JMenuItem("Group settings…");
+            props.addActionListener(x -> groupPropsUI(group));
+            JMenuItem rename = new JMenuItem("Rename group…");
+            rename.addActionListener(x -> renameProjectUI(group));
+            JMenuItem remove = new JMenuItem("Delete group…");
+            remove.addActionListener(x -> removeProjectUI(group));
+            JMenuItem detachAll = new JMenuItem("Move all sessions out (detach)");
+            detachAll.addActionListener(x -> detachProjectSessions(group));
+            JMenuItem moveHere = new JMenuItem("Move current session here");
+            moveHere.addActionListener(x -> {
+                SessionEntry current = activeSessionEntry();
+                if (current != null) {
+                    moveSessionTo(current.id, projectId, group.header.title());
+                }
+            });
+            menu.add(newSession); menu.addSeparator();
+            menu.add(props); menu.add(rename); menu.add(detachAll); menu.add(remove);
+            menu.addSeparator(); menu.add(moveHere);
+        } else if (group.header.unknown()) {
+            JMenuItem refresh = new JMenuItem("Refresh");
+            refresh.addActionListener(x -> refreshProjectSnapshot());
+            menu.add(refresh);
+        } else {
+            // the Default bucket: it is the absence of a project, so it has no row to
+            // rename, delete or give settings — giving it a name creates the project and
+            // adopts its rows. The settings entry is still offered because it routes to
+            // exactly that naming step, then to the new group's form.
+            JMenuItem newSession = new JMenuItem("New session here");
+            newSession.addActionListener(x -> createSession(null));
+            JMenuItem props = new JMenuItem("Group settings…");
+            props.addActionListener(x -> groupPropsUI(group));
+            JMenuItem adopt = new JMenuItem("Rename as a group…");
+            adopt.addActionListener(x -> renameDefaultGroupUI());
+            JMenuItem moveOut = new JMenuItem("Move selected session here");
+            moveOut.addActionListener(x -> {
+                SessionEntry selected = sessionList.getSelectedValue();
+                SessionEntry subject = selected != null && !selected.isGroup() ? selected : activeSessionEntry();
+                if (subject != null) moveSessionTo(subject.id, null, SessionGrouping.DEFAULT_GROUP);
+            });
+            menu.add(newSession); menu.addSeparator();
+            menu.add(props); menu.add(adopt); menu.add(moveOut);
+        }
+        JMenuItem newProject = new JMenuItem("New group…");
+        newProject.addActionListener(x -> createProjectUI(null));
+        JMenuItem refresh = new JMenuItem("Refresh");
+        refresh.addActionListener(x -> refreshProjectSnapshot());
+        menu.addSeparator(); menu.add(newProject); menu.add(refresh);
+        return menu;
+    }
+
+    /** The group a menu or shortcut should act on: a picked header, or the one a picked session sits under. */
+    private SessionEntry selectedGroupRow() {
+        int index = sessionList.getSelectedIndex();
+        SessionEntry entry = index < 0 ? null : sessionList.getModel().getElementAt(index);
+        if (entry == null) return null;
+        if (entry.isGroup()) return entry;
+        net.thevpc.naru.desktop.model.SessionGrouping.Header header = headerAtOrAbove(index);
+        return header == null ? null : SessionEntry.group(header);
+    }
+
+    private void showGroupMenuAt(java.awt.Component anchor) {
+        SessionEntry group = selectedGroupRow();
+        javax.swing.JPopupMenu menu = new javax.swing.JPopupMenu();
+        if (group == null) {
+            // Flat sidebar: the project read has not landed, so there is no header to act on.
+            // The menu still has to be able to start the tree, and has to say why the groups
+            // are missing when it could not.
+            String error = projectReadError;
+            if (error != null) {
+                JMenuItem reason = new JMenuItem("No groups: " + error);
+                reason.setEnabled(false);
+                menu.add(reason);
+                menu.addSeparator();
+            }
+            JMenuItem newProject = new JMenuItem("New group…");
+            newProject.addActionListener(x -> createProjectUI(null));
+            JMenuItem refresh = new JMenuItem("Refresh");
+            refresh.addActionListener(x -> refreshProjectSnapshot());
+            menu.add(newProject); menu.add(refresh);
+        } else {
+            menu = groupMenu(group);
+        }
+        menu.show(anchor, 0, anchor.getHeight());
     }
 
     @Override
@@ -618,9 +749,18 @@ public final class MainWindow extends JFrame {
     }
 
     private void createSession() {
+        createSession(null);
+    }
+
+    /**
+     * Start a session. {@code projectId} is the group whose plus was clicked, or null for the
+     * Default bucket: the engine copies it into the new session's record, so the row lands in
+     * that group and stays there after a reopen.
+     */
+    private void createSession(String projectId) {
         NPath dir = projectDirectory == null
                 ? NPath.of(System.getProperty("user.dir", ".")).toAbsolute() : projectDirectory;
-        openProject(dir);
+        openProject(dir, null, net.thevpc.naru.api.store.NaruSessionScope.PRIVATE, true, projectId);
     }
 
     /**
@@ -682,7 +822,7 @@ public final class MainWindow extends JFrame {
                         // -s, so a run started in either host continues in the other.
                         SessionEntry requested = takeRequestedSession();
                         if (requested == null) {
-                            sessionList.setSelectedIndex(0);
+                            selectFirstSessionRow();
                         } else {
                             sessionList.setSelectedIndex(sessions.indexOf(requested));
                             activateSession(requested);
@@ -709,7 +849,7 @@ public final class MainWindow extends JFrame {
         return NaruDesktop.workspace(dir).sessionCatalog();
     }
 
-    /** The group row's caption: a caret, the name, and how many visible sessions it holds. */
+    /** The group row's caption: a caret, the project's own glyph in its own hue, the name, the count. */
     private static String groupTitleHtml(SessionEntry group) {
         String title = htmlEscape(group.header.title());
         int n = group.header.count();
@@ -717,7 +857,17 @@ public final class MainWindow extends JFrame {
                 ? "<span style='color:" + UiPalette.css(UiPalette.muted()) + ";'> &middot; "
                 + n + " session" + (n == 1 ? "" : "s") + "</span>"
                 : "";
-        return "&#9656;&nbsp;&nbsp;<b>" + title + "</b>" + count;
+        String mark = "";
+        net.thevpc.naru.desktop.model.SessionGrouping.Project project = group.header.project();
+        if (project != null) {
+            String symbol = net.thevpc.naru.desktop.ui.GroupPresets.symbolOf(project.icon());
+            if (symbol != null) {
+                java.awt.Color hue = net.thevpc.naru.desktop.ui.GroupPresets.colorOf(project.color());
+                mark = "<span style='color:" + UiPalette.css(hue == null ? UiPalette.muted()
+                        : UiPalette.readable(hue)) + ";'>" + symbol + "</span>&nbsp;&nbsp;";
+            }
+        }
+        return "&#9656;&nbsp;&nbsp;" + mark + "<b>" + title + "</b>" + count;
     }
 
     private static String htmlEscape(String s) {
@@ -745,34 +895,400 @@ public final class MainWindow extends JFrame {
         return null;
     }
 
-    private void createProjectUI() {
-        String name = javax.swing.JOptionPane.showInputDialog(this, "Project name:");
-        if (name == null || name.isBlank()) return;
-        String suggested = projectDirectory == null ? System.getProperty("user.dir", ".")
-                : projectDirectory.resolve(name.trim()).toString();
-        String folder = javax.swing.JOptionPane.showInputDialog(this,
-                "Project folder — the directory new sessions under this project start in (it may not exist yet):",
-                suggested);
-        if (folder == null || folder.isBlank()) return;
-        final String fname = name;
-        final String ffolder = folder;
-        final java.util.concurrent.atomic.AtomicReference<String> warnings = new java.util.concurrent.atomic.AtomicReference<>();
-        runProjectAction("Add project", () -> {
-            var result = projectService().add(fname, NPath.of(ffolder), null);
-            if (!result.warnings().isEmpty()) warnings.set(String.join("\n", result.warnings()));
-        }, () -> {
-            if (warnings.get() != null) {
-                net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this, "Add project", warnings.get());
-            }
-        });
+    /**
+     * The Default bucket is not a stored project, so naming it makes one: the same group form
+     * opens, prefilled with the bucket's own title, and says how many sessions the new group is
+     * about to take in. They move in the same off-EDT action that files the row.
+     */
+    private void renameDefaultGroupUI() {
+        List<String> moveIds = defaultGroupSessionIds();
+        String name = SessionGrouping.DEFAULT_GROUP;
+        groupFormUI(new GroupFormSeed(null,
+                "Rename group — " + moveIds.size() + " session(s) of "
+                        + SessionGrouping.DEFAULT_GROUP + " move into it",
+                name, NPath.of(suggestedProjectFolder(name)), null, null, null, moveIds));
     }
 
+    /**
+     * The group a row belongs to. The store answers for any session it has listed; a row
+     * created moments ago has no uuid and no listing yet, so the group whose plus was clicked
+     * is the only witness. A detach clears both, which is what puts the row back in Default.
+     */
+    private String projectOfRow(SessionEntry entry, ProjectSnapshot snap) {
+        if (entry.id != null && snap != null) {
+            String fromStore = snap.projectOf().get(entry.id);
+            if (fromStore != null) return fromStore;
+        }
+        return entry.projectId;
+    }
+
+    /**
+     * Every session that belongs to no project — the members of the Default bucket, filter
+     * or no filter. A session the project read never reported counts as a member: it has no
+     * project as far as the sidebar is concerned.
+     */
+    private List<String> defaultGroupSessionIds() {
+        ProjectSnapshot snap = projectSnapshot;
+        List<String> ids = new ArrayList<>();
+        for (SessionEntry entry : sessions) {
+            if (entry.id == null) continue;
+            if (projectOfRow(entry, snap) == null) ids.add(entry.id);
+        }
+        return ids;
+    }
+
+    /**
+     * Create a group: the shared form, empty but for a suggested folder. The two prompts of the
+     * old flow (a name, then a folder) are rows of one form now, so a group can be given its
+     * glyph and hue at the moment it is invented rather than in a second pass.
+     * {@code initialName} pre-fills the name row, which is how the Default bucket offers its own
+     * title as the starting point.
+     */
+    private void createProjectUI(String initialName) {
+        String name = initialName == null ? "" : initialName;
+        groupFormUI(new GroupFormSeed(null, "New group", name,
+                NPath.of(suggestedProjectFolder(name)), null, null, null, List.of()));
+    }
+
+    private String suggestedProjectFolder(String name) {
+        return projectDirectory == null ? System.getProperty("user.dir", ".")
+                : projectDirectory.resolve(name).toString();
+    }
+
+    /**
+     * The group's own settings. Nothing lives in a separate place from creation any more: the
+     * same form opens on the stored row, and OK patches that row — folder included, since a
+     * group that moved on disk should be able to say so.
+     */
+    private void groupPropsUI(SessionEntry group) {
+        net.thevpc.naru.desktop.model.SessionGrouping.Project row = group.header.project();
+        if (row == null) {
+            // the Default bucket owns no project row, so its settings are the ones that
+            // create one: naming it is what turns the bucket into a group
+            renameDefaultGroupUI();
+            return;
+        }
+        groupFormUI(new GroupFormSeed(row.id(), "Group settings — " + row.name(), row.name(),
+                row.folder(), row.icon(), row.color(), row.description(), List.of()));
+    }
+
+    /**
+     * What the group form starts with, and what its OK button does: {@code projectId == null}
+     * files a new row, anything else patches that row. {@code adoptSessions} belongs to the
+     * create path only — it is how naming the Default bucket pulls the bucket inside.
+     */
+    private record GroupFormSeed(String projectId, String title, String name, NPath folder,
+                                 String icon, String color, String description,
+                                 List<String> adoptSessions) {
+        boolean creating() {
+            return projectId == null;
+        }
+    }
+
+    /**
+     * The group form's editable rows, gathered so the folder probe has one target to write into
+     * instead of six captured variables.
+     */
+    private static final class GroupFormFields {
+        JTextField name;
+        JComboBox<String> icon;
+        JComboBox<String> color;
+        JTextArea description;
+        JLabel status;
+
+        void apply(net.thevpc.naru.api.project.NaruProject row) {
+            name.setText(row.name());
+            icon.setSelectedItem(row.icon());
+            color.setSelectedItem(row.color());
+            description.setText(row.description() == null ? "" : row.description());
+        }
+    }
+
+    /**
+     * The one group form: name, folder, glyph, hue, description.
+     *
+     * <p>The folder is not just a path to file under the row: a folder that already holds a NARU
+     * project store describes a group, and reading it is what makes a checkout on disk come back
+     * with its own name and paint. Both doors read it the same way, as the folder row settles —
+     * browsing somewhere is answering the question "what group lives here?", not editing props by
+     * hand. Nothing is written until OK, so a browse that turns the form into someone else's group
+     * is one Cancel away from being nothing at all.
+     */
+    private void groupFormUI(GroupFormSeed seed) {
+        GroupFormFields fields = new GroupFormFields();
+        fields.name = new JTextField(seed.name(), 28);
+        JTextField folder = new JTextField(
+                seed.folder() == null ? "" : seed.folder().toString(), 24);
+        fields.icon = groupIconCombo(seed.icon());
+        fields.color = groupColorCombo(seed.color());
+        fields.description = new JTextArea(seed.description(), 3, 28);
+        fields.description.setLineWrap(true);
+        fields.description.setWrapStyleWord(true);
+        fields.status = new JLabel(" ");
+        fields.status.setForeground(UiPalette.muted());
+
+        JPanel folderRow = new JPanel(new BorderLayout(6, 0));
+        folderRow.setOpaque(false);
+        JButton browse = new JButton("Browse…");
+        browse.addActionListener(e -> {
+            java.awt.Window owner = SwingUtilities.getWindowAncestor(folder);
+            javax.swing.JFileChooser chooser = new javax.swing.JFileChooser(folder.getText());
+            chooser.setFileSelectionMode(javax.swing.JFileChooser.DIRECTORIES_ONLY);
+            chooser.setDialogTitle("Group folder");
+            if (chooser.showOpenDialog(owner) != javax.swing.JFileChooser.APPROVE_OPTION) return;
+            folder.setText(chooser.getSelectedFile().getAbsolutePath());
+        });
+        folderRow.add(folder, BorderLayout.CENTER);
+        folderRow.add(browse, BorderLayout.EAST);
+
+        // the typed path is read as it settles, in both doors: a pause, not a keystroke, because
+        // half a path is a folder that exists nowhere and every keystroke would queue a probe
+        javax.swing.Timer probeTimer = new javax.swing.Timer(450,
+                e -> probeGroupFolder(folder.getText(), fields));
+        probeTimer.setRepeats(false);
+        javax.swing.event.DocumentListener spoken = new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { probeTimer.restart(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { probeTimer.restart(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { probeTimer.restart(); }
+        };
+        // added after the initial text, so opening the form on a stored row does not re-read it
+        folder.getDocument().addDocumentListener(spoken);
+
+        JPanel form = new JPanel(new java.awt.GridBagLayout());
+        form.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
+        java.awt.GridBagConstraints c = new java.awt.GridBagConstraints();
+        c.anchor = java.awt.GridBagConstraints.NORTHWEST;
+        c.insets = new java.awt.Insets(4, 4, 4, 4);
+        c.gridx = 0; c.gridy = 0;
+        form.add(new JLabel("Name"), c);
+        c.gridx = 1; c.weightx = 1; c.fill = java.awt.GridBagConstraints.HORIZONTAL;
+        form.add(fields.name, c);
+        c.gridx = 0; c.gridy = 1; c.weightx = 0; c.fill = java.awt.GridBagConstraints.NONE;
+        form.add(new JLabel("Folder"), c);
+        c.gridx = 1; c.fill = java.awt.GridBagConstraints.HORIZONTAL;
+        form.add(folderRow, c);
+        c.gridx = 0; c.gridy = 2;
+        form.add(new JLabel("Icon"), c);
+        c.gridx = 1; c.fill = java.awt.GridBagConstraints.HORIZONTAL;
+        form.add(fields.icon, c);
+        c.gridx = 0; c.gridy = 3;
+        form.add(new JLabel("Colour"), c);
+        c.gridx = 1; c.fill = java.awt.GridBagConstraints.HORIZONTAL;
+        form.add(fields.color, c);
+        c.gridx = 0; c.gridy = 4; c.weightx = 0; c.weighty = 0;
+        c.fill = java.awt.GridBagConstraints.NONE;
+        form.add(new JLabel("Description"), c);
+        c.gridx = 1; c.weightx = 1; c.weighty = 1; c.fill = java.awt.GridBagConstraints.BOTH;
+        form.add(new JScrollPane(fields.description), c);
+        c.gridx = 0; c.gridy = 5; c.gridwidth = 2; c.weightx = 1;
+        c.fill = java.awt.GridBagConstraints.HORIZONTAL;
+        form.add(fields.status, c);
+
+        if (!net.thevpc.naru.desktop.ui.DesktopDialog.confirmComponent(this, seed.title(), form)) {
+            return;
+        }
+        final String fname = fields.name.getText() == null
+                ? "" : fields.name.getText().trim();
+        if (fname.isEmpty()) {
+            net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, seed.title(),
+                    "A group needs a name. Nothing was changed.");
+            return;
+        }
+        final String ffolder = folder.getText() == null ? "" : folder.getText().trim();
+        if (ffolder.isEmpty()) {
+            net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, seed.title(),
+                    "A group needs a folder: it is what its new sessions start in. Nothing was changed.");
+            return;
+        }
+        final String ficon = (String) fields.icon.getSelectedItem();
+        final String fcolor = (String) fields.color.getSelectedItem();
+        final String fdescription = fields.description.getText().trim();
+        if (seed.creating()) {
+            // no draft-taking create in the service, so a new row is filed and then painted:
+            // two writes, and the second one carries the version the first left behind
+            final java.util.concurrent.atomic.AtomicReference<String> warnings =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            runProjectAction("Add group", () -> {
+                var service = projectService();
+                var added = service.add(fname, NPath.of(ffolder), null);
+                if (!added.warnings().isEmpty()) {
+                    warnings.set(String.join("\n", added.warnings()));
+                }
+                var row = added.value();
+                service.edit(row.id(), row.version(), groupPatch(fname, ffolder, ficon, fcolor, fdescription));
+                if (!seed.adoptSessions().isEmpty()) {
+                    service.moveSessions(seed.adoptSessions(), row.id());
+                }
+            }, () -> {
+                if (warnings.get() != null) {
+                    net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this,
+                            "Add group", warnings.get());
+                }
+            });
+            return;
+        }
+        runProjectAction("Save group settings", () -> {
+            var service = projectService();
+            var found = service.find(seed.projectId()).get();
+            service.edit(found.id(), found.version(),
+                    groupPatch(fname, ffolder, ficon, fcolor, fdescription));
+        }, null);
+    }
+
+    /**
+     * The patch the form writes. Every setter runs on every save — never a clear-or-unset branch:
+     * a form that returns "no icon" means the icon should leave the row, which unset would
+     * silently keep.
+     */
+    private static net.thevpc.naru.api.project.NaruProjectPatch groupPatch(
+            String name, String folder, String icon, String color, String description) {
+        return net.thevpc.naru.api.project.NaruProjectPatch.of()
+                .name(name)
+                .folder(NPath.of(folder))
+                .icon(icon == null || icon.isBlank() ? null : icon)
+                .color(color == null || color.isBlank() ? null : color)
+                .description(description.isEmpty() ? null : description);
+    }
+
+    /** The preset glyph picker; the row stores the preset id, not the symbol it renders. */
+    private JComboBox<String> groupIconCombo(String selected) {
+        JComboBox<String> icon = new JComboBox<>();
+        icon.addItem(null);
+        for (net.thevpc.naru.desktop.ui.GroupPresets.Glyph g
+                : net.thevpc.naru.desktop.ui.GroupPresets.glyphs()) {
+            icon.addItem(g.id());
+        }
+        icon.setSelectedItem(selected);
+        icon.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public java.awt.Component getListCellRendererComponent(JList<?> list, Object value,
+                                                                  int index, boolean isSelected,
+                                                                  boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                String id = (String) value;
+                String symbol = net.thevpc.naru.desktop.ui.GroupPresets.symbolOf(id);
+                setText((symbol == null ? "" : symbol + "  ")
+                        + net.thevpc.naru.desktop.ui.GroupPresets.labelOf(id));
+                return this;
+            }
+        });
+        return icon;
+    }
+
+    /** The preset hue picker; the row stores a literal hex, so another host paints it too. */
+    private JComboBox<String> groupColorCombo(String selected) {
+        JComboBox<String> color = new JComboBox<>();
+        color.addItem(null);
+        for (net.thevpc.naru.desktop.ui.GroupPresets.Swatch s
+                : net.thevpc.naru.desktop.ui.GroupPresets.swatches()) {
+            color.addItem(s.hex());
+        }
+        color.setSelectedItem(selected);
+        color.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public java.awt.Component getListCellRendererComponent(JList<?> list, Object value,
+                                                                  int index, boolean isSelected,
+                                                                  boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                String hex = (String) value;
+                java.awt.Color hue = net.thevpc.naru.desktop.ui.GroupPresets.colorOf(hex);
+                setIcon(hue == null ? null
+                        : new net.thevpc.naru.desktop.ui.GroupPresets.ColorIcon(hue, 12, 12));
+                setText(net.thevpc.naru.desktop.ui.GroupPresets.colorLabel(hex));
+                return this;
+            }
+        });
+        return color;
+    }
+
+    /**
+     * Read the group a folder already holds, off the event thread, and say what was found. The
+     * fields take what the folder says: the folder row is the one the user is pointing at, so the
+     * group living there is the answer — Cancel still leaves the stored row untouched.
+     */
+    private void probeGroupFolder(String folderText, GroupFormFields fields) {
+        final String text = folderText == null ? "" : folderText.trim();
+        if (text.isEmpty() || projectDirectory == null) {
+            // the loader that can see the store extensions belongs to an open workspace, and a
+            // form with no folder typed yet has nothing to read
+            fields.status.setText(" ");
+            return;
+        }
+        fields.status.setText("Reading the folder…");
+        final NPath home = NPath.of(text);
+        final NClassLoader loader = NaruDesktop.workspace(projectDirectory).classLoader();
+        new javax.swing.SwingWorker<net.thevpc.naru.api.project.NaruProject, Void>() {
+            private String message;
+
+            @Override
+            protected net.thevpc.naru.api.project.NaruProject doInBackground() {
+                try {
+                    net.thevpc.naru.api.project.NaruProject found = readGroupFolder(home, loader);
+                    message = found == null
+                            ? "No group store in this folder yet."
+                            : "Loaded “" + found.name() + "” from the store in this folder.";
+                    return found;
+                } catch (Exception ex) {
+                    String detail = ex.getMessage() == null
+                            ? ex.getClass().getSimpleName() : ex.getMessage();
+                    message = "This folder could not be read: " + detail;
+                    return null;
+                }
+            }
+
+            @Override
+            protected void done() {
+                net.thevpc.naru.api.project.NaruProject found = null;
+                try {
+                    found = get();
+                } catch (Exception ignored) {
+                    // doInBackground already turned every failure into a status line
+                }
+                fields.status.setText(message);
+                if (found != null) fields.apply(found);
+            }
+        }.execute();
+    }
+
+    /**
+     * The newest group {@code home} describes, or null when it holds no store. A row whose own
+     * folder is this directory answers first: that is the group this folder was made for.
+     */
+    private net.thevpc.naru.api.project.NaruProject readGroupFolder(
+            NPath home, NClassLoader loader) {
+        net.thevpc.naru.api.store.NaruProjectStoreConfig config =
+                new net.thevpc.naru.api.store.NaruProjectStoreConfig(home, null);
+        net.thevpc.naru.api.project.NaruProjectStore store =
+                net.thevpc.naru.api.project.NaruProjectStore.open(config, null, loader);
+        try {
+            java.util.List<net.thevpc.naru.api.project.NaruProject> rows = store.findByQuery(
+                    new net.thevpc.naru.api.project.NaruProjectQuery(
+                            null, null, net.thevpc.naru.api.store.NaruUserFilter.any(), null, 50))
+                    .items();
+            for (net.thevpc.naru.api.project.NaruProject row : rows) {
+                if (row.folder() != null && row.folder().equals(home)) return row;
+            }
+            return rows.size() == 1 ? rows.get(0) : null;
+        } finally {
+            try {
+                store.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+
     private void renameProjectUI(SessionEntry group) {
-        String name = javax.swing.JOptionPane.showInputDialog(this, "New project name:",
-                group.header.title());
+        if (group.header.unknown()) return;
+        if (group.header.projectId() == null) {
+            renameDefaultGroupUI();
+            return;
+        }
+        String name = net.thevpc.naru.desktop.ui.DesktopDialog.promptText(this, "Rename group",
+                "New group name", group.header.title());
         if (name == null || name.isBlank() || name.equals(group.header.title())) return;
-        final String newName = name;
-        runProjectAction("Rename project", () -> {
+        final String newName = name.trim();
+        runProjectAction("Rename group", () -> {
             var service = projectService();
             var current = service.find(group.header.projectId()).get();
             service.edit(current.id(), current.version(),
@@ -781,6 +1297,13 @@ public final class MainWindow extends JFrame {
     }
 
     private void detachProjectSessions(SessionEntry group) {
+        // rows this window created carry their group themselves, so they leave it here too;
+        // the listed ones follow the store once the refresh after this action lands
+        for (SessionEntry entry : sessions) {
+            if (group.header.projectId() != null && group.header.projectId().equals(entry.projectId)) {
+                entry.projectId = null;
+            }
+        }
         runProjectAction("Detach sessions", () -> {
             var service = projectService();
             ProjectSnapshot snap = projectSnapshot;
@@ -803,34 +1326,31 @@ public final class MainWindow extends JFrame {
         }
         Object choice;
         if (memberCount == 0) {
-            choice = javax.swing.JOptionPane.showConfirmDialog(this,
-                    "Remove the project “" + group.header.title() + "”?\nIts sessions keep working; they simply belong to no project.",
-                    "Remove project", javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.QUESTION_MESSAGE);
-            if (choice == null || ((Integer) choice) != javax.swing.JOptionPane.OK_OPTION) return;
+            if (!net.thevpc.naru.desktop.ui.DesktopDialog.confirm(this, "Delete group",
+                    "Delete the group “" + group.header.title() + "”?\nIts sessions keep working; they simply belong to no group.",
+                    "Delete")) return;
             choice = net.thevpc.naru.api.project.NaruProjectDeletePolicy.REJECT;
         } else {
             choice = javax.swing.JOptionPane.showInputDialog(this,
-                    "This project still has " + memberCount + " session(s). What should happen to them?",
-                    "Remove project", javax.swing.JOptionPane.QUESTION_MESSAGE, null,
-                    new Object[]{"Detach — keep the sessions, they move to “No project”",
-                            "Cascade — delete the sessions with the project",
+                    "This group still has " + memberCount + " session(s). What should happen to them?",
+                    "Delete group", javax.swing.JOptionPane.QUESTION_MESSAGE, null,
+                    new Object[]{"Detach — keep the sessions, they move to “" + SessionGrouping.DEFAULT_GROUP + "”",
+                            "Cascade — delete the sessions with the group",
                             "Cancel"},
-                    "Detach — keep the sessions, they move to “No project”");
+                    "Detach — keep the sessions, they move to “" + SessionGrouping.DEFAULT_GROUP + "”");
             if (choice == null || String.valueOf(choice).startsWith("Cancel")) return;
             boolean cascade = String.valueOf(choice).startsWith("Cascade");
             if (cascade) {
-                int sure = javax.swing.JOptionPane.showConfirmDialog(this,
-                        "Cascade deletes every session of “" + group.header.title() + "” — conversations, tasks and history — and then the project. Continue?",
-                        "Remove project — cascade", javax.swing.JOptionPane.OK_CANCEL_OPTION,
-                        javax.swing.JOptionPane.WARNING_MESSAGE);
-                if (sure != javax.swing.JOptionPane.OK_OPTION) return;
+                if (!net.thevpc.naru.desktop.ui.DesktopDialog.confirm(this, "Delete group — cascade",
+                        "Cascade deletes every session of “" + group.header.title() + "” — conversations, tasks and history — and then the group.",
+                        "Delete everything")) return;
             }
             choice = cascade ? net.thevpc.naru.api.project.NaruProjectDeletePolicy.CASCADE
                     : net.thevpc.naru.api.project.NaruProjectDeletePolicy.DETACH;
         }
         final net.thevpc.naru.api.project.NaruProjectDeletePolicy policy =
                 (net.thevpc.naru.api.project.NaruProjectDeletePolicy) choice;
-        runProjectAction("Remove project", () -> {
+        runProjectAction("Delete group", () -> {
             var service = projectService();
             var current = service.find(group.header.projectId()).get();
             var report = service.remove(current.id(), current.version(), policy);
@@ -850,7 +1370,7 @@ public final class MainWindow extends JFrame {
         String currentId = snap.projectOf().get(entry.id);
         java.util.List<net.thevpc.naru.desktop.model.SessionGrouping.Project> projects = snap.projects();
         String[] labels = new String[projects.size() + 1];
-        labels[0] = net.thevpc.naru.desktop.model.SessionGrouping.NO_PROJECT;
+        labels[0] = SessionGrouping.DEFAULT_GROUP;
         for (int i = 0; i < projects.size(); i++) {
             labels[i + 1] = projects.get(i).name();
         }
@@ -859,16 +1379,29 @@ public final class MainWindow extends JFrame {
             if (projects.get(i).id().equals(currentId)) selectedLabel = i + 1;
         }
         Object choice = javax.swing.JOptionPane.showInputDialog(this,
-                "Move “" + entry + "” to which project?", "Move to project",
+                "Move “" + entry + "” to which group?", "Move to group",
                 javax.swing.JOptionPane.QUESTION_MESSAGE, null, labels, labels[selectedLabel]);
         if (choice == null) return;
-        int idx = java.util.Arrays.asList(labels).indexOf(choice);
-        if (idx == selectedLabel) return;
+        // identity, not equals: a project may legitimately be named "Default", and then the
+        // same caption is two different targets in this list
+        int idx = -1;
+        for (int i = 0; i < labels.length; i++) {
+            if (labels[i] == choice) {
+                idx = i;
+                break;
+            }
+        }
+        if (idx < 0 || idx == selectedLabel) return;
         moveSessionTo(entry.id, idx <= 0 ? null : projects.get(idx - 1).id(), String.valueOf(choice));
     }
 
     /** The move is a projectId change only: directories, storage and content never move. */
     private void moveSessionTo(String sessionId, String targetProjectId, String targetLabel) {
+        // the row keeps its group as its own fact, so it has to follow the move now: waiting
+        // for the store listing would show the session under Default for a refresh cycle
+        for (SessionEntry entry : sessions) {
+            if (sessionId != null && sessionId.equals(entry.id)) entry.projectId = targetProjectId;
+        }
         runProjectAction("Move session", () -> {
             var report = projectService().moveSession(sessionId,
                     targetProjectId == null ? net.thevpc.naru.api.project.NaruProjectService.NO_PROJECT : targetProjectId);
@@ -884,7 +1417,10 @@ public final class MainWindow extends JFrame {
      */
     private void runProjectAction(String title, Runnable action, Runnable onSuccess) {
         if (projectService() == null) {
-            net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, title, "No workspace is open yet.");
+            net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, title,
+                    projectDirectory == null
+                            ? "No workspace is open yet."
+                            : "This workspace provides no project store, so groups cannot be changed.");
             return;
         }
         new javax.swing.SwingWorker<Void, Void>() {
@@ -1052,7 +1588,12 @@ public final class MainWindow extends JFrame {
 
         p.add(card);
         center.removeAll();
-        center.add(p, BorderLayout.CENTER);
+        // The rail rides along even when no session is open: a group row is the door to the
+        // first session, and a welcome page without it leaves that door unreachable on exactly
+        // the workspace where the user needs it.
+        JSplitPane railAndWelcome = SplitPanes.horizontal(sessionRail(), p);
+        railAndWelcome.setResizeWeight(0.24);
+        center.add(railAndWelcome, BorderLayout.CENTER);
         center.revalidate();
         center.repaint();
     }
@@ -1072,14 +1613,25 @@ public final class MainWindow extends JFrame {
 
     private void openProject(NPath dir, String restoreId, net.thevpc.naru.api.store.NaruSessionScope restoreScope,
                              boolean selectOnCreate) {
+        openProject(dir, restoreId, restoreScope, selectOnCreate, null);
+    }
+
+    /**
+     * @param projectId the group to create the new session under, null for a standalone one.
+     *                  Ignored on a restore, whose saved row already names its group.
+     */
+    private void openProject(NPath dir, String restoreId, net.thevpc.naru.api.store.NaruSessionScope restoreScope,
+                             boolean selectOnCreate, String projectId) {
         SwingUtilities.invokeLater(() -> {
             host = new InteractionHost();
             // the queue drains from the first frame, so whatever the engine writes while the
             // workspace is still resolving shows up instead of being buffered behind the boot
             host.startFlushTimer();
-            NaruSessionModel created = new NaruSessionModel(() -> NaruDesktop.workspace(dir), dir, host, restoreId, restoreScope);
+            NaruSessionModel created = new NaruSessionModel(() -> NaruDesktop.workspace(dir), dir, host,
+                    restoreId, restoreScope, restoreId == null ? projectId : null);
             SessionEntry entry = new SessionEntry(nextSessionNumber++, restoreId, restoreScope, dir,
                     (net.thevpc.naru.api.agent.NaruResourceInfo) null, created, host);
+            entry.projectId = restoreId == null ? projectId : null;
             sessions.add(entry);
             rebuildSessionList();
             if (selectOnCreate) sessionList.setSelectedValue(entry, true);
@@ -1121,9 +1673,7 @@ public final class MainWindow extends JFrame {
                                 }
                                 rebuildSessionList();
                                 refreshProjectSnapshot();
-                                if (!saved.isEmpty()) SwingUtilities.invokeLater(() -> {
-                                    if (sessionRows.size() > 0) sessionList.setSelectedIndex(0);
-                                });
+                                if (!saved.isEmpty()) SwingUtilities.invokeLater(MainWindow.this::selectFirstSessionRow);
                             } catch (Exception ex) {
                                 created.notifyUser("Could not list saved sessions: "
                                         + (ex.getCause() == null ? ex.getMessage() : ex.getCause().getMessage()));
@@ -1134,6 +1684,20 @@ public final class MainWindow extends JFrame {
                 catalogPoll.start();
             }
         });
+    }
+
+    /**
+     * Focus the first real session row, skipping any group header above it. Index 0 is a
+     * header as soon as the sidebar groups, and a header cannot be opened or typed into.
+     */
+    private void selectFirstSessionRow() {
+        DefaultListModel<SessionEntry> model = sessionRows;
+        for (int i = 0; i < model.size(); i++) {
+            if (!model.get(i).isGroup()) {
+                sessionList.setSelectedIndex(i);
+                return;
+            }
+        }
     }
 
     private void rebuildSessionList() {
@@ -1147,16 +1711,17 @@ public final class MainWindow extends JFrame {
             }
         }
         ProjectSnapshot snap = projectSnapshot;
-        if (snap == null || snap.projects().isEmpty()) {
-            // the flat catalog: no projects exist (or the service is unreachable), and a
-            // window that invents a "No project" folder over a list that is entirely
-            // sessions-without-projects would only be noise
+        if (snap == null) {
+            // no snapshot yet: either no workspace is open or the project read failed. The
+            // flat catalog is the honest answer here — the window does not yet know which
+            // project each session names, and inventing a Default group over rows that may
+            // all have one would be a lie the sidebar has to take back a second later.
             for (SessionEntry entry : visible) replacement.addElement(entry);
         } else {
             net.thevpc.naru.desktop.model.SessionGrouping.Header last = null;
             for (var line : net.thevpc.naru.desktop.model.SessionGrouping.layout(
-                    snap.projects(), visible, snap.projectOf(), e -> e.id)) {
-                if (line.item() == null && !query.isEmpty()) continue; // empty project while filtering
+                    snap.projects(), visible, e -> projectOfRow(e, snap))) {
+                if (line.item() == null && !query.isEmpty()) continue; // empty group while filtering
                 if (line.header() != last) {
                     replacement.addElement(SessionEntry.group(line.header()));
                     last = line.header();
@@ -1197,12 +1762,24 @@ public final class MainWindow extends JFrame {
     }
 
     private volatile ProjectSnapshot projectSnapshot;
+    /**
+     * Why the project read has never succeeded, or null. The sidebar degrades to a flat list
+     * in that case, which looks like a design choice unless the reason is somewhere the user
+     * can read it.
+     */
+    private volatile String projectReadError;
     /** Workspaces whose project service already carries a refresh listener from this window. */
     private final java.util.Set<String> projectListenersOwned = new java.util.HashSet<>();
 
     private net.thevpc.naru.api.project.NaruProjectService projectService() {
         if (projectDirectory == null) return null;
-        return NaruDesktop.workspace(projectDirectory).projects();
+        try {
+            return NaruDesktop.workspace(projectDirectory).projects();
+        } catch (net.thevpc.nuts.util.NUnsupportedOperationException e) {
+            // a workspace built without a project store: every group action reports
+            // "no workspace is open yet" rather than throwing inside a menu listener
+            return null;
+        }
     }
 
     private void refreshProjectSnapshot() {
@@ -1232,8 +1809,9 @@ public final class MainWindow extends JFrame {
                     var page = service.tree(new net.thevpc.naru.api.project.NaruProjectQuery(
                             cursor, null, null, null, 200));
                     for (var node : page.items()) {
+                        net.thevpc.naru.api.project.NaruProject p = node.project();
                         projects.add(new net.thevpc.naru.desktop.model.SessionGrouping.Project(
-                                node.project().id(), node.project().name()));
+                                p.id(), p.name(), p.folder(), p.icon(), p.color(), p.description()));
                     }
                     cursor = page.nextCursor();
                 } while (cursor != null);
@@ -1254,10 +1832,17 @@ public final class MainWindow extends JFrame {
             protected void done() {
                 try {
                     projectSnapshot = get();
+                    projectReadError = null;
                 } catch (Exception e) {
-                    // a failed read leaves the last view (or the flat one) standing: the
-                    // sidebar must never empty because a store lookup hiccuped
-                    projectSnapshot = null;
+                    // Keep the last good tree rather than dropping to the flat listing: the
+                    // comment below used to promise exactly this, and the assignment to null
+                    // ungrouped the sidebar for one store hiccup. Only a workspace that never
+                    // answered once falls back to flat.
+                    if (projectSnapshot == null) {
+                        Throwable cause = e.getCause() == null ? e : e.getCause();
+                        projectReadError = cause.getMessage() == null
+                                ? cause.getClass().getSimpleName() : cause.getMessage();
+                    }
                 }
                 rebuildSessionList();
             }
@@ -1423,15 +2008,21 @@ public final class MainWindow extends JFrame {
         open.putClientProperty("JButton.buttonType", "toolBarButton");
         net.thevpc.naru.desktop.ui.ActionButtons.glyphSized(open);
         open.addActionListener(e -> { SessionEntry selected = sessionList.getSelectedValue(); if (selected != null) activateSession(selected); });
-        JButton add = new JButton("＋");
-        add.setFocusable(false);
-        add.setToolTipText("Create a session");
-        add.getAccessibleContext().setAccessibleName("New session");
-        add.putClientProperty("JButton.buttonType", "toolBarButton");
-        net.thevpc.naru.desktop.ui.ActionButtons.glyphSized(add);
-        add.addActionListener(e -> createSession());
+        // No new-session button here: a session is created in a group, so its door is the plus
+        // painted on that group's row. The rail keeps the two actions that are about the picked
+        // row rather than about a group.
+        // Group management lives beside the session buttons, not only in the right-click
+        // menu: a fresh workspace has a header to right-click only once it is grouped, and
+        // one button carries new/rename/delete instead of three glyphs crowding the header.
+        JButton groups = new JButton("⊞");
+        groups.setFocusable(false);
+        groups.setToolTipText("Groups — new, rename, settings, delete");
+        groups.getAccessibleContext().setAccessibleName("Groups");
+        groups.putClientProperty("JButton.buttonType", "toolBarButton");
+        net.thevpc.naru.desktop.ui.ActionButtons.glyphSized(groups);
+        groups.addActionListener(e -> showGroupMenuAt(groups));
         sessionActions.add(open);
-        sessionActions.add(add);
+        sessionActions.add(groups);
         sessionHeader.add(sessionActions, BorderLayout.EAST);
         if (!sessionFilterBound) {
             sessionFilterBound = true;
@@ -1501,9 +2092,34 @@ public final class MainWindow extends JFrame {
                 JLabel head = new JLabel("<html><div style='padding:3px 4px 1px 6px;'>"
                         + "<span style='color:" + UiPalette.css(UiPalette.muted()) + ";'>"
                         + groupTitleHtml(value) + "</span></div></html>");
-                head.setOpaque(true);
-                head.setBackground(list.getBackground());
-                return head;
+                head.setOpaque(false);
+                JPanel row = new JPanel(new BorderLayout());
+                row.setOpaque(true);
+                row.setBackground(list.getBackground());
+                row.add(head, BorderLayout.CENTER);
+                if (!value.header.unknown()) {
+                    // The group's two doors, each in a band the hit-test reads the same way:
+                    // which project a session is born into is decided by the row the plus was
+                    // clicked on, not guessed afterwards, and the gear opens that group's own
+                    // icon, colour and description.
+                    boolean hovered = Integer.valueOf(index)
+                            .equals(list.getClientProperty("naru.hoverRow"));
+                    java.awt.Color actionColor = hovered
+                            ? UiPalette.readable(UiPalette.accent()) : UiPalette.muted();
+                    JPanel actions = new JPanel(new java.awt.GridLayout(1, 2));
+                    actions.setOpaque(false);
+                    JLabel gear = new JLabel("⚙", javax.swing.SwingConstants.CENTER);
+                    JLabel plus = new JLabel("＋", javax.swing.SwingConstants.CENTER);
+                    for (JLabel chip : new JLabel[]{gear, plus}) {
+                        chip.setOpaque(false);
+                        chip.setForeground(actionColor);
+                        chip.setPreferredSize(new java.awt.Dimension(GROUP_ACTION_BAND, 1));
+                    }
+                    actions.add(gear);
+                    actions.add(plus);
+                    row.add(actions, BorderLayout.EAST);
+                }
+                return row;
             }
             String dates = value.dateSummary();
             String state = value.stateLabel();
@@ -1645,6 +2261,14 @@ public final class MainWindow extends JFrame {
          */
         NaruSessionModel pendingTeardown;
 
+        /**
+         * The group this row was created under, kept because a brand-new session has no uuid
+         * yet and the store listing cannot say where it belongs. The snapshot map still wins
+         * for any row it knows, so a move performed elsewhere (or a detach, which removes the
+         * row from the map and from this field in the same action) is never overridden here.
+         */
+        String projectId;
+
         SessionEntry(int number, String id, net.thevpc.naru.api.store.NaruSessionScope scope,
                      NPath projectDir, net.thevpc.naru.api.agent.NaruResourceInfo savedInfo,
                      NaruSessionModel model, InteractionHost host) {
@@ -1719,7 +2343,7 @@ public final class MainWindow extends JFrame {
     private JTabbedPane inspectorTabs;
 
     private JTabbedPane sideTabs(TaskPane tasks, NaruSessionModel session) {
-        JTabbedPane tabs = new JTabbedPane();
+        JTabbedPane tabs = new JTabbedPane();tabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
         // the plan board leads the rail: it says what the run is for, where the two tabs after it
         // answer questions about a run that already happened
         planPane = new PlanPane(session);

@@ -2,6 +2,10 @@ package net.thevpc.naru.api.project;
 
 import net.thevpc.naru.api.store.NaruPage;
 import net.thevpc.naru.api.store.NaruProjectStoreConfig;
+import net.thevpc.naru.api.store.NaruProjectStoreFactory;
+import net.thevpc.nuts.artifact.NDefinition;
+import net.thevpc.nuts.ext.NServiceLoader;
+import net.thevpc.nuts.reflect.NClassLoader;
 import net.thevpc.nuts.util.NOptional;
 
 /**
@@ -88,5 +92,73 @@ public interface NaruProjectStore extends AutoCloseable {
     /** Convenience for stores that serve exactly one config. */
     default NaruProjectStoreConfig config() {
         throw new UnsupportedOperationException("config is not exposed by " + getClass().getName());
+    }
+
+    /**
+     * Open a project store for a config, choosing the backend exactly the way the engine does
+     * when it builds a workspace: the factory named in the configuration first — a name that
+     * is not available fails loudly, because silently writing to a different backend is worse
+     * than not starting — and otherwise the default factories sorted by name.
+     *
+     * <p>This lives on the SPI, not only in the engine, because a host sometimes has to read a
+     * folder that is not its own workspace: the desktop's group form looks at the folder the
+     * user just picked to see whether a store is already there. The engine's resolver is not
+     * public surface, and a host must not reach into {@code naru.impl} for it.
+     *
+     * @param configuredName the store name from the host's configuration, null for the default
+     * @param classLoader    the loader that can see the store extensions
+     * @throws IllegalStateException when no factory can serve the config
+     */
+    static NaruProjectStore open(NaruProjectStoreConfig config, String configuredName,
+                                 NClassLoader classLoader) {
+        java.util.List<NaruProjectStoreFactory> factories = NServiceLoader
+                .of(NaruProjectStoreFactory.class, null, classLoader.asClassLoader())
+                .loadAll(null);
+        NaruProjectStoreFactory chosen = null;
+        if (configuredName != null && !configuredName.isBlank()) {
+            for (NaruProjectStoreFactory f : factories) {
+                if (configuredName.equals(f.name())) {
+                    chosen = f;
+                    break;
+                }
+            }
+            if (chosen == null) {
+                throw new IllegalStateException("no project store named '" + configuredName
+                        + "' is available; found " + names(factories));
+            }
+        }
+        if (chosen == null) {
+            java.util.List<NaruProjectStoreFactory> defaults = new java.util.ArrayList<>();
+            for (NaruProjectStoreFactory f : factories) {
+                if (f.isDefault()) {
+                    defaults.add(f);
+                }
+            }
+            defaults.sort(java.util.Comparator.comparing(NaruProjectStoreFactory::name));
+            chosen = defaults.isEmpty() ? null : defaults.get(0);
+        }
+        if (chosen == null) {
+            throw new IllegalStateException("no project store is available; found " + names(factories));
+        }
+        NOptional<NaruProjectStore> store = chosen.open(config);
+        if (!store.isPresent()) {
+            throw new IllegalStateException("project store '" + chosen.name()
+                    + "' cannot serve " + config);
+        }
+        return store.get();
+    }
+
+    /** Open the default store backend with the class loader that loaded this interface. */
+    static NaruProjectStore open(NaruProjectStoreConfig config) {
+        return open(config, null, NClassLoader.of("naru-project-store",
+                NaruProjectStore.class.getClassLoader(), new NDefinition[0]));
+    }
+
+    private static String names(java.util.List<NaruProjectStoreFactory> factories) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (NaruProjectStoreFactory f : factories) {
+            out.add(f.name());
+        }
+        return out.toString();
     }
 }

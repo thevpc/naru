@@ -249,6 +249,12 @@ public final class TranscriptModel {
         } else if (message != null) {
             b.setMessage(message, sequence);
         }
+        if (item.text() != null) {
+            // Keep the severity of a derived line (an engine progress note has no message of its
+            // own), so a level filter can tell "inbox" chatter from an answer instead of treating
+            // every replayed row as ordinary conversation.
+            b.setLevel(item.text().normalizedLevel());
+        }
         noteTextChanged(b);
         return isNew;
     }

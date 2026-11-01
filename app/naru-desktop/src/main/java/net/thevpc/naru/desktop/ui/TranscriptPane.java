@@ -66,6 +66,16 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     private final javax.swing.JToggleButton internalEvents;
     private final javax.swing.JToggleButton traceEvents;
     private final javax.swing.JToggleButton debugEvents;
+    /**
+     * The Conversation tab's severity filter. "Info" is the default and hides the engine's debug
+     * chatter (the "[1] inbox 2" style progress notes) that is stored as history but was never
+     * meant to be read as conversation.
+     */
+    private final javax.swing.JComboBox<String> levelFilter;
+    /** The three rungs offered by {@link #levelFilter}; not every {@code Level} is worth a menu row. */
+    private static final String LEVEL_INFO = "Info";
+    private static final String LEVEL_DEBUG = "Debug";
+    private static final String LEVEL_ALL = "All";
     private final JButton older = new JButton("↑");
     private final JButton newer = new JButton("↓");
     private final JButton moreResults = new JButton("More results");
@@ -114,16 +124,27 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         internalEvents = new javax.swing.JToggleButton(showChatMessages ? "Activity" : "Logs", !showChatMessages);
         traceEvents = showChatMessages ? null : new javax.swing.JToggleButton("Trace", false);
         debugEvents = showChatMessages ? null : new javax.swing.JToggleButton("Debug", false);
+        levelFilter = showChatMessages
+                ? new javax.swing.JComboBox<>(new String[]{LEVEL_INFO, LEVEL_DEBUG, LEVEL_ALL}) : null;
         this.markdown = new MarkdownRenderer(this::htmlArrived);
         cards.setLayout(new BoxLayout(cards, BoxLayout.Y_AXIS));
         cards.setBorder(BorderFactory.createEmptyBorder(6, 8, 2, 8));
         cards.setBackground(javax.swing.UIManager.getColor("List.background"));
         internalEvents.setToolTipText(showChatMessages
-                ? "Show engine activity between messages (progress notes, host events). Answers and tool calls are always shown."
+                ? "Show engine activity between messages at the chosen level. Debug and All include it automatically."
                 : "Show regular session output and logs");
         internalEvents.setFocusable(false);
         internalEvents.setMargin(new java.awt.Insets(2, 6, 2, 6));
         internalEvents.addActionListener(e -> syncRows(true));
+        if (levelFilter != null) {
+            levelFilter.setSelectedItem(LEVEL_INFO);
+            levelFilter.setFocusable(false);
+            levelFilter.setMaximumRowCount(3);
+            levelFilter.setToolTipText("Detail level shown in the conversation: Info hides debug chatter "
+                    + "(engine inbox/status notes), Debug adds it, All adds every remaining level.");
+            levelFilter.getAccessibleContext().setAccessibleName("Conversation log level");
+            levelFilter.addActionListener(e -> syncRows(true));
+        }
         if (traceEvents != null) {
             traceEvents.setToolTipText("Include low-level execution trace events");
             traceEvents.setFocusable(false);
@@ -154,6 +175,13 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         moreResults.addActionListener(e -> runEngineSearch(session, true));
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         controls.add(internalEvents);
+        if (levelFilter != null) {
+            JLabel levelCaption = new JLabel("Level");
+            UiFonts.apply(levelCaption, UiFonts.CAPTION, Font.PLAIN);
+            levelCaption.setForeground(UiPalette.muted());
+            controls.add(levelCaption);
+            controls.add(levelFilter);
+        }
         if (traceEvents != null) { controls.add(traceEvents); controls.add(debugEvents); }
         controls.add(search);
         controls.add(older);
@@ -328,6 +356,19 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     }
 
     private boolean shouldDisplay(TranscriptBlock block) {
+        BlockStyle style = BlockStyle.forBlock(block);
+        if (showChatMessages) {
+            // The Conversation tab filters every row by the chosen severity first: a debug-level
+            // progress note is stored history, not something to read by default. The audience rule
+            // then decides whether engine mechanics are included at all.
+            if (blockLevel(block).intValue() < selectedLevel().intValue()) {
+                return false;
+            }
+            // The Conversation tab: everything written for the user, plus engine mechanics when
+            // Activity is on or the reader has asked for debug detail. A directive result is
+            // conversation whatever mode carried it.
+            return style.audience() == BlockStyle.Audience.CONVERSATION || showsEngineDetail();
+        }
         // Fine-grained messages stay out of the default view: they are diagnostic noise unless
         // the reader has asked for detail or chosen a finer log level.
         java.util.logging.Level lvl = block.level();
@@ -336,12 +377,6 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         if (lvl != null && lvl.intValue() < java.util.logging.Level.INFO.intValue()
                 && !internal && !debug) {
             return false;
-        }
-        BlockStyle style = BlockStyle.forBlock(block);
-        if (showChatMessages) {
-            // The Conversation tab: everything written for the user, plus engine mechanics only
-            // when Activity is on. A directive result is conversation whatever mode carried it.
-            return style.audience() == BlockStyle.Audience.CONVERSATION || internalEvents.isSelected();
         }
         // The Logs tab is the whole record, so it keeps the stored conversation too: after a restart
         // only durable messages exist, and hiding them left the tab blank — the raw engine output
@@ -354,6 +389,58 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         }
         if (block.mode() == net.thevpc.naru.api.agent.NaruLogMode.DEBUG) return debugEvents.isSelected();
         return internalEvents.isSelected();
+    }
+
+    /** The severity floor the Conversation tab currently shows. */
+    private java.util.logging.Level selectedLevel() {
+        if (levelFilter == null) {
+            return java.util.logging.Level.ALL;
+        }
+        Object selected = levelFilter.getSelectedItem();
+        if (LEVEL_DEBUG.equals(selected)) {
+            // Nuts maps asDebug()/asFinest() to Level.FINEST, so "Debug" has to start there:
+            // Level.FINE would hide the very notes the reader asked to see.
+            return java.util.logging.Level.FINEST;
+        }
+        if (LEVEL_ALL.equals(selected)) {
+            return java.util.logging.Level.ALL;
+        }
+        return java.util.logging.Level.INFO;
+    }
+
+    /**
+     * Whether engine mechanics are part of the Conversation tab right now. Activity is the explicit
+     * switch, and asking for debug detail implies it: a reader who chose Debug is asking to see the
+     * engine's own rows, not only the progress notes that happen to sit on the conversation channel.
+     */
+    private boolean showsEngineDetail() {
+        if (internalEvents != null && internalEvents.isSelected()) {
+            return true;
+        }
+        return levelFilter != null && !LEVEL_INFO.equals(levelFilter.getSelectedItem());
+    }
+
+    /**
+     * A row's severity. Derived rows carry their own level from the replay; a row that only has a
+     * channel falls back to what that channel means (TRACE is finest, DEBUG/SCHEDULER are debug,
+     * everything else is ordinary information).
+     */
+    private static java.util.logging.Level blockLevel(TranscriptBlock block) {
+        java.util.logging.Level lvl = block.level();
+        if (lvl != null) {
+            return lvl;
+        }
+        return switch (block.mode()) {
+            case TRACE, DEBUG, SCHEDULER -> java.util.logging.Level.FINEST;
+            default -> java.util.logging.Level.INFO;
+        };
+    }
+
+    /** Choose the Conversation tab's level filter; package-visible so a headless test can drive it. */
+    void setLevelFilter(String label) {
+        if (levelFilter != null) {
+            levelFilter.setSelectedItem(label);
+        }
     }
 
     private void renderWindow(int anchorIndex) {

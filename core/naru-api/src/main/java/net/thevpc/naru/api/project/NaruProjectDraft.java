@@ -9,12 +9,17 @@ import net.thevpc.nuts.io.NPath;
  * <p>Fields follow {@link NaruProject}'s rules: {@code name} is required; {@code folder}
  * is required (there is no implicit default — the service reports "folder required" when
  * it is missing); {@code user} is nullable, and an empty string is read as {@code null}.
+ * {@code icon}, {@code color} and {@code description} are nullable presentation values,
+ * validated by the store exactly as {@link NaruProject} states.
  */
 public final class NaruProjectDraft {
 
     private String name;
     private NPath folder;
     private String user;
+    private String icon;
+    private String color;
+    private String description;
 
     private NaruProjectDraft() {
     }
@@ -54,8 +59,36 @@ public final class NaruProjectDraft {
         return this;
     }
 
+    public String icon() {
+        return icon;
+    }
+
+    public NaruProjectDraft icon(String icon) {
+        this.icon = icon;
+        return this;
+    }
+
+    public String color() {
+        return color;
+    }
+
+    public NaruProjectDraft color(String color) {
+        this.color = color;
+        return this;
+    }
+
+    public String description() {
+        return description;
+    }
+
+    public NaruProjectDraft description(String description) {
+        this.description = description;
+        return this;
+    }
+
     @Override
     public String toString() {
-        return "NaruProjectDraft{name=" + name + ", folder=" + folder + ", user=" + user + '}';
+        return "NaruProjectDraft{name=" + name + ", folder=" + folder + ", user=" + user
+                + ", icon=" + icon + ", color=" + color + ", description=" + description + '}';
     }
 }

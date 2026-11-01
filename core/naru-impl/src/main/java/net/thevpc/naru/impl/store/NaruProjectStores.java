@@ -5,17 +5,14 @@ import net.thevpc.naru.api.store.NaruProjectStoreConfig;
 import net.thevpc.naru.api.store.NaruProjectStoreFactory;
 import net.thevpc.nuts.ext.NServiceLoader;
 import net.thevpc.nuts.reflect.NClassLoader;
-import net.thevpc.nuts.util.NOptional;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
- * Finds a project store the way {@link NaruStoreFactory} finds a session store: named
- * factory first (a name that is not present fails loudly, because silently writing to a
- * different backend is worse than not starting), then the default factories sorted by
- * name. Implementations come from {@code META-INF/services/net.thevpc.nuts.spi.NComponent}.
+ * Finds a project store the way {@link NaruStoreFactory} finds a session store. The selection
+ * rule itself lives on {@link NaruProjectStore} so that a host reading a foreign folder — the
+ * desktop's group form inspects the folder the user picked — can use the same resolver without
+ * importing this package. This class keeps the factory-listing surface the engine uses.
  */
 public final class NaruProjectStores {
 
@@ -24,50 +21,10 @@ public final class NaruProjectStores {
 
     public static NaruProjectStore open(NaruProjectStoreConfig config, String configuredName,
                                         NClassLoader classLoader) {
-        List<NaruProjectStoreFactory> factories = factories(classLoader);
-        NaruProjectStoreFactory chosen = null;
-        if (configuredName != null && !configuredName.isBlank()) {
-            for (NaruProjectStoreFactory f : factories) {
-                if (configuredName.equals(f.name())) {
-                    chosen = f;
-                    break;
-                }
-            }
-            if (chosen == null) {
-                throw new IllegalStateException("no project store named '" + configuredName
-                        + "' is available; found " + names(factories));
-            }
-        }
-        if (chosen == null) {
-            List<NaruProjectStoreFactory> defaults = new ArrayList<>();
-            for (NaruProjectStoreFactory f : factories) {
-                if (f.isDefault()) {
-                    defaults.add(f);
-                }
-            }
-            defaults.sort(Comparator.comparing(NaruProjectStoreFactory::name));
-            chosen = defaults.isEmpty() ? null : defaults.get(0);
-        }
-        if (chosen == null) {
-            throw new IllegalStateException("no project store is available; found " + names(factories));
-        }
-        NOptional<NaruProjectStore> store = chosen.open(config);
-        if (!store.isPresent()) {
-            throw new IllegalStateException("project store '" + chosen.name()
-                    + "' cannot serve " + config);
-        }
-        return store.get();
+        return NaruProjectStore.open(config, configuredName, classLoader);
     }
 
     public static List<NaruProjectStoreFactory> factories(NClassLoader classLoader) {
         return NServiceLoader.of(NaruProjectStoreFactory.class, null, classLoader.asClassLoader()).loadAll(null);
-    }
-
-    private static String names(List<NaruProjectStoreFactory> factories) {
-        List<String> out = new ArrayList<>();
-        for (NaruProjectStoreFactory f : factories) {
-            out.add(f.name());
-        }
-        return out.toString();
     }
 }

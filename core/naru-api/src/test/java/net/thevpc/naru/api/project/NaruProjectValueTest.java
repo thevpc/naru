@@ -28,7 +28,8 @@ public class NaruProjectValueTest {
     }
 
     private static NaruProject project(String name, NPath folder, String user) {
-        return NaruProject.of("aaaaaaaa-0000-0000-0000-000000000001", name, folder, user, T0, T1, 1);
+        return NaruProject.of("aaaaaaaa-0000-0000-0000-000000000001", name, folder, user,
+                null, null, null, T0, T1, 1);
     }
 
     // ---------------------------------------------------------------- name
@@ -59,9 +60,9 @@ public class NaruProjectValueTest {
     @Test
     public void missingIdOrVersionBelowOneIsRefused() {
         Assertions.assertThrows(NIllegalArgumentException.class,
-                () -> NaruProject.of(" ", "name", NPath.of("/tmp/x"), null, T0, T1, 1));
+                () -> NaruProject.of(" ", "name", NPath.of("/tmp/x"), null, null, null, null, T0, T1, 1));
         Assertions.assertThrows(NIllegalArgumentException.class,
-                () -> NaruProject.of("id", "name", NPath.of("/tmp/x"), null, T0, T1, 0));
+                () -> NaruProject.of("id", "name", NPath.of("/tmp/x"), null, null, null, null, T0, T1, 0));
     }
 
     // ---------------------------------------------------------------- user
@@ -93,7 +94,8 @@ public class NaruProjectValueTest {
     @Test
     public void writtenProducesARevalidatedRowWithTheNewVersion() {
         NaruProject p = project("first", NPath.of("/tmp/a"), "alice");
-        NaruProject q = p.written("second", p.folder(), null, T1.plusSeconds(60), 2);
+        NaruProject q = p.written("second", p.folder(), null, p.icon(), p.color(), p.description(),
+                T1.plusSeconds(60), 2);
         Assertions.assertEquals("second", q.name());
         Assertions.assertEquals(p.id(), q.id());
         Assertions.assertEquals(p.createdAt(), q.createdAt());
@@ -101,18 +103,58 @@ public class NaruProjectValueTest {
         Assertions.assertEquals(2, q.version());
         // revalidation still applies
         Assertions.assertThrows(NIllegalArgumentException.class,
-                () -> p.written("", p.folder(), null, T1, 2));
+                () -> p.written("", p.folder(), null, null, null, null, T1, 2));
+    }
+
+    @Test
+    public void presentationFieldsAreTrimmedOrRefused() {
+        NaruProject p = NaruProject.of("aaaaaaaa-0000-0000-0000-000000000002", "n", NPath.of("/tmp/x"),
+                null, "  rocket ", "#3b82f6", "  the api work \n second line ", T0, T1, 1);
+        Assertions.assertEquals("rocket", p.icon());
+        // a colour reads back upper-case so re-stating it is not reported as a change
+        Assertions.assertEquals("#3B82F6", p.color());
+        Assertions.assertEquals("the api work \n second line", p.description());
+        Assertions.assertNull(NaruProject.of("id", "n", NPath.of("/tmp/x"), null, "  ", "#FFFFFF", "   ",
+                T0, T1, 1).icon());
+        // an icon names one glyph, so a line break in it is a mistake rather than prose
+        Assertions.assertThrows(NIllegalArgumentException.class,
+                () -> NaruProject.of("id", "n", NPath.of("/tmp/x"), null, "two\nlines", null, null, T0, T1, 1));
+        Assertions.assertThrows(NIllegalArgumentException.class,
+                () -> NaruProject.of("id", "n", NPath.of("/tmp/x"), null, "i".repeat(NaruProject.MAX_ICON_LENGTH + 1),
+                        null, null, T0, T1, 1));
+        Assertions.assertThrows(NIllegalArgumentException.class,
+                () -> NaruProject.of("id", "n", NPath.of("/tmp/x"), null, null, "red", null, T0, T1, 1));
+        Assertions.assertThrows(NIllegalArgumentException.class,
+                () -> NaruProject.of("id", "n", NPath.of("/tmp/x"), null, null, "#3B82F", null, T0, T1, 1));
+        Assertions.assertThrows(NIllegalArgumentException.class,
+                () -> NaruProject.of("id", "n", NPath.of("/tmp/x"), null, null, "#GGGGGG", null, T0, T1, 1));
+        Assertions.assertThrows(NIllegalArgumentException.class,
+                () -> NaruProject.of("id", "n", NPath.of("/tmp/x"), null, null, null,
+                        "d".repeat(NaruProject.MAX_DESCRIPTION_LENGTH + 1), T0, T1, 1));
+    }
+
+    @Test
+    public void unsetPresentationFieldsAreOmittedAndReadBackAsNull() {
+        NaruProject p = project("solo", NPath.of("/tmp/x"), null);
+        NElement e = p.toElement();
+        Assertions.assertNull(NaruProject.of(e).icon());
+        Assertions.assertNull(NaruProject.of(e).color());
+        Assertions.assertNull(NaruProject.of(e).description());
     }
 
     @Test
     public void elementRoundTripPreservesEveryField() {
-        NaruProject p = project("café", NPath.of("/tmp/x"), "bob");
+        NaruProject p = NaruProject.of("aaaaaaaa-0000-0000-0000-000000000003", "café", NPath.of("/tmp/x"),
+                "bob", "rocket", "#3B82F6", "the api work", T0, T1, 1);
         NElement e = p.toElement();
         NaruProject back = NaruProject.of(e);
         Assertions.assertEquals(p.id(), back.id());
         Assertions.assertEquals(p.name(), back.name());
         Assertions.assertEquals(p.folder(), back.folder());
         Assertions.assertEquals(p.user(), back.user());
+        Assertions.assertEquals(p.icon(), back.icon());
+        Assertions.assertEquals(p.color(), back.color());
+        Assertions.assertEquals(p.description(), back.description());
         Assertions.assertEquals(p.createdAt(), back.createdAt());
         Assertions.assertEquals(p.updatedAt(), back.updatedAt());
         Assertions.assertEquals(p.version(), back.version());
@@ -144,6 +186,18 @@ public class NaruProjectValueTest {
         Assertions.assertEquals("renamed", named.name().value());
         Assertions.assertEquals("carol", named.user().value());
         Assertions.assertFalse(named.folder().isSet(), "an untouched field stays unset");
+
+        NaruProjectPatch props = NaruProjectPatch.of().icon("rocket").color("#3B82F6").description("api work");
+        Assertions.assertEquals("rocket", props.icon().value());
+        Assertions.assertEquals("#3B82F6", props.color().value());
+        Assertions.assertEquals("api work", props.description().value());
+        Assertions.assertFalse(props.name().isSet(), "a props-only patch leaves the name alone");
+        // clearing a presentation field is a statement, not an omission: the store has to
+        // remove the colour rather than keep the one the row already carries
+        NaruProjectPatch cleared = NaruProjectPatch.of().clearColor().clearIcon().clearDescription();
+        Assertions.assertTrue(cleared.color().isSet() && cleared.icon().isSet() && cleared.description().isSet());
+        Assertions.assertNull(cleared.color().value());
+        Assertions.assertFalse(NaruProjectPatch.of().isEmpty() && cleared.isEmpty());
     }
 
     @Test

@@ -9,31 +9,32 @@ import java.awt.Insets;
 
 /**
  * The chrome every transcript row shares: a flat, full-width layer marked by a coloured gutter
- * stripe and closed by a hairline, instead of a rounded box floating on the panel.
+ * stripe, instead of a rounded box floating on the panel.
  * <p>
  * Boxes-with-borders were the old look, and they cost the reader twice: a tinted outline around
  * every single block repeats the framing the column already has, and eight pastel fills all claim
- * the same attention. Here the structure is the stack itself — one surface, one rule per row — and
- * the only colour left is the 3-pixel stripe, which says what the block <i>is</i> (the hue comes
- * from the block's own style) rather than how loud it should be.
+ * the same attention. Here the structure is the stack itself — one surface, and the only colour is
+ * the 3-pixel stripe, which says what the block <i>is</i> (the hue comes from the block's own
+ * style) rather than how loud it should be. Rows are separated by the column's gap alone; a rule
+ * under every item reads as an underline and chops the conversation into a table.
  * <p>
- * The stripe and the rule are painted, not bordered, so a row costs three primitives on the EDT no
- * matter how long its body is.
+ * The stripe is painted, not bordered, so a row costs two primitives on the EDT no matter how long
+ * its body is.
  */
 public final class TranscriptLayer {
 
     /** The width of the gutter stripe that carries the block's hue. */
     public static final int STRIPE = 3;
 
-    /** The air between two rows; the rule belongs to the row above it, so this can stay tight. */
-    public static final int GAP = 2;
+    /** The air between two rows; with no rule to close them, this is what separates the stack. */
+    public static final int GAP = 4;
 
     private TranscriptLayer() {
     }
 
-    /** Padding for a row: clear of the stripe on the left, room for the rule at the bottom. */
+    /** Padding for a row: clear of the stripe on the left and off the next row at the bottom. */
     public static Border border() {
-        return new EmptyBorder(new Insets(8, STRIPE + 11, 9, 12));
+        return new EmptyBorder(new Insets(8, STRIPE + 11, 8, 12));
     }
 
     /**
@@ -65,10 +66,6 @@ public final class TranscriptLayer {
             if (stripe != null) {
                 g.fillRect(0, 0, STRIPE + Math.round(hover * 2), height);
             }
-            g.setColor(UiPalette.alpha(UiPalette.border(), 160));
-            // The rule stops at the gutter: a hairline across the stripe breaks it into dashes,
-            // and the stripe is meant to read as one rail the rows hang off.
-            g.drawLine(STRIPE, height - 1, width, height - 1);
         } finally {
             g.dispose();
         }

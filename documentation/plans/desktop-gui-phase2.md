@@ -717,8 +717,83 @@ The PR changes no agent behaviour and no terminal code path: the terminal does n
 `NaruLineSyntax`, and `NaruLineCompletion`'s behaviour is unchanged because `tokenize` now runs on the
 same split it always produced.
 
+## Groups: props on the row, one form, and a store seam a host may use
+
+**What the owner asked for, in three steps.** Sessions had to be grouped by project, with a Default
+bucket when no group exists, and the sidebar had to add, rename and delete groups; the new-session
+plus had to move onto each group row and a fresh session had to be filed under the group whose plus
+was pressed; a group had to carry an icon, a colour and a description, persisted and editable; and
+finally New group and Group settings had to be *one* dialog — name, folder, icon, colour, description
+— that reads the folder it is pointed at and pulls a group's props back out of a store already living
+there. Two of those steps changed shape on the way and are recorded here.
+
+**`NaruProjectStore.open` is now api surface (`core/naru-api/.../project/`).** The desktop had to
+read a folder that is not its own workspace, and the only resolver for that lived in
+`net.thevpc.naru.impl.store.NaruProjectStores` — which the desktop module does not import, and never
+has: `grep -rn "import net.thevpc.naru.impl" app/naru-desktop/src/main` is empty, and the two lines
+that do exist are in tests of the access policy. The owner chose the seam over an impl import and over
+parsing `.tson` in the UI. The selection rule (named factory first, a missing name fails loudly,
+otherwise default factories sorted by name) moved to the SPI verbatim and
+`NaruProjectStores.open` is a one-line delegate, so there is still exactly one implementation. The
+no-name overload builds its loader with `NClassLoader.of(name, parent, new NDefinition[0])`: passing
+zero varargs is *ambiguous* between `NDefinition...` and `NClasspathEntry...` in nuts 1.1.0.0 and
+does not compile, which is worth knowing before the next host needs a default loader.
+
+**The group form is one dialog with three doors.** `groupFormUI(GroupFormSeed)` owns Name, Folder
+(with Browse, directories-only), Icon, Colour, Description and a status line. New group opens it empty
+but for a suggested folder; Group settings opens it on the stored row; the Default bucket's Group
+settings is a create that also moves the bucket's sessions into the row it files, which is what the old
+two-prompt `renameDefaultGroupUI` did and why the seed carries `adoptSessions`. Both doors read the
+folder the same way, as its row settles — a 450 ms non-repeating `Timer` behind a document listener, so
+half a typed path is not a probe, plus the same read after Browse. The first cut put that reading
+behind a **Load from folder** button in settings mode, on the grounds that a stored group must not lose
+its props because someone browsed elsewhere; the owner rejected the distinction ("for me it is implicit
+when browsing to the folder") and the button is gone. The argument still holds, but it is answered by
+the form rather than by a second click: nothing is written until OK, so a browse that turns the form
+into another folder's group is one Cancel away from being nothing at all — measured, not assumed, in
+the gate run below. A create writes twice: `NaruProjectService` has no draft-taking create, so the row
+is filed by `add(name, folder, user)` and painted by the `edit(...)` patch that follows, which is why a
+group born in this dialog is at `version=2`. A draft-taking `add` is the small engine PR that would
+remove that.
+
+**`SessionGrouping.Project` grew `folder`.** The form has to open on what the row already says, and
+the sidebar's snapshot was the only place a header's props came from; the alternative was a service
+read on the EDT. Both existing constructors survive (id+name, id+name+props), so the pure-model tests
+still describe a project without a folder.
+
+**Measurements.** `extensions/naru-store-file` **55 / 0 failures / 0 errors**, which includes the
+three new seam tests (`NaruProjectStoreOpenSeamTest`: opens a foreign folder and reads its props back
+through a *second* open, honours a requested store name, refuses an unknown name with the list of
+what is available). `core/naru-api,core/naru-impl` **312 tests / 9 failures / 0 errors**, and a clean
+detached worktree at `2c6d875` reports the *same nine* (`NaruTaskCompletionTest.cancelSettlesTheRunAsKilled`,
+`NaruTaskInterruptTest` ×2, `NaruToolCallLifecycleTest` ×2, `NaruGoDirectiveTest`,
+`NaruModelResourceResolutionTest` ×2, `NaruLineCompletionTest`) — none of them in the project path, so
+they are the owner's in-flight scheduler work, not this commit's. `app/naru-desktop` **296 / 1 / 5**
+against a clean-HEAD baseline of **293 / 7 / 5**; the one failure is `SplitPanesTest` and the five are
+`BudgetTextTest`'s missing-workspace errors, both present at HEAD, and the six `ComposerAreaTest`
+focus reds at HEAD did not recur.
+
+**GUI gate (Xvfb `:99`, `java.awt.Robot` clicks, `/tmp/ui2/run14.log`).** Settings opened from the ⚙
+chip on *Backend* shows `[field=Backend][field=…/backend][combo=cube of 15][combo=#8B5CF6 of 12]
+[area=the api work second line]`, with no Load button in `buttons=[×][Browse…][Cancel][Save]`. Typing
+a foreign folder into that dialog re-fills it by itself (`FORM-C` — `Legacy`, `tag`, `#14B8A6`,
+*Loaded "Legacy" from the store in this folder.*), and Cancel leaves the stored row exactly as it was
+(`FORM-D` still reports `Backend … icon=cube color=#8B5CF6`). The New group form behaves the same way
+from an empty start (`FORM-F`); renaming it to *Imported* and pressing Save puts
+`[Imported folder=… icon=tag color=#14B8A6 … v2]` in the service tree and `0:[> ⚑ Imported]` at the
+head of the sidebar, so the glyph and the hue came from the folder the form was pointed at.
+
 ## Open in Phase 2
 
+- **Group order is the store's order, and the store sorts by `updatedAt` descending.** Editing a
+  group — even a folder read that repainted the form, followed by a save — moves it to the head of
+  the sidebar, which is
+  what the gate run shows (`Imported` first, `Backend` last). Either the sidebar re-sorts by name or
+  the tree query asks for another sort; both are one line, neither is obviously right, so it is his
+  call.
+- **The welcome card still carries its own "＋ New Session"** beside the per-group chips on the rail.
+  With a plus on every group row, the second door is redundant for a workspace that has a group; it
+  stays the only door for a bare one.
 - **`core/naru-impl` is red at HEAD again**: `NaruTaskCompletionTest.cancelSettlesTheRunAsKilled:574`
   ("session stopped"), 238 tests / 1 failure, reproduced in a clean worktree at `a4d7f6f` with no
   desktop changes. It is the committed scheduler work, it is the owner's area, and a fix that reads the

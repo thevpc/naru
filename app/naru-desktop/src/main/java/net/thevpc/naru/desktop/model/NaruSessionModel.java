@@ -76,6 +76,8 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     private final NPath sessionDir;
     private final String restoreId;
     private final net.thevpc.naru.api.store.NaruSessionScope restoreScope;
+    /** The group this session is created under, or null. Ignored on a restore (see {@link #boot()}). */
+    private final String projectId;
     private final InteractionHost host;
     private final TranscriptModel transcript = new TranscriptModel();
     /**
@@ -227,12 +229,24 @@ public final class NaruSessionModel implements InteractionHost.Listener {
     public NaruSessionModel(java.util.function.Supplier<NaruWorkspace> workspaceFactory,
                             NPath sessionDir, InteractionHost host, String restoreId,
                             net.thevpc.naru.api.store.NaruSessionScope restoreScope) {
+        this(workspaceFactory, sessionDir, host, restoreId, restoreScope, null);
+    }
+
+    /**
+     * @param projectId the group to create the session under, or null for a standalone one.
+     *                  Only honoured when {@code restoreId} is null: the engine resolves a
+     *                  project reference strictly, and a saved session already carries its own.
+     */
+    public NaruSessionModel(java.util.function.Supplier<NaruWorkspace> workspaceFactory,
+                            NPath sessionDir, InteractionHost host, String restoreId,
+                            net.thevpc.naru.api.store.NaruSessionScope restoreScope, String projectId) {
         EDT.check("NaruSessionModel construct");
         this.workspaceFactory = workspaceFactory;
         this.sessionDir = sessionDir;
         this.host = host;
         this.restoreId = restoreId;
         this.restoreScope = restoreScope;
+        this.projectId = projectId;
         host.setListener(this);
     }
 
@@ -398,6 +412,12 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             // reopen look like a newly-created session.
             if (restoreId == null) {
                 builder.statements(new String[0]).interactive();
+                if (projectId != null) {
+                    // the group whose plus was clicked owns the session from its first message.
+                    // Never stated on a restore: the engine resolves a project reference
+                    // strictly, and the saved row already carries its own id.
+                    builder.project(projectId);
+                }
             }
             session = builder.build();
             if (restoreId == null) {

@@ -8,6 +8,8 @@ import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.util.EDT;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.log.NMsgIntent;
+import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -162,6 +164,27 @@ class TranscriptPaneStreamTest {
             assertEquals(2, pane.rowCount(), "the restored conversation is in the log");
             assertTrue(pane.cellTextAt(0).contains("hi"));
             assertTrue(pane.cellTextAt(1).contains("hello"));
+        });
+    }
+
+    @Test
+    void debugProgressNotesStayOutOfTheConversationUntilTheReaderAsksForThem() throws Exception {
+        buildPane();
+        onEdt(() -> {
+            model.onBatch(List.of(
+                    new TranscriptEvent.Message("u1", 1, 1, NaruMessage.user("hello")),
+                    new TranscriptEvent.Message("d1", 1, 2, NaruMessage.engine(
+                            NMsg.ofC("[1] inbox 2").asDebug().withIntent(NMsgIntent.PROGRESS)))), host);
+            assertEquals(1, pane.rowCount(),
+                    "a debug progress note is stored history, not conversation: Info hides it");
+            assertTrue(pane.cellTextAt(0).contains("hello"));
+
+            pane.setLevelFilter("Debug");
+            assertEquals(2, pane.rowCount(), "Debug reveals the engine's debug notes");
+            assertTrue(pane.cellTextAt(1).contains("inbox 2"));
+
+            pane.setLevelFilter("Info");
+            assertEquals(1, pane.rowCount(), "and going back to Info hides them again");
         });
     }
 

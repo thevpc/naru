@@ -94,6 +94,9 @@ public class NaruFileProjectStore implements NaruProjectStore {
         String name = NaruProject.checkName(draft.name());
         NPath folder = NaruProject.checkFolder(draft.folder());
         String user = NaruProject.checkUser(draft.user());
+        String icon = NaruProject.checkIcon(draft.icon());
+        String color = NaruProject.checkColor(draft.color());
+        String description = NaruProject.checkDescription(draft.description());
         synchronized (GLOBAL_LOCK) {
             // the uniqueness scan and this row's write are one critical section: two
             // concurrent creations of the same (user, name) must not both pass the scan
@@ -105,7 +108,7 @@ public class NaruFileProjectStore implements NaruProjectStore {
             }
             String id = UUID.randomUUID().toString();
             Instant now = Instant.now();
-            NaruProject project = NaruProject.of(id, name, folder, user, now, now, 1);
+            NaruProject project = NaruProject.of(id, name, folder, user, icon, color, description, now, now, 1);
             synchronized (lockFor(fileOf(id).toString())) {
                 writeRow(project);
             }
@@ -141,8 +144,12 @@ public class NaruFileProjectStore implements NaruProjectStore {
         String name = patch.name().isSet() ? NaruProject.checkName(patch.name().value()) : current.name();
         NPath folder = patch.folder().isSet() ? NaruProject.checkFolder(patch.folder().value()) : current.folder();
         String user = patch.user().isSet() ? NaruProject.checkUser(patch.user().value()) : current.user();
+        String icon = patch.icon().isSet() ? NaruProject.checkIcon(patch.icon().value()) : current.icon();
+        String color = patch.color().isSet() ? NaruProject.checkColor(patch.color().value()) : current.color();
+        String description = patch.description().isSet()
+                ? NaruProject.checkDescription(patch.description().value()) : current.description();
         if (!name.equals(current.name()) || !Objects.equals(user, current.user())) {
-            NaruProject candidate = NaruProject.of(id, name, folder, user,
+            NaruProject candidate = NaruProject.of(id, name, folder, user, icon, color, description,
                     current.createdAt(), Instant.now(), expectedVersion + 1);
             // uniqueness is rechecked on name OR user change, excluding the row being updated
             for (NaruProject other : scanAll()) {
@@ -155,7 +162,8 @@ public class NaruFileProjectStore implements NaruProjectStore {
                 }
             }
         }
-        NaruProject updated = current.written(name, folder, user, Instant.now(), expectedVersion + 1);
+        NaruProject updated = current.written(name, folder, user, icon, color, description,
+                Instant.now(), expectedVersion + 1);
         writeRow(updated);
         return updated;
     }

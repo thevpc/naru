@@ -14,10 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * A transcript row is a flat layer: a coloured gutter stripe, an optional wash for fixed-width data
- * and a hairline that closes it. Nothing else of the row is painted, so the column reads as one
- * surface instead of a stack of boxes — which is exactly the property these tests pin, because the
- * old chrome failed it silently (a row that fills its own background looks fine until two of them
- * touch).
+ * and nothing else. Nothing else of the row is painted, so the column reads as one surface instead
+ * of a stack of boxes — which is exactly the property these tests pin, because the old chrome
+ * failed it silently (a row that fills its own background looks fine until two of them touch).
  */
 class TranscriptLayerTest {
 
@@ -44,7 +43,7 @@ class TranscriptLayerTest {
     }
 
     @Test
-    void aRowPaintsItsStripeItsRuleAndNothingElse() {
+    void aRowPaintsItsStripeAndNothingElse() {
         BufferedImage image = paintRow(HUE, false, 120, 40);
         Color stripe = UiPalette.readable(HUE);
         for (int y = 0; y < 40; y++) {
@@ -53,15 +52,15 @@ class TranscriptLayerTest {
         assertEquals(stripe, pixel(image, TranscriptLayer.STRIPE - 1, 20));
         assertEquals(BODY, pixel(image, TranscriptLayer.STRIPE, 20), "the stripe stops at its width");
         assertEquals(BODY, pixel(image, 60, 20), "an untinted row leaves its body to the column");
-        assertNotEquals(BODY, pixel(image, 60, 39), "the row closes with a hairline");
-        assertEquals(BODY, pixel(image, 60, 38), "and the hairline is one line, not a border");
+        assertEquals(BODY, pixel(image, 60, 39), "no underline closes the row");
+        assertEquals(BODY, pixel(image, 60, 38), "and there is no border either");
     }
 
     @Test
-    void aRowWithNoHueKeepsTheRuleButClaimsNoColour() {
+    void aRowWithNoHueClaimsNoColourAndNoRule() {
         BufferedImage image = paintRow(null, false, 120, 30);
         assertEquals(BODY, pixel(image, 1, 15), "no stripe where there is no hue to carry");
-        assertNotEquals(BODY, pixel(image, 60, 29), "the row is still separated from the next");
+        assertEquals(BODY, pixel(image, 60, 29), "and no rule to separate it from the next row");
     }
 
     @Test
@@ -85,7 +84,7 @@ class TranscriptLayerTest {
         assertTrue(left > TranscriptLayer.STRIPE + 4,
                 "text must not touch the stripe, got left inset " + left);
         assertTrue(row.getBorder().getBorderInsets(row).bottom >= 4,
-                "the hairline needs air below the last line");
+                "the next row needs air below the last line");
     }
 
     @Test

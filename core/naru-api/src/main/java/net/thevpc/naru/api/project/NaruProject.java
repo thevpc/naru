@@ -41,6 +41,13 @@ import java.time.Instant;
  *       unmounted volume is storable, and callers get a warning rather than an error.</li>
  *   <li>{@code user} — nullable, opaque. Trimmed; an empty string becomes {@code null}.
  *       It carries no authentication or permissions; it is stored and filterable only.</li>
+ *   <li>{@code icon} — nullable presentation key, at most {@value #MAX_ICON_LENGTH}
+ *       characters. Hosts map it to a glyph of their own choosing, so an unknown icon is
+ *       ignored rather than rejected. Never interpreted by the engine.</li>
+ *   <li>{@code color} — nullable {@code #RRGGBB}, stored upper-case. A literal colour and
+ *       not a preset name so that a host which has never seen the picker still paints it.</li>
+ *   <li>{@code description} — nullable free text, at most {@value #MAX_DESCRIPTION_LENGTH}
+ *       characters, line breaks allowed. Display only.</li>
  *   <li>{@code createdAt} — set once. {@code updatedAt} — set on every successful write.
  *       {@code version} — starts at 1, incremented on every successful write; the token
  *       for optimistic concurrency.</li>
@@ -55,21 +62,32 @@ public final class NaruProject implements NToElement {
 
     /** The longest name the type accepts. */
     public static final int MAX_NAME_LENGTH = 200;
+    /** The longest icon key the type accepts. */
+    public static final int MAX_ICON_LENGTH = 64;
+    /** The longest description the type accepts. */
+    public static final int MAX_DESCRIPTION_LENGTH = 1000;
 
     private final String id;
     private final String name;
     private final NPath folder;
     private final String user;
+    private final String icon;
+    private final String color;
+    private final String description;
     private final Instant createdAt;
     private final Instant updatedAt;
     private final long version;
 
     private NaruProject(String id, String name, NPath folder, String user,
+                        String icon, String color, String description,
                         Instant createdAt, Instant updatedAt, long version) {
         this.id = id;
         this.name = name;
         this.folder = folder;
         this.user = user;
+        this.icon = icon;
+        this.color = color;
+        this.description = description;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
         this.version = version;
@@ -82,6 +100,7 @@ public final class NaruProject implements NToElement {
      * @throws NIllegalArgumentException when a field violates the rules
      */
     public static NaruProject of(String id, String name, NPath folder, String user,
+                                 String icon, String color, String description,
                                  Instant createdAt, Instant updatedAt, long version) {
         if (id == null || id.isBlank()) {
             throw new NIllegalArgumentException(NMsg.ofC("project id is required"));
@@ -94,6 +113,7 @@ public final class NaruProject implements NToElement {
                     id, version));
         }
         return new NaruProject(id, checkName(name), checkFolder(folder), checkUser(user),
+                checkIcon(icon), checkColor(color), checkDescription(description),
                 createdAt, updatedAt, version);
     }
 
@@ -103,8 +123,9 @@ public final class NaruProject implements NToElement {
      * {@link #of}, so a patch cannot smuggle in a bad value.
      */
     public NaruProject written(String name, NPath folder, String user,
+                               String icon, String color, String description,
                                Instant updatedAt, long newVersion) {
-        return of(id, name, folder, user, createdAt, updatedAt, newVersion);
+        return of(id, name, folder, user, icon, color, description, createdAt, updatedAt, newVersion);
     }
 
     // ---------------------------------------------------------------- rules
@@ -154,6 +175,70 @@ public final class NaruProject implements NToElement {
         return checkName(name).toLowerCase(java.util.Locale.ROOT);
     }
 
+    /** Trimmed and NFC-normalized; blank becomes null. No line breaks: an icon is one short word. */
+    public static String checkIcon(String icon) {
+        return checkText(icon, MAX_ICON_LENGTH, "icon", false);
+    }
+
+    /** Trimmed, NFC-normalized, line breaks kept; blank becomes null. */
+    public static String checkDescription(String description) {
+        return checkText(description, MAX_DESCRIPTION_LENGTH, "description", true);
+    }
+
+    /**
+     * {@code #RRGGBB}, stored upper-case so an edit that keeps the colour does not report a
+     * change; blank and null both mean "no colour chosen".
+     */
+    public static String checkColor(String color) {
+        if (color == null) {
+            return null;
+        }
+        String trimmed = Normalizer.normalize(color.trim(), Normalizer.Form.NFC);
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.length() != 7 || trimmed.charAt(0) != '#') {
+            throw new NIllegalArgumentException(NMsg.ofC("project color must be #RRGGBB, found %s",
+                    abbreviated(trimmed)));
+        }
+        for (int i = 1; i < 7; i++) {
+            if (Character.digit(trimmed.charAt(i), 16) < 0) {
+                throw new NIllegalArgumentException(NMsg.ofC("project color must be #RRGGBB, found %s",
+                        abbreviated(trimmed)));
+            }
+        }
+        return trimmed.toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private static String checkText(String value, int maxLength, String field, boolean multiline) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = Normalizer.normalize(value.trim(), Normalizer.Form.NFC);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        if (normalized.length() > maxLength) {
+            throw new NIllegalArgumentException(NMsg.ofC("project %s exceeds %s characters: %s",
+                    field, maxLength, abbreviated(normalized)));
+        }
+        for (int i = 0; i < normalized.length(); i++) {
+            char c = normalized.charAt(i);
+            if (!multiline && (c == '\n' || c == '\r')) {
+                throw new NIllegalArgumentException(NMsg.ofC("project %s must be a single line: %s",
+                        field, abbreviated(normalized)));
+            }
+            if (Character.getType(c) == Character.FORMAT || Character.isISOControl(c)) {
+                if (multiline && (c == '\n' || c == '\r' || c == '\t')) {
+                    continue;
+                }
+                throw new NIllegalArgumentException(NMsg.ofC("project %s contains control characters: %s",
+                        field, abbreviated(normalized)));
+            }
+        }
+        return normalized;
+    }
+
     private static String abbreviated(String s) {
         return s.length() <= 40 ? s : s.substring(0, 40) + "…";
     }
@@ -175,6 +260,21 @@ public final class NaruProject implements NToElement {
     /** The opaque owner, or null. No authentication, no permissions: stored and filterable only. */
     public String user() {
         return user;
+    }
+
+    /** The presentation icon key, or null. Hosts are free to ignore an unknown key. */
+    public String icon() {
+        return icon;
+    }
+
+    /** The {@code #RRGGBB} accent, or null when the host should use its own default. */
+    public String color() {
+        return color;
+    }
+
+    /** Free text for the host to display, or null. Never parsed. */
+    public String description() {
+        return description;
     }
 
     public Instant createdAt() {
@@ -199,6 +299,9 @@ public final class NaruProject implements NToElement {
                 o.getStringValue("name").orElse(null),
                 o.getStringValue("folder").map(NPath::of).orElse(null),
                 o.getStringValue("user").orElse(null),
+                o.getStringValue("icon").orElse(null),
+                o.getStringValue("color").orElse(null),
+                o.getStringValue("description").orElse(null),
                 o.getInstantValue("createdAt").orElse(null),
                 o.getInstantValue("updatedAt").orElse(null),
                 o.getLongValue("version").orElse(0L));
@@ -216,6 +319,15 @@ public final class NaruProject implements NToElement {
             // empty string
             o.set("user", user);
         }
+        if (icon != null) {
+            o.set("icon", icon);
+        }
+        if (color != null) {
+            o.set("color", color);
+        }
+        if (description != null) {
+            o.set("description", description);
+        }
         o.set("createdAt", NElement.ofInstant(createdAt));
         o.set("updatedAt", NElement.ofInstant(updatedAt));
         o.set("version", version);
@@ -225,6 +337,7 @@ public final class NaruProject implements NToElement {
     @Override
     public String toString() {
         return "NaruProject{id=" + id + ", name=" + name + ", folder=" + folder
-                + ", user=" + user + ", version=" + version + '}';
+                + ", user=" + user + ", icon=" + icon + ", color=" + color
+                + ", version=" + version + '}';
     }
 }

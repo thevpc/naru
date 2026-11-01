@@ -16,6 +16,9 @@ public final class NaruProjectPatch {
     private NaruSetting<String> name = NaruSetting.unset();
     private NaruSetting<NPath> folder = NaruSetting.unset();
     private NaruSetting<String> user = NaruSetting.unset();
+    private NaruSetting<String> icon = NaruSetting.unset();
+    private NaruSetting<String> color = NaruSetting.unset();
+    private NaruSetting<String> description = NaruSetting.unset();
 
     private NaruProjectPatch() {
     }
@@ -63,12 +66,62 @@ public final class NaruProjectPatch {
         return this;
     }
 
+    public NaruSetting<String> icon() {
+        return icon;
+    }
+
+    /** Set the presentation icon key. Passing {@code null} (or {@link #clearIcon()}) clears it. */
+    public NaruProjectPatch icon(String icon) {
+        this.icon = NaruSetting.set(icon);
+        return this;
+    }
+
+    /** Equivalent to {@code icon(null)}: an explicit clear, not an omission. */
+    public NaruProjectPatch clearIcon() {
+        this.icon = NaruSetting.set(null);
+        return this;
+    }
+
+    public NaruSetting<String> color() {
+        return color;
+    }
+
+    /** Set the {@code #RRGGBB} accent. Passing {@code null} (or {@link #clearColor()}) clears it. */
+    public NaruProjectPatch color(String color) {
+        this.color = NaruSetting.set(color);
+        return this;
+    }
+
+    /** Equivalent to {@code color(null)}: an explicit clear, not an omission. */
+    public NaruProjectPatch clearColor() {
+        this.color = NaruSetting.set(null);
+        return this;
+    }
+
+    public NaruSetting<String> description() {
+        return description;
+    }
+
+    /** Set the free-text description. Passing {@code null} (or {@link #clearDescription()}) clears it. */
+    public NaruProjectPatch description(String description) {
+        this.description = NaruSetting.set(description);
+        return this;
+    }
+
+    /** Equivalent to {@code description(null)}: an explicit clear, not an omission. */
+    public NaruProjectPatch clearDescription() {
+        this.description = NaruSetting.set(null);
+        return this;
+    }
+
     public boolean isEmpty() {
-        return !name.isSet() && !folder.isSet() && !user.isSet();
+        return !name.isSet() && !folder.isSet() && !user.isSet()
+                && !icon.isSet() && !color.isSet() && !description.isSet();
     }
 
     @Override
     public String toString() {
-        return "NaruProjectPatch{name=" + name + ", folder=" + folder + ", user=" + user + '}';
+        return "NaruProjectPatch{name=" + name + ", folder=" + folder + ", user=" + user
+                + ", icon=" + icon + ", color=" + color + ", description=" + description + '}';
     }
 }
