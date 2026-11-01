@@ -100,9 +100,9 @@ Consequences:
   `shadowed` so the collision is never hidden (§3).
 - **The folder walk is closest-first.** `distance` is the number of levels from
   the task's `workingDir`; the working directory itself is distance `0` and the
-  project directory is the weakest of the walk. The walk mirrors
-  `NaruTaskImpl.loadLoadModelAgentInfos` and falls back to the project
-  directory alone when the task's working directory leaves the project.
+  session directory is the weakest of the walk. The walk mirrors
+  `NaruTaskImpl.loadLoadModelAgentInfos` and falls back to the session
+  directory alone when the task's working directory leaves it.
 - **Folder-scoped skills are advertised, never auto-loaded.** They appear for a
   task working inside the folder, and simply disappear when it leaves: the next
   resolution walks from the task's new working directory. There is no
@@ -152,7 +152,7 @@ This is the opt-in boundary: trusting a root says "read it", not "obey it".
 The manager reads two ways:
 
 - **Base snapshot.** At `open()` and on every `/skill reload`, the manager scans
-  the roots effective at the **project directory** and snapshots each winning
+  the roots effective at the **session directory** and snapshots each winning
   skill (name, description, body, front-matter, content hash). Request-time
   contribution for those roots is then disk-free.
 - **Live folder walk.** Roots between the project and the task's current

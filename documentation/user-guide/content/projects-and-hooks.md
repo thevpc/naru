@@ -3,6 +3,12 @@
 > **When to use this:** you move between directories or project roots while a session is
 > running, and you need to know exactly what that does — which scripts run, which do not,
 > and how a session-wide default or a workspace bootstrap belongs in your setup.
+>
+> **Naming note:** on this page, "project" means the *folder* a session is anchored to
+> (the workspace directory). The first-class **Project** entity — a grouping label that
+> seeds initial values for new sessions — is documented in [Projects](projects.md);
+> `/project` manages entities and never changes a session's directory. `/sessiondir`
+> changes the directory and manages no entities.
 
 This page is about the **navigation** directives and the **init scripts** they trigger.
 

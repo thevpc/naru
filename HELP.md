@@ -508,6 +508,30 @@ Available Native Core Directives:
            show a plan or active one
     -----------------------------------------
 
+  project Directives:
+    /project : manage projects: grouping labels that seed new sessions
+    | Detailed Specification :
+  /project  list [--user=<u>|--no-user] [--filter=<text>]
+           list projects with id, name, folder, user and session count
+           bare /project runs list
+
+  /project  show <id|name>
+           show one project, including its version token
+
+  /project  add <name> --folder=<path> [--user=<u>]
+           create a project; the folder is required and may not exist yet (it warns)
+
+  /project  edit <id|name> [--name=<n>] [--folder=<path>] [--user=<u>|--no-user]
+           edit a project; existing sessions are never changed by this
+
+  /project  remove <id|name> [--sessions=reject|detach|cascade]
+           remove a project; sessions=reject (default) refuses while any session points at it,
+           detach clears their projectId, cascade deletes the sessions first and refuses if any is live
+
+  /project  move [--to=<id|name|none>] <sessionId|name>...
+           re-point sessions at a project (default: none, standalone); changes only projectId
+    -----------------------------------------
+
   routine Directives:
     /routine : create, update , list routines
     | Detailed Specification :
