@@ -90,6 +90,20 @@ public interface NaruWorkspace {
     NaruSessionBuilder newSession();
 
     /**
+     * The project service of this workspace: the only component that sees both the
+     * project store and the session store. Projects supply initial values to new
+     * sessions (folder to {@code sessionDir}, user to {@code user}) and group the
+     * session tree; they never restrict or propagate.
+     *
+     * @throws net.thevpc.nuts.util.NUnsupportedOperationException when the workspace
+     *         implementation provides no project store
+     */
+    default net.thevpc.naru.api.project.NaruProjectService projects() {
+        throw new net.thevpc.nuts.util.NUnsupportedOperationException(
+                NMsg.ofC("this workspace provides no project service"));
+    }
+
+    /**
      * The sessions currently running under this agent.
      * <p>
      * A live view, not a snapshot: a session appears when it starts and disappears when it
