@@ -99,6 +99,85 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
     }
 
     @Override
+    public NOptional<NaruPlan> setGoal(String planId, String goal) {
+        NOptional<NaruPlan> found = findPlan(planId);
+        if (!found.isPresent()) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("plan %s", planId));
+        }
+        if (goal == null || goal.isBlank()) {
+            return NOptional.ofNamedError(NMsg.ofC("plan %s needs a goal, not a blank one", planId));
+        }
+        NaruPlan plan = found.orNull();
+        plan.setGoal(goal.trim());
+        plan.touch();
+        return NOptional.of(plan);
+    }
+
+    @Override
+    public NOptional<NaruPlanItem> editItem(String planId, String itemId, NaruPlanItemPatch patch) {
+        NOptional<NaruPlan> foundPlan = findPlan(planId);
+        if (!foundPlan.isPresent()) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("plan %s", planId));
+        }
+        NaruPlan plan = foundPlan.orNull();
+        NaruPlanItem item = itemId == null ? null : plan.findItemByPrefix(itemId);
+        if (item == null) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("item %s of plan %s", itemId, planId));
+        }
+        if (patch == null || patch.isEmpty()) {
+            return NOptional.ofNamedError(NMsg.ofC("nothing to change on item %s", itemId));
+        }
+        if (patch.description().isSet()) {
+            String description = patch.description().value();
+            if (description == null || description.isBlank()) {
+                return NOptional.ofNamedError(NMsg.ofC(
+                        "item %s needs a description; remove it with /plan remove instead", item.id()));
+            }
+            NaruPlanItemStatus status = item.status();
+            if (status == NaruPlanItemStatus.RUNNING || status == NaruPlanItemStatus.VALIDATING) {
+                return NOptional.ofNamedError(NMsg.ofC(
+                        "item %s is %s; its text is the instruction a task is working from, so stop that task "
+                                + "before rewriting it", item.id(), status.name().toLowerCase()));
+            }
+            item.setDescription(description.trim());
+        }
+        if (patch.notes().isSet()) {
+            // setNotes maps blank to null on its own, so an explicit clear needs no branch here
+            item.setNotes(patch.notes().value());
+        }
+        if (patch.validator().isSet()) {
+            item.setValidator(patch.validator().value());
+        }
+        plan.touch();
+        recomputeAndFill(plan.id());
+        return NOptional.of(item);
+    }
+
+    @Override
+    public NOptional<NaruPlan> removeItem(String planId, String itemId) {
+        NOptional<NaruPlan> found = findPlan(planId);
+        if (!found.isPresent()) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("plan %s", planId));
+        }
+        NaruPlan plan = found.orNull();
+        NaruPlanItem item = itemId == null ? null : plan.findItemByPrefix(itemId);
+        if (item == null) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("item %s of plan %s", itemId, planId));
+        }
+        NaruPlanItemStatus status = item.status();
+        if (status == NaruPlanItemStatus.RUNNING || status == NaruPlanItemStatus.VALIDATING) {
+            return NOptional.ofNamedError(NMsg.ofC(
+                    "item %s is %s and a task is reporting against it; stop that task first",
+                    item.id(), status.name().toLowerCase()));
+        }
+        // removeItem already drops the inbound edges and touches; the pass afterwards is what
+        // lets a dependent become READY now that its gate is gone
+        plan.removeItem(item.id());
+        recomputeAndFill(plan.id());
+        return NOptional.of(plan);
+    }
+
+    @Override
     public NOptional<NaruPlanItem> reportItem(String planId, String itemId, NaruPlanItemStatus status, String notes) {
         NOptional<NaruPlanItem> found = findItem(planId, itemId);
         if (found.isError()) {

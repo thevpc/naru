@@ -4,7 +4,7 @@ import javax.swing.UIManager;
 import java.awt.Color;
 
 /**
- * The four hues the desktop paints, and nothing else.
+ * The hues the desktop paints, and nothing else.
  * <p>
  * Colour carries state here, not decoration: a reader should be able to tell an open session from a
  * closed one without reading the word beside it. That only works while the same hue means the same
@@ -12,6 +12,10 @@ import java.awt.Color;
  * instead of being re-spelled as literals at each of those places. Everything else stays in the
  * look-and-feel's own palette — greys, borders and the accent — so a theme change still moves the
  * interface as a whole and only the state hues, which are deliberately theme independent, stay put.
+ * <p>
+ * {@link #BRAND} is the one hue outside that rule. It identifies the product rather than a state, so
+ * it is only ever allowed on the chrome — the title bar's wash and wordmark — where nothing else can
+ * be mistaken for a session, a task or a gauge.
  */
 public final class UiPalette {
 
@@ -23,6 +27,8 @@ public final class UiPalette {
     public static final Color ATTENTION = new Color(0xEF, 0x44, 0x44);
     /** No state worth reporting: a closed session, a gauge that has nothing to measure yet. */
     public static final Color IDLE = new Color(0x9C, 0xA3, 0xAF);
+    /** The app icon's cyan: brand only, never a state. */
+    public static final Color BRAND = new Color(0x38, 0xBD, 0xF8);
 
     private UiPalette() {
     }

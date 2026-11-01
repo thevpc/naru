@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.plan;
 
+import net.thevpc.naru.api.project.NaruSetting;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.List;
@@ -46,6 +47,38 @@ public interface NaruPlanManager {
      *                                  would contain a cycle
      */
     NOptional<NaruPlan> addItems(String planId, List<NaruPlanItemSpec> items);
+
+    /**
+     * Restate what a plan is for.
+     *
+     * <p>The goal is the one field a human is expected to correct after the plan is
+     * written — the shape the model proposed was right, its sentence about the purpose was
+     * not. A blank goal is refused rather than stored: {@code render()} and the desktop
+     * board both fall back to a placeholder, so an empty one reads as damage.
+     */
+    NOptional<NaruPlan> setGoal(String planId, String goal);
+
+    /**
+     * Edit one item's text, note or validator.
+     *
+     * <p>Fields the patch leaves {@link NaruSetting#unset() unset} are not written. An
+     * item whose task is {@link NaruPlanItemStatus#RUNNING} or
+     * {@link NaruPlanItemStatus#VALIDATING} cannot have its description changed: the worker
+     * was handed that sentence as its instruction, and rewriting it underneath the run
+     * leaves the task doing work the plan no longer describes. Notes and validator may
+     * still be edited while it runs.
+     */
+    NOptional<NaruPlanItem> editItem(String planId, String itemId, NaruPlanItemPatch patch);
+
+    /**
+     * Drop an item and every dependency edge that pointed at it, then recompute readiness
+     * so its dependents unblock if it was their last gate.
+     *
+     * <p>Refused while a task holds the item, for the reason {@link #reopenItem} gives for
+     * non-terminal items: un-starting live work is the caller's job, and deleting the item
+     * the task is reporting against would desynchronise the two.
+     */
+    NOptional<NaruPlan> removeItem(String planId, String itemId);
 
     /**
      * Reports progress on an item.

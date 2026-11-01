@@ -16,6 +16,7 @@ import net.thevpc.nuts.text.NTextStyle;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -186,6 +187,255 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                     return NaruStmtResult.ofSuccess();
                 }
             });
+            register(new AbstractSubCommand("goal", NText.ofPlain("restate what the active plan is for")
+                    , new SubCommandHelp("<text...>", "set the goal of the active plan; the shape of the "
+                    + "plan is unchanged, only its purpose")
+            ) {
+                @Override
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                    List<String> words = new ArrayList<>();
+                    try {
+                        cmdLine.matcher().whenNonOption().asArg(a -> words.add(a.image())).requireAll();
+                    } catch (Exception e) {
+                        return fail(context, String.valueOf(e.getMessage()));
+                    }
+                    String goal = String.join(" ", words).trim();
+                    if (goal.isEmpty()) {
+                        return fail(context, "usage: /plan goal <text...>");
+                    }
+                    NaruPlanManager plans = NaruPlanExtension.plans(context.task().session());
+                    String activeId = plans.activePlanId();
+                    if (activeId == null) {
+                        return fail(context, "no active plan; select one with /plan activate <id> first");
+                    }
+                    NOptional<NaruPlan> result = plans.setGoal(activeId, goal);
+                    if (result.isError() || !result.isPresent()) {
+                        return fail(context, reason(result, "plan " + activeId + " kept its old goal"));
+                    }
+                    logInfo(context, NMsg.ofC("plan %s goal is now: %s",
+                            NMsg.ofStyledPrimary1(activeId), goal));
+                    return NaruStmtResult.ofSuccess(result.orNull().toElement());
+                }
+            });
+            register(new AbstractSubCommand("add", NText.ofPlain("append an item to the active plan")
+                    , new SubCommandHelp("<text...> [--after=<item>] [--key=<k>] "
+                            + "[--validator=<none|model-review|user-approval>]",
+                    "append one item; --after may be repeated and names an item id, prefix or key")
+            ) {
+                @Override
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                    List<String> words = new ArrayList<>();
+                    List<String> after = new ArrayList<>();
+                    String[] key = {null};
+                    String[] validator = {null};
+                    try {
+                        cmdLine.matcher()
+                                .when("--after").asEntry(a -> {
+                                    String v = a.stringValue();
+                                    if (v != null) {
+                                        after.add(v);
+                                    }
+                                })
+                                .when("--key").asEntry(a -> key[0] = a.stringValue())
+                                .when("--validator").asEntry(a -> validator[0] = a.stringValue())
+                                .whenNonOption().asArg(a -> words.add(a.image()))
+                                .requireAll();
+                    } catch (Exception e) {
+                        return fail(context, String.valueOf(e.getMessage()));
+                    }
+                    String description = String.join(" ", words).trim();
+                    if (description.isEmpty()) {
+                        return fail(context, "usage: /plan add <text...> [--after=<item>]");
+                    }
+                    NaruPlanManager plans = NaruPlanExtension.plans(context.task().session());
+                    String activeId = plans.activePlanId();
+                    if (activeId == null) {
+                        return fail(context, "no active plan; select one with /plan activate <id> first");
+                    }
+                    NOptional<NaruPlan> planOpt = plans.findPlan(activeId);
+                    if (!planOpt.isPresent()) {
+                        return fail(context, "plan " + activeId + " is gone");
+                    }
+                    NaruPlan plan = planOpt.orNull();
+                    // --after takes an id, a unique id prefix or the declaration key the board
+                    // prints, so resolve here and pass ids down: addItems speaks keys of the same
+                    // batch, and a human quoting 8 characters from the panel should not have to
+                    // know which of the three forms they were looking at
+                    List<String> dependencyIds = new ArrayList<>();
+                    for (String ref : after) {
+                        NaruPlanItem target = resolveItem(plan, ref);
+                        if (target == null) {
+                            return fail(context, "no item matching '" + ref + "' in plan " + plan.id());
+                        }
+                        dependencyIds.add(target.id());
+                    }
+                    NOptional<NaruPlanValidatorKind> vk = NaruPlanValidatorKind.parse(validator[0]);
+                    if (vk.isError()) {
+                        return fail(context, "unknown validator '" + validator[0]
+                                + "': use none, model-review or user-approval");
+                    }
+                    NaruPlanItemSpec spec = NBlankable.isBlank(key[0])
+                            ? NaruPlanItemSpec.of(description)
+                            : NaruPlanItemSpec.of(key[0].trim(), description);
+                    spec.validator(vk.orNull());
+                    for (String id : dependencyIds) {
+                        spec.dependsOn(id);
+                    }
+                    NOptional<NaruPlan> result = plans.addItems(plan.id(), List.of(spec));
+                    if (result.isError() || !result.isPresent()) {
+                        return fail(context, reason(result, "the plan rejected that item"));
+                    }
+                    logInfo(context, NMsg.ofC("item added to plan %s\n%s",
+                            NMsg.ofStyledPrimary1(plan.id()), result.orNull().render()));
+                    return NaruStmtResult.ofSuccess(result.orNull().toElement());
+                }
+            });
+            register(new AbstractSubCommand("edit", NText.ofPlain("change an item's text or validator")
+                    , new SubCommandHelp("<item> [<text...>] [--no-notes] "
+                            + "[--validator=<none|model-review|user-approval>]",
+                    "edit one item of the active plan; positional text becomes the new description. "
+                            + "A note is free text too, so it is set with /plan note rather than an option: "
+                            + "the parser takes one token per --option value")
+            ) {
+                @Override
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                    List<String> words = new ArrayList<>();
+                    List<String> positionals = new ArrayList<>();
+                    NaruPlanItemPatch patch = NaruPlanItemPatch.of();
+                    boolean[] clearNotes = {false};
+                    String[] validator = {null};
+                    try {
+                        cmdLine.matcher()
+                                .when("--no-notes").asFlag(a -> {
+                                    if (a.booleanValue()) {
+                                        clearNotes[0] = true;
+                                    }
+                                })
+                                .when("--validator").asEntry(a -> validator[0] = a.stringValue())
+                                .whenNonOption().asArg(a -> positionals.add(a.image()))
+                                .requireAll();
+                    } catch (Exception e) {
+                        return fail(context, String.valueOf(e.getMessage()));
+                    }
+                    if (positionals.isEmpty()) {
+                        return fail(context, "usage: /plan edit <item> [<text...>] [--no-notes] "
+                                + "[--validator=<k>]");
+                    }
+                    String itemRef = positionals.remove(0);
+                    for (String w : positionals) {
+                        words.add(w);
+                    }
+                    String description = String.join(" ", words).trim();
+                    if (!description.isEmpty()) {
+                        patch.description(description);
+                    }
+                    if (clearNotes[0]) {
+                        patch.clearNotes();
+                    }
+                    if (validator[0] != null) {
+                        NOptional<NaruPlanValidatorKind> vk = NaruPlanValidatorKind.parse(validator[0]);
+                        if (vk.isError()) {
+                            return fail(context, "unknown validator '" + validator[0]
+                                    + "': use none, model-review or user-approval");
+                        }
+                        patch.validator(vk.orNull());
+                    }
+                    NaruPlanManager plans = NaruPlanExtension.plans(context.task().session());
+                    String activeId = plans.activePlanId();
+                    if (activeId == null) {
+                        return fail(context, "no active plan; select one with /plan activate <id> first");
+                    }
+                    NaruPlan plan = plans.findPlan(activeId).orNull();
+                    NaruPlanItem item = plan == null ? null : resolveItem(plan, itemRef);
+                    if (item == null) {
+                        return fail(context, "no item matching '" + itemRef + "' in plan " + activeId);
+                    }
+                    NOptional<NaruPlanItem> result = plans.editItem(plan.id(), item.id(), patch);
+                    if (result.isError() || !result.isPresent()) {
+                        return fail(context, reason(result, "item " + item.id() + " could not be edited"));
+                    }
+                    logInfo(context, NMsg.ofC("item %s updated\n%s", result.orNull().id(),
+                            plans.findPlan(plan.id()).orNull().render()));
+                    return NaruStmtResult.ofSuccess(result.orNull().toElement());
+                }
+            });
+            register(new AbstractSubCommand("note", NText.ofPlain("write an item's note")
+                    , new SubCommandHelp("<item> <text...>",
+                    "replace the free-text note an item carries; clear it with /plan edit <item> --no-notes")
+            ) {
+                @Override
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                    List<String> positionals = new ArrayList<>();
+                    try {
+                        cmdLine.matcher().whenNonOption().asArg(a -> positionals.add(a.image()))
+                                .requireAll();
+                    } catch (Exception e) {
+                        return fail(context, String.valueOf(e.getMessage()));
+                    }
+                    if (positionals.size() < 2) {
+                        return fail(context, "usage: /plan note <item> <text...>");
+                    }
+                    String itemRef = positionals.remove(0);
+                    String text = String.join(" ", positionals).trim();
+                    if (text.isEmpty()) {
+                        return fail(context, "the note is empty; clear it with /plan edit " + itemRef + " --no-notes");
+                    }
+                    NaruPlanManager plans = NaruPlanExtension.plans(context.task().session());
+                    String activeId = plans.activePlanId();
+                    if (activeId == null) {
+                        return fail(context, "no active plan; select one with /plan activate <id> first");
+                    }
+                    NaruPlan plan = plans.findPlan(activeId).orNull();
+                    NaruPlanItem item = plan == null ? null : resolveItem(plan, itemRef);
+                    if (item == null) {
+                        return fail(context, "no item matching '" + itemRef + "' in plan " + activeId);
+                    }
+                    NOptional<NaruPlanItem> result = plans.editItem(plan.id(), item.id(),
+                            NaruPlanItemPatch.of().notes(text));
+                    if (result.isError() || !result.isPresent()) {
+                        return fail(context, reason(result, "item " + item.id() + " kept its old note"));
+                    }
+                    logInfo(context, NMsg.ofC("item %s noted\n%s", result.orNull().id(),
+                            plans.findPlan(plan.id()).orNull().render()));
+                    return NaruStmtResult.ofSuccess(result.orNull().toElement());
+                }
+            });
+            register(new AbstractSubCommand("remove", NText.ofPlain("drop an item from the active plan")
+                    , new SubCommandHelp("<item>",
+                    "remove an item and the edges pointing at it; refused while a task is running it")
+            ) {
+                @Override
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                    List<String> positionals = new ArrayList<>();
+                    try {
+                        cmdLine.matcher().whenNonOption().asArg(a -> positionals.add(a.image()))
+                                .requireAll();
+                    } catch (Exception e) {
+                        return fail(context, String.valueOf(e.getMessage()));
+                    }
+                    if (positionals.size() != 1) {
+                        return fail(context, "usage: /plan remove <item>");
+                    }
+                    NaruPlanManager plans = NaruPlanExtension.plans(context.task().session());
+                    String activeId = plans.activePlanId();
+                    if (activeId == null) {
+                        return fail(context, "no active plan; select one with /plan activate <id> first");
+                    }
+                    NOptional<NaruPlan> found = plans.findPlan(activeId);
+                    NaruPlan plan = found.orNull();
+                    NaruPlanItem item = plan == null ? null : resolveItem(plan, positionals.get(0));
+                    if (item == null) {
+                        return fail(context, "no item matching '" + positionals.get(0) + "' in plan " + activeId);
+                    }
+                    NOptional<NaruPlan> result = plans.removeItem(plan.id(), item.id());
+                    if (result.isError() || !result.isPresent()) {
+                        return fail(context, reason(result, "item " + item.id() + " is still in the plan"));
+                    }
+                    logInfo(context, NMsg.ofC("item removed from plan %s\n%s",
+                            NMsg.ofStyledPrimary1(activeId), result.orNull().render()));
+                    return NaruStmtResult.ofSuccess(result.orNull().toElement());
+                }
+            });
             register(new AbstractSubCommand("clear", NText.ofPlain("remove a plan entirely, or the active plan when no id is given")) {
                 @Override
                 public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
@@ -200,6 +450,52 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
 
         private void logInfo(SubCommandContext context, NMsg message) {
             context.outln( NMsg.ofC("%s", message));
+        }
+
+        /**
+         * The edit verbs' shared failure shape: the words go to the transcript and come back
+         * as the statement's error value, so a desktop dialog and a terminal reader see the
+         * same complaint.
+         */
+        private NaruStmtResult fail(SubCommandContext context, String message) {
+            NMsg msg = NMsg.ofC("%s", message).asError();
+            context.errln(msg);
+            return NaruStmtResult.ofError(msg);
+        }
+
+        /**
+         * The manager's reason, when it has one.
+         *
+         * <p>{@code NOptional.message()} is a {@code Supplier<NMsg>}, so printing the optional
+         * itself yields "ErrorOptional@1b2c3" — a stack of hashes in the user's dialog. Only the
+         * words the manager chose are shown; the fallback covers an optional built without a
+         * message, which still must not come out as an address.
+         */
+        private static String reason(NOptional<?> result, String fallback) {
+            java.util.function.Supplier<NMsg> message = result.message();
+            NMsg msg = message == null ? null : message.get();
+            return msg == null ? fallback : msg.toString();
+        }
+
+        /**
+         * An item addressed by full id, unique id prefix, or the declaration key it was authored
+         * with. The board and {@code render()} print keys when the item has one, so a human
+         * pointing back at what they can see has to be able to name it that way.
+         */
+        private static NaruPlanItem resolveItem(NaruPlan plan, String ref) {
+            if (ref == null || ref.isBlank()) {
+                return null;
+            }
+            NaruPlanItem byId = plan.findItemByPrefix(ref);
+            if (byId != null) {
+                return byId;
+            }
+            for (NaruPlanItem i : plan.items()) {
+                if (ref.trim().equals(plan.keyOf(i.id()))) {
+                    return i;
+                }
+            }
+            return null;
         }
 
         private NaruStmtResult logAll(SubCommandContext context) {

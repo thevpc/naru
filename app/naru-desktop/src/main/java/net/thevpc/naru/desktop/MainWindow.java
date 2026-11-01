@@ -15,6 +15,10 @@ import net.thevpc.naru.desktop.ui.WorkbenchPane;
 import net.thevpc.naru.desktop.ui.SettingsPane;
 import net.thevpc.naru.desktop.ui.SplitPanes;
 import net.thevpc.naru.desktop.ui.TextAreas;
+import net.thevpc.naru.desktop.ui.BrandMark;
+import net.thevpc.naru.desktop.ui.HeaderBar;
+import net.thevpc.naru.desktop.ui.HoverTint;
+import net.thevpc.naru.desktop.ui.TabGlyphs;
 import net.thevpc.nuts.io.NPath;
 
 import javax.swing.BorderFactory;
@@ -113,7 +117,6 @@ public final class MainWindow extends JFrame {
     private PlanPane planPane;
     private NaruSessionModel session;
     private InteractionHost host;
-    private Point dragOffset;
     private boolean maximized;
     private boolean resizeListenerInstalled;
     private final MouseAdapter resizeListener = new MouseAdapter() {
@@ -336,8 +339,8 @@ public final class MainWindow extends JFrame {
     }
 
     private JPanel topBar() {
-        JPanel shell = new JPanel(new BorderLayout());
-        JMenuBar menus = new JMenuBar();
+        HeaderBar shell = new HeaderBar(() -> maximized, this::toggleMaximize);
+        JMenuBar menus = HeaderBar.washedMenuBar();
         JMenu file = new JMenu("File");
         JMenuItem newSession = new JMenuItem("New session…");
         newSession.addActionListener(e -> createSession());
@@ -362,54 +365,35 @@ public final class MainWindow extends JFrame {
         sessionMenu.add(openSelected); sessionMenu.add(rename); sessionMenu.add(closeCurrent); sessionMenu.add(deleteSelected);
         JMenu help = new JMenu("Help"); help.add(new JMenuItem("About NARU"));
         menus.add(file); menus.add(view); menus.add(sessionMenu); menus.add(help);
-        shell.add(menus, BorderLayout.WEST);
+        // The mark leads, then the menus: the bar says what the window is before it says what you
+        // can do in it, and the wash under it starts at the mark and fades away from it.
+        JPanel leading = new JPanel(new BorderLayout(10, 0));
+        leading.setOpaque(false);
+        leading.add(new BrandMark(), BorderLayout.WEST);
+        leading.add(menus, BorderLayout.CENTER);
+        shell.add(leading, BorderLayout.WEST);
 
-        JPanel bar = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 5));
-        bar.setOpaque(false);
-        // Left empty: it is the drag handle for the window. The session it used to name is stated in
-        // the status footer, where the reader looks after a turn ends, and in the taskbar title.
-
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 2));
-        JButton settings = new JButton("⚙"); settings.setToolTipText("Settings"); settings.getAccessibleContext().setAccessibleName("Settings");
-        settings.setFocusable(false); settings.putClientProperty("JButton.buttonType", "toolBarButton");
-        settings.addActionListener(e -> showSettings()); controls.add(settings);
-
-        JButton min = new JButton("—"); min.setToolTipText("Minimize"); min.addActionListener(e -> setState(ICONIFIED));
-        JButton max = new JButton("□"); max.setToolTipText("Maximize / restore"); max.addActionListener(e -> toggleMaximize());
-        JButton quit = new JButton("×"); quit.setToolTipText("Close"); quit.addActionListener(e -> dispatchEvent(new WindowEvent(this, WindowEvent.WINDOW_CLOSING)));
-        for (JButton b : new JButton[]{min, max, quit}) {
-            b.setFocusable(false);
-            b.putClientProperty("JButton.buttonType", "toolBarButton");
-            controls.add(b);
-        }
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 3, 3));
+        controls.setOpaque(false);
+        // Each control keeps the hue of what it does to the window: the interface's own accent for
+        // the settings page, amber for stepping out of the way, green for taking the screen, and
+        // the palette's red for the one control that ends the run. They show only while the pointer
+        // is on them, so none of them can be mistaken for a session's state dot.
+        HoverTint settings = new HoverTint("⚙", UiPalette.accent(), "Settings");
+        settings.addActionListener(e -> showSettings());
+        HoverTint min = new HoverTint("—", UiPalette.PENDING, "Minimize");
+        min.addActionListener(e -> setState(ICONIFIED));
+        HoverTint max = new HoverTint("□", UiPalette.LIVE, "Maximize / restore");
+        max.addActionListener(e -> toggleMaximize());
+        HoverTint quit = new HoverTint("×", UiPalette.ATTENTION, "Close");
+        quit.addActionListener(e -> dispatchEvent(new WindowEvent(this, WindowEvent.WINDOW_CLOSING)));
         // the four controls carry one glyph each: a margin-sized box is wide enough at the font the
         // window was built with and elides the glyph to "…" once the interface size grows
         net.thevpc.naru.desktop.ui.ActionButtons.glyphSized(settings, min, max, quit);
-
-        shell.add(bar, BorderLayout.CENTER); shell.add(controls, BorderLayout.EAST);
-        java.awt.Color separator = javax.swing.UIManager.getColor("Component.borderColor");
-        if (separator == null) separator = javax.swing.UIManager.getColor("Separator.foreground");
-        shell.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, separator == null ? new Color(210, 215, 225) : separator));
-        MouseAdapter drag = new MouseAdapter() {
-            private MouseEvent handled;
-            @Override public void mousePressed(MouseEvent e) { if (e.getButton()==MouseEvent.BUTTON1 && !maximized) { dragOffset=e.getLocationOnScreen(); Point p=getLocation(); dragOffset.translate(-p.x,-p.y); } }
-            @Override public void mouseDragged(MouseEvent e) { if (dragOffset!=null && !maximized) { Point p=e.getLocationOnScreen(); setLocation(p.x-dragOffset.x,p.y-dragOffset.y); } }
-            @Override public void mouseReleased(MouseEvent e) { dragOffset=null; }
-            @Override public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() != 2 || e.getButton() != MouseEvent.BUTTON1) return;
-                // This adapter sits on the bar and on every child of it that is not a control, and one
-                // real double-click travels up from the child under the pointer: the same event object
-                // is offered once to each of them. Answering twice would toggle twice and look dead.
-                if (handled == e) return;
-                handled = e;
-                // Events from the control buttons arrive here by propagation, too; a double-click on
-                // the maximize button has to stay the button's own single press.
-                for (java.awt.Component c = e.getComponent(); c != null && c != shell; c = c.getParent())
-                    if (c instanceof javax.swing.AbstractButton) return;
-                toggleMaximize();
-            }
-        };
-        installDrag(shell, drag);
+        for (JButton b : new JButton[]{settings, min, max, quit}) controls.add(b);
+        shell.add(controls, BorderLayout.EAST);
+        // The Centre of the bar is left to the shell itself: it is the drag handle, and
+        // HeaderBar answers the pointer where its own chrome is not a control.
         return shell;
     }
 
@@ -544,13 +528,6 @@ public final class MainWindow extends JFrame {
                 protected Void doInBackground(){entry.model.session().name(newName).save();return null;}
                 protected void done(){hideLoading();try{get();rebuildSessionList();sessionList.repaint();showActiveSession(newName, entry);}catch(Exception ex){Throwable c=ex.getCause()==null?ex:ex.getCause();net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this,"Rename session",String.valueOf(c.getMessage()));}}
             }.execute();
-    }
-
-    private void installDrag(java.awt.Component c, MouseAdapter drag) {
-        if (c instanceof JMenuBar || c instanceof JButton || c instanceof javax.swing.AbstractButton
-                || c instanceof JList<?>) return;
-        c.addMouseListener(drag); c.addMouseMotionListener(drag);
-        if (c instanceof java.awt.Container container) for (java.awt.Component child : container.getComponents()) installDrag(child, drag);
     }
 
     /**
@@ -1316,6 +1293,19 @@ public final class MainWindow extends JFrame {
         tabs.addTab("Inspect", inspector);
         workbench = new WorkbenchPane(session);
         tabs.addTab("Workspace", workbench);
+        // The four first-level tabs get a shape each. The words stay — they are what selectSideTab and
+        // a screenshot of "the Permissions tab" address — but four grey words in a two-row strip are
+        // hard to tell apart at a glance, and the tooltip says what is behind a tab before it is opened.
+        TabGlyphs.decorate(tabs, tabs.indexOfTab("Plan"), TabGlyphs.Kind.PLAN,
+                "what the run is for, step by step");
+        TabGlyphs.decorate(tabs, tabs.indexOfTab("Permissions"), TabGlyphs.Kind.PERMISSIONS,
+                "what this task may and may not do");
+        TabGlyphs.decorate(tabs, tabs.indexOfTab("Inspect"), TabGlyphs.Kind.INSPECT,
+                "the tools called and the model requests made");
+        TabGlyphs.decorate(tabs, tabs.indexOfTab("Workspace"), TabGlyphs.Kind.WORKSPACE,
+                "the files, the changes and the tags");
+        // One pixel of underline vanishes in a strip that wraps to two rows.
+        tabs.putClientProperty("JTabbedPane.tabSelectionHeight", 3);
         this.sideTabs = tabs;
         return tabs;
     }
