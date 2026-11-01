@@ -428,8 +428,7 @@ public class NaruProjectServiceTest {
     }
 
     @Test
-    public void unknownReferenceIsNotFound() {
-        // the non-throwing lookup says "nothing"…
+    public void unknownReferenceIsNotFound() {        // the non-throwing lookup says "nothing"…
         Assertions.assertTrue(projects.find("nothing-here").isEmpty());
         // …and an operation that must have a target says so
         Assertions.assertThrows(NaruProjectNotFoundException.class,
@@ -439,6 +438,24 @@ public class NaruProjectServiceTest {
     }
 
     // ---------------------------------------------------------------- notifications
+
+    @Test
+    public void removeListenerStopsFurtherDelivery() {
+        AtomicInteger seen = new AtomicInteger();
+        net.thevpc.naru.api.project.NaruProjectListener l =
+                new net.thevpc.naru.api.project.NaruProjectListener() {
+                    @Override
+                    public void onProjectCreated(NaruProject project) {
+                        seen.incrementAndGet();
+                    }
+                };
+        projects.addListener(l);
+        createProject("Listed-1", workspaceDir.resolve("x1").toString(), null);
+        Assertions.assertEquals(1, seen.get());
+        projects.removeListener(l);
+        createProject("Listed-2", workspaceDir.resolve("x2").toString(), null);
+        Assertions.assertEquals(1, seen.get(), "a removed listener is silent");
+    }
 
     @Test
     public void listenersSeeCreateUpdateMoveAndRemoveAndSurviveTheirOwnFailures() {
