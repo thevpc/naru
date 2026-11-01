@@ -54,6 +54,28 @@ public interface NaruSessionBuilder {
     NaruSessionBuilder sessionDir(NPath sessionDir);
 
     /**
+     * The project this session is created under: its folder seeds {@code sessionDir} and
+     * its user seeds {@code user} when those were not stated explicitly (copied at
+     * creation, never read through afterwards). Resolved when the session is built or its
+     * handle is activated; a reference naming no project is a build-time error.
+     *
+     * @param idOrName exact project id, else a case-insensitive normalized project name
+     */
+    default NaruSessionBuilder project(String idOrName) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * The opaque user string persisted with the session and returned by session
+     * summaries. Distinct from {@link #user(NaruPrincipal)}: this is a stored, filterable
+     * label with no authentication or permission meaning. Unset, it takes the project's
+     * user when a project is given, else stays null.
+     */
+    default NaruSessionBuilder user(String user) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * The principal that owns the session. Defaults to the OS user
      * ({@code System.getProperty("user.name")}), so a single-user host needs to
      * say nothing; a host that serves several people sets it explicitly.

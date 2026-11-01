@@ -20,9 +20,14 @@ public final class NaruMoveReport {
     private final Map<String, String> failed;
 
     public NaruMoveReport(Map<String, String> moved, List<String> unchanged, Map<String, String> failed) {
-        this.moved = moved == null ? Map.of() : Map.copyOf(moved);
+        // LinkedHashMap, not Map.copyOf: a move to standalone legitimately carries a null
+        // "to-project" value, and an immutable map that rejects nulls would turn the most
+        // ordinary detach into a NullPointerException
+        this.moved = moved == null ? Map.of()
+                : java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(moved));
         this.unchanged = unchanged == null ? List.of() : List.copyOf(unchanged);
-        this.failed = failed == null ? Map.of() : Map.copyOf(failed);
+        this.failed = failed == null ? Map.of()
+                : java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(failed));
     }
 
     public static NaruMoveReport empty() {

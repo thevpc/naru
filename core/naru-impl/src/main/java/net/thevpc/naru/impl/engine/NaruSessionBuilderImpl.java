@@ -65,6 +65,14 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
      * Owner already bound as an actor; takes precedence over {@link #user}.
      */
     private NaruActor userActor;
+    /**
+     * Project reference (id or name) resolved at build time; supplies initial values only.
+     */
+    private String projectRef;
+    /**
+     * The opaque user string to persist with a newly created session.
+     */
+    private String userSeed;
 
 
 
@@ -123,6 +131,18 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     @Override
     public NaruSessionBuilder sessionDir(NPath sessionDir) {
         this.sessionDir = sessionDir;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder project(String idOrName) {
+        this.projectRef = idOrName;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder user(String user) {
+        this.userSeed = user;
         return this;
     }
 
@@ -282,7 +302,17 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
             printBanner();
         }
         agent.classLoader();
-        NPath dir = sessionDir != null ? sessionDir : agent.defaultSessionDir();
+        // the project reference resolves now: a caller that names a project that does not
+        // exist is told at build time, not silently dropped. The resolution is strict only
+        // at creation; a session that merely keeps a dangling projectId stays readable.
+        net.thevpc.naru.api.project.NaruProject project = resolveProjectRef();
+        // effective-value rule, creation time only: explicit value, else the project's,
+        // else the existing default. After build() the session owns its values outright.
+        NPath dir = sessionDir != null
+                ? sessionDir
+                : (project != null && project.folder() != null
+                ? project.folder()
+                : agent.defaultSessionDir());
         NaruInteraction useInteraction = interaction != null
                 ? interaction
                 : new NaruTerminalInteraction();
@@ -314,6 +344,13 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
             } else {
                 session.initializeHandleId(id, useScope);
             }
+        }
+        if (!resumed) {
+            // seeding belongs to creation only: a resumed session keeps the projectId and
+            // user already stored, which describe the conversation that was saved
+            session._setProjectId(project == null ? null : project.id());
+            String effectiveUser = userSeed != null ? userSeed : (project == null ? null : project.user());
+            session._setUserName(effectiveUser);
         }
         // The configured task belongs to a session being created. A session hydrated from the
         // store already has its own task tree; seeding another here would put a fresh
@@ -349,11 +386,30 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     @Override
     public NaruSessionHandle buildHandle() {
         return new NaruSessionHandleImpl(agent,
-                sessionDir != null ? sessionDir : agent.defaultSessionDir(),
+                // sessionDir may stay null here: the handle resolves the effective
+                // directory at activation, where the project's folder becomes the default
+                sessionDir,
                 interaction, task, id, store, scope, inputBlockPolicy, hibernateAfter,
                 streaming, busyPolicy, turnListener, maxLiveSessions,
                 checkpointEachMessage, capacityTimeout, agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter(),
-                combineModelFilters(agent.modelFilter(), modelFilter));
+                combineModelFilters(agent.modelFilter(), modelFilter),
+                projectRef, userSeed);
+    }
+
+    /**
+     * Resolves the {@code project(idOrName)} reference strictly: naming a project that
+     * does not exist is a build-time (or activation-time) error, not a silent standalone.
+     */
+    private net.thevpc.naru.api.project.NaruProject resolveProjectRef() {
+        if (projectRef == null || projectRef.isBlank()) {
+            return null;
+        }
+        net.thevpc.naru.api.project.NaruProject project = agent.projects().find(projectRef).orNull();
+        if (project == null) {
+            throw new net.thevpc.nuts.util.NIllegalArgumentException(
+                    NMsg.ofC("project not found: %s", projectRef));
+        }
+        return project;
     }
 
     /**

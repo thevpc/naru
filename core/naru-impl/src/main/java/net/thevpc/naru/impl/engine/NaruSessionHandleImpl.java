@@ -32,7 +32,15 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     });
 
     private final NaruWorkspaceImpl agent;
+    /**
+     * The caller's stated session directory, or null: when null and a project is given,
+     * the project's folder becomes the session directory at activation.
+     */
     private final NPath sessionDir;
+    /** Project reference resolved at activation; supplies initial values only. */
+    private final String projectRef;
+    /** The opaque user string seeded on a newly created session. */
+    private final String userSeed;
     private final NaruInteraction customInteraction;
     private final NaruTaskSpec task;
     private final String id;
@@ -60,8 +68,9 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                           Duration capacityTimeout,
                           NaruSessionListener sessionListener, Predicate<NaruDirective> directiveFilter,
                           Predicate<NaruTool> toolFilter, Predicate<NaruToolTag> tagFilter,
-                          NaruModelFilter modelFilter) {
+                          NaruModelFilter modelFilter, String projectRef, String userSeed) {
         this.agent = agent; this.sessionDir = sessionDir; this.customInteraction = interaction;
+        this.projectRef = projectRef; this.userSeed = userSeed;
         this.task = task; this.id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id;
         this.requestedStore = store; this.newScope = scope == null ? NaruSessionScope.PRIVATE : scope;
         this.inputPolicy = inputPolicy == null ? NaruInputBlockPolicy.HIBERNATE : inputPolicy;
@@ -155,7 +164,21 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
 
     private Live activate() {
         TurnInteraction interaction = new TurnInteraction(customInteraction, listener, streaming, this::onInputRequested);
-        NaruSessionImpl session = new NaruSessionImpl(agent, sessionDir, interaction, true,
+        // the effective-value rule at activation, mirroring NaruSessionBuilder.build():
+        // explicit directory, else the project's folder, else the workspace default; a
+        // project reference naming nothing is an error before any state is written
+        net.thevpc.naru.api.project.NaruProject project = null;
+        if (projectRef != null && !projectRef.isBlank()) {
+            project = agent.projects().find(projectRef).orNull();
+            if (project == null) {
+                throw new net.thevpc.nuts.util.NIllegalArgumentException(
+                        NMsg.ofC("project not found: %s", projectRef));
+            }
+        }
+        NPath dir = sessionDir != null
+                ? sessionDir
+                : (project != null && project.folder() != null ? project.folder() : agent.defaultSessionDir());
+        NaruSessionImpl session = new NaruSessionImpl(agent, dir, interaction, true,
                 sessionListener, directiveFilter, toolFilter, tagFilter, modelFilter, requestedStore);
         session.configureTurnPersistence(true, checkpointEachMessage);
         NaruSessionStore store = requestedStore == null ? session.rawSessionStore() : requestedStore;
@@ -164,6 +187,9 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
             session.loadStored(id, scope);
         } else {
             session.initializeHandleId(id, scope);
+            // creation-time seeding only: a resumed session keeps its stored project and user
+            session._setProjectId(project == null ? null : project.id());
+            session._setUserName(userSeed != null ? userSeed : (project == null ? null : project.user()));
             if (task != null) {
                 NaruTask initial = session.newTask(task);
                 initial.unhold();

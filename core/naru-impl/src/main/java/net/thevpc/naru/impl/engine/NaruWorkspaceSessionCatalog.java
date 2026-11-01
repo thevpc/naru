@@ -40,6 +40,15 @@ final class NaruWorkspaceSessionCatalog implements NaruSessionStoreManager {
         this.workspace = workspace;
     }
 
+    /**
+     * The store handle, shared with the project service: one folder, one handle. A second
+     * handle is how the same session used to be listed once per handle and then fail to
+     * delete.
+     */
+    NaruSessionStore rawStore() {
+        return store();
+    }
+
     private NaruSessionStore store() {
         NaruSessionStore current = store;
         if (current != null) {

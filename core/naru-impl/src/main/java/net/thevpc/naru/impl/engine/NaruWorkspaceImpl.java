@@ -8,6 +8,7 @@ import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.model.NaruModelFilter;
+import net.thevpc.naru.api.project.NaruProjectService;
 import net.thevpc.naru.api.store.NaruDataStore;
 import net.thevpc.naru.api.store.NaruDataStoreConfig;
 import net.thevpc.naru.api.store.NaruDataStoreProvider;
@@ -82,6 +83,8 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
      * this class exists to prevent.
      */
     private NaruSessionStoreManager sessionCatalog;
+    private NaruProjectService projects;
+    private NPath projectsDirectory;
     private NPath catalogProjectDirectory;
     private final Object signal = new Object();
     private volatile Thread maintenanceThread;
@@ -511,6 +514,30 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                 catalogProjectDirectory = projectDirectory;
             }
             return sessionCatalog;
+        }
+    }
+
+    /**
+     * The project service, one per workspace directory — the same invalidation rule as
+     * {@link #sessionCatalog()}: both are disk state rooted at the project directory, and
+     * keeping the old one after a directory change would list the previous project's
+     * sessions under the new project's name. It shares the catalog's session-store handle:
+     * the tree and the catalog must be one view of one folder, never two handles that
+     * disagree.
+     */
+    @Override
+    public NaruProjectService projects() {
+        NaruProjectService current = projects;
+        if (current != null && projectsDirectory == projectDirectory) {
+            return current;
+        }
+        synchronized (this) {
+            if (projects == null || projectsDirectory != projectDirectory) {
+                projects = new NaruProjectServiceImpl(this,
+                        ((NaruWorkspaceSessionCatalog) sessionCatalog()).rawStore());
+                projectsDirectory = projectDirectory;
+            }
+            return projects;
         }
     }
 
