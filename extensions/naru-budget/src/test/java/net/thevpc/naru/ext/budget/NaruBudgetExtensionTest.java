@@ -43,7 +43,7 @@ public class NaruBudgetExtensionTest {
         // configureDefaults=true: the extension is found through the same SPI lookup the
         // /budget directive uses, so this also covers registration
         return (NaruSessionImpl) agent.newSession()
-                .sessionDir(projectDir)
+                .directory(projectDir)
                 .interaction(null)
                 .sessionListener(null)
                 .directiveFilter(null)

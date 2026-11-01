@@ -55,7 +55,7 @@ public class NaruProjectInitializationTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         session = agent.newSession()
-                .sessionDir(projectDir)
+                .directory(projectDir)
                 .interaction(interaction)
                 .configureDefaults(false)
                 .sessionListener(null)

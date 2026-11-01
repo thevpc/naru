@@ -40,7 +40,7 @@ public class NaruWorkspaceCatalogTest {
 
     private static NaruSession session(NaruWorkspace agent, NPath projectDir, String id) {
         return agent.newSession()
-                .sessionDir(projectDir)
+                .directory(projectDir)
                 .id(id)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))

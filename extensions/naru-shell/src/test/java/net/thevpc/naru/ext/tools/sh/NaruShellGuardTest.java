@@ -41,7 +41,7 @@ public class NaruShellGuardTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
         return agent.newSession()
-                .sessionDir(dir)
+                .directory(dir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

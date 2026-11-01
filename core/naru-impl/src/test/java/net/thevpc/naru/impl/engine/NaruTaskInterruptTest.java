@@ -311,7 +311,7 @@ public class NaruTaskInterruptTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-interrupt-" + System.nanoTime()));
         NaruSession session = agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(new RecordingInteraction())
                 .configureDefaults(false)
                 .sessionListener(null)
@@ -442,7 +442,7 @@ public class NaruTaskInterruptTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-interrupt-e2e-" + System.nanoTime()));
         NaruSession session = agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(interaction)
                 .configureDefaults(false)
                 .sessionListener(null)

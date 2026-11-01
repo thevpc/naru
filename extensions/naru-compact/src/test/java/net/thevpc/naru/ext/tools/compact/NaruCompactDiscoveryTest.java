@@ -40,7 +40,7 @@ class NaruCompactDiscoveryTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-compact-discovery-" + System.nanoTime()));
         session = agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(null)
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)

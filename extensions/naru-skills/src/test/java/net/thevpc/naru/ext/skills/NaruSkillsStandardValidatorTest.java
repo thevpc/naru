@@ -216,7 +216,7 @@ public class NaruSkillsStandardValidatorTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.of(tmp));
         NaruSession session = agent.newSession()
-                .sessionDir(NPath.of(tmp))
+                .directory(NPath.of(tmp))
                 .interaction(null)
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)

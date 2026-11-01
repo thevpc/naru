@@ -36,7 +36,7 @@ public class NaruActorThreadingTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
         return agent.newSession()
-                .sessionDir(dir)
+                .directory(dir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)
@@ -134,7 +134,7 @@ public class NaruActorThreadingTest {
         NPath dir = NPath.ofTempFolder("naru-actor-builder-" + System.nanoTime());
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
-        NaruSession s = agent.newSession().sessionDir(dir).userActor(owner).build();
+        NaruSession s = agent.newSession().directory(dir).userActor(owner).build();
         assertEquals(owner, s.userActor());
         assertEquals("carol", s.user().id());
     }

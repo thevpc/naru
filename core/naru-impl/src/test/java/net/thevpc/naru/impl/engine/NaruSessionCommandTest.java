@@ -74,7 +74,7 @@ public class NaruSessionCommandTest {
         NPath dir = NPath.ofTempFolder("naru-session-command");
         agent.projectDirectory(dir);
         NaruSession s = agent.newSession()
-                .sessionDir(dir)
+                .directory(dir)
                 .interaction(host)
                 .configureDefaults(false)
                 .sessionListener(null)

@@ -344,7 +344,7 @@ This is not fussiness. A task is deregistered as soon as it ends, so the object 
 hand may be the only remaining record of what happened — and a record that a later write
 can edit is not a record.
 
-The *descriptive* setters (`sessionDir`, `taskMode`, `promptMode`, …) stay live, because
+The *descriptive* setters (`directory`, `taskMode`, `promptMode`, …) stay live, because
 those describe the task rather than its run. So `NaruTask` is not a value type: do not
 cache one expecting immutability. Ask it again when you need to know.
 

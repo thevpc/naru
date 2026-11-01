@@ -83,7 +83,7 @@ concatenation.
 | Precedence | Kind | Path | Visibility | Trust |
 |---|---|---|---|---|
 | 10 | `PROJECT_PRIVATE` | `<project>/.naru/local/skills` | private | native |
-| 100 + distance | `FOLDER_PUBLIC` | `<dir>/.naru/skills` for each `dir` from `sessionDir` down to `workingDir` | public | native |
+| 100 + distance | `FOLDER_PUBLIC` | `<dir>/.naru/skills` for each `dir` from `directory` down to `workingDir` | public | native |
 | 5000 | `USER` | `~/.naru/skills` | private | native |
 | 6000 | `FOREIGN_PROJECT` | `<project>/.claude/skills` | public | opt-in |
 | 6001 | `FOREIGN_PROJECT` | `<project>/.agents/skills` | public | opt-in |

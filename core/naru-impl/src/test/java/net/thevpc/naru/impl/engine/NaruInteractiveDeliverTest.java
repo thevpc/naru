@@ -17,7 +17,6 @@ import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruStreamChunk;
 import net.thevpc.naru.api.model.NaruStreamHandler;
 import net.thevpc.naru.api.model.NaruThinkingExtraction;
-import net.thevpc.naru.api.scheduler.NaruTaskMode;
 import net.thevpc.naru.api.store.NaruSessionScope;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
@@ -263,7 +262,7 @@ public class NaruInteractiveDeliverTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
         NaruSession session = agent.newSession()
-                .sessionDir(dir)
+                .directory(dir)
                 .id(id)
                 .scope(NaruSessionScope.PRIVATE)
                 .interaction(host)

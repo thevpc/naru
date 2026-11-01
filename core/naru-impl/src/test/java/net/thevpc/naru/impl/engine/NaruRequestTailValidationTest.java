@@ -56,7 +56,7 @@ public class NaruRequestTailValidationTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-tail-" + System.nanoTime()));
         session = agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)
@@ -186,7 +186,7 @@ public class NaruRequestTailValidationTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-tail-strict-" + System.nanoTime()));
         NaruSession strictSession = agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

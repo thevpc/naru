@@ -43,7 +43,6 @@ import org.junit.jupiter.api.Timeout;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -123,7 +122,7 @@ public class NaruToolCallLifecycleTest {
         dir.mkdirs();
         agent.projectDirectory(dir);
         NaruSession s = agent.newSession()
-                .sessionDir(dir)
+                .directory(dir)
                 .interaction(interaction)
                 .configureDefaults(false)
                 .sessionListener(null)
@@ -382,7 +381,7 @@ public class NaruToolCallLifecycleTest {
         dir.mkdirs();
         agent.projectDirectory(dir);
         NaruSession s = agent.newSession()
-                .sessionDir(dir)
+                .directory(dir)
                 .interaction(stream)
                 .configureDefaults(false)
                 .sessionListener(null)

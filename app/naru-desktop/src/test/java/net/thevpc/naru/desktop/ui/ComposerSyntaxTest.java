@@ -58,7 +58,7 @@ class ComposerSyntaxTest {
             NPath dir = NPath.ofTempFolder("naru-desktop-syntax");
             NaruWorkspace agent = NaruWorkspace.of();
             agent.projectDirectory(dir);
-            session = agent.newSession().sessionDir(dir).configureDefaults(false).build();
+            session = agent.newSession().directory(dir).configureDefaults(false).build();
             session.registry().registerDirectiveProvider(
                     new net.thevpc.naru.impl.registry.NaruBuiltinDirectiveProvider());
         }

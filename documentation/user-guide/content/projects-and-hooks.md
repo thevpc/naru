@@ -76,7 +76,7 @@ ordinary events, so a task can observe any of them with `/on`:
 
 | Event            | Fired when | Payload |
 |------------------|------------|---------|
-| `session-start`  | the session starts serving, once | `sessionDir`, `workingDir` |
+| `session-start`  | the session starts serving, once | `directory`, `workingDir` |
 | `task-spawn`     | a task is created (the historical event is `TaskSpawned`) | resolved spawn sets and provenance |
 | `sessiondir-change` | the project root changes through `/sessiondir` | `oldSessionDir`, `newSessionDir` |
 

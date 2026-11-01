@@ -184,7 +184,7 @@ public class NaruStreamInputTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-stream-input"));
         return (NaruSessionImpl) agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(interaction)
                 .configureDefaults(false)
                 .sessionListener(null)

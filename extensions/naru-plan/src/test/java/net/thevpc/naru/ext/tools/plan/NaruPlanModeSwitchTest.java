@@ -52,7 +52,7 @@ public class NaruPlanModeSwitchTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-plan-mode-switch"));
         session = agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(null)
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)

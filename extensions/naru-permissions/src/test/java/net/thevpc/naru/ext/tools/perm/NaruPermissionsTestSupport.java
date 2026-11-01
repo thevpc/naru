@@ -28,7 +28,7 @@ final class NaruPermissionsTestSupport {
         // directory must be set before the session is constructed
         agent.projectDirectory(dir);
         return (NaruSessionImpl) agent.newSession()
-                .sessionDir(dir)
+                .directory(dir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

@@ -19,7 +19,6 @@ import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.Assertions;
@@ -59,7 +58,7 @@ public class NaruGoDirectiveTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-go-" + System.nanoTime()));
         session = agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

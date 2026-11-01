@@ -50,7 +50,7 @@ class NaruCompactCompactionStateTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-compact-state"));
         session = agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(null)
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)

@@ -46,7 +46,7 @@ public class RegistrationWiringTest {
         agent.projectDirectory(NPath.ofTempFolder("naru-reg-wiring-" + System.nanoTime()));
         // configureDefaults=false: no SPI provider discovery, no network, no real models
         session = agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(null)
                 .configureDefaults(false)
                 .sessionListener(new NaruSessionListener() {

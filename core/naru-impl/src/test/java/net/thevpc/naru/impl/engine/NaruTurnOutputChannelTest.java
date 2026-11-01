@@ -216,7 +216,7 @@ public class NaruTurnOutputChannelTest {
         dir.mkdirs();
         agent.projectDirectory(dir);
         NaruSession s = agent.newSession()
-                .sessionDir(dir)
+                .directory(dir)
                 .interaction(recorder)
                 .configureDefaults(false)
                 .sessionListener(null)

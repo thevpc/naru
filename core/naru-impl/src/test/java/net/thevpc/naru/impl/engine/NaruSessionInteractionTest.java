@@ -65,7 +65,7 @@ public class NaruSessionInteractionTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-interaction-" + name));
         return (NaruSessionImpl) agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(interaction)
                 .configureDefaults(false)
                 .sessionListener(null)

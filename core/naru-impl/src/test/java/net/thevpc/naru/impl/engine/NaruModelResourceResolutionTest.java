@@ -87,7 +87,7 @@ public class NaruModelResourceResolutionTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         NaruSession session = agent.newSession()
-                .sessionDir(projectDir)
+                .directory(projectDir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

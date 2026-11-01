@@ -75,7 +75,7 @@ public class NaruSkillsRootsTest {
         workspace.projectDirectory(projectDir);
         outputs.clear();
         session = workspace.newSession()
-                .sessionDir(projectDir)
+                .directory(projectDir)
                 .interaction(new NaruStreamInteraction(o -> outputs.add(o)))
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)
@@ -290,7 +290,7 @@ public class NaruSkillsRootsTest {
         NaruWorkspace a = NaruWorkspace.of();
         a.projectDirectory(projectDir);
         NaruSession fresh = a.newSession()
-                .sessionDir(projectDir)
+                .directory(projectDir)
                 .interaction(new NaruStreamInteraction(freshOutputs::add))
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)
@@ -321,7 +321,7 @@ public class NaruSkillsRootsTest {
         NaruWorkspace a = NaruWorkspace.of();
         a.projectDirectory(projectDir);
         NaruSession fresh = a.newSession()
-                .sessionDir(projectDir)
+                .directory(projectDir)
                 .interaction(new NaruStreamInteraction(freshOutputs::add))
                 .sessionListener(NOOP_LISTENER)
                 .directiveFilter(null)

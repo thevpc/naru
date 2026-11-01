@@ -71,7 +71,7 @@ public class NaruSessionInputApiTest {
         NPath dir = NPath.ofTempFolder("naru-session-input-api");
         agent.projectDirectory(dir);
         return agent.newSession()
-                .sessionDir(dir)
+                .directory(dir)
                 .interaction(silentHost(seen))
                 .configureDefaults(false)
                 .sessionListener(null)

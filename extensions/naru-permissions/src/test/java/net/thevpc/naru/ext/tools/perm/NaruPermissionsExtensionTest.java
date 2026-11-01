@@ -39,7 +39,7 @@ public class NaruPermissionsExtensionTest {
         // configureDefaults=true: this is how a user session is built, and it is the
         // only path that proves SPI discovery and open() ordering together
         return agent.newSession()
-                .sessionDir(agent.projectDirectory())
+                .directory(agent.projectDirectory())
                 .interaction(null)
                 .sessionListener(null)
                 .directiveFilter(null)

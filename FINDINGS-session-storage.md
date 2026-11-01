@@ -5,7 +5,7 @@ Read before any change. Facts, with the code that establishes each one.
 ## 1. `.naru/local/sessions/snapshot.tson` — NOT a pointer, and nothing reads it
 
 It is a **whole older-format session state document**, not an index. Shape (2.7K in this
-repo): `uuid`, `name`, `creationDate`, `modificationDate`, `model`, `sessionDir`,
+repo): `uuid`, `name`, `creationDate`, `modificationDate`, `model`, `directory`,
 `workingDir`, and a `tasks` array holding **full inline task elements** (including
 `history`, `frames` inline). Its `uuid` is `6442acf3-…`, different from
 `.naru/local/sessions/snapshot/session.tson`'s `6c602730-…`.

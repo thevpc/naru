@@ -41,7 +41,7 @@ public class NaruSessionStoreManagerTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
         return agent.newSession()
-                .sessionDir(projectDir)
+                .directory(projectDir)
                 .interaction(new net.thevpc.naru.impl.interaction.NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

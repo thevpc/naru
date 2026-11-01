@@ -24,7 +24,6 @@ import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
-import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -57,7 +56,7 @@ public class NaruAccessEnforcementTest {
         NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(dir);
         return agent.newSession()
-                .sessionDir(dir)
+                .directory(dir)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)

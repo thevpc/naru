@@ -51,7 +51,7 @@ public interface NaruSessionBuilder {
      * The directory this session uses to resolve project-relative files and skills. Defaults to the agent's workspace directory, or the
      * user's home directory when the agent has none.
      */
-    NaruSessionBuilder sessionDir(NPath sessionDir);
+    NaruSessionBuilder directory(NPath sessionDir);
 
     /**
      * The principal that owns the session. Defaults to the OS user
