@@ -1,2 +1,3 @@
 net.thevpc.naru.impl.store.NaruFileSessionStoreFactory
 net.thevpc.naru.impl.store.NaruFileDataStoreProvider
+net.thevpc.naru.impl.store.NaruFileProjectStoreFactory
