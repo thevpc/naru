@@ -31,6 +31,7 @@
         <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-routines</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-plan</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-sessions</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-projects</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-tags</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-tasks</artifactId><version>1.1.0.0</version></dependency>
         <dependency><groupId>net.thevpc.naru.extensions</groupId><artifactId>naru-llm-models</artifactId><version>1.1.0.0</version></dependency>

@@ -40,7 +40,9 @@ import java.util.List;
  *   --vision-model &lt;name&gt;   Vision model for inspect_image (default: qwen2.5vl:7b)
  *   --provider &lt;name&gt;       Provider: ollama (default: ollama)
  *   --provider-url &lt;url&gt;    Provider base URL (default: http://localhost:11434)
- *   --project-dir &lt;path&gt;    Project directory tools operate in (default: .)
+ *   --directory &lt;path&gt;      Workspace folder holding the .naru store (default: .)
+ *   --project &lt;id|name&gt;     Create the new session under that project
+ *   --user &lt;name&gt;           Opaque user label for the new session
  *   --max-steps &lt;n&gt;         Max agent loop iterations (default: 20)
  *   --no-vision             Disable the inspect_image tool
  *   --quiet                 Suppress step-by-step output
@@ -49,7 +51,9 @@ import java.util.List;
  */
 public class NaruCmdLineProcessor {
 
-    private String projectDir = ".";
+    private String workspaceDir = ".";
+    private String projectRef;
+    private String userRef;
     private String sessionId;
     private boolean help = false;
     private boolean helpCommands = false;
@@ -70,7 +74,9 @@ public class NaruCmdLineProcessor {
                 .when("--tasks", "-t").asEntry(a -> precommands.add(a.value()))
                 .when("--file", "-f").asEntry(a -> precommands.add("/source " + a.value()))
                 .when("--interactive", "-i").asFlag(a -> forceInteractive = a.booleanValue())
-                .when("--project", "-d").asEntry(a -> projectDir = a.value())
+                .when("--directory", "-d").asEntry(a -> workspaceDir = a.value())
+                .when("--project").asEntry(a -> projectRef = a.value())
+                .when("--user").asEntry(a -> userRef = a.value())
                 .when("--session", "-s").asEntry(a -> sessionId = a.value())
                 .when("--extension", "-e").asEntry(a -> extensions.add(a.value()))
                 .when("--help", "-h").asFlag(a -> {
@@ -91,6 +97,11 @@ public class NaruCmdLineProcessor {
 
     // ── Run ───────────────────────────────────────────────────────────────────
 
+    /** The workspace root for this run: the directory holding the {@code .naru} store. */
+    private NPath workspaceDirectory() {
+        return NPath.of(workspaceDir);
+    }
+
     public void run() {
         if (help) {
             if (helpCommands) {
@@ -100,15 +111,15 @@ public class NaruCmdLineProcessor {
             }
             return;
         }
-        NaruWorkspace runner = createWorkspace(NPath.of(projectDir));
+        NaruWorkspace runner = createWorkspace(workspaceDirectory());
         boolean interactive = (forceInteractive == null ? precommands.isEmpty() : forceInteractive);
         if (interactive) {
-            NaruSession session = runner.newSession()
+            NaruSession session = applySessionCreationOptions(runner.newSession()
                     .statements(precommands.toArray(new String[0]))
                     .interactive()
                     .banner(true)
                     .richTerm(true)
-                    .id(sessionId)
+                    .id(sessionId))
                     .build();
             printRestoredConversation(session);
             session.start().waitFor();
@@ -117,9 +128,9 @@ public class NaruCmdLineProcessor {
                 throw new NIllegalArgumentException(NMsg.ofC("no task specified"));
             }
             try {
-                NaruSession session = runner.newSession()
+                NaruSession session = applySessionCreationOptions(runner.newSession()
                         .statements(precommands.toArray(new String[0]))
-                        .id(sessionId)
+                        .id(sessionId))
                         .build();
                 printRestoredConversation(session);
                 session.start().waitFor();
@@ -127,6 +138,21 @@ public class NaruCmdLineProcessor {
                 // just exit
             }
         }
+    }
+
+    /**
+     * {@code --project} and {@code --user} apply at session creation: the project seeds
+     * the session directory and user when not otherwise stated, and a missing project
+     * fails the build. Reopening an existing session keeps its stored values.
+     */
+    private NaruSessionBuilder applySessionCreationOptions(NaruSessionBuilder builder) {
+        if (projectRef != null && !projectRef.isBlank()) {
+            builder = builder.project(projectRef);
+        }
+        if (userRef != null && !userRef.isBlank()) {
+            builder = builder.user(userRef);
+        }
+        return builder;
     }
 
     /**
@@ -177,9 +203,12 @@ public class NaruCmdLineProcessor {
                         "  -t|--task <text>          task to run\n" +
                         "  -f|--file <text>          task file to run\n" +
                         "  -i|--interactive          force interactive mode\n" +
-                        "  -d|--project <directory>  select project folder\n" +
-                "  -s|--session <uuid>     reopen a session saved in that project's store and\n" +
-                "                            reprint its conversation before the prompt\n" +
+                        "  -d|--directory <path>     workspace folder holding the .naru store (default: .)\n" +
+                        "  --project <id|name>       create the new session under that project:\n" +
+                        "                            its folder and user seed the session (see /project)\n" +
+                        "  --user <name>             opaque user label stored with the new session\n" +
+                        "  -s|--session <uuid>     reopen a session saved in that project's store and\n" +
+                        "                            reprint its conversation before the prompt\n" +
                         "  -p|--profile <name|id>    load a profile (a bundle of extensions);\n" +
                         "                            repeatable. bare names resolve under\n" +
                         "                            net.thevpc.naru.profiles:naru-profile-<name>\n" +
@@ -188,9 +217,10 @@ public class NaruCmdLineProcessor {
                         "  --help, -h             Show this help\n\n" +
                         "Examples:\n" +
                         "  naru --task \"What files are in the project?\"\n" +
-                        "  naru -t \"/model use qwen2.5-coder:7b\"  -t \"Fix the bug in MyApp.java\" --project ./my-app" +
-                        "  naru -t \"/model use qwen2.5-coder:7b\"  -f \"myscript.naru\" --project ./my-app" +
-                        "  naru --task \"Verify the output.png matches input.tson\" --project ./my-app\n" +
+                        "  naru -t \"/model use qwen2.5-coder:7b\" -t \"Fix the bug in MyApp.java\" -d ./my-app\n" +
+                        "  naru -t \"/model use qwen2.5-coder:7b\" -f \"myscript.naru\" -d ./my-app\n" +
+                        "  naru --task \"Verify the output.png matches input.tson\" -d ./my-app\n" +
+                        "  naru --project backend --task \"Add pagination to the list\"\n" +
                         "  naru --profile dev --task \"Explore the repo with the full dev harness\"\n" +
                         "  naru --extension net.thevpc.naru:naru-budget --task \"Show my spend\"\n"
         );
@@ -220,12 +250,12 @@ public class NaruCmdLineProcessor {
 
     public void printHelpCommands(String[] helpCommandsArgs) {
         openStandaloneWorkspace();
-        NPath projectDir = NPath.ofTempFolder("naru-helpgen-" + System.nanoTime());
+        NPath helpWorkspaceDir = NPath.ofTempFolder("naru-helpgen-" + System.nanoTime());
         // built through the same profile/extension path as a real run, so the generated
         // manual lists whatever a configured naru would actually offer
-        NaruWorkspace agent = createWorkspace(projectDir);
+        NaruWorkspace agent = createWorkspace(helpWorkspaceDir);
         NaruSession session = agent.newSession()
-                .sessionDir(projectDir)
+                .sessionDir(helpWorkspaceDir)
                 .interaction(new NaruStreamInteraction(o -> {
                     // help renders through the directive result; session output is discarded
                 }))

@@ -26,6 +26,7 @@
         <module>naru-budget</module>
         <module>naru-compact</module>
         <module>naru-sessions</module>
+        <module>naru-projects</module>
         <module>naru-routines</module>
         <module>naru-plan</module>
         <module>naru-tasks</module>
