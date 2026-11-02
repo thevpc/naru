@@ -65,6 +65,12 @@ public class NaruFileSessionStore implements NaruSessionStore {
      */
     private static final Set<String> RESERVED_DIRS = Set.of(".versions", "audit");
 
+    /** Where the global {@code Session N} counter lives, at the store root. */
+    private static final String SESSION_COUNTER_FILE = "session-counter";
+
+    /** The shape of a placeholder name, used only to seed a missing counter file. */
+    private static final Pattern PLACEHOLDER_SESSION_NAME = Pattern.compile("^Session (\\d+)$");
+
     private final NaruStoreConfig config;
     private final NPath publicRoot;
     private final NPath privateRoot;
@@ -238,6 +244,58 @@ public class NaruFileSessionStore implements NaruSessionStore {
         if (!createIfAbsent(data, scope)) {
             throw new IllegalStateException("session already exists: " + data.uuid());
         }
+    }
+
+    /**
+     * The number is global, not per project, so it lives at the store root rather than
+     * inside any session folder — moving a session between projects must not change its
+     * placeholder or let a second session claim the same {@code Session N}.
+     */
+    @Override
+    public long nextSessionNumber() {
+        NPath root = config.storeDir();
+        return withMetadataLock(root, () -> {
+            NPath counter = root.resolve(SESSION_COUNTER_FILE);
+            long next = readSessionCounter(counter) + 1;
+            try {
+                NaruFileIo.writeAtomic(counter, Long.toString(next));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            return next;
+        });
+    }
+
+    /**
+     * The counter as it currently stands. A missing or unreadable file is seeded from the
+     * highest {@code Session N} already on disk, so a store created before counters existed
+     * — or one whose counter was lost — resumes above the names in use rather than colliding
+     * with them. Never decremented, and numbers are never reclaimed from a deleted session.
+     */
+    private long readSessionCounter(NPath counter) {
+        if (NaruFileIo.isFile(counter)) {
+            try {
+                return Math.max(0, Long.parseLong(NaruFileIo.readString(counter).trim()));
+            } catch (Exception ignored) {
+                // fall through to the scan below
+            }
+        }
+        long max = 0;
+        for (NaruSessionSummary s : headerRows()) {
+            String name = s.name();
+            if (name == null) {
+                continue;
+            }
+            Matcher m = PLACEHOLDER_SESSION_NAME.matcher(name);
+            if (m.matches()) {
+                try {
+                    max = Math.max(max, Long.parseLong(m.group(1)));
+                } catch (NumberFormatException ignored) {
+                    // a name too large for a long cannot be one this store handed out
+                }
+            }
+        }
+        return max;
     }
 
     @Override

@@ -119,6 +119,9 @@ public class NaruCmdLineProcessor {
                     .interactive()
                     .banner(true)
                     .richTerm(true)
+                    // the terminal is a first-party host: it has no titles of its own, so a
+                    // session it opens is expected to name itself
+                    .autoTitle(true)
                     .id(sessionId))
                     .build();
             printRestoredConversation(session);
@@ -130,6 +133,7 @@ public class NaruCmdLineProcessor {
             try {
                 NaruSession session = applySessionCreationOptions(runner.newSession()
                         .statements(precommands.toArray(new String[0]))
+                        .autoTitle(true)
                         .id(sessionId))
                         .build();
                 printRestoredConversation(session);

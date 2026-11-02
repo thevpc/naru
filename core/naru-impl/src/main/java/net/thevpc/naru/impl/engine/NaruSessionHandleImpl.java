@@ -59,6 +59,10 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     private final Predicate<NaruTool> toolFilter;
     private final Predicate<NaruToolTag> tagFilter;
     private final NaruModelFilter modelFilter;
+    /** A name the host chose at creation, or null for a placeholder. */
+    private final String sessionName;
+    /** Whether this session may ask a model for a title; see {@code NaruSessionBuilder#autoTitle}. */
+    private final Boolean autoTitle;
 
     NaruSessionHandleImpl(NaruWorkspaceImpl agent, NPath sessionDir, NaruInteraction interaction,
                           NaruTaskSpec task, String id, NaruSessionStore store, NaruSessionScope scope,
@@ -68,9 +72,11 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                           Duration capacityTimeout,
                           NaruSessionListener sessionListener, Predicate<NaruDirective> directiveFilter,
                           Predicate<NaruTool> toolFilter, Predicate<NaruToolTag> tagFilter,
-                          NaruModelFilter modelFilter, String projectRef, String userSeed) {
+                          NaruModelFilter modelFilter, String projectRef, String userSeed,
+                          String sessionName, Boolean autoTitle) {
         this.agent = agent; this.sessionDir = sessionDir; this.customInteraction = interaction;
         this.projectRef = projectRef; this.userSeed = userSeed;
+        this.sessionName = sessionName; this.autoTitle = autoTitle;
         this.task = task; this.id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id;
         this.requestedStore = store; this.newScope = scope == null ? NaruSessionScope.PRIVATE : scope;
         this.inputPolicy = inputPolicy == null ? NaruInputBlockPolicy.HIBERNATE : inputPolicy;
@@ -181,6 +187,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         NaruSessionImpl session = new NaruSessionImpl(agent, dir, interaction, true,
                 sessionListener, directiveFilter, toolFilter, tagFilter, modelFilter, requestedStore);
         session.configureTurnPersistence(true, checkpointEachMessage);
+        session.setAutoTitleOverride(autoTitle);
         NaruSessionStore store = requestedStore == null ? session.rawSessionStore() : requestedStore;
         NaruSessionScope scope = store.scopeOf(id).orElse(newScope);
         if (store.exists(id, scope)) {
@@ -190,6 +197,9 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
             // creation-time seeding only: a resumed session keeps its stored project and user
             session._setProjectId(project == null ? null : project.id());
             session._setUserName(userSeed != null ? userSeed : (project == null ? null : project.user()));
+            if (sessionName != null) {
+                session.rename(sessionName, NaruSessionNameSource.USER);
+            }
             if (task != null) {
                 NaruTask initial = session.newTask(task);
                 initial.unhold();

@@ -261,8 +261,8 @@ public class NaruBudgetDirectiveTest {
 
     @Test
     public void reportGroupsByProviderByDefault() {
-        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
-        session.fireModelCallUsage(null, new NaruModelKey("beta", "m2"), 200, 20, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("beta", "m2"), 200, 20, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String out = String.valueOf(report().successValue());
         Assertions.assertTrue(out.contains("provider: alpha"), out);
@@ -276,7 +276,7 @@ public class NaruBudgetDirectiveTest {
      */
     @Test
     public void groupByTakesAFlatLabelTuple() {
-        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String out = String.valueOf(reportWith("--group-by=provider,model").successValue());
         Assertions.assertTrue(out.contains("provider,model: alpha, m1"), out);
@@ -284,8 +284,8 @@ public class NaruBudgetDirectiveTest {
 
     @Test
     public void providerFilterNarrowsTheReport() {
-        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
-        session.fireModelCallUsage(null, new NaruModelKey("beta", "m2"), 200, 20, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("beta", "m2"), 200, 20, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String out = String.valueOf(reportWith("--provider=alpha").successValue());
         Assertions.assertTrue(out.contains("provider: alpha"), out);
@@ -302,7 +302,7 @@ public class NaruBudgetDirectiveTest {
         service().trackTransaction(new NaruTokenTransaction(other, "other-session", "u",
                 new NaruModelConfig(new NaruModelKey("alpha", "m1")),
                 500, 50, -1, -1, Instant.now(), NDuration.ofMillis(5)));
-        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String scoped = String.valueOf(report().successValue());
         Assertions.assertTrue(scoped.contains("calls 1"),
@@ -355,7 +355,7 @@ public class NaruBudgetDirectiveTest {
     public void aPricedCallCarriesItsCostIntoTheReport() {
         reportWith("price set alpha input=1 output=2");
         session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"),
-                1_000_000, 1_000_000, -1, -1, NDuration.ofMillis(5));
+                1_000_000, 1_000_000, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String out = String.valueOf(report().successValue());
         // 1M input at 1.0/1M plus 1M output at 2.0/1M is exactly 3.0
@@ -364,7 +364,7 @@ public class NaruBudgetDirectiveTest {
 
     @Test
     public void anUnpricedCallIsAnnouncedNotSilentlyZero() {
-        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String out = String.valueOf(report().successValue());
         Assertions.assertTrue(out.contains("unpriced"), out);
@@ -377,7 +377,7 @@ public class NaruBudgetDirectiveTest {
      */
     @Test
     public void anAbsentGroupingKeyBecomesTheNoneBucket() {
-        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String out = String.valueOf(reportWith("--group-by=task-name").successValue());
         Assertions.assertTrue(out.contains("task-name: (none)"), out);
@@ -385,7 +385,7 @@ public class NaruBudgetDirectiveTest {
 
     @Test
     public void aPeriodExcludesCallsOutsideIt() {
-        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String future = String.valueOf(reportWith("--from=2999-01-01T00:00:00Z").successValue());
         Assertions.assertTrue(future.contains("no model calls in scope"), future);
@@ -396,7 +396,7 @@ public class NaruBudgetDirectiveTest {
 
     @Test
     public void cacheHitIsNaWhenNoCallReportedCache() {
-        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String out = String.valueOf(report().successValue());
         Assertions.assertTrue(out.contains("cache-hit n/a"), out);
@@ -404,8 +404,8 @@ public class NaruBudgetDirectiveTest {
 
     @Test
     public void cacheHitIsMarkedPartialWhenOnlySomeCallsReportedCache() {
-        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, 0, 0, NDuration.ofMillis(5));
-        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, 0, 0, java.util.Map.of(), NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"), 100, 10, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String out = String.valueOf(report().successValue());
         Assertions.assertTrue(out.contains("partial"),
@@ -434,7 +434,7 @@ public class NaruBudgetDirectiveTest {
     @Test
     public void aLaterPriceChangeDoesNotRewritePastCost() {
         session.fireModelCallUsage(null, new NaruModelKey("alpha", "m1"),
-                1_000_000, 0, -1, -1, NDuration.ofMillis(5));
+                1_000_000, 0, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         reportWith("price set alpha input=5 output=5");
 
@@ -598,7 +598,7 @@ public class NaruBudgetDirectiveTest {
     @Test
     public void reportSurvivesAModelWithNoContextSize() {
         session.fireModelCallUsage(null, new NaruModelKey("test", "sizeless"),
-                100, 10, -1, -1, NDuration.ofMillis(5));
+                100, 10, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         NaruStmtResult result = report(NaruMessage.system("hello"));
 
@@ -634,7 +634,7 @@ public class NaruBudgetDirectiveTest {
     @Test
     public void explainShowsTheEstimateAgainstWhatWasActuallyReported() {
         session.fireModelCallUsage(null, new NaruModelKey("test", "calibrated"),
-                400, 40, -1, -1, NDuration.ofMillis(5));
+                400, 40, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String out = String.valueOf(reportWith("--explain").successValue());
         Assertions.assertTrue(out.contains("estimated tokens"),
@@ -650,7 +650,7 @@ public class NaruBudgetDirectiveTest {
     @Test
     public void theDefaultReportDoesNotGuess() {
         session.fireModelCallUsage(null, new NaruModelKey("test", "calibrated"),
-                400, 40, -1, -1, NDuration.ofMillis(5));
+                400, 40, -1, -1, java.util.Map.of(), NDuration.ofMillis(5));
 
         String out = String.valueOf(report().successValue());
         Assertions.assertFalse(out.contains("estimated tokens"),

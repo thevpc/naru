@@ -57,6 +57,17 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             }
         });
 
+        register(new AbstractSubCommand("title", NText.ofPlain("generate a session title with a model")
+                , new SubCommandHelp("[--id=<prefix>|--name=<name>] [--model=<provider/model>]",
+                        "regenerate the session's name from its stored history and keep it; "
+                                + "overrides any existing name")
+        ) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                return executeTitle(context, cmdLine);
+            }
+        });
+
         register(new AbstractSubCommand("public", NText.ofPlain("change session visibility to public"),
                 new SubCommandHelp("[--id=<prefix>|--name=<name>]", "make a session public; defaults to the current session")
         ) {
@@ -117,8 +128,8 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("save", NText.ofPlain("save session")
-                , new SubCommandHelp("[<name>]", "save current session with optional name.\nwhen no name was provided, and this is a new session, a generated name will be guessed using the current model.\n when name is provided, it will be used to set name or rename the session.")
-                , new SubCommandHelp("[--id=<prefix>|--name=<name>]", "save a running session selected by id or name; defaults to the current session")
+                , new SubCommandHelp("[--id=<prefix>|--name=<name>]", "write the current session to the store; "
+                        + "names belong to /session rename and /session title")
         ) {
             @Override
             public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
@@ -200,6 +211,8 @@ public class NaruSessionDirective extends NaruDirectiveBase {
     private static final class TargetArgs {
         String id;
         String name;
+        /** {@code --model=} for {@code /session title}; ignored by every other subcommand. */
+        String model;
         String error;
         final List<String> positionals = new ArrayList<>();
 
@@ -231,7 +244,10 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                 if (NBlankable.isBlank(n) && saved != null) {
                     n = saved.getName();
                 }
-                return NBlankable.isBlank(n) ? "NO_NAME" : n;
+                // A session always has a name now, so the only way to reach here is a live
+                // session that was stopping while it was being resolved: show the uuid rather
+                // than a sentinel, which is the one thing the label is allowed to fall back to.
+                return NBlankable.isBlank(n) ? uuid : n;
             }
         }
 
@@ -251,6 +267,13 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                     cmdLine.next();
                     ta.name = optionValue(cmdLine, a);
                     if (NBlankable.isBlank(ta.name)) {
+                        ta.error = "missing value for " + a.image();
+                        return ta;
+                    }
+                } else if (a.key().equals("--model")) {
+                    cmdLine.next();
+                    ta.model = optionValue(cmdLine, a);
+                    if (NBlankable.isBlank(ta.model)) {
                         ta.error = "missing value for " + a.image();
                         return ta;
                     }
@@ -344,9 +367,11 @@ public class NaruSessionDirective extends NaruDirectiveBase {
     }
 
     private NaruStmtResult fail(SubCommandContext context, String message) {
-        NMsg msg = NMsg.ofC("%s", message).asError();
-        context.outln(msg);
-        return NaruStmtResult.ofError();
+        context.outln(NMsg.ofC("%s", message).asError());
+        // The reason travels on the result too: a caller that only inspects the statement --
+        // a script reading lastError, a test, the desktop's command runner -- would otherwise
+        // learn that something failed and nothing about what.
+        return NaruStmtResult.ofError(NMsg.ofC("%s", message));
     }
 
     private static String safeName(NaruSession session) {
@@ -405,7 +430,9 @@ public class NaruSessionDirective extends NaruDirectiveBase {
 
     private boolean renameTarget(NaruTask task, SessionTarget target, String newName) {
         if (target.live != null) {
-            target.live.name(newName);
+            // one call sets name and source together, so a rename can never leave a live
+            // session holding a USER name the titler still thinks it may overwrite
+            target.live.rename(newName, NaruSessionNameSource.USER);
             return true;
         }
         return task.session().sessionStoreManager().rename(target.uuid, newName);
@@ -419,7 +446,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
      */
     private static final Set<String> TARGET_SUBCOMMANDS = Set.of(
             "current", "save", "restore", "reset", "copy",
-            "public", "private", "delete", "rename", "load");
+            "public", "private", "delete", "rename", "title", "load");
 
     /**
      * Subcommands whose positional words name sessions rather than being free text.
@@ -518,7 +545,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
             uuids.add(s.uuid());
         }
         String n = safeName(s);
-        if (n != null && !n.isEmpty() && !"NO_NAME".equals(n) && seenNames.add(n)) {
+        if (n != null && !n.isEmpty() && seenNames.add(n)) {
             names.add(n);
         }
     }
@@ -589,7 +616,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         String uuid = live != null ? live.uuid() : saved.getUuid();
         String name = live != null ? safeName(live) : saved.getName();
         if (NBlankable.isBlank(name)) {
-            name = "NO_NAME";
+            name = uuid;
         }
         NaruVisibility visibility = live != null ? live.getVisibility() : saved.getMode();
         String age = NaruUtils.timeAgo(live != null ? live.modificationInstant() : saved.getModificationInstant());
@@ -717,7 +744,7 @@ public class NaruSessionDirective extends NaruDirectiveBase {
                     : (ta.positionals.isEmpty() ? "main" : ta.positionals.get(0));
             NMsg msg = NMsg.ofC("session not found %s", label);
             context.errln(msg);
-            return NaruStmtResult.ofError();
+            return NaruStmtResult.ofError(msg);
         }
         task.session().load(uuid);
         context.outln(NMsg.ofC("Loaded session: %s", task.session().name()));
@@ -748,43 +775,85 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         if (ta.error != null) {
             return fail(context, ta.error);
         }
-        String newName = ta.positionals.isEmpty() ? null : String.join(" ", ta.positionals).trim();
+        if (!ta.positionals.isEmpty()) {
+            // save used to take a name and, when it got none, ask a model to guess one. Both
+            // jobs have their own subcommand now, so a word here is a mistake worth naming
+            // rather than a thing to silently write into the session.
+            return fail(context, "/session save takes no name; use /session rename <name> "
+                    + "or /session title");
+        }
         return withTarget(context, task, ta, target -> {
-            if (!NBlankable.isBlank(newName)) {
-                if (!renameTarget(task, target, newName)) {
-                    return fail(context, NMsg.ofC("session not found %s", target.uuid).toString());
-                }
-            }
             if (target.live == null) {
                 // a session that only lives in the catalog is, by definition, already saved
                 context.outln(NMsg.ofC("Saved session: %s",
                         NMsg.ofStyledString(target.displayName())));
                 return NaruStmtResult.ofSuccess();
             }
-            NaruSession session = target.live;
-            if ((NBlankable.isBlank(session.name()) || session.name().equals("NO_NAME"))
-                    && session == task.session()) {
-                // only the current session can borrow the current task's conversation to guess a name
-                List<NaruMessage> history = task.context(NaruSource.values()).messages();
-                history.add(NaruMessage.user("can you suggest a name for this session? dont be verbose in your response, only return the suggested name please."));
-                NaruModelConfig model = task.model();
-                try {
-                    NaruResponse chat = task.chat(model,
-                            new NaruModelRequest(history,
-                                    task.context(NaruSource.values()).env()
-                            )
-                    );
-                    if (chat.getMessage() != null) {
-                        session.name(chat.getMessage().getContent().toString());
-                    }
-                } catch (Exception ex) {
-                    context.outln(NMsg.ofC("Unable ot evaluate session title using LLM : %s : %s", NMsg.ofStyledString(session.name()), ex));
-                }
-            }
-            session.save();
-            context.outln(NMsg.ofC("Saved session: %s", NMsg.ofStyledString(session.name())));
+            target.live.save();
+            context.outln(NMsg.ofC("Saved session: %s",
+                    NMsg.ofStyledString(target.live.name())));
             return NaruStmtResult.ofSuccess();
         });
+    }
+
+    /**
+     * {@code /session title [target] [--model=<provider/model>]}: ask a model for the session's
+     * name from what is already stored, and keep the answer whatever was there before.
+     *
+     * <p>Unlike the automatic trigger this reports its failure, because the user asked for the
+     * title and is entitled to know which models were tried and what each one did instead.
+     */
+    public NaruStmtResult executeTitle(SubCommandContext context, NCmdLine cmdLine) {
+        NaruTask task = context.task();
+        TargetArgs ta = parseTargetArgs(task, cmdLine);
+        if (ta.error != null) {
+            return fail(context, ta.error);
+        }
+        if (!ta.positionals.isEmpty()) {
+            return fail(context, "/session title takes no name; use /session rename <name>");
+        }
+        return withTarget(context, task, ta, target -> {
+            NaruSession live = target.live;
+            if (live == null) {
+                // Reading a stored history is a task-level job and the catalog keeps only the
+                // header, so regeneration asks for the session to be open rather than guess at
+                // a title from a uuid.
+                return fail(context, NMsg.ofC(
+                        "session %s is not open in this process; /session title needs a running "
+                                + "session to read its history from. Open it with /session load "
+                                + "--id=%s first.", target.uuid, target.uuid).toString());
+            }
+            NaruTask transport = live == task.session() ? task : mainTaskOf(live);
+            if (transport == null) {
+                return fail(context, NMsg.ofC(
+                        "session %s has no task to read a title from", target.uuid).toString());
+            }
+            NaruTitleRequest request = NaruTitleRequest.excerpt(live, transport);
+            if (!NBlankable.isBlank(ta.model)) {
+                request = request.withModel(ta.model);
+            }
+            try {
+                String title = transport.session().titler().regenerate(request);
+                context.outln(NMsg.ofC("Titled session %s as %s",
+                        target.uuid, NMsg.ofStyledString(title)));
+                return NaruStmtResult.ofSuccess(NElement.of(title));
+            } catch (NaruTitleException e) {
+                // the name is left exactly as it was; only the reason travels
+                NMsg msg = NMsg.ofC("%s", e.getMessage());
+                context.errln(msg.asError());
+                return NaruStmtResult.ofError(msg);
+            }
+        });
+    }
+
+    /** The task a titling call reads its history from: the one the user is talking through. */
+    private static NaruTask mainTaskOf(NaruSession session) {
+        NaruTask fg = session.findTask(session.foregroundTaskId()).orNull();
+        if (fg != null) {
+            return fg;
+        }
+        List<NaruTask> tasks = session.tasks();
+        return tasks.isEmpty() ? null : tasks.get(0);
     }
 
     public NaruStmtResult executeRename(SubCommandContext context, NCmdLine cmdLine) {
@@ -793,11 +862,14 @@ public class NaruSessionDirective extends NaruDirectiveBase {
         if (ta.error != null) {
             return fail(context, ta.error);
         }
-        String newName = String.join(" ", ta.positionals).trim();
-        if (NBlankable.isBlank(newName)) {
-            NMsg msg = NMsg.ofC("empty or invalid session name : %s", NMsg.ofStyledString(newName));
-            context.errln(msg);
-            return NaruStmtResult.ofError();
+        String newName;
+        try {
+            newName = NaruSessionNames.normalize(String.join(" ", ta.positionals));
+        } catch (RuntimeException e) {
+            // the reason, not the rejected text: an empty name must not print as an empty name
+            NMsg msg = NMsg.ofC("invalid session name: %s", e.getMessage());
+            context.errln(msg.asError());
+            return NaruStmtResult.ofError(msg);
         }
         return withTarget(context, task, ta, target -> {
             if (!renameTarget(task, target, newName)) {

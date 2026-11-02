@@ -32,6 +32,20 @@ public class NaruEvent {
      * reported by {@code /skill doctor} rather than silently dropped.
      */
     public static final String SESSION_DIR_CHANGE = "sessiondir-change";
+    /**
+     * Fired when a session's name changes: an automatic title landed, a person renamed it,
+     * or {@code /session title} regenerated it. The payload carries {@code uuid},
+     * {@code oldName}, {@code newName} and {@code source} (the {@link
+     * net.thevpc.naru.api.agent.NaruSessionNameSource} that now owns the name).
+     *
+     * <p>A name is display state, so a host that renders the session list can settle the
+     * changed row from this event instead of reloading the whole tree -- which is the only
+     * reason it exists. The placeholder minted when a session is first named is not
+     * announced: it is not a change of label, it is the label appearing for the first time,
+     * and a listener that treated it as a rename would flash a row into place for a session
+     * the user has not looked at yet.
+     */
+    public static final String SESSION_RENAMED = "session-renamed";
     private final long seq;
     private final String name;
     private final Map<String, Object> payload;

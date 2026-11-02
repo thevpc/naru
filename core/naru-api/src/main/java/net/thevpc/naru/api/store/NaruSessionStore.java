@@ -174,6 +174,33 @@ public interface NaruSessionStore extends AutoCloseable {
 
     void create(NaruSessionData data, NaruSessionScope scope);
 
+    /**
+     * The number for the next placeholder name ({@code Session N}), allocated once and never
+     * handed out again.
+     *
+     * <p>Global to the store rather than per project or per scope, because a session moves
+     * between projects and a per-project counter would put two sessions in one listing under
+     * the same label. It is also never reused after a deletion: a placeholder is the name a
+     * user sees before they have a better one, and a {@code Session 7} that turns out to be
+     * a different conversation than the {@code Session 7} they remembered is worse than a
+     * gap in the numbering.
+     *
+     * <h2>What an implementation owes this</h2>
+     * A single atomic increment. Two callers asking at once -- two sessions created in one
+     * process, or two processes over one shared directory -- must never receive the same
+     * number, and a number must never come back after the process that took it died before
+     * writing it down. A file store does it under its own metadata lock; a database should
+     * do it with {@code INSERT ... RETURNING}, a sequence, or an
+     * {@code UPDATE ... SET n = n + 1} in a single statement, and the contract asks for
+     * nothing more than that. It is a method rather than a field on a session so that a
+     * backend can keep the counter wherever it belongs to it.
+     *
+     * <p>Seeding is part of the guarantee: when the counter does not exist yet, the first
+     * number must be above every {@code Session N} already in the store, so an installation
+     * that has sessions but no counter does not immediately collide with them.
+     */
+    long nextSessionNumber();
+
     /** Atomically creates a session only when no record with this id exists. */
     default boolean createIfAbsent(NaruSessionData data, NaruSessionScope scope) {
         if (exists(data.uuid(), scope)) return false;

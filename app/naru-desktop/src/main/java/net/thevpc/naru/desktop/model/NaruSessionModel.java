@@ -11,6 +11,7 @@ import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.agent.NaruSessionUsageListener;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruWorkspace;
+import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
 import net.thevpc.naru.api.registry.NaruLineCompletion;
@@ -289,6 +290,9 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                 .interaction(host)
                 .banner(false)
                 .richTerm(false)
+                // the desktop shows session names in its tree and has no titles of its own,
+                // so it opts into the runtime that generates them
+                .autoTitle(true)
                 .sessionListener(new NaruSessionListener() {
                     @Override
                     public void onEventAppended(net.thevpc.naru.api.scheduler.NaruEvent e) {
@@ -335,6 +339,15 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                                         if (failure == null && page != null) onEdt(() -> restoreTranscript(page));
                                     });
                         });
+                    }
+
+                    @Override
+                    public void onSessionRenamed(NaruSession s, String oldName, String newName,
+                                                 net.thevpc.naru.api.agent.NaruSessionNameSource source) {
+                        // An automatic title arrives on a titling worker, a rename from the EDT.
+                        // Both mean the same thing to the sidebar: re-read name() and repaint the
+                        // row. Nothing here reloads the tree.
+                        onEdt(NaruSessionModel.this::fireChanged);
                     }
 
                     @Override
@@ -442,7 +455,8 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         session.addUsageListener(new NaruSessionUsageListener() {
             @Override
             public void onModelCall(NaruTask task, NaruModelKey m, long p, long c,
-                                    long cw, long cr, NDuration duration) {
+                                    long cw, long cr, java.util.Map<String, String> labels,
+                                    NDuration duration) {
                 String label = m == null ? "—" : m.provider() + "/" + m.model();
                 String took = duration == null ? "" : " " + duration;
                 onEdt(() -> {
@@ -2020,6 +2034,29 @@ public final class NaruSessionModel implements InteractionHost.Listener {
      */
     public NaruSession session() {
         return closed ? null : session;
+    }
+
+    /**
+     * Whether the mode the next directive would run under exists to carry out decided work
+     * ({@code modeIntent() == EXECUTING}).
+     *
+     * <p>The plan board asks this to tell an activated plan that is actually being dispatched from
+     * one that is merely marked active: nothing dispatches items until the conversation is in an
+     * executing mode, so an "active" plan is dormant everywhere else. Read from the task a
+     * directive would land on, which is the same task {@link #submitDirective} uses.
+     */
+    public boolean isExecutingMode() {
+        NaruSession current = session;
+        if (current == null || closed) {
+            return false;
+        }
+        try {
+            NaruTask task = directiveTargetTask(current);
+            NaruPromptMode mode = task == null ? null : task.promptMode();
+            return mode != null && mode.modeIntent() == NaruPromptMode.ModeIntent.EXECUTING;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     public boolean isRunning() {

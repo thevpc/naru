@@ -238,7 +238,6 @@ public final class MainWindow extends JFrame {
     private java.awt.Rectangle restoredBounds;
     /** The frame cursor already asked for, so hovering an edge does not re-send the same request. */
     private Cursor appliedCursor;
-    private int nextSessionNumber = 1;
     private final JLabel taskScopeHeader = new JLabel("No task selected");
     private NaruSessionModel.Listener selectionSync;
     private NaruSessionModel.Listener loadingListener;
@@ -410,6 +409,8 @@ public final class MainWindow extends JFrame {
         menu.add(openClose);
         javax.swing.JMenuItem rename = new javax.swing.JMenuItem("Rename session…");
         rename.addActionListener(x -> renameSelectedSession()); menu.add(rename);
+        javax.swing.JMenuItem titler = new javax.swing.JMenuItem("Generate title…");
+        titler.addActionListener(x -> regenerateSessionTitle(entry)); menu.add(titler);
         javax.swing.JMenuItem move = new javax.swing.JMenuItem("Move to group…");
         move.addActionListener(x -> moveSessionToProject(entry)); menu.add(move);
         menu.addSeparator();
@@ -705,13 +706,54 @@ public final class MainWindow extends JFrame {
         SessionEntry entry = sessionList.getSelectedValue();
         if (entry == null || entry.model == null || entry.model.session() == null) return;
         String oldName = entry.model.session().name();
-        String value=net.thevpc.naru.desktop.ui.DesktopDialog.promptText(this,"Rename session","Session name",oldName==null||"NO_NAME".equals(oldName)?"":oldName);
+        String value=net.thevpc.naru.desktop.ui.DesktopDialog.promptText(this,"Rename session","Session name",oldName);
         if(value==null||value.isBlank()) return;
         String newName=value.trim(); showLoading("Saving session name…");
             new javax.swing.SwingWorker<Void,Void>() {
-                protected Void doInBackground(){entry.model.session().name(newName).save();return null;}
+                protected Void doInBackground(){
+                    // USER, not the titler's AUTO: an inline rename is a person choosing, and
+                    // nothing automatic may come back later and overwrite it.
+                    entry.model.session().rename(newName, net.thevpc.naru.api.agent.NaruSessionNameSource.USER).save();
+                    return null;
+                }
                 protected void done(){hideLoading();try{get();rebuildSessionList();sessionList.repaint();showActiveSession(newName, entry);}catch(Exception ex){Throwable c=ex.getCause()==null?ex:ex.getCause();net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this,"Rename session",String.valueOf(c.getMessage()));}}
             }.execute();
+    }
+
+    /**
+     * Ask a model for this session's name from its stored history, off the UI thread. The same
+     * service {@code /session title} calls; a failure is a message, never a silent no-op.
+     */
+    private void regenerateSessionTitle(SessionEntry entry) {
+        if (entry == null || entry.model == null || entry.model.session() == null) return;
+        net.thevpc.naru.api.agent.NaruSession session = entry.model.session();
+        showLoading("Generating a title…");
+        new javax.swing.SwingWorker<String,Void>() {
+            protected String doInBackground(){
+                java.util.List<net.thevpc.naru.api.task.NaruTask> tasks = session.tasks();
+                net.thevpc.naru.api.task.NaruTask transport =
+                        session.findTask(session.foregroundTaskId()).orNull();
+                if (transport == null && !tasks.isEmpty()) transport = tasks.get(0);
+                if (transport == null) {
+                    throw new IllegalStateException("this session has no conversation to title from");
+                }
+                return session.titler().regenerate(net.thevpc.naru.api.agent.NaruTitleRequest
+                        .excerpt(session, transport));
+            }
+            protected void done(){
+                hideLoading();
+                try {
+                    get();
+                    // the rename event refreshes the row; this only covers the case where the
+                    // listener is not attached to this model
+                    sessionList.repaint();
+                } catch (Exception ex) {
+                    Throwable c = ex.getCause() == null ? ex : ex.getCause();
+                    net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(MainWindow.this, "Generate title",
+                            String.valueOf(c.getMessage()));
+                }
+            }
+        }.execute();
     }
 
     /**
@@ -808,7 +850,7 @@ public final class MainWindow extends JFrame {
                         var scope = info.getMode() == net.thevpc.naru.api.agent.NaruVisibility.PUBLIC
                                 ? net.thevpc.naru.api.store.NaruSessionScope.PUBLIC
                                 : net.thevpc.naru.api.store.NaruSessionScope.PRIVATE;
-                        sessions.add(new SessionEntry(nextSessionNumber++, info.getUuid(), scope,
+                        sessions.add(new SessionEntry(info.getUuid(), scope,
                                 projectDirectory, info, null, null));
                     }
                     rebuildSessionList();
@@ -1629,7 +1671,7 @@ public final class MainWindow extends JFrame {
             host.startFlushTimer();
             NaruSessionModel created = new NaruSessionModel(() -> NaruDesktop.workspace(dir), dir, host,
                     restoreId, restoreScope, restoreId == null ? projectId : null);
-            SessionEntry entry = new SessionEntry(nextSessionNumber++, restoreId, restoreScope, dir,
+            SessionEntry entry = new SessionEntry(restoreId, restoreScope, dir,
                     (net.thevpc.naru.api.agent.NaruResourceInfo) null, created, host);
             entry.projectId = restoreId == null ? projectId : null;
             sessions.add(entry);
@@ -1667,7 +1709,7 @@ public final class MainWindow extends JFrame {
                                         // Saved sessions are lightweight rows until selected. Eagerly
                                         // booting the whole catalog created dozens of session threads
                                         // that all waited for Swing to finish rebuilding this list.
-                                        sessions.add(new SessionEntry(nextSessionNumber++, info.getUuid(),
+                                        sessions.add(new SessionEntry(info.getUuid(),
                                                 scope, dir, info, null, null));
                                     }
                                 }
@@ -2246,7 +2288,6 @@ public final class MainWindow extends JFrame {
     }
 
     private static final class SessionEntry {
-        final int number;
         String id;
         final net.thevpc.naru.api.store.NaruSessionScope scope;
         final NPath projectDir;
@@ -2269,16 +2310,16 @@ public final class MainWindow extends JFrame {
          */
         String projectId;
 
-        SessionEntry(int number, String id, net.thevpc.naru.api.store.NaruSessionScope scope,
+        SessionEntry(String id, net.thevpc.naru.api.store.NaruSessionScope scope,
                      NPath projectDir, net.thevpc.naru.api.agent.NaruResourceInfo savedInfo,
                      NaruSessionModel model, InteractionHost host) {
-            this.number = number; this.id = id; this.scope = scope; this.projectDir = projectDir;
+            this.id = id; this.scope = scope; this.projectDir = projectDir;
             this.savedInfo = savedInfo; this.model = model; this.host = host; this.header = null;
         }
 
         /** A group row: it names a project (or the standalone/unknown buckets) and holds no session. */
         private SessionEntry(net.thevpc.naru.desktop.model.SessionGrouping.Header header) {
-            this.number = 0; this.id = null; this.scope = null; this.projectDir = null;
+            this.id = null; this.scope = null; this.projectDir = null;
             this.savedInfo = null; this.model = null; this.host = null; this.header = header;
         }
 
@@ -2315,11 +2356,16 @@ public final class MainWindow extends JFrame {
                 int n = header.count();
                 return header.title() + (header.projectId() == null && !header.unknown() && n == 0 ? "" : " (" + n + ")");
             }
-            String name = model != null && model.session() != null ? model.session().name() : null;
-            if (model == null || model.session() == null) name = savedInfo != null ? savedInfo.getName()
-                    : null;
-            return name == null || name.isBlank() || "NO_NAME".equals(name)
-                    ? "Session " + number : name;
+            // The row's label is the session's stored name, always. There is no computed
+            // "Session N" left to fall back to: a fresh session is minted a placeholder by the
+            // store's counter, and the only rows with no name are ones whose engine has not
+            // answered yet.
+            if (model != null && model.session() != null) return model.session().name();
+            if (savedInfo != null) {
+                String saved = savedInfo.getName();
+                if (saved != null && !saved.isBlank()) return saved;
+            }
+            return "Opening…";
         }
         String dateSummary() {
             if (model != null && model.session() != null) {

@@ -185,7 +185,8 @@ public class NaruCompactExtension implements NaruSessionExtension, NaruSessionUs
 
     @Override
     public void onModelCall(NaruTask task, NaruModelKey model, long promptTokens, long completionTokens,
-                            long cacheWriteTokens, long cacheReadTokens, NDuration duration) {
+                            long cacheWriteTokens, long cacheReadTokens,
+                            java.util.Map<String, String> labels, NDuration duration) {
         // Nothing to do per call. Registered because rate limits arrive on the same listener,
         // and registering for one reason only would mean two listeners to keep in step.
     }

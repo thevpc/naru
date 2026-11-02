@@ -3,10 +3,12 @@ package net.thevpc.naru.ext.tools.sessions;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
+import net.thevpc.naru.api.agent.NaruSessionNameSource;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.AbstractNaruModelProvider;
 import net.thevpc.naru.api.model.NaruCachingMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
@@ -95,6 +97,7 @@ public class NaruSessionDirectiveTest {
     private NaruSession newSession(String name) {
         NaruSession s = agent.newSession()
                 .sessionDir(projectDir)
+                .name(name)
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .configureDefaults(false)
@@ -105,7 +108,6 @@ public class NaruSessionDirectiveTest {
                 .build();
         s.registry().registerDirectiveProvider(new NaruSessionsDirectiveProvider());
         s.registry().registerModelProvider(new OfflineProvider());
-        s.name(name);
         return s;
     }
 
@@ -431,6 +433,75 @@ public class NaruSessionDirectiveTest {
                 () -> "the error must say the session is not running: " + r.errorValue());
     }
 
+    // ── naming ───────────────────────────────────────────────────────────────
+
+    /**
+     * {@code save} used to take a name and, without one, ask a model to guess. Both jobs have
+     * their own subcommand now, so a stray word has to be reported rather than written into
+     * the session as its title.
+     */
+    @Test
+    public void saveWithANamePointsAtTheCommandThatMeansIt() {
+        NaruStmtResult r = call("save my real name");
+
+        assertEquals(NaruStmtResultType.ERROR, r.type(), () -> "save takes no name: " + r);
+        String error = String.valueOf(r.errorValue());
+        assertTrue(error.contains("rename") && error.contains("title"),
+                () -> "the error must name the two commands the user meant: " + error);
+        assertEquals("arch-review", session.name(), "a rejected save must not rename anything");
+    }
+
+    /** An empty rename is rejected without echoing the empty name back as if it were one. */
+    @Test
+    public void renameWithoutANameSaysSo() {
+        NaruStmtResult r = call("rename --name arch-review");
+
+        assertEquals(NaruStmtResultType.ERROR, r.type(), () -> "empty rename must fail: " + r);
+        assertTrue(String.valueOf(r.errorValue()).contains("invalid session name"),
+                () -> "the error must be about the name: " + r.errorValue());
+        assertEquals("arch-review", session.name());
+    }
+
+    @Test
+    public void titleAsksAModelAndStoresTheAnswerAsAnAutomaticName() {
+        session.registry().registerModelProvider(
+                new OfflineProvider("titler", "small", "LVM Partition Resize"));
+        NaruTask main = task();
+        main.addHistory(NaruMessage.user("how do I resize a partition on lvm"));
+        session.foregroundTaskId(main.id());
+
+        NaruStmtResult r = call("title --model=titler/small");
+
+        assertEquals(0, r.exitCode(), () -> "title must succeed: " + r.errorValue());
+        assertEquals("LVM Partition Resize", session.name());
+        assertEquals(NaruSessionNameSource.AUTO, session.nameSource(),
+                "an explicit title is recorded as auto-generated, so a later rename still wins");
+    }
+
+    @Test
+    public void titleReportsTheModelsItTriedWhenNoneAnswered() {
+        NaruStmtResult r = call("title");
+
+        assertEquals(NaruStmtResultType.ERROR, r.type(),
+                () -> "a title nobody could produce must be reported, got " + r);
+        assertTrue(String.valueOf(r.errorValue()).contains("session title"),
+                () -> "the failure must say what it was about: " + r.errorValue());
+        assertEquals("arch-review", session.name(), "a failed title leaves the name alone");
+    }
+
+    /** A saved-only session has no stored history to read here, so regeneration asks for it. */
+    @Test
+    public void titleOnASavedOnlySessionAsksForARunningOne() {
+        NaruSession saved = savedSession("not-running");
+        String prefix = uniquePrefix(saved.uuid(), session.uuid());
+
+        NaruStmtResult r = call("title --id " + prefix);
+
+        assertEquals(NaruStmtResultType.ERROR, r.type(), () -> "title needs a live session: " + r);
+        assertTrue(String.valueOf(r.errorValue()).contains("not open in this process"),
+                () -> "the error must say why: " + r.errorValue());
+    }
+
     // ── autocomplete ─────────────────────────────────────────────────────────
 
     /** The request's exact case: {@code --id=} must complete the id from the catalog. */
@@ -525,17 +596,27 @@ public class NaruSessionDirectiveTest {
     }
 
     /**
-     * A single offline, tools-capable model so that {@code newTask} always finds something
-     * to attach to a task. It never chats: the tests here drive /session, not the model.
+     * An offline model so that {@code newTask} always finds something to attach to a task.
+     * The answer is scripted: with none, the call refuses, because these tests drive
+     * /session rather than a model -- except the title tests, which need one that answers.
      */
     private static final class OfflineProvider extends AbstractNaruModelProvider {
+        private final String modelId;
+        private final String answer;
+
         OfflineProvider() {
-            super("offline", new String[0]);
+            this("offline", "offline-model", null);
+        }
+
+        OfflineProvider(String id, String modelId, String answer) {
+            super(id, new String[0]);
+            this.modelId = modelId;
+            this.answer = answer;
         }
 
         @Override
         public List<String> findModelIds(NaruSession session) {
-            return List.of("offline-model");
+            return List.of(modelId);
         }
 
         @Override
@@ -543,59 +624,67 @@ public class NaruSessionDirectiveTest {
             return NOptional.of(new NaruModelProtocol() {
                 @Override
                 public NaruResponse chat(NaruModelRequest request, NaruTask task) {
-                    throw new UnsupportedOperationException("offline test model never chats");
+                    if (answer == null) {
+                        throw new UnsupportedOperationException("offline test model never chats");
+                    }
+                    NaruResponse response = new NaruResponse();
+                    response.setMessage(NaruMessage.assistant(answer));
+                    return response;
                 }
 
                 @Override
                 public NaruModelCapabilities getCapabilities() {
-                    return new NaruModelCapabilities() {
-                        @Override
-                        public long contextLength() {
-                            return 4096;
-                        }
-
-                        @Override
-                        public boolean isVision() {
-                            return false;
-                        }
-
-                        @Override
-                        public boolean isTools() {
-                            return true;
-                        }
-
-                        @Override
-                        public boolean isThinking() {
-                            return false;
-                        }
-
-                        @Override
-                        public boolean isEmbedding() {
-                            return false;
-                        }
-
-                        @Override
-                        public boolean isTextOnly() {
-                            return true;
-                        }
-
-                        @Override
-                        public NaruCachingMode cachingMode() {
-                            return NaruCachingMode.NONE;
-                        }
-
-                        @Override
-                        public Set<String> keys() {
-                            return Set.of();
-                        }
-
-                        @Override
-                        public NElement toElement() {
-                            return NElement.ofNull();
-                        }
-                    };
+                    return CAPS;
                 }
             });
         }
     }
+
+    /** The capabilities every stub protocol reports: offline, tools-capable, no caching. */
+    private static final NaruModelCapabilities CAPS = new NaruModelCapabilities() {
+        @Override
+        public long contextLength() {
+            return 4096;
+        }
+
+        @Override
+        public boolean isVision() {
+            return false;
+        }
+
+        @Override
+        public boolean isTools() {
+            return true;
+        }
+
+        @Override
+        public boolean isThinking() {
+            return false;
+        }
+
+        @Override
+        public boolean isEmbedding() {
+            return false;
+        }
+
+        @Override
+        public boolean isTextOnly() {
+            return true;
+        }
+
+        @Override
+        public NaruCachingMode cachingMode() {
+            return NaruCachingMode.NONE;
+        }
+
+        @Override
+        public Set<String> keys() {
+            return Set.of();
+        }
+
+        @Override
+        public NElement toElement() {
+            return NElement.ofNull();
+        }
+    };
 }

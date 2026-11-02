@@ -24,18 +24,26 @@ final class PlanDirectives {
     }
 
     /** Run with a leading slash, so it parses as a directive rather than an instruction to the model. */
-    static String goal(String text) {
-        return withText("/plan goal", text);
+    static String create(String text) {
+        return withText("/plan create", text);
     }
 
-    /** Append an item to the active plan. */
-    static String addItem(String text) {
-        return withText("/plan add", text);
+    /**
+     * Restate a plan's goal. The plan is named explicitly so a dormant plan can be edited without
+     * being activated first, which is the whole point of the board listing every plan.
+     */
+    static String goal(String planId, String text) {
+        return withText("/plan goal --plan=" + planId, text);
+    }
+
+    /** Append an item to the named plan (active or not). */
+    static String addItem(String planId, String text) {
+        return withText("/plan add --plan=" + planId, text);
     }
 
     /** Rewrite one item's description; the ref is the id the snapshot carries. */
-    static String editItem(String itemRef, String text) {
-        return withText("/plan edit " + itemRef, text);
+    static String editItem(String planId, String itemRef, String text) {
+        return withText("/plan edit --plan=" + planId + " " + itemRef, text);
     }
 
     /**
@@ -48,8 +56,8 @@ final class PlanDirectives {
         return quoted == null ? null : head + " " + quoted;
     }
 
-    static String removeItem(String itemRef) {
-        return "/plan remove " + itemRef;
+    static String removeItem(String planId, String itemRef) {
+        return "/plan remove --plan=" + planId + " " + itemRef;
     }
 
     static String activate(String planId) {

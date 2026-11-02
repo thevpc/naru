@@ -5,6 +5,8 @@ import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.time.NDuration;
 
+import java.util.Map;
+
 /**
  * Notified when a provider reports something the core has no opinion about: how many
  * tokens a call cost, and what the provider's own rate limits currently are.
@@ -47,7 +49,15 @@ public interface NaruSessionUsageListener {
      * {@code max(0, promptTokens - cacheReadTokens - cacheWriteTokens)}.
      *
      * @param task the task that made the call, so a consumer can stamp task identity and
-     *             user-defined labels; never null on the production path
+     *             user-defined labels; null for a call made outside any task, such as a
+     *             session title
+     * @param labels what this particular call was <em>for</em>, beyond the task's own
+     *               labels -- a session title reports {@code title}. Labels are per call,
+     *               not per task, because a side-channel call has no task to carry them
+     *               and a report that cannot tell titling from conversation is a report
+     *               that cannot price it. Never null; may be empty. A key that collides
+     *               with a built-in dimension (provider, model, session, user, task-*) is
+     *               ignored by the consumer, exactly as a task label is.
      * @param duration wall-clock time of the call, for latency reporting
      */
     void onModelCall(NaruTask task,
@@ -56,6 +66,7 @@ public interface NaruSessionUsageListener {
                      long completionTokens,
                      long cacheWriteTokens,
                      long cacheReadTokens,
+                     Map<String, String> labels,
                      NDuration duration);
 
     /**

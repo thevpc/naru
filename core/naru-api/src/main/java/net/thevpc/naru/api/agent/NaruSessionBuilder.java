@@ -139,6 +139,30 @@ public interface NaruSessionBuilder {
     }
 
     /**
+     * The label the session starts with.
+     *
+     * <p>A name supplied here is a person's name (or their backend's), so it is stored as
+     * {@link NaruSessionNameSource#USER} and no automatic title will overwrite it. Left
+     * unset, the session gets the generated {@code Session N} placeholder and stays
+     * available to titling.
+     */
+    default NaruSessionBuilder name(String name) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Whether this session may be given an automatic title after its first user message.
+     *
+     * <p>The instance-level {@code session.title.auto} setting decides by default, which is
+     * on for the terminal and the desktop. An embedding backend turns it off: a chatbot
+     * product names its own threads, and a title the runtime invents and then throws away
+     * is a paid model call for nothing.
+     */
+    default NaruSessionBuilder autoTitle(boolean enabled) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * How the session reaches its user: a terminal, a stream, or anything else.
      * <p>
      * Defaults to a {@link NaruInteraction} on the process terminal, which is what

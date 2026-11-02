@@ -74,6 +74,20 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
      */
     private String userSeed;
 
+    /**
+     * A name the host chose at creation, or null to let the session carry a placeholder.
+     * Normalized now, because a host that passes an empty name is told at build time rather
+     * than after the session directory exists.
+     */
+    private String sessionName;
+
+    /**
+     * Whether this session may ask a model for a title. Defaults to false: a host that
+     * embeds NARU behind its own chatbot supplies its own titles and does not want a model
+     * call it did not ask for. A first-party launcher opts in with {@code autoTitle(true)}.
+     */
+    private Boolean autoTitle = Boolean.FALSE;
+
 
 
     private NaruSessionListener sessionListener;
@@ -125,6 +139,18 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     @Override
     public NaruSessionBuilder modelFilter(NaruModelFilter value) {
         this.modelFilter = value;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder name(String name) {
+        this.sessionName = NaruSessionNames.normalize(name);
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder autoTitle(boolean enabled) {
+        this.autoTitle = enabled;
         return this;
     }
 
@@ -352,6 +378,12 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
             String effectiveUser = userSeed != null ? userSeed : (project == null ? null : project.user());
             session._setUserName(effectiveUser);
         }
+        session.setAutoTitleOverride(autoTitle);
+        if (sessionName != null && !resumed) {
+            // A host that named the session means that name, so the source is USER: an
+            // automatic title must not come back later and overwrite what the embedder chose.
+            session.rename(sessionName, NaruSessionNameSource.USER);
+        }
         // The configured task belongs to a session being created. A session hydrated from the
         // store already has its own task tree; seeding another here would put a fresh
         // interactive task next to the restored one and make every reopen look like a new
@@ -393,7 +425,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
                 streaming, busyPolicy, turnListener, maxLiveSessions,
                 checkpointEachMessage, capacityTimeout, agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter(),
                 combineModelFilters(agent.modelFilter(), modelFilter),
-                projectRef, userSeed);
+                projectRef, userSeed, sessionName, autoTitle);
     }
 
     /**

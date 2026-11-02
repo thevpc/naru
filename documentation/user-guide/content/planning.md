@@ -131,11 +131,24 @@ there is no tool that does any of this.
 | `/plan show` | Same as `/plan`. |
 | `/plan show <id>` | Show one plan by id or unique prefix. |
 | `/plan show all` | List every plan with status and progress. |
-| `/plan activate <id>` | Make a plan the active one. |
+| `/plan list` | List every plan with status and progress. |
+| `/plan create <goal…>` | Create a plan holding only its goal. It is **not** activated. |
+| `/plan goal [--plan=<id>] <text…>` | Restate a plan's goal. |
+| `/plan add [--plan=<id>] <text…> [--after=<item>] [--key=<k>] [--validator=<k>]` | Append an item. |
+| `/plan edit [--plan=<id>] <item> [<text…>] [--notes=<t>|--no-notes] [--validator=<k>]` | Change an item's text, note or validator. |
+| `/plan note [--plan=<id>] <item> <text…>` | Replace an item's free-text note. |
+| `/plan remove [--plan=<id>] <item>` | Drop an item and the edges pointing at it. |
+| `/plan activate [<id>]` | Make a plan the active one. |
 | `/plan deactivate` | Stop treating a plan as active. Progress is kept. |
 | `/plan reopen <item-id>` | Reopen one finished item of the active plan. |
 | `/plan clear [<id>]` | Delete a plan, or the active plan when no id is given. |
 | `/plan help` | Directive help. |
+
+Every write verb takes an optional `--plan=<id>`. Without it the verb acts on the
+**active** plan; with it the verb acts on the named plan **without changing which plan
+is active**. That is how the desktop's Plan panel lets you shape a dormant plan before
+you decide to run it. The write verbs are the human equivalent of `plan_create` and
+`plan_update`, and like them they can never mark an item `done` or activate a plan.
 
 A listing looks like this:
 
@@ -273,6 +286,18 @@ scriptable from inside a routine, by design.
 ```
 
 shows which tags and tools the current task actually has.
+
+### Modes: an active plan is only *live* in an executing mode
+
+Being active and being worked through are different things. A plan is dispatched only
+when the conversation is in a mode that declares itself for carrying out work — a
+`ModeIntent.EXECUTING` mode such as `implement`. Everywhere else (`default`, and the
+read-only `plan` mode) an active plan is **dormant**: it is chosen, nothing is being
+run for it, and the desktop's Plan panel greys it out and says so.
+
+This is also why the plan directive refuses `/plan activate` while `plan` mode is
+active, and why switching into `implement` with exactly one unfinished plan picks that
+plan up for you rather than making you type `/plan activate` as well.
 
 ---
 

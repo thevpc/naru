@@ -2278,17 +2278,26 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             return;
         }
         ensureHistoryLoaded();
+        boolean userTurn = false;
         if (assistantMsg.getRole().equals(NaruRole.system)) {
             systemHistory.add(s -> assistantMsg);
         } else {
             if (assistantMsg.getRole().equals(NaruRole.user)) {
                 userQueriesCount++;
+                userTurn = true;
             }
             history.add(assistantMsg);
             publishToInteraction(assistantMsg);
         }
         fireChanged();
         ((NaruSessionImpl) session).checkpointMessage(id());
+        if (userTurn) {
+            // The one hook the automatic title needs. Last, after the append and the checkpoint:
+            // the titling worker reads this task's history, and a trigger posted before the
+            // message lands races its own input -- and loses, silently, because titling must
+            // never surface an error. Returns immediately; never throws.
+            ((NaruSessionImpl) session).maybeAutoTitle(this);
+        }
     }
 
     /**
@@ -3140,11 +3149,15 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         // consumer can tell "no cache" from "not measured".
         ((NaruSessionImpl) session()).fireModelCallUsage(
                 this,
-                model().key(),
+                modelKey.key(),
                 r.getPromptTokens(),
                 r.getEvalTokens(),
                 r.getCacheWriteTokens(),
                 r.getCacheReadTokens(),
+                // The task's labels live on the task and the consumer reads them from there;
+                // an ordinary conversation call adds nothing per call. A titling call, which
+                // has no task of its own, is the case this argument exists for.
+                Map.of(),
                 chronometer.stop().duration()
         );
         ((NaruSessionImpl) session()).fireModelCall(

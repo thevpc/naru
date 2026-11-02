@@ -9,12 +9,17 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * JDBC-backed session store. Hot state is split into metadata, task skeletons and
  * individual message records; appending a turn does not rewrite prior messages.
  */
 final class NaruJdbcSessionStore implements NaruSessionStore {
+    private static final String SESSION_COUNTER_KEY = "session-counter";
+    private static final Pattern PLACEHOLDER_SESSION_NAME = Pattern.compile("^Session (\\d+)$");
+
     private final NaruDataStore records;
     private final NaruStoreConfig config;
 
@@ -82,6 +87,43 @@ final class NaruJdbcSessionStore implements NaruSessionStore {
     @Override public boolean exists(String uuid, NaruSessionScope scope) { return get(meta(scope, uuid)).isPresent(); }
     @Override public void create(NaruSessionData data, NaruSessionScope scope) {
         if (!createIfAbsent(data, scope)) throw new IllegalStateException("session already exists: " + data.uuid());
+    }
+
+    /**
+     * Lives at the store root rather than under {@code session/}, and is bumped inside the
+     * records transaction, so a backend whose transaction is a real SQL transaction gets the
+     * atomic increment for free.
+     */
+    @Override public long nextSessionNumber() {
+        return records.transaction(s -> {
+            long current = get(SESSION_COUNTER_KEY).map(e -> e.asLongValue().orElse(0L)).orElse(0L);
+            if (current <= 0) current = highestPlaceholderNumber();
+            long next = current + 1;
+            put(SESSION_COUNTER_KEY, NElement.ofNumber(next));
+            return next;
+        });
+    }
+
+    /**
+     * Seed for a store that predates the counter: the highest {@code Session N} in use.
+     * Headers only — the numbers handed out are never reclaimed from a deleted session, so
+     * a rescan may under-report and that is accepted; the counter file is the authority.
+     */
+    private long highestPlaceholderNumber() {
+        long max = 0;
+        for (NaruSessionScope scope : NaruSessionScope.values()) {
+            for (String key : records.keys(root(scope))) {
+                if (!key.endsWith("/meta")) continue;
+                String name = get(key).map(NaruSessionData::of).map(NaruSessionData::name).orElse(null);
+                if (name == null) continue;
+                Matcher m = PLACEHOLDER_SESSION_NAME.matcher(name);
+                if (m.matches()) {
+                    try { max = Math.max(max, Long.parseLong(m.group(1))); }
+                    catch (NumberFormatException ignored) { }
+                }
+            }
+        }
+        return max;
     }
     @Override public boolean createIfAbsent(NaruSessionData data, NaruSessionScope scope) {
         return records.transaction(s -> { if (actualScope(data.uuid()) != null) return false; put(meta(scope, data.uuid()), data.toElement()); return true; });

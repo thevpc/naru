@@ -108,11 +108,21 @@ class PlanPaneTest {
     // ── which plan is pointed at ──────────────────────────────────────────────
 
     @Test
-    void theActivePlanIsTheOneOfferingEdits() throws Exception {
-        assertNotNull(onEdtReturn(() -> findButton(pane, "⏸")), "deactivate this plan");
-        assertNotNull(onEdtReturn(() -> findButton(pane, "＋")), "add an item");
-        assertEquals(2, onEdtReturn(() -> findButtons(pane, "×")).size(),
-                "the two items nobody is working on carry a remove control");
+    void everyPlanIsEditableAndTheActiveOneOffersDeactivation() throws Exception {
+        assertNotNull(onEdtReturn(() -> findButton(pane, "⏸")), "the active plan can be deactivated");
+        assertNotNull(onEdtReturn(() -> findButton(pane, "▶")), "the dormant plan can be activated");
+        assertEquals(2, onEdtReturn(() -> findButtons(pane, "＋")).size(),
+                "both plans offer add-an-item, active or not");
+        assertEquals(3, onEdtReturn(() -> findButtons(pane, "×")).size(),
+                "every item nobody is working on carries a remove control, in either plan");
+    }
+
+    @Test
+    void anActivatedPlanInANonExecutingModeIsShownAsDormant() throws Exception {
+        // the fixture has no live session, so the mode is not executing: the active plan must read
+        // as chosen-but-not-running rather than live
+        assertNotNull(onEdtReturn(() -> findLabelContaining(pane, "active, dormant")),
+                "the active plan says it is dormant until an executing mode");
     }
 
     @Test
@@ -131,10 +141,36 @@ class PlanPaneTest {
     }
 
     @Test
-    void removingAnItemIsOneDirectiveLine() throws Exception {
+    void removingAnItemIsOneDirectiveLineNamingItsPlan() throws Exception {
         List<JButton> remove = onEdtReturn(() -> findButtons(pane, "×"));
         onEdt(() -> remove.get(0).doClick());
-        assertEquals(List.of("/plan remove item-a"), sent);
+        assertEquals(List.of("/plan remove --plan=active-plan item-a"), sent);
+    }
+
+    // ── creating and editing plans ────────────────────────────────────────────
+
+    @Test
+    void theToolbarMakesANewPlanThroughTheSameDoor() throws Exception {
+        JButton newPlan = onEdtReturn(() -> findButton(pane, "＋ New plan"));
+        assertNotNull(newPlan, "the board always offers a new plan");
+        onEdt(newPlan::doClick);
+        JTextField field = onEdtReturn(() -> findField(pane));
+        assertNotNull(field, "the new-plan control opens a field for the goal");
+        onEdt(() -> field.setText("migrate the build"));
+        submit(field);
+        assertEquals(List.of("/plan create \"migrate the build\""), sent);
+    }
+
+    @Test
+    void editingADormantPlansItemNeverTouchesTheActivePlan() throws Exception {
+        // item-d belongs to dormant-plan; the line must name that plan so the edit lands there
+        JLabel row = onEdtReturn(() -> findLabel(pane, "something else"));
+        assertNotNull(row, "the dormant plan's item is on the board");
+        click(row);
+        JTextField field = onEdtReturn(() -> findField(pane));
+        onEdt(() -> field.setText("something else, reworded"));
+        submit(field);
+        assertEquals(List.of("/plan edit --plan=dormant-plan item-d \"something else, reworded\""), sent);
     }
 
     // ── editing the text ──────────────────────────────────────────────────────
@@ -149,7 +185,7 @@ class PlanPaneTest {
         assertEquals("write the rail", field.getText(), "the field starts as the sentence it replaces");
         onEdt(() -> field.setText("write the rail, then test --the flag"));
         submit(field);
-        assertEquals(List.of("/plan edit item-a \"write the rail, then test --the flag\""), sent);
+        assertEquals(List.of("/plan edit --plan=active-plan item-a \"write the rail, then test --the flag\""), sent);
     }
 
     @Test
@@ -160,18 +196,19 @@ class PlanPaneTest {
         JTextField field = onEdtReturn(() -> findField(pane));
         onEdt(() -> field.setText("ship the cockpit and the rail"));
         submit(field);
-        assertEquals(List.of("/plan goal \"ship the cockpit and the rail\""), sent);
+        assertEquals(List.of("/plan goal --plan=active-plan \"ship the cockpit and the rail\""), sent);
     }
 
     @Test
     void theAddControlOpensABlankFieldAndSendsWhatIsTypedIntoIt() throws Exception {
         JButton plus = onEdtReturn(() -> findButton(pane, "＋"));
+        assertNotNull(plus, "the active plan offers add-an-item");
         onEdt(plus::doClick);
         JTextField field = onEdtReturn(() -> findField(pane));
         assertNotNull(field, "add an item starts a field, not a dialog");
         onEdt(() -> field.setText("land the docs"));
         submit(field);
-        assertEquals(List.of("/plan add \"land the docs\""), sent);
+        assertEquals(List.of("/plan add --plan=active-plan \"land the docs\""), sent);
     }
 
     @Test
@@ -292,6 +329,13 @@ class PlanPaneTest {
     private static JLabel findLabel(Container root, String text) {
         List<JLabel> out = new ArrayList<>();
         collect(root, JLabel.class, l -> text.equals(l.getText()), out);
+        return out.isEmpty() ? null : out.get(0);
+    }
+
+    /** For a label whose exact words the design may still be tuning, e.g. the dormant badge. */
+    private static JLabel findLabelContaining(Container root, String fragment) {
+        List<JLabel> out = new ArrayList<>();
+        collect(root, JLabel.class, l -> l.getText() != null && l.getText().contains(fragment), out);
         return out.isEmpty() ? null : out.get(0);
     }
 

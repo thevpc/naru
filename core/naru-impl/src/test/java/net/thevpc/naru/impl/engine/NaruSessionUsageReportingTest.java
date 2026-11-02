@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Covers the usage seam the metering extension hangs off. The core's whole obligation here
@@ -54,11 +55,14 @@ public class NaruSessionUsageReportingTest {
         final List<long[]> calls = new ArrayList<>();
         final List<NaruTask> tasks = new ArrayList<>();
         final List<NaruProviderRateLimitInfo> limits = new ArrayList<>();
+        final List<Map<String, String>> labels = new ArrayList<>();
 
         @Override
         public void onModelCall(NaruTask task, NaruModelKey model, long promptTokens, long completionTokens,
-                                long cacheWriteTokens, long cacheReadTokens, NDuration duration) {
+                                long cacheWriteTokens, long cacheReadTokens, Map<String, String> callLabels,
+                                NDuration duration) {
             tasks.add(task);
+            labels.add(callLabels);
             calls.add(new long[]{promptTokens, completionTokens, cacheWriteTokens, cacheReadTokens,
                     duration.toMillis()});
         }
@@ -75,7 +79,7 @@ public class NaruSessionUsageReportingTest {
         Recorder r = new Recorder();
         session.addUsageListener(r);
 
-        session.fireModelCallUsage(null, MODEL, 1200, 80, 300, 900, NDuration.ofMillis(1500));
+        session.fireModelCallUsage(null, MODEL, 1200, 80, 300, 900, Map.of(), NDuration.ofMillis(1500));
 
         Assertions.assertEquals(1, r.calls.size());
         long[] got = r.calls.get(0);
@@ -94,7 +98,7 @@ public class NaruSessionUsageReportingTest {
         Recorder r = new Recorder();
         session.addUsageListener(r);
 
-        session.fireModelCallUsage(null, MODEL, 50, 5, -1, -1, NDuration.ofMillis(10));
+        session.fireModelCallUsage(null, MODEL, 50, 5, -1, -1, Map.of(), NDuration.ofMillis(10));
 
         Assertions.assertArrayEquals(new long[]{50, 5, -1, -1, 10}, r.calls.get(0));
     }
@@ -114,7 +118,7 @@ public class NaruSessionUsageReportingTest {
                 new Class<?>[]{NaruTask.class},
                 (proxy, method, args) -> null);
 
-        session.fireModelCallUsage(task, MODEL, 10, 1, 0, 0, NDuration.ofMillis(5));
+        session.fireModelCallUsage(task, MODEL, 10, 1, 0, 0, Map.of(), NDuration.ofMillis(5));
 
         Assertions.assertSame(task, r.tasks.get(0),
                 "the task that made the call must reach the listener unchanged");
@@ -128,7 +132,7 @@ public class NaruSessionUsageReportingTest {
         session.addUsageListener(a);
         session.addUsageListener(b);
 
-        session.fireModelCallUsage(null, MODEL, 10, 1, 0, 0, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, MODEL, 10, 1, 0, 0, Map.of(), NDuration.ofMillis(5));
 
         Assertions.assertEquals(1, a.calls.size());
         Assertions.assertEquals(1, b.calls.size());
@@ -145,7 +149,8 @@ public class NaruSessionUsageReportingTest {
         session.addUsageListener(new NaruSessionUsageListener() {
             @Override
             public void onModelCall(NaruTask task, NaruModelKey model, long promptTokens, long completionTokens,
-                                    long cacheWriteTokens, long cacheReadTokens, NDuration duration) {
+                                    long cacheWriteTokens, long cacheReadTokens, Map<String, String> callLabels,
+                                    NDuration duration) {
                 throw new IllegalStateException("listener is broken");
             }
 
@@ -157,7 +162,7 @@ public class NaruSessionUsageReportingTest {
         session.addUsageListener(after);
 
         Assertions.assertDoesNotThrow(() ->
-                        session.fireModelCallUsage(null, MODEL, 10, 1, 0, 0, NDuration.ofMillis(5)),
+                        session.fireModelCallUsage(null, MODEL, 10, 1, 0, 0, Map.of(), NDuration.ofMillis(5)),
                 "a broken observer must not propagate out of a model call");
         Assertions.assertEquals(1, after.calls.size(),
                 "a broken listener must not swallow the notification for later ones");
@@ -169,9 +174,9 @@ public class NaruSessionUsageReportingTest {
         Recorder r = new Recorder();
         session.addUsageListener(r);
 
-        session.fireModelCallUsage(null, MODEL, 10, 1, 0, 0, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, MODEL, 10, 1, 0, 0, Map.of(), NDuration.ofMillis(5));
         session.removeUsageListener(r);
-        session.fireModelCallUsage(null, MODEL, 10, 1, 0, 0, NDuration.ofMillis(5));
+        session.fireModelCallUsage(null, MODEL, 10, 1, 0, 0, Map.of(), NDuration.ofMillis(5));
 
         Assertions.assertEquals(1, r.calls.size());
     }
@@ -198,6 +203,6 @@ public class NaruSessionUsageReportingTest {
         NaruSessionImpl session = newSession();
         session.addUsageListener(null);
         Assertions.assertDoesNotThrow(() ->
-                session.fireModelCallUsage(null, MODEL, 1, 1, 0, 0, NDuration.ofMillis(1)));
+                session.fireModelCallUsage(null, MODEL, 1, 1, 0, 0, Map.of(), NDuration.ofMillis(1)));
     }
 }

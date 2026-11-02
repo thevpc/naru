@@ -53,7 +53,7 @@ public class NaruBudgetExtensionTest {
     }
 
     private static void call(NaruSessionImpl session, NaruModelKey model, long prompt, long completion) {
-        session.fireModelCallUsage(null, model, prompt, completion, -1, -1, NDuration.ofMillis(10));
+        session.fireModelCallUsage(null, model, prompt, completion, -1, -1, java.util.Map.of(), NDuration.ofMillis(10));
     }
 
     @Test
@@ -91,8 +91,8 @@ public class NaruBudgetExtensionTest {
         NaruSessionImpl session = newSession("cache");
         NaruBudgetService svc = NaruBudgetExtension.budget(session);
 
-        session.fireModelCallUsage(null, MODEL_A, 1000, 20, 1000, 0, NDuration.ofMillis(10));
-        session.fireModelCallUsage(null, MODEL_A, 1000, 20, 100, 900, NDuration.ofMillis(10));
+        session.fireModelCallUsage(null, MODEL_A, 1000, 20, 1000, 0, java.util.Map.of(), NDuration.ofMillis(10));
+        session.fireModelCallUsage(null, MODEL_A, 1000, 20, 100, 900, java.util.Map.of(), NDuration.ofMillis(10));
 
         NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL_A));
         Assertions.assertEquals(1100, stats.cacheWriteTokens());

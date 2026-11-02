@@ -38,4 +38,19 @@ public interface NaruSessionListener {
      * — the desktop's tool list — stays honest about what the model is offered.
      */
     default void onToolExclusionsChanged(NaruTask task) { }
+
+    /**
+     * The session's human label changed. Covers every way a name can move — a rename, an
+     * automatic title, an explicit regeneration — so a listing has one place to refresh from
+     * rather than polling.
+     *
+     * <p>Deliberately not fired when a placeholder is first minted for a session that had no
+     * name: that is the label appearing for the first time, not one replacing another, and
+     * {@code oldName} would have no honest value.
+     *
+     * <p>Fired on the thread that changed the name, which for an automatic title is a runtime
+     * worker and not the UI thread.
+     */
+    default void onSessionRenamed(NaruSession session, String oldName, String newName,
+                                  NaruSessionNameSource source) { }
 }

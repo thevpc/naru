@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
+import net.thevpc.naru.api.agent.NaruSessionNameSource;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.task.NaruTask;
@@ -69,6 +70,13 @@ class NaruSessionListenerDelegate implements NaruSessionListener {
     public void onToolExclusionsChanged(NaruTask task) {
         for (NaruSessionListener li : ad) {
             li.onToolExclusionsChanged(task);
+        }
+    }
+
+    @Override
+    public void onSessionRenamed(NaruSession session, String oldName, String newName, NaruSessionNameSource source) {
+        for (NaruSessionListener li : ad) {
+            li.onSessionRenamed(session, oldName, newName, source);
         }
     }
 }

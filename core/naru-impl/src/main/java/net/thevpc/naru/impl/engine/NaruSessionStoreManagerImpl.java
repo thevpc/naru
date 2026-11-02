@@ -1,5 +1,7 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.agent.NaruSessionNameSource;
+import net.thevpc.naru.api.agent.NaruSessionNames;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSessionStoreManager;
@@ -154,7 +156,7 @@ public class NaruSessionStoreManagerImpl implements NaruSessionStoreManager {
         }
         if (adapter.uuid().equals(uuid)) {
             // the live session owns its own name; persist comes with it
-            adapter.name(name);
+            adapter.rename(name, NaruSessionNameSource.USER);
             return true;
         }
         NaruSessionScope scope = adapter.rawSessionStore().scopeOf(uuid).orNull();
@@ -165,9 +167,13 @@ public class NaruSessionStoreManagerImpl implements NaruSessionStoreManager {
         if (data == null) {
             return false;
         }
-        data.name(name);
+        // A catalog rename is a rename: the label is chosen by a person, so the source is
+        // USER and not left at whatever the record carried. Setting one without the other
+        // is how a manual name ends up eligible for automatic overwrite.
+        data.name(NaruSessionNames.normalize(name));
+        data.nameSource(NaruSessionNameSource.USER);
         data.modificationInstant(Instant.now());
-        adapter.rawSessionStore().saveData(data, scope);
+        adapter.rawSessionStore().compareAndSetData(data, scope, data.version());
         return true;
     }
 

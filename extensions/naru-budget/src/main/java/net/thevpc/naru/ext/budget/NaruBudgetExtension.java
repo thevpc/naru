@@ -81,7 +81,8 @@ public class NaruBudgetExtension implements NaruSessionExtension, NaruSessionUsa
 
     @Override
     public void onModelCall(NaruTask task, NaruModelKey model, long promptTokens, long completionTokens,
-                            long cacheWriteTokens, long cacheReadTokens, NDuration duration) {
+                            long cacheWriteTokens, long cacheReadTokens,
+                            Map<String, String> labels, NDuration duration) {
         if (budgetService == null) {
             return;
         }
@@ -89,7 +90,7 @@ public class NaruBudgetExtension implements NaruSessionExtension, NaruSessionUsa
         String sessionId = session == null ? null : session.uuid();
         String userId = session == null || session.user() == null ? null : session.user().id();
         budgetService.trackTransaction(new NaruTokenTransaction(
-                buildLabels(task, modelConfig, sessionId, userId),
+                buildLabels(task, modelConfig, sessionId, userId, labels),
                 sessionId,
                 userId,
                 modelConfig,
@@ -107,13 +108,19 @@ public class NaruBudgetExtension implements NaruSessionExtension, NaruSessionUsa
 
     /**
      * Builds the full label set for one call: the built-in dimensions derived from the
-     * call, then the task's user-defined labels, which never override a built-in key.
+     * call, then the task's user-defined labels, then the labels of the call itself, which
+     * sit at the same level as a task's own and never override a built-in key either.
+     *
+     * <p>Call labels exist because a call can be made without a task. A session title is
+     * billed like any other completion but belongs to no conversation turn, so the only
+     * thing that can distinguish it in a report is a label carried on the call.
      *
      * <p>TODO: per-routine attribution. A {@code call}ed routine has no label of its
      * own, so its spend is attributed to the enclosing task. A {@code routine} label
      * taken from the top routine frame is the intended later addition.
      */
-    private static Labels buildLabels(NaruTask task, NaruModelConfig model, String sessionId, String userId) {
+    private static Labels buildLabels(NaruTask task, NaruModelConfig model, String sessionId, String userId,
+                                      Map<String, String> callLabels) {
         Labels.Builder b = Labels.builder();
         if (model != null) {
             if (model.provider() != null) {
@@ -146,6 +153,13 @@ public class NaruBudgetExtension implements NaruSessionExtension, NaruSessionUsa
         if (task != null) {
             for (Map.Entry<String, String> e : task.labels().entrySet()) {
                 // user labels never override a built-in dimension
+                if (!builtin.containsKey(e.getKey())) {
+                    all.add(e.getKey(), e.getValue());
+                }
+            }
+        }
+        if (callLabels != null) {
+            for (Map.Entry<String, String> e : callLabels.entrySet()) {
                 if (!builtin.containsKey(e.getKey())) {
                     all.add(e.getKey(), e.getValue());
                 }

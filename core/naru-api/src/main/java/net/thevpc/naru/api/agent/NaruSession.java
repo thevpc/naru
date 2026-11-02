@@ -299,17 +299,48 @@ public interface NaruSession {
     /**
      * Returns the name of this session.
      *
+     * <p>Never blank. A session that was never named reports the generated placeholder
+     * ({@code Session N}) that {@link #nameSource()} says is owned by nobody; the number
+     * comes from a counter the store keeps, so the label a user sees is the label that
+     * gets stored and survives a restart.
+     *
      * @return the session name, never null
      */
     String name();
 
     /**
-     * Sets the name of this session.
+     * Who last chose this session's name, and therefore who may change it next.
      *
-     * @param name the new name, must not be null
-     * @return this session for chaining
+     * <p>Never null: a session loaded from a store that predates the field reports
+     * {@link NaruSessionNameSource#USER}, because a name a person typed is the likeliest
+     * origin and the only cost of that reading is that no title is applied over it.
      */
-    NaruSession name(String name);
+    NaruSessionNameSource nameSource();
+
+    /**
+     * Sets the name of this session together with the authority that set it.
+     *
+     * <p>Name and source are one operation because they must never disagree: a rename that
+     * stored the label and lost its source would let an automatic title overwrite a name
+     * the user just typed. Validation is {@link NaruSessionNames#normalize(String)} --
+     * trimmed, single line, capped -- and duplicates are allowed, since the uuid is the
+     * identity and this is a label.
+     *
+     * @param name   the new name, not blank after normalizing
+     * @param source who chose it
+     * @return this session for chaining
+     * @throws net.thevpc.nuts.util.NIllegalArgumentException when the name is empty
+     */
+    NaruSession rename(String name, NaruSessionNameSource source);
+
+    /**
+     * The service that names a session from what was said in it.
+     *
+     * <p>On the session rather than on the registry because titling needs the session's
+     * model access, its metering seam and its store, and {@code /session title} and the
+     * automatic trigger must go through exactly one implementation of those.
+     */
+    NaruSessionTitler titler();
 
     /**
      * The catalog of sessions <b>saved to disk</b> in this project.

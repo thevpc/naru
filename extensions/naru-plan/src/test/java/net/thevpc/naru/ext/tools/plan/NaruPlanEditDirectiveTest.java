@@ -209,6 +209,73 @@ public class NaruPlanEditDirectiveTest {
     }
 
     @Test
+    public void createMakesAPlanHoldingOnlyItsGoalAndLeavesItDormant() {
+        NaruStmtResult r = plan("create migrate the build");
+        assertTrue(!isErr(r), err(r));
+        List<NaruPlan> all = List.copyOf(plans().plans().values());
+        assertEquals(1, all.size());
+        assertEquals("migrate the build", all.get(0).goal());
+        assertTrue(all.get(0).items().isEmpty(), "the plan starts with no items");
+        assertTrue(plans().activePlanId() == null, "a created plan stays dormant");
+    }
+
+    @Test
+    public void createWithNoGoalIsAnError() {
+        NaruStmtResult r = plan("create");
+        assertTrue(isErr(r));
+        assertTrue(err(r).contains("usage"), err(r));
+        assertTrue(plans().plans().isEmpty());
+    }
+
+    // ── naming a plan other than the active one ───────────────────────────────
+
+    @Test
+    public void goalTargetsANamedPlanWithoutActivatingIt() {
+        NaruPlan active = activePlan("a", "the active one");
+        NaruPlan other = plans().createPlan("other goal", List.of(NaruPlanItemSpec.of("b", "other item")));
+        NaruStmtResult r = plan("goal --plan=" + other.id() + " renamed other");
+        assertTrue(!isErr(r), err(r));
+        assertEquals("renamed other", plans().findPlan(other.id()).orNull().goal());
+        assertEquals("goal", plans().findPlan(active.id()).orNull().goal(), "the active plan is untouched");
+        assertEquals(active.id(), plans().activePlanId(), "and it stays the active one");
+    }
+
+    @Test
+    public void addTargetsANamedPlan() {
+        NaruPlan active = activePlan("a", "the active one");
+        NaruPlan other = plans().createPlan("other goal", List.of());
+        NaruStmtResult r = plan("add --plan=" + other.id() + " an item for the other plan");
+        assertTrue(!isErr(r), err(r));
+        assertEquals(1, plans().findPlan(other.id()).orNull().items().size());
+        assertEquals(1, plans().findPlan(active.id()).orNull().items().size(), "the active plan kept its one item");
+        assertEquals(active.id(), plans().activePlanId());
+    }
+
+    @Test
+    public void editAndRemoveTargetANamedPlan() {
+        NaruPlan active = activePlan("a", "the active one");
+        NaruPlan other = plans().createPlan("other goal", List.of(NaruPlanItemSpec.of("b", "other item")));
+        String itemId = other.items().get(0).id();
+        assertTrue(!plan("edit --plan=" + other.id() + " " + itemId + " rewritten elsewhere").isError());
+        assertEquals("rewritten elsewhere", plans().findItem(other.id(), itemId).orNull().description());
+        assertTrue(!plan("remove --plan=" + other.id() + " " + itemId).isError());
+        assertTrue(plans().findPlan(other.id()).orNull().items().isEmpty());
+        // the active plan was never the target, so its own item is untouched
+        List<NaruPlanItem> activeItems = plans().findPlan(active.id()).orNull().items();
+        assertEquals(1, activeItems.size());
+        assertEquals("design it", activeItems.get(0).description());
+        assertEquals(NaruPlanItemStatus.READY, activeItems.get(0).status());
+    }
+
+    @Test
+    public void anUnknownNamedPlanIsAnError() {
+        activePlan("a", "the active one");
+        NaruStmtResult r = plan("goal --plan=zzzz renamed");
+        assertTrue(isErr(r));
+        assertTrue(err(r).contains("no plan matching"), err(r));
+    }
+
+    @Test
     public void anItemPrefixIsEnoughToAddressIt() {
         NaruPlan plan = activePlan("a", "design it");
         String itemId = plan.items().get(0).id();
