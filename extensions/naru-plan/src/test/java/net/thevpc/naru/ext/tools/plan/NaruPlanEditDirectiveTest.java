@@ -263,7 +263,7 @@ public class NaruPlanEditDirectiveTest {
         // the active plan was never the target, so its own item is untouched
         List<NaruPlanItem> activeItems = plans().findPlan(active.id()).orNull().items();
         assertEquals(1, activeItems.size());
-        assertEquals("design it", activeItems.get(0).description());
+        assertEquals("the active one", activeItems.get(0).description());
         assertEquals(NaruPlanItemStatus.READY, activeItems.get(0).status());
     }
 

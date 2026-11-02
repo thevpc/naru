@@ -230,10 +230,11 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                         return fail(context, "usage: /plan goal [--plan=<id>] <text...>");
                     }
                     NaruPlanManager plans = NaruPlanExtension.plans(context.task().session());
-                    NaruPlan plan = targetPlan(plans, planRef[0], context);
-                    if (plan == null) {
-                        return NaruStmtResult.ofError();
+                    NOptional<NaruPlan> planOpt = targetPlan(plans, planRef[0]);
+                    if (planOpt.isError() || !planOpt.isPresent()) {
+                        return fail(context, reason(planOpt, "no plan to edit"));
                     }
+                    NaruPlan plan = planOpt.orNull();
                     NOptional<NaruPlan> result = plans.setGoal(plan.id(), goal);
                     if (result.isError() || !result.isPresent()) {
                         return fail(context, reason(result, "plan " + plan.id() + " kept its old goal"));
@@ -277,10 +278,11 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                         return fail(context, "usage: /plan add [--plan=<id>] <text...> [--after=<item>]");
                     }
                     NaruPlanManager plans = NaruPlanExtension.plans(context.task().session());
-                    NaruPlan plan = targetPlan(plans, planRef[0], context);
-                    if (plan == null) {
-                        return NaruStmtResult.ofError();
+                    NOptional<NaruPlan> planOpt = targetPlan(plans, planRef[0]);
+                    if (planOpt.isError() || !planOpt.isPresent()) {
+                        return fail(context, reason(planOpt, "no plan to edit"));
                     }
+                    NaruPlan plan = planOpt.orNull();
                     // --after takes an id, a unique id prefix or the declaration key the board
                     // prints, so resolve here and pass ids down: addItems speaks keys of the same
                     // batch, and a human quoting 8 characters from the panel should not have to
@@ -368,10 +370,11 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                         patch.validator(vk.orNull());
                     }
                     NaruPlanManager plans = NaruPlanExtension.plans(context.task().session());
-                    NaruPlan plan = targetPlan(plans, planRef[0], context);
-                    if (plan == null) {
-                        return NaruStmtResult.ofError();
+                    NOptional<NaruPlan> planOpt = targetPlan(plans, planRef[0]);
+                    if (planOpt.isError() || !planOpt.isPresent()) {
+                        return fail(context, reason(planOpt, "no plan to edit"));
                     }
+                    NaruPlan plan = planOpt.orNull();
                     NaruPlanItem item = resolveItem(plan, itemRef);
                     if (item == null) {
                         return fail(context, "no item matching '" + itemRef + "' in plan " + plan.id());
@@ -411,10 +414,11 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                         return fail(context, "the note is empty; clear it with /plan edit " + itemRef + " --no-notes");
                     }
                     NaruPlanManager plans = NaruPlanExtension.plans(context.task().session());
-                    NaruPlan plan = targetPlan(plans, planRef[0], context);
-                    if (plan == null) {
-                        return NaruStmtResult.ofError();
+                    NOptional<NaruPlan> planOpt = targetPlan(plans, planRef[0]);
+                    if (planOpt.isError() || !planOpt.isPresent()) {
+                        return fail(context, reason(planOpt, "no plan to edit"));
                     }
+                    NaruPlan plan = planOpt.orNull();
                     NaruPlanItem item = resolveItem(plan, itemRef);
                     if (item == null) {
                         return fail(context, "no item matching '" + itemRef + "' in plan " + plan.id());
@@ -450,10 +454,11 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                         return fail(context, "usage: /plan remove [--plan=<id>] <item>");
                     }
                     NaruPlanManager plans = NaruPlanExtension.plans(context.task().session());
-                    NaruPlan plan = targetPlan(plans, planRef[0], context);
-                    if (plan == null) {
-                        return NaruStmtResult.ofError();
+                    NOptional<NaruPlan> planOpt = targetPlan(plans, planRef[0]);
+                    if (planOpt.isError() || !planOpt.isPresent()) {
+                        return fail(context, reason(planOpt, "no plan to edit"));
                     }
+                    NaruPlan plan = planOpt.orNull();
                     NaruPlanItem item = resolveItem(plan, positionals.get(0));
                     if (item == null) {
                         return fail(context, "no item matching '" + positionals.get(0) + "' in plan " + plan.id());
@@ -513,22 +518,20 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
          * else the active plan. Naming another plan edits it in place without changing which
          * plan is active, so a dormant plan can be shaped before it is ever run.
          */
-        private static NaruPlan targetPlan(NaruPlanManager plans, String planRef, SubCommandContext context) {
+        private static NOptional<NaruPlan> targetPlan(NaruPlanManager plans, String planRef) {
             if (NBlankable.isBlank(planRef)) {
                 NaruPlan active = plans.activePlan().orNull();
                 if (active == null) {
-                    context.errln(NMsg.ofC("%s", "no active plan; select one with /plan activate <id> "
-                            + "or name one with --plan=<id>").asError());
-                    return null;
+                    return NOptional.ofError(NMsg.ofC("no active plan; select one with /plan activate <id> "
+                            + "or name one with --plan=<id>"));
                 }
-                return active;
+                return NOptional.of(active);
             }
             NaruPlan p = plans.findPlan(planRef).orNull();
             if (p == null) {
-                context.errln(NMsg.ofC("no plan matching '%s'", planRef).asError());
-                return null;
+                return NOptional.ofError(NMsg.ofC("no plan matching '%s'", planRef));
             }
-            return p;
+            return NOptional.of(p);
         }
 
         /**
