@@ -29,15 +29,28 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
 
     private final Map<String, NaruPlan> plans = new LinkedHashMap<>();
     private volatile String activePlanId;
+    /**
+     * Hosts that display the graph. A plan changes without the panel asking — a task reports
+     * progress, a directive adds an item, a mode switch activates a plan — and a board that only
+     * reads on its own events shows a plan that is no longer true.
+     */
+    private final List<Runnable> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @Override
     public NaruPlan createPlan(String goal, List<NaruPlanItemSpec> items) {
+        return createPlan(goal, null, items);
+    }
+
+    @Override
+    public NaruPlan createPlan(String goal, String description, List<NaruPlanItemSpec> items) {
         NaruPlan plan = new NaruPlan(goal);
+        plan.setDescription(description);
         plan.addItems(items == null ? new ArrayList<>() : items);
         plans.put(plan.id(), plan);
         // the graph is built with every item PENDING; the first readiness pass is what
         // makes the roots of the plan runnable
-        recomputeAndFill(plan.id());
+        recompute(plan.id());
+        changed();
         return plan;
     }
 
@@ -94,7 +107,8 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
         } catch (IllegalArgumentException e) {
             return NOptional.ofNamedError(NMsg.ofC("cannot add items to plan %s: %s", planId, e.getMessage()));
         }
-        recomputeAndFill(planId);
+        recompute(planId);
+        changed();
         return NOptional.of(plan);
     }
 
@@ -110,12 +124,83 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
         NaruPlan plan = found.orNull();
         plan.setGoal(goal.trim());
         plan.touch();
+        changed();
         return NOptional.of(plan);
     }
 
     @Override
-    public NOptional<NaruPlanItem> editItem(String planId, String itemId, NaruPlanItemPatch patch) {
-        NOptional<NaruPlan> foundPlan = findPlan(planId);
+    public NOptional<NaruPlan> setDescription(String planId, String description) {
+        NOptional<NaruPlan> found = findPlan(planId);
+        if (!found.isPresent()) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("plan %s", planId));
+        }
+        NaruPlan plan = found.orNull();
+        // blank clears; anything else is the reader's own Markdown and is stored as written, apart
+        // from the padding around it. Flattening it here would turn a document into a sentence.
+        plan.setDescription(description == null || description.isBlank() ? null : description.strip());
+        plan.touch();
+        changed();
+        return NOptional.of(plan);
+    }
+
+    @Override
+    public NOptional<NaruPlan> renameItem(String planId, String itemId, String key) {
+        NOptional<NaruPlan> found = findPlan(planId);
+        if (!found.isPresent()) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("plan %s", planId));
+        }
+        NaruPlan plan = found.orNull();
+        NaruPlanItem item = itemId == null ? null : plan.findItemByPrefix(itemId);
+        if (item == null) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("item %s of plan %s", itemId, planId));
+        }
+        if (key != null && !key.isBlank() && !isSingleWordKey(key.trim())) {
+            return NOptional.ofNamedError(NMsg.ofC(
+                    "'%s' is not a usable item key: a key is one word, so later items can point at "
+                            + "it with --after=%s", key.trim(), key.trim()));
+        }
+        if (!plan.renameKey(item.id(), key)) {
+            return NOptional.ofNamedError(NMsg.ofC("plan %s already has an item keyed '%s'",
+                    plan.id(), key == null ? "" : key.trim()));
+        }
+        plan.touch();
+        changed();
+        return NOptional.of(plan);
+    }
+
+    /**
+     * A declaration key is the handle later items and {@code /plan add --after=} quote, so it has to
+     * survive being typed into a command line: one word, no whitespace.
+     */
+    private static boolean isSingleWordKey(String key) {
+        return key.matches("[A-Za-z0-9._-]+");
+    }
+
+    @Override
+    public NOptional<NaruPlan> moveItem(String planId, String itemId, int newIndex) {
+        NOptional<NaruPlan> found = findPlan(planId);
+        if (!found.isPresent()) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("plan %s", planId));
+        }
+        NaruPlan plan = found.orNull();
+        NaruPlanItem item = itemId == null ? null : plan.findItemByPrefix(itemId);
+        if (item == null) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("item %s of plan %s", itemId, planId));
+        }
+        if (newIndex < 0 || newIndex >= plan.items().size()) {
+            return NOptional.ofNamedError(NMsg.ofC("position %d is outside plan %s, which has %d items",
+                    newIndex, plan.id(), plan.items().size()));
+        }
+        // order decides which ready item a dispatcher offers first, so a running item may still be
+        // moved: its text and edges are untouched, only its place in the reading order changes
+        plan.moveItem(item.id(), newIndex);
+        plan.touch();
+        changed();
+        return NOptional.of(plan);
+    }
+
+    @Override
+    public NOptional<NaruPlanItem> editItem(String planId, String itemId, NaruPlanItemPatch patch) {        NOptional<NaruPlan> foundPlan = findPlan(planId);
         if (!foundPlan.isPresent()) {
             return NOptional.ofNamedEmpty(NMsg.ofC("plan %s", planId));
         }
@@ -149,7 +234,8 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
             item.setValidator(patch.validator().value());
         }
         plan.touch();
-        recomputeAndFill(plan.id());
+        recompute(plan.id());
+        changed();
         return NOptional.of(item);
     }
 
@@ -173,7 +259,8 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
         // removeItem already drops the inbound edges and touches; the pass afterwards is what
         // lets a dependent become READY now that its gate is gone
         plan.removeItem(item.id());
-        recomputeAndFill(plan.id());
+        recompute(plan.id());
+        changed();
         return NOptional.of(plan);
     }
 
@@ -207,7 +294,8 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
             item.setNotes(notes);
         }
         plan(planId).touch();
-        recomputeAndFill(planId);
+        recompute(planId);
+        changed();
         return NOptional.of(item);
     }
 
@@ -228,7 +316,8 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
             item.setNotes(notes);
         }
         plan(planId).touch();
-        recomputeAndFill(planId);
+        recompute(planId);
+        changed();
         return NOptional.of(item);
     }
 
@@ -245,7 +334,8 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
         List<NaruPlanItem> demoted = new ArrayList<>();
         demote(plan, item, cascade, demoted);
         plan.touch();
-        recomputeAndFill(planId);
+        recompute(planId);
+        changed();
         return NOptional.of(demoted);
     }
 
@@ -274,11 +364,22 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
 
     @Override
     public NOptional<NaruPlan> recomputeAndFill(String planId) {
+        NOptional<NaruPlan> result = recompute(planId);
+        changed();
+        return result;
+    }
+
+    /**
+     * The readiness pass, without announcing it. Every mutator below finishes with one of these, so
+     * an internal pass must not fire its own event on top of the write that caused it — a board would
+     * otherwise read the graph twice for one click.
+     */
+    private NOptional<NaruPlan> recompute(String planId) {
         NaruPlan plan = planId == null ? null : plans.get(planId);
         if (plan == null) {
             return NOptional.ofNamedEmpty(NMsg.ofC("plan %s", planId));
         }
-        boolean changed = false;
+        boolean moved = false;
         for (NaruPlanItem s : plan.items()) {
             if (s.status().isTerminal() || s.status() == NaruPlanItemStatus.RUNNING
                     || s.status() == NaruPlanItemStatus.VALIDATING) {
@@ -288,13 +389,40 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
             NaruPlanItemStatus want = satisfied ? NaruPlanItemStatus.READY : NaruPlanItemStatus.PENDING;
             if (s.status() != want) {
                 s.setStatus(want);
-                changed = true;
+                moved = true;
             }
         }
-        if (changed) {
+        if (moved) {
             plan.touch();
         }
         return NOptional.of(plan);
+    }
+
+    // ── change announcements (the seam NaruPlanExtension forwards to its hosts) ──
+
+    /** Announce the graph's new shape to a host that displays it. */
+    public void addChangeListener(Runnable listener) {
+        if (listener != null) {
+            listeners.add(listener);
+        }
+    }
+
+    public void removeChangeListener(Runnable listener) {
+        listeners.remove(listener);
+    }
+
+    /**
+     * Tell everyone that the graph moved. A listener that throws is a display bug in whoever
+     * registered it and must not undo the write that already landed, so its failure stops here.
+     */
+    private void changed() {
+        for (Runnable listener : listeners) {
+            try {
+                listener.run();
+            } catch (RuntimeException ignored) {
+                // the plan is written; a broken panel is not a reason to lose that
+            }
+        }
     }
 
     private boolean dependenciesSatisfied(NaruPlan plan, NaruPlanItem s) {
@@ -309,10 +437,14 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
 
     @Override
     public boolean removePlan(String planId) {
-        if (planId != null && planId.equals(activePlanId)) {
+        boolean removed = planId != null && plans.remove(planId) != null;
+        if (removed && planId.equals(activePlanId)) {
             activePlanId = null;
         }
-        return planId != null && plans.remove(planId) != null;
+        if (removed) {
+            changed();
+        }
+        return removed;
     }
 
     @Override
@@ -334,6 +466,7 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
         } else {
             throw new IllegalArgumentException("unknown plan " + planId);
         }
+        changed();
     }
 
     private NaruPlan plan(String planId) {
@@ -346,6 +479,7 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
     public void clear() {
         plans.clear();
         activePlanId = null;
+        listeners.clear();
     }
 
     // ── persistence (driven by NaruPlanExtension, via the session extension SPI) ──
@@ -412,6 +546,9 @@ public class NaruPlanManagerImpl implements NaruPlanManager {
             if (act != null && plans.containsKey(act)) {
                 activePlanId = act;
             }
+            // a board that was open while the session restored must hear that the graph it read
+            // is gone and a different one arrived
+            changed();
         } catch (Exception ex) {
             throw new NIllegalArgumentException(NMsg.ofC("failed to load plans: %s", ex.getMessage(), ex));
         }

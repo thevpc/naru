@@ -40,6 +40,23 @@ public interface NaruPlanReader extends NaruSessionExtension {
     NaruPlanSnapshot activePlan();
 
     /**
+     * Hear about a plan change the host did not ask for — a task reporting progress, a directive
+     * adding an item, a readiness pass. Defaulted to nothing so a reader that cannot announce
+     * changes still answers reads; {@code naru-plan} overrides both and a host that subscribes
+     * through this seam is refreshed by the graph's own writers.
+     *
+     * <p>A host must still poll on its own events: this is the push that makes a board honest
+     * between them, not the only refresh path.
+     */
+    default void addPlanListener(NaruPlanListener listener) {
+        // no listeners available: the host's own refresh path is what draws the board
+    }
+
+    /** Stop a listener announced by {@link #addPlanListener(NaruPlanListener)}; absent is a no-op. */
+    default void removePlanListener(NaruPlanListener listener) {
+    }
+
+    /**
      * The session's reader, or {@code null} when the {@code naru-plan} extension is not installed. A
      * host must then say that planning is unavailable rather than read the extension's own state
      * file with a parser of its own, because two parsers of one format drift.

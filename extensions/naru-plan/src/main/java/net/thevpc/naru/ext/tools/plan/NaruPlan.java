@@ -56,10 +56,6 @@ public class NaruPlan {
         this(UUID.randomUUID().toString(), goal, null);
     }
 
-    public NaruPlan(String goal, String description) {
-        this(UUID.randomUUID().toString(), goal, description);
-    }
-
     public NaruPlan(String id, String goal) {
         this(id, goal, null);
     }
@@ -125,6 +121,22 @@ public class NaruPlan {
 
     public NaruPlan setGoal(String goal) {
         this.goal = goal;
+        return this;
+    }
+
+    /**
+     * The long description, or null when the plan carries none.
+     *
+     * <p>Markdown, stored exactly as written: the plan's items are sentences but this is a document,
+     * so a host that renders it may show headings, lists and code that a flattened one could not.
+     */
+    public String description() {
+        return description;
+    }
+
+    /** Replace the description; pass null or blank to leave the plan without one. */
+    public NaruPlan setDescription(String description) {
+        this.description = (description == null || description.isBlank()) ? null : description;
         return this;
     }
 
@@ -259,6 +271,58 @@ public class NaruPlan {
                 s.removeDependency(itemId);
             }
         }
+        touch();
+        return true;
+    }
+
+    /**
+     * Retire the declaration key an item carries and give it another, or clear it when
+     * {@code newKey} is blank.
+     *
+     * <p>A key is only a handle for authoring — edges are stored as item ids — so renaming one
+     * rewrites nothing else in the graph. It fails (returns false, plan untouched) when another
+     * item already answers to {@code newKey}, because two items sharing a handle would make every
+     * later {@code --after=<key>} ambiguous.
+     */
+    public boolean renameKey(String itemId, String newKey) {
+        if (item(itemId) == null) {
+            return false;
+        }
+        String previous = keyOf(itemId);
+        String wanted = newKey == null || newKey.isBlank() ? null : newKey.trim();
+        if (wanted != null && itemId.equals(keyToItemId.get(wanted))) {
+            return true;
+        }
+        if (wanted != null && keyToItemId.containsKey(wanted)) {
+            return false;
+        }
+        if (previous != null) {
+            keyToItemId.remove(previous);
+        }
+        if (wanted != null) {
+            keyToItemId.put(wanted, itemId);
+        }
+        touch();
+        return true;
+    }
+
+    /**
+     * Move an item to a new position in declaration order.
+     *
+     * <p>Order is not status: it says which ready item a dispatcher offers first and how the plan
+     * reads on screen, so this touches no dependency edge and no item's own text.
+     */
+    public boolean moveItem(String itemId, int newIndex) {
+        NaruPlanItem target = item(itemId);
+        if (target == null || newIndex < 0 || newIndex >= items.size()) {
+            return false;
+        }
+        int at = items.indexOf(target);
+        if (at == newIndex) {
+            return true;
+        }
+        items.remove(at);
+        items.add(newIndex, target);
         touch();
         return true;
     }
@@ -415,6 +479,11 @@ public class NaruPlan {
     public NText render() {
         NTextBuilder sb = NTextBuilder.of();
         sb.append("Plan ").append(shortId(), NTextStyle.primary1()).append(" - ").append(goal, NTextStyle.primary2()).append('\n');
+        if (description != null && !description.isBlank()) {
+            // the description is the reader's own prose about the whole plan, so the model gets it
+            // verbatim rather than a one-line summary of it
+            sb.append(description.strip()).append('\n');
+        }
         for (NaruPlanItem s : items) {
             sb.append("  ").append(s.id().substring(0, Math.min(8, s.id().length())), NTextStyle.pale());
             if (s.validator().isGate()) {
@@ -472,6 +541,9 @@ public class NaruPlan {
         b.set("schemaVersion", SCHEMA_VERSION);
         b.set("id", id);
         b.set("goal", goal);
+        if (description != null) {
+            b.set("description", description);
+        }
         b.set("creationInstant", NElement.ofInstant(creationInstant));
         b.set("modificationInstant", NElement.ofInstant(modificationInstant));
         b.set("items", itemsArr.build());

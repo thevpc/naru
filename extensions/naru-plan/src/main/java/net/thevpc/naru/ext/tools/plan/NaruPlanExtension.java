@@ -9,6 +9,7 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.plan.NaruPlanException;
 import net.thevpc.naru.api.plan.NaruPlanItemSnapshot;
 import net.thevpc.naru.api.plan.NaruPlanItemState;
+import net.thevpc.naru.api.plan.NaruPlanListener;
 import net.thevpc.naru.api.plan.NaruPlanReader;
 import net.thevpc.naru.api.plan.NaruPlanService;
 import net.thevpc.naru.api.plan.NaruPlanSnapshot;
@@ -24,7 +25,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Makes the planning feature available to the session, without the core knowing that
@@ -50,6 +53,8 @@ public class NaruPlanExtension implements NaruSessionExtension, NaruPlanService 
                     + "session; if it turns out to be wrong, say so in your report and let the user re-plan.";
 
     private final NaruPlanManagerImpl plans = new NaruPlanManagerImpl();
+    /** The bridges between a host's listener and the manager's Runnable, so removal can match. */
+    private final Map<NaruPlanListener, Runnable> planListeners = new ConcurrentHashMap<>();
 
     @Override
     public String name() {
@@ -96,6 +101,66 @@ public class NaruPlanExtension implements NaruSessionExtension, NaruPlanService 
     }
 
     @Override
+    public NaruPlanSnapshot createPlan(String goal, String description) {
+        String text = requireText(goal, "a plan needs a goal");
+        try {
+            NaruPlan plan = plans.createPlan(text, keepMarkdown(description), new ArrayList<>());
+            return snapshot(plan, plan.id().equals(plans.activePlanId()));
+        } catch (IllegalArgumentException e) {
+            throw new NaruPlanException(messageOf(e, "the plan could not be created"), e);
+        }
+    }
+
+    @Override
+    public NaruPlanSnapshot setDescription(String planId, String description) {
+        NaruPlan plan = plan(planId);
+        NaruPlan changed = orFail(plans.setDescription(plan.id(), keepMarkdown(description)),
+                "plan " + plan.id() + " kept its old description");
+        return snapshot(changed, changed.id().equals(plans.activePlanId()));
+    }
+
+    @Override
+    public NaruPlanSnapshot renameItem(String planId, String itemId, String key) {
+        NaruPlan plan = plan(planId);
+        NaruPlan changed = orFail(plans.renameItem(plan.id(), itemId, key),
+                "item " + itemId + " kept its old key");
+        return snapshot(changed, changed.id().equals(plans.activePlanId()));
+    }
+
+    @Override
+    public NaruPlanSnapshot moveItem(String planId, String itemId, int newIndex) {
+        NaruPlan plan = plan(planId);
+        NaruPlan changed = orFail(plans.moveItem(plan.id(), itemId, newIndex),
+                "item " + itemId + " stayed where it was");
+        return snapshot(changed, changed.id().equals(plans.activePlanId()));
+    }
+
+    @Override
+    public void addPlanListener(NaruPlanListener listener) {
+        if (listener == null) {
+            return;
+        }
+        // the manager holds the Runnable, so the one it was given is what removal has to hand back:
+        // a fresh method reference each call would never match and the panel would leak a subscriber
+        planListeners.computeIfAbsent(listener, k -> {
+            Runnable bridge = k::plansChanged;
+            plans.addChangeListener(bridge);
+            return bridge;
+        });
+    }
+
+    @Override
+    public void removePlanListener(NaruPlanListener listener) {
+        if (listener == null) {
+            return;
+        }
+        Runnable bridge = planListeners.remove(listener);
+        if (bridge != null) {
+            plans.removeChangeListener(bridge);
+        }
+    }
+
+    @Override
     public NaruPlanSnapshot setGoal(String planId, String goal) {
         String text = requireText(goal, "a plan needs a goal, not a blank one");
         NaruPlan plan = plan(planId);
@@ -106,7 +171,7 @@ public class NaruPlanExtension implements NaruSessionExtension, NaruPlanService 
 
     @Override
     public NaruPlanSnapshot addItem(String planId, String description) {
-        String text = requireText(description, "an item needs a description");
+        String text = requireDescription(description, "an item needs a description");
         NaruPlan plan = plan(planId);
         NaruPlan changed = orFail(plans.addItems(plan.id(), List.of(NaruPlanItemSpec.of(text))),
                 "plan " + plan.id() + " rejected that item");
@@ -115,7 +180,7 @@ public class NaruPlanExtension implements NaruSessionExtension, NaruPlanService 
 
     @Override
     public NaruPlanSnapshot editItem(String planId, String itemId, String description) {
-        String text = requireText(description, "an item needs a description");
+        String text = requireDescription(description, "an item needs a description");
         NaruPlan plan = plan(planId);
         orFail(plans.editItem(plan.id(), itemId, NaruPlanItemPatch.of().description(text)),
                 "item " + itemId + " could not be edited");
@@ -176,6 +241,25 @@ public class NaruPlanExtension implements NaruSessionExtension, NaruPlanService 
         return flat;
     }
 
+    /**
+     * A description the caller must supply. Only the padding around it is trimmed: this text is
+     * Markdown, so a blank line between two paragraphs and an indented code fence are the content,
+     * not whitespace to clean up. {@link #requireText} flattens, which is right for a one-line goal
+     * and would turn a description into a run-on sentence.
+     */
+    private static String requireDescription(String text, String complaint) {
+        String kept = keepMarkdown(text);
+        if (kept.isEmpty()) {
+            throw new NaruPlanException(complaint);
+        }
+        return kept;
+    }
+
+    /** Trim the surrounding whitespace and keep every line break inside, or "" when blank. */
+    private static String keepMarkdown(String text) {
+        return text == null ? "" : text.strip();
+    }
+
     private static String messageOf(RuntimeException e, String fallback) {
         return e.getMessage() == null || e.getMessage().isBlank() ? fallback : e.getMessage();
     }
@@ -199,8 +283,8 @@ public class NaruPlanExtension implements NaruSessionExtension, NaruPlanService 
                     NaruPlanItemState.valueOf(i.status().name()), deps,
                     i.notes(), i.taskId(), i.attempts()));
         }
-        return new NaruPlanSnapshot(p.id(), p.goal(), NaruPlanState.valueOf(p.status().name()),
-                items, active);
+        return new NaruPlanSnapshot(p.id(), p.goal(), p.description() == null ? "" : p.description(),
+                NaruPlanState.valueOf(p.status().name()), items, active);
     }
 
     /** The declaration key if the plan has one, otherwise the short id prefix {@link #contribute} prints. */
