@@ -146,7 +146,7 @@
                         <version>3.0.2</version>
                         <executions>
                             <execution>
-                                <phase>process-sources</phase>
+                                <phase>package</phase>
                                 <goals>
                                     <goal>copy-dependencies</goal>
                                 </goals>
@@ -239,7 +239,7 @@
                         <version>3.0.2</version>
                         <executions>
                             <execution>
-                                <phase>process-sources</phase>
+                                <phase>package</phase>
                                 <goals>
                                     <goal>copy-dependencies</goal>
                                 </goals>

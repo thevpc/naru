@@ -64,3 +64,4 @@ documentation/.naru
 /profiles/target/
 /target/
 /test/target/
+/.naru/stores/skills/trust/sessiondir/.lock
