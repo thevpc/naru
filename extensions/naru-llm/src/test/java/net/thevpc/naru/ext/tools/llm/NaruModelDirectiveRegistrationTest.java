@@ -217,6 +217,9 @@ public class NaruModelDirectiveRegistrationTest {
                             instances.remove(id.toLowerCase());
                             return was;
                         }
+                        case "registrationOrigin":
+                            // this fake owns one scope only: whatever it holds is the project's own
+                            return NOptional.ofEmpty();
                         case "findModel":
                             return NOptional.ofEmpty();
                         case "setListedModels": {

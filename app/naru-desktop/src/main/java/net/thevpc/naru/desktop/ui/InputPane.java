@@ -662,8 +662,12 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                 model.setText(ModelIcons.buttonLabel(current == null ? null : current.provider(),
                         current == null ? null : current.model(), 22));
                 String absent = absentProvidersSummary();
+                int hidden = hiddenFromListing();
                 model.setToolTipText((current == null ? "No model selected" : current.toString())
                         + " · " + modelInfos.size() + " models exposed by providers registered for this session"
+                        // the count above is what the session fetched, so a model the reader hid says
+                        // where it went instead of leaving the picker listing one short
+                        + (hidden == 0 ? "" : " · " + hidden + " hidden by this project's picker settings")
                         + (modelCatalogFailure == null ? "" : " · model list failed: " + modelCatalogFailure)
                         + (absent == null ? "" : " · " + absent));
             }
@@ -791,12 +795,18 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
 
     private void showModelChooser() {
         if (modelInfos == null) modelInfos = java.util.List.of();
+        // the view axis: what this project's reader chose not to see, and the filters they left the
+        // chooser on last time. Neither is a policy — the engine's own refusal is a model.filter.*
+        // key, and it applies whether or not this listing shows the model.
+        final ModelViewPreferences viewPrefs = modelViewPreferences();
+        java.util.List<net.thevpc.naru.api.model.NaruModelInfo> visible = viewPrefs.visible(modelInfos);
+        final int hiddenCount = modelInfos.size() - visible.size();
         final javax.swing.JLabel emptyLabel = new javax.swing.JLabel("No models match the filters.");
         emptyLabel.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
         emptyLabel.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
         DefaultListModel<net.thevpc.naru.api.model.NaruModelInfo> rows = new DefaultListModel<>();
         DefaultListModel<net.thevpc.naru.api.model.NaruModelInfo> all = new DefaultListModel<>();
-        modelInfos.forEach(info -> {
+        visible.forEach(info -> {
             rows.addElement(info);
             all.addElement(info);
         });
@@ -831,14 +841,25 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             }
         } catch (RuntimeException ignored) {
         }
-        modelInfos.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).forEach(allProviderNames0::add);
+        visible.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).forEach(allProviderNames0::add);
         final java.util.List<String> allProviderNames = allProviderNames0.stream().filter(java.util.Objects::nonNull).distinct().sorted(String.CASE_INSENSITIVE_ORDER).collect(java.util.stream.Collectors.toList());
         java.util.Set<String> providersWithModels = new java.util.LinkedHashSet<>();
-        modelInfos.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).forEach(providersWithModels::add);
+        visible.stream().map(net.thevpc.naru.api.model.NaruModelInfo::provider).filter(java.util.Objects::nonNull).forEach(providersWithModels::add);
 
         javax.swing.JCheckBox allProvidersFlag = new javax.swing.JCheckBox("Show providers without models", true);
         selectedModelProviders.clear();
-        selectedModelProviders.addAll(allProviderNames);
+        // remembered from the last time this project's chooser was open, kept to the providers that
+        // still exist: a provider unregistered since then must not be silently selected as an empty
+        // checkbox, and no remembered list at all means every provider this session can offer
+        String rememberedProviders = viewPrefs.filter("providers");
+        for (String name : allProviderNames) {
+            if (rememberedProviders == null || rememberedProviders.isEmpty()) {
+                selectedModelProviders.add(name);
+            } else if (rememberedProviders.contains("\n" + name + "\n")) {
+                selectedModelProviders.add(name);
+            }
+        }
+        allProvidersFlag.setSelected(!"false".equals(viewPrefs.filter("showEmptyProviders")));
 
         javax.swing.JTextField providerFilter = new javax.swing.JTextField();
         providerFilter.setFont(providerFilter.getFont().deriveFont(11f));
@@ -891,6 +912,21 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
 
         javax.swing.JComboBox<String> sort = new javax.swing.JComboBox<>(new String[]{"Name", "Context size"});
         sort.setFont(sort.getFont().deriveFont(11f));
+        String rememberedSort = viewPrefs.filter("sort");
+        if (rememberedSort != null) {
+            sort.setSelectedItem(rememberedSort);
+        }
+        String rememberedText = viewPrefs.filter("text");
+        if (rememberedText != null) {
+            filter.setText(rememberedText);
+        }
+        srcLocal.setSelected("true".equals(viewPrefs.filter("local")));
+        srcRemote.setSelected("true".equals(viewPrefs.filter("remote")));
+        capVision.setSelected("true".equals(viewPrefs.filter("vision")));
+        capTools.setSelected("true".equals(viewPrefs.filter("tools")));
+        capReasoning.setSelected("true".equals(viewPrefs.filter("reasoning")));
+        capEmbeddings.setSelected("true".equals(viewPrefs.filter("embeddings")));
+        capFree.setSelected("true".equals(viewPrefs.filter("free")));
         JDialog dialog = DesktopDialog.create(SwingUtilities.getWindowAncestor(this), "Choose model");
         filter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             private void apply() {
@@ -926,7 +962,10 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                 rows.addAll(matches);
                 if (matches.isEmpty()) {
                     String reason = emptyListingReason();
-                    emptyLabel.setText(reason == null ? "No models match the filters." : reason);
+                    String base = reason == null ? "No models match the filters." : reason;
+                    int hidden = hiddenCount;
+                    emptyLabel.setText(base + (hidden == 0 ? ""
+                            : " · " + hidden + " more hidden by this project's picker settings"));
                     emptyLabel.setVisible(true);
                 } else {
                     emptyLabel.setVisible(false);
@@ -1035,6 +1074,31 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         capEmbeddings.addActionListener(refilter);
         capFree.addActionListener(refilter);
         sort.addActionListener(refilter);
+        // Remember where this project's reader left the picker. The provider set is only stored when
+        // it is a real subset: "everything this session can offer" is what an absent entry means, so
+        // writing the full list would silently hide the provider they register next week.
+        dialog.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override public void windowClosed(java.awt.event.WindowEvent e) {
+                boolean everyProvider = selectedModelProviders.size() == allProviderNames.size();
+                StringBuilder names = new StringBuilder("\n");
+                if (!everyProvider) {
+                    for (String name : selectedModelProviders) {
+                        names.append(name).append('\n');
+                    }
+                }
+                viewPrefs.setFilter("providers", everyProvider || names.length() <= 1 ? null : names.toString());
+                viewPrefs.setFilter("text", filter.getText().trim());
+                viewPrefs.setFilter("sort", String.valueOf(sort.getSelectedItem()));
+                viewPrefs.setFilter("local", String.valueOf(srcLocal.isSelected()));
+                viewPrefs.setFilter("remote", String.valueOf(srcRemote.isSelected()));
+                viewPrefs.setFilter("vision", String.valueOf(capVision.isSelected()));
+                viewPrefs.setFilter("tools", String.valueOf(capTools.isSelected()));
+                viewPrefs.setFilter("reasoning", String.valueOf(capReasoning.isSelected()));
+                viewPrefs.setFilter("embeddings", String.valueOf(capEmbeddings.isSelected()));
+                viewPrefs.setFilter("free", String.valueOf(capFree.isSelected()));
+                viewPrefs.setFilter("showEmptyProviders", String.valueOf(allProvidersFlag.isSelected()));
+            }
+        });
         javax.swing.JPanel centerPanel = new javax.swing.JPanel(new java.awt.BorderLayout());
         javax.swing.JScrollPane listScroll = new javax.swing.JScrollPane(list);
         centerPanel.add(listScroll, java.awt.BorderLayout.CENTER);
@@ -1047,6 +1111,26 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         // has touched anything; without this the dialog opens claiming no filter matched
         refilterHolder[0].run();
         DesktopDialog.showCentered(dialog, SwingUtilities.getWindowAncestor(this), 760, 560);
+    }
+
+    /**
+     * This project's picker settings, read fresh: the settings pane can hide a provider while this
+     * chooser is closed, and a cached copy would keep listing what the reader just removed. Inert
+     * when no session is open, which is the same as nothing remembered.
+     */
+    private ModelViewPreferences modelViewPreferences() {
+        net.thevpc.nuts.io.NPath dir = null;
+        try {
+            net.thevpc.naru.api.agent.NaruSession s = session.session();
+            dir = s == null || s.agent() == null ? null : s.agent().projectDirectory();
+        } catch (RuntimeException ignored) {
+        }
+        return ModelViewPreferences.of(dir);
+    }
+
+    /** How many of the models this session fetched are hidden from this window. */
+    private int hiddenFromListing() {
+        return modelInfos.size() - modelViewPreferences().visible(modelInfos).size();
     }
 
     private boolean isDeclaredFree(net.thevpc.naru.api.model.NaruModelInfo info) {

@@ -5,6 +5,7 @@ import net.thevpc.naru.api.agent.NaruSessionTitler;
 import net.thevpc.naru.api.registry.NaruConfigKey;
 import net.thevpc.naru.api.registry.NaruConfigKeyProvider;
 import net.thevpc.naru.api.spawn.NaruSpawnPolicy;
+import net.thevpc.naru.impl.engine.NaruModelPolicy;
 
 import java.util.List;
 
@@ -43,7 +44,17 @@ public class NaruCoreConfigKeyProvider implements NaruConfigKeyProvider {
                 NaruConfigKey.of("naru.hooks.initOnCd",
                         "run the init hooks when the project directory changes").withValues("true", "false"),
                 NaruConfigKey.of("naru.tags.effectAnd",
-                        "how 'effect' tags combine on a task").withValues("on", "warn", "off")
+                        "how 'effect' tags combine on a task").withValues("on", "warn", "off"),
+                // The policy axis of model visibility. The view axis — what a panel lists —
+                // is the desktop's own state; these keys decide what any session may use.
+                NaruConfigKey.of(NaruModelPolicy.ALLOW_PROVIDERS,
+                        "comma-separated provider ids that are the only ones allowed; empty allows all"),
+                NaruConfigKey.of(NaruModelPolicy.DENY_PROVIDERS,
+                        "comma-separated provider ids that are refused even under the allow-list"),
+                NaruConfigKey.of(NaruModelPolicy.DENY_MODELS,
+                        "comma-separated provider/model keys refused individually"),
+                NaruConfigKey.of(NaruModelPolicy.LOCAL_ONLY,
+                        "allow only models served from a local endpoint").withValues("true", "false")
         );
     }
 }

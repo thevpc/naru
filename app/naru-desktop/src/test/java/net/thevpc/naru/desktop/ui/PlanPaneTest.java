@@ -2,6 +2,7 @@ package net.thevpc.naru.desktop.ui;
 
 import net.thevpc.naru.api.plan.NaruPlanItemSnapshot;
 import net.thevpc.naru.api.plan.NaruPlanItemState;
+import net.thevpc.naru.api.plan.NaruPlanService;
 import net.thevpc.naru.api.plan.NaruPlanSnapshot;
 import net.thevpc.naru.api.plan.NaruPlanState;
 import net.thevpc.naru.desktop.host.InteractionHost;
@@ -38,17 +39,16 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 /**
  * The board as a thing a reader clicks.
  *
- * <p>The panel is handed a snapshot source and a {@link PlanPane.Director} instead of a live
- * session: the plan extension is not on this module's test classpath, and what is worth pinning
- * here is that a click becomes exactly one directive line — not that the engine accepts it, which
- * the extension's own tests already cover.
+ * <p>The panel is handed a {@link NaruPlanService} instead of a live session: the plan extension is
+ * not on this module's test classpath, and what is worth pinning here is that a click becomes exactly
+ * one service call — not that the extension accepts it, which the extension's own tests cover.
  */
 class PlanPaneTest {
 
     private NaruSessionModel model;
     private InteractionHost host;
     private List<NaruPlanSnapshot> board;
-    private List<String> sent;
+    private List<String> writes;
     private PlanPane pane;
 
     @BeforeAll
@@ -67,11 +67,14 @@ class PlanPaneTest {
                                 item("item-c", "test it", NaruPlanItemState.PENDING)), true),
                 new NaruPlanSnapshot("dormant-plan", "an older idea", NaruPlanState.PENDING,
                         List.of(item("item-d", "something else", NaruPlanItemState.PENDING)), false)));
-        sent = new ArrayList<>();
+        writes = new ArrayList<>();
+        NaruPlanService service = new RecordingPlanService();
         onEdt(() -> {
             host = new InteractionHost();
             model = new NaruSessionModel(() -> null, dir, host);
-            pane = new PlanPane(model, () -> List.copyOf(board), sent::add);
+            // Runnable::run keeps the test deterministic: a click reaches the service before the
+            // assertion, while production writes use a background worker
+            pane = new PlanPane(model, () -> service, Runnable::run);
             pane.setSize(340, 520);
             pane.doLayout();
         });
@@ -102,7 +105,7 @@ class PlanPaneTest {
                 return;
             }
         }
-        assertTrue(false, "the plan board never drew; sent lines were " + sent);
+        assertTrue(false, "the plan board never drew; writes were " + writes);
     }
 
     // ── which plan is pointed at ──────────────────────────────────────────────
@@ -112,9 +115,37 @@ class PlanPaneTest {
         assertNotNull(onEdtReturn(() -> findButton(pane, "⏸")), "the active plan can be deactivated");
         assertNotNull(onEdtReturn(() -> findButton(pane, "▶")), "the dormant plan can be activated");
         assertEquals(2, onEdtReturn(() -> findButtons(pane, "＋")).size(),
-                "both plans offer add-an-item, active or not");
-        assertEquals(3, onEdtReturn(() -> findButtons(pane, "×")).size(),
-                "every item nobody is working on carries a remove control, in either plan");
+                "both registered plans offer add-an-item, active or not");
+        assertEquals(2, onEdtReturn(() -> findButtons(pane, "×")).size(),
+                "only the open plan's items are drawn; the running item carries no remove control");
+        assertEquals(2, onEdtReturn(() -> findButtons(pane, "🗑")).size(),
+                "every registered plan can be deleted from its row");
+    }
+
+    @Test
+    void thePlanListOpensTheActivePlanAndKeepsTheOthersClosed() throws Exception {
+        assertNotNull(onEdtReturn(() -> findLabel(pane, "write the rail")),
+                "the active plan is open on the board");
+        assertNull(onEdtReturn(() -> findLabel(pane, "something else")),
+                "a dormant plan's items stay folded until its row is opened");
+        assertNotNull(onEdtReturn(() -> findLabelContaining(pane, "Registered plans · 2")),
+                "the panel lists every registered plan");
+    }
+
+    @Test
+    void openingADormantPlanShowsItsItemsAndClosesTheActiveOne() throws Exception {
+        click(onEdtReturn(() -> findLabel(pane, "an older idea")));
+        assertNotNull(onEdtReturn(() -> findLabel(pane, "something else")),
+                "the opened plan's item is drawn");
+        assertNull(onEdtReturn(() -> findLabel(pane, "write the rail")),
+                "the previously open plan is folded, not duplicated");
+    }
+
+    @Test
+    void deletingAPlanIsOneWriteNamingTheWholePlan() throws Exception {
+        List<JButton> delete = onEdtReturn(() -> findButtons(pane, "🗑"));
+        onEdt(() -> delete.get(0).doClick());
+        assertEquals(List.of("delete active-plan"), writes);
     }
 
     @Test
@@ -126,25 +157,25 @@ class PlanPaneTest {
     }
 
     @Test
-    void selectingADormantPlanIsOneDirectiveLine() throws Exception {
+    void selectingADormantPlanIsOneWrite() throws Exception {
         JButton activate = onEdtReturn(() -> findButton(pane, "▶"));
         assertNotNull(activate, "a dormant plan is offered for activation");
         onEdt(() -> activate.doClick());
-        assertEquals(List.of("/plan activate dormant-plan"), sent);
+        assertEquals(List.of("activate dormant-plan"), writes);
     }
 
     @Test
-    void deselectingTheActivePlanIsOneDirectiveLine() throws Exception {
+    void deselectingTheActivePlanIsOneWrite() throws Exception {
         JButton pause = onEdtReturn(() -> findButton(pane, "⏸"));
         onEdt(() -> pause.doClick());
-        assertEquals(List.of("/plan deactivate"), sent);
+        assertEquals(List.of("deactivate"), writes);
     }
 
     @Test
-    void removingAnItemIsOneDirectiveLineNamingItsPlan() throws Exception {
+    void removingAnItemIsOneWriteNamingItsPlan() throws Exception {
         List<JButton> remove = onEdtReturn(() -> findButtons(pane, "×"));
         onEdt(() -> remove.get(0).doClick());
-        assertEquals(List.of("/plan remove --plan=active-plan item-a"), sent);
+        assertEquals(List.of("remove active-plan item-a"), writes);
     }
 
     // ── creating and editing plans ────────────────────────────────────────────
@@ -158,19 +189,32 @@ class PlanPaneTest {
         assertNotNull(field, "the new-plan control opens a field for the goal");
         onEdt(() -> field.setText("migrate the build"));
         submit(field);
-        assertEquals(List.of("/plan create \"migrate the build\""), sent);
+        assertEquals(List.of("create migrate the build"), writes);
     }
 
     @Test
     void editingADormantPlansItemNeverTouchesTheActivePlan() throws Exception {
-        // item-d belongs to dormant-plan; the line must name that plan so the edit lands there
+        // open the dormant plan first; item-d belongs to it, and the line must name that plan
+        click(onEdtReturn(() -> findLabel(pane, "an older idea")));
         JLabel row = onEdtReturn(() -> findLabel(pane, "something else"));
-        assertNotNull(row, "the dormant plan's item is on the board");
+        assertNotNull(row, "the dormant plan's item is on the board once its row is opened");
         click(row);
         JTextField field = onEdtReturn(() -> findField(pane));
         onEdt(() -> field.setText("something else, reworded"));
         submit(field);
-        assertEquals(List.of("/plan edit --plan=dormant-plan item-d \"something else, reworded\""), sent);
+        assertEquals(List.of("edit dormant-plan item-d something else, reworded"), writes);
+    }
+
+    @Test
+    void addingAnItemToAClosedPlanOpensItFirstAndNamesIt() throws Exception {
+        List<JButton> add = onEdtReturn(() -> findButtons(pane, "＋"));
+        // the active plan is listed first; the second control belongs to the dormant plan
+        onEdt(() -> add.get(1).doClick());
+        JTextField field = onEdtReturn(() -> findField(pane));
+        assertNotNull(field, "add opens a field in the plan it belongs to");
+        onEdt(() -> field.setText("land the docs"));
+        submit(field);
+        assertEquals(List.of("add dormant-plan land the docs"), writes);
     }
 
     // ── editing the text ──────────────────────────────────────────────────────
@@ -185,7 +229,7 @@ class PlanPaneTest {
         assertEquals("write the rail", field.getText(), "the field starts as the sentence it replaces");
         onEdt(() -> field.setText("write the rail, then test --the flag"));
         submit(field);
-        assertEquals(List.of("/plan edit --plan=active-plan item-a \"write the rail, then test --the flag\""), sent);
+        assertEquals(List.of("edit active-plan item-a write the rail, then test --the flag"), writes);
     }
 
     @Test
@@ -196,7 +240,7 @@ class PlanPaneTest {
         JTextField field = onEdtReturn(() -> findField(pane));
         onEdt(() -> field.setText("ship the cockpit and the rail"));
         submit(field);
-        assertEquals(List.of("/plan goal --plan=active-plan \"ship the cockpit and the rail\""), sent);
+        assertEquals(List.of("goal active-plan ship the cockpit and the rail"), writes);
     }
 
     @Test
@@ -208,7 +252,7 @@ class PlanPaneTest {
         assertNotNull(field, "add an item starts a field, not a dialog");
         onEdt(() -> field.setText("land the docs"));
         submit(field);
-        assertEquals(List.of("/plan add --plan=active-plan \"land the docs\""), sent);
+        assertEquals(List.of("add active-plan land the docs"), writes);
     }
 
     @Test
@@ -218,7 +262,7 @@ class PlanPaneTest {
         assertEquals(0, onEdtReturn(() -> busy.getMouseListeners().length),
                 "its text is the instruction a task is working from, so the row is not clickable");
         assertNull(onEdtReturn(() -> findField(pane)));
-        assertEquals(List.of(), sent);
+        assertEquals(List.of(), writes);
     }
 
     @Test
@@ -232,7 +276,7 @@ class PlanPaneTest {
         JTextField still = onEdtReturn(() -> findField(pane));
         assertSame(field, still, "the board must not repaint over an open editor");
         assertEquals("half a sentence", still.getText());
-        assertEquals(List.of(), sent, "waiting is not sending");
+        assertEquals(List.of(), writes, "waiting is not sending");
     }
 
     @Test
@@ -242,7 +286,7 @@ class PlanPaneTest {
         onEdt(() -> field.setText("never mind"));
         pressEscape(field);
         assertNull(onEdtReturn(() -> findField(pane)), "escape closes the editor");
-        assertEquals(List.of(), sent);
+        assertEquals(List.of(), writes);
         assertNotNull(onEdtReturn(() -> findLabel(pane, "write the rail")), "the row comes back");
     }
 
@@ -254,8 +298,78 @@ class PlanPaneTest {
         JButton commit = onEdtReturn(() -> findButton(pane, "✓"));
         assertNotNull(commit, "the editor carries a commit button");
         onEdt(commit::doClick);
-        assertEquals(List.of(), sent, "a blank description is not a plan item");
+        assertEquals(List.of(), writes, "a blank description is not a plan item");
         assertNull(onEdtReturn(() -> findField(pane)), "and the editor still closes");
+    }
+
+    /** The service seam, recorded as one readable line per call instead of touching a real graph. */
+    private final class RecordingPlanService implements NaruPlanService {
+
+        @Override
+        public String name() {
+            return "plan";
+        }
+
+        @Override
+        public List<NaruPlanSnapshot> allPlans() {
+            return List.copyOf(board);
+        }
+
+        @Override
+        public NaruPlanSnapshot activePlan() {
+            for (NaruPlanSnapshot p : board) {
+                if (p.active()) {
+                    return p;
+                }
+            }
+            return null;
+        }
+
+        @Override
+        public NaruPlanSnapshot createPlan(String goal) {
+            writes.add("create " + goal);
+            return new NaruPlanSnapshot("created-plan", goal, NaruPlanState.PENDING, List.of(), false);
+        }
+
+        @Override
+        public NaruPlanSnapshot setGoal(String planId, String goal) {
+            writes.add("goal " + planId + " " + goal);
+            return board.get(0);
+        }
+
+        @Override
+        public NaruPlanSnapshot addItem(String planId, String description) {
+            writes.add("add " + planId + " " + description);
+            return board.get(0);
+        }
+
+        @Override
+        public NaruPlanSnapshot editItem(String planId, String itemId, String description) {
+            writes.add("edit " + planId + " " + itemId + " " + description);
+            return board.get(0);
+        }
+
+        @Override
+        public NaruPlanSnapshot removeItem(String planId, String itemId) {
+            writes.add("remove " + planId + " " + itemId);
+            return board.get(0);
+        }
+
+        @Override
+        public NaruPlanSnapshot activate(String planId) {
+            writes.add("activate " + planId);
+            return board.get(0);
+        }
+
+        @Override
+        public void deactivate() {
+            writes.add("deactivate");
+        }
+
+        @Override
+        public void deletePlan(String planId) {
+            writes.add("delete " + planId);
+        }
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

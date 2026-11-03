@@ -274,9 +274,22 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
         return this;
     }
 
+    /**
+     * The filter in force for new sessions: whatever a host set in code, AND-combined with
+     * the policy the project's config keys ask for (see {@link NaruModelPolicy}).
+     *
+     * <p>Resolved per call rather than cached on the field, so editing
+     * {@code model.filter.*} in {@code env.tson} takes effect for the next session without
+     * restarting the agent, and so a {@code modelFilter(null)} from a host cannot be
+     * mistaken for "no policy".
+     */
     @Override
     public NaruModelFilter modelFilter() {
-        return modelFilter;
+        NaruModelFilter policy = NaruModelPolicy.filterFor(this);
+        if (policy == null) {
+            return modelFilter;
+        }
+        return modelFilter == null ? policy : modelFilter.and(policy);
     }
 
     @Override
@@ -377,10 +390,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     @Override
     public NaruWorkspace projectDirectory(NPath projectDirectory) {
         this.projectDirectory = projectDirectory;
-        registrations = new NaruRegistrationStore(
-                projectDirectory.resolve(".naru/config/registrations.tson"),
-                projectDirectory.resolve(".naru/local/config/registrations.tson")
-        );
+        registrations = NaruRegistrationStore.of(userRegistrationHome(), projectDirectory);
         projectEnv = new NaruProjectEnv(
                 projectDirectory.resolve(".naru/config/env.tson"),
                 projectDirectory.resolve(".naru/local/config/env.tson")
@@ -390,6 +400,20 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
 
     public NaruProjectEnv env() {
         return projectEnv;
+    }
+
+    /**
+     * Where the user-global registrations live: the home directory, or whatever {@code
+     * naru.userHome} names instead. The override exists for tests — a personal {@code ~/.naru}
+     * is not something a store test should read, write, or be broken by — and mirrors {@code
+     * naru.skills.userHome}.
+     */
+    private static NPath userRegistrationHome() {
+        String override = System.getProperty("naru.userHome");
+        if (!NBlankable.isBlank(override)) {
+            return NPath.of(override);
+        }
+        return NPath.ofUserHome();
     }
 
     @Override

@@ -10,14 +10,22 @@ import java.util.List;
  * a structure nobody is synchronising. A snapshot is taken on the caller's request and cannot change
  * underneath it.
  *
- * @param id     the plan's id
- * @param goal   what the plan is for
- * @param state  the aggregate state, derived from the items
- * @param items  the items, in the order they were declared
- * @param active whether this is the plan the session is currently working through
+ * @param id          the plan's id
+ * @param goal        the plan's short name: what the plan is for
+ * @param description the long, Markdown-capable description; may be blank
+ * @param state       the aggregate state, derived from the items
+ * @param items       the items, in the order they were declared
+ * @param active      whether this is the plan the session is currently working through
  */
-public record NaruPlanSnapshot(String id, String goal, NaruPlanState state,
+public record NaruPlanSnapshot(String id, String goal, String description, NaruPlanState state,
                                List<NaruPlanItemSnapshot> items, boolean active) {
+
+    /** A plan snapshot without the optional long description. */
+    public NaruPlanSnapshot(String id, String goal, NaruPlanState state,
+                            List<NaruPlanItemSnapshot> items, boolean active) {
+        this(id, goal, "", state, items, active);
+    }
+
 
     /** Items that reached {@code DONE}. */
     public int doneCount() {

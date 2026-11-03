@@ -39,6 +39,8 @@ public class NaruPlan {
 
     private final String id;
     private String goal;
+    /** The optional long description. Markdown is preserved verbatim; null means none. */
+    private String description;
     private final Instant creationInstant;
     private Instant modificationInstant;
     private final List<NaruPlanItem> items = new ArrayList<>();
@@ -51,12 +53,21 @@ public class NaruPlan {
     private final Map<String, String> keyToItemId = new LinkedHashMap<>();
 
     public NaruPlan(String goal) {
-        this(UUID.randomUUID().toString(), goal);
+        this(UUID.randomUUID().toString(), goal, null);
+    }
+
+    public NaruPlan(String goal, String description) {
+        this(UUID.randomUUID().toString(), goal, description);
     }
 
     public NaruPlan(String id, String goal) {
+        this(id, goal, null);
+    }
+
+    public NaruPlan(String id, String goal, String description) {
         this.id = (id == null || id.isBlank()) ? UUID.randomUUID().toString() : id;
         this.goal = goal;
+        this.description = description;
         this.creationInstant = Instant.now();
         this.modificationInstant = creationInstant;
     }
@@ -65,6 +76,7 @@ public class NaruPlan {
         NObjectElement o = element.asObject().get();
         this.id = o.getStringValue("id").orElse(UUID.randomUUID().toString());
         this.goal = o.getStringValue("goal").orNull();
+        this.description = o.getStringValue("description").orNull();
         this.creationInstant = o.getInstantValue("creationInstant").orElse(Instant.now());
         this.modificationInstant = o.getInstantValue("modificationInstant").orElse(creationInstant);
         o.getArray("items").ifPresent(arr -> {

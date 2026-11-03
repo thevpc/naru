@@ -134,4 +134,79 @@ public class StoredStringMapRoundtripTest {
         Assertions.assertEquals(List.of("model=\"ollama/first:1\""),
                 keysOf(f.readString()));
     }
+
+    /**
+     * A registration value is a nested object, and a nested object off a builder carries no
+     * separators between its pairs at all — written verbatim, the file re-parses with one value
+     * swallowing the next key's name, and the store reads back a registration that lost its
+     * {@code model}. Both shapes are what a settings save does: replace a value, and append one.
+     */
+    @Test
+    public void rewritingANestedValueKeepsEveryFieldOfIt() {
+        NPath f = fileWith("{\n"
+                + "  \"shared\": { provider : \"stub\", model : \"s-model\", temperature : 0.3 }\n"
+                + "}\n");
+        StoredStringMap<NElement> map = new StoredStringMap<>(f, NElement.class);
+        // the same object, its fields in a different order — what a second save of the same
+        // registration from a Map.of(...) looks like
+        map.put("shared", NElement.ofObjectBuilder()
+                .set("temperature", NElement.of(0.3f))
+                .set("model", NElement.ofString("s-model"))
+                .set("url", NElement.ofString("https://personal.test/v1"))
+                .set("provider", NElement.ofString("stub"))
+                .build());
+
+        String text = f.readString();
+        NElement parsed = NElementReader.ofTson().read(text);
+        NObjectElement shared = valueOf(parsed, "shared");
+        Assertions.assertNotNull(shared, "the file no longer holds an object under 'shared':\n" + text);
+        Assertions.assertEquals(List.of("temperature", "model", "url", "provider"),
+                namesOf(shared), "every field of the rewritten value is still its own pair:\n" + text);
+    }
+
+    @Test
+    public void appendingANestedValueIsReadableOnTheNextLoad() {
+        NPath f = fileWith(SOURCE);
+        StoredStringMap<NElement> map = new StoredStringMap<>(f, NElement.class);
+        map.put("shared", NElement.ofObjectBuilder()
+                .set("provider", NElement.ofString("stub"))
+                .set("model", NElement.ofString("s-model"))
+                .build());
+
+        NObjectElement shared = valueOf(NElementReader.ofTson().read(f.readString()), "shared");
+        Assertions.assertNotNull(shared, "the appended value is not an object anymore:\n"
+                + f.readString());
+        Assertions.assertEquals(List.of("provider", "model"), namesOf(shared));
+    }
+
+    private static NObjectElement valueOf(NElement root, String key) {
+        List<NElement> candidates = new ArrayList<>();
+        if (root instanceof net.thevpc.nuts.elem.NFragmentElement fragment) {
+            for (NElement c : fragment) {
+                candidates.add(c);
+            }
+        } else {
+            candidates.add(root);
+        }
+        for (NElement candidate : candidates) {
+            NObjectElement o = candidate.asObject().orNull();
+            if (o == null) {
+                continue;
+            }
+            for (NPairElement p : o.namedPairs()) {
+                if (key.equals(p.key().asStringValue().orNull())) {
+                    return p.value().asObject().orNull();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static List<String> namesOf(NObjectElement o) {
+        List<String> out = new ArrayList<>();
+        for (NPairElement p : o.namedPairs()) {
+            out.add(p.key().asStringValue().orNull());
+        }
+        return out;
+    }
 }

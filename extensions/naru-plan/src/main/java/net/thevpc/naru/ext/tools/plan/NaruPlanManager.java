@@ -30,6 +30,11 @@ public interface NaruPlanManager {
      */
     NaruPlan createPlan(String goal, List<NaruPlanItemSpec> items);
 
+    /**
+     * Creates a plan with a long, Markdown-capable description.
+     */
+    NaruPlan createPlan(String goal, String description, List<NaruPlanItemSpec> items);
+
     NOptional<NaruPlan> findPlan(String planId);
 
     /**
@@ -57,6 +62,23 @@ public interface NaruPlanManager {
      * board both fall back to a placeholder, so an empty one reads as damage.
      */
     NOptional<NaruPlan> setGoal(String planId, String goal);
+
+    /**
+     * Replaces the plan's long description. Blank clears it; the text is otherwise preserved.
+     */
+    NOptional<NaruPlan> setDescription(String planId, String description);
+
+    /**
+     * Renames the short declaration key of one item. Dependencies are stored as item ids, so a
+     * rename never rewrites an edge. An empty key clears the key and leaves the id prefix as the
+     * item's label.
+     */
+    NOptional<NaruPlan> renameItem(String planId, String itemId, String key);
+
+    /**
+     * Moves one item to a zero-based position in declaration order.
+     */
+    NOptional<NaruPlan> moveItem(String planId, String itemId, int newIndex);
 
     /**
      * Edit one item's text, note or validator.

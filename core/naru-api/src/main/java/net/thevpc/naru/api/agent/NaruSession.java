@@ -396,8 +396,9 @@ public interface NaruSession {
     NaruSession setListedModels(List<NaruModelKey> models);
 
     /**
-     * Every registration in this project, by id: the merged view of the two
-     * visibility files (private fields overlay public ones).
+     * Every registration this session can use, by id: the merged view of the project's two
+     * visibility files and the user's two, private fields overlaying public ones within each scope
+     * and the project scope overlaying the user scope.
      *
      * <p>Values carry literal credentials unmasked — anything that prints them
      * must go through {@link net.thevpc.naru.api.model.NaruModelRegistration#masked()}.
@@ -405,18 +406,39 @@ public interface NaruSession {
     Map<String, NaruModelRegistration> registrations();
 
     /**
-     * Creates or replaces a registration. Its fields are re-split across the two
-     * visibility files as they are written: literal secrets private, everything
-     * else (including {@code $NAME} references) public.
+     * Creates or replaces a registration in the project scope. Its fields are re-split across the
+     * two visibility files as they are written: literal secrets private, everything else
+     * (including {@code $NAME} references) public.
      */
     void putRegistration(NaruModelRegistration registration);
 
     /**
-     * Deletes a registration from both visibility files.
+     * Creates or replaces a registration in one scope. {@code USER} writes the machine-wide
+     * {@code ~/.naru} files — every project then sees it — while {@code PROJECT} writes this
+     * workspace's own. A project registration of the same id overrides it field by field, or
+     * replaces it outright when it names a different provider or protocol.
+     */
+    void putRegistration(NaruModelRegistration registration, NaruRegistrationScope scope);
+
+    /**
+     * Deletes a registration from the project scope's two files.
      *
      * @return true when it was present
      */
     boolean removeRegistration(String id);
+
+    /**
+     * Deletes a registration from one scope. Deleting a project override that sits on a user
+     * registration uncovers the user registration rather than removing it; check
+     * {@link #registrationOrigin(String)} before promising a delete.
+     */
+    boolean removeRegistration(String id, NaruRegistrationScope scope);
+
+    /**
+     * Which scope each field of a registration was read from, or empty when no file declares it —
+     * the difference between "this registration is mine" and "this project only overrides my key".
+     */
+    NOptional<NaruRegistrationOrigin> registrationOrigin(String id);
 
 
     NOptional<NElement> getProjectEnv(String key);

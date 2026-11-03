@@ -146,9 +146,21 @@ there is no tool that does any of this.
 
 Every write verb takes an optional `--plan=<id>`. Without it the verb acts on the
 **active** plan; with it the verb acts on the named plan **without changing which plan
-is active**. That is how the desktop's Plan panel lets you shape a dormant plan before
-you decide to run it. The write verbs are the human equivalent of `plan_create` and
-`plan_update`, and like them they can never mark an item `done` or activate a plan.
+is active**. The desktop's Plan panel offers the same target, so you can shape a dormant
+plan before deciding to run it. The write verbs are the human equivalent of
+`plan_create` and `plan_update`, and like them they can never mark an item `done` or
+activate a plan.
+
+In the desktop, the Plan tab lists every registered plan as a row. The tab appears only
+when the `naru-plan` extension is installed. The active plan is listed first and opened by
+default; click another row to open it. Each row carries **▶ / ⏸** to enable or disable
+that plan, **＋** to add an item, and **🗑** to delete the whole plan. In the open plan,
+click the goal or an item's sentence to edit it, and use **×** to remove an item. Deleting
+a plan is immediate and cannot be undone.
+
+The panel reads and writes through the extension's `NaruPlanService`, not by composing
+`/plan` lines. Both paths reach the same graph and the same rules, so the directives above
+remain the human and model interface while a click stays a direct service call.
 
 A listing looks like this:
 

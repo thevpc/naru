@@ -1103,10 +1103,15 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public void putRegistration(NaruModelRegistration registration) {
+        putRegistration(registration, NaruRegistrationScope.PROJECT);
+    }
+
+    @Override
+    public void putRegistration(NaruModelRegistration registration, NaruRegistrationScope scope) {
         ensureNotStopped();
         NaruRegistrationStore store = registrationStore();
         if (registration != null && store != null) {
-            store.put(registration);
+            store.put(registration, scope);
             reloadRegistrations();
             fireChanged();
         }
@@ -1114,14 +1119,26 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
     @Override
     public boolean removeRegistration(String id) {
+        return removeRegistration(id, NaruRegistrationScope.PROJECT);
+    }
+
+    @Override
+    public boolean removeRegistration(String id, NaruRegistrationScope scope) {
         ensureNotStopped();
         NaruRegistrationStore store = registrationStore();
-        boolean removed = store != null && store.remove(id);
+        boolean removed = store != null && store.remove(id, scope);
         if (removed) {
             reloadRegistrations();
             fireChanged();
         }
         return removed;
+    }
+
+    @Override
+    public NOptional<NaruRegistrationOrigin> registrationOrigin(String id) {
+        ensureNotStopped();
+        NaruRegistrationStore store = registrationStore();
+        return store == null ? NOptional.ofEmpty() : store.origin(id);
     }
 
     private NaruRegistrationStore registrationStore() {

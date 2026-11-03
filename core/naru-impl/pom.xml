@@ -119,6 +119,22 @@
                     </toolchains>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!--
+                        Registrations merge a user-global layer (~/.naru) under every project, so a
+                        test workspace would otherwise read, and could be broken by, the developer's
+                        own personal providers. Point that layer at an empty directory under target/:
+                        a test that wants a user layer sets naru.userHome to a temp folder itself.
+                    -->
+                    <systemPropertyVariables>
+                        <naru.userHome>${project.build.directory}/test-user-home</naru.userHome>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
     <profiles>

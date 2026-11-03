@@ -6,9 +6,11 @@ import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.mode.NaruPromptMode.ModeIntent;
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.naru.api.plan.NaruPlanException;
 import net.thevpc.naru.api.plan.NaruPlanItemSnapshot;
 import net.thevpc.naru.api.plan.NaruPlanItemState;
 import net.thevpc.naru.api.plan.NaruPlanReader;
+import net.thevpc.naru.api.plan.NaruPlanService;
 import net.thevpc.naru.api.plan.NaruPlanSnapshot;
 import net.thevpc.naru.api.plan.NaruPlanState;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
@@ -33,7 +35,7 @@ import java.util.Set;
  * classpath removes planning entirely; nothing in {@code naru-api} or {@code naru-impl}
  * refers to it.
  */
-public class NaruPlanExtension implements NaruSessionExtension, NaruPlanReader {
+public class NaruPlanExtension implements NaruSessionExtension, NaruPlanService {
 
     public static final String NAME = "plan";
 
@@ -80,6 +82,102 @@ public class NaruPlanExtension implements NaruSessionExtension, NaruPlanReader {
     public NaruPlanSnapshot activePlan() {
         NaruPlan p = plans.activePlan().orNull();
         return p == null ? null : snapshot(p, true);
+    }
+
+    @Override
+    public NaruPlanSnapshot createPlan(String goal) {
+        String text = requireText(goal, "a plan needs a goal");
+        try {
+            NaruPlan plan = plans.createPlan(text, new ArrayList<>());
+            return snapshot(plan, plan.id().equals(plans.activePlanId()));
+        } catch (IllegalArgumentException e) {
+            throw new NaruPlanException(messageOf(e, "the plan could not be created"), e);
+        }
+    }
+
+    @Override
+    public NaruPlanSnapshot setGoal(String planId, String goal) {
+        String text = requireText(goal, "a plan needs a goal, not a blank one");
+        NaruPlan plan = plan(planId);
+        NaruPlan changed = orFail(plans.setGoal(plan.id(), text),
+                "plan " + plan.id() + " kept its old goal");
+        return snapshot(changed, changed.id().equals(plans.activePlanId()));
+    }
+
+    @Override
+    public NaruPlanSnapshot addItem(String planId, String description) {
+        String text = requireText(description, "an item needs a description");
+        NaruPlan plan = plan(planId);
+        NaruPlan changed = orFail(plans.addItems(plan.id(), List.of(NaruPlanItemSpec.of(text))),
+                "plan " + plan.id() + " rejected that item");
+        return snapshot(changed, changed.id().equals(plans.activePlanId()));
+    }
+
+    @Override
+    public NaruPlanSnapshot editItem(String planId, String itemId, String description) {
+        String text = requireText(description, "an item needs a description");
+        NaruPlan plan = plan(planId);
+        orFail(plans.editItem(plan.id(), itemId, NaruPlanItemPatch.of().description(text)),
+                "item " + itemId + " could not be edited");
+        return snapshot(plan, plan.id().equals(plans.activePlanId()));
+    }
+
+    @Override
+    public NaruPlanSnapshot removeItem(String planId, String itemId) {
+        NaruPlan plan = plan(planId);
+        NaruPlan changed = orFail(plans.removeItem(plan.id(), itemId),
+                "item " + itemId + " is still in the plan");
+        return snapshot(changed, changed.id().equals(plans.activePlanId()));
+    }
+
+    @Override
+    public NaruPlanSnapshot activate(String planId) {
+        NaruPlan plan = plan(planId);
+        plans.setActivePlanId(plan.id());
+        return snapshot(plan, true);
+    }
+
+    @Override
+    public void deactivate() {
+        plans.setActivePlanId(null);
+    }
+
+    @Override
+    public void deletePlan(String planId) {
+        NaruPlan plan = plan(planId);
+        if (!plans.removePlan(plan.id())) {
+            throw new NaruPlanException("plan " + planId + " is no longer there");
+        }
+    }
+
+    private NaruPlan plan(String planId) {
+        return orFail(plans.findPlan(planId), "no plan " + planId);
+    }
+
+    /**
+     * A write the graph refused. The manager already phrases the reason for a reader, so it is
+     * carried through instead of being replaced by a generic "edit failed".
+     */
+    private static <T> T orFail(NOptional<T> result, String fallback) {
+        if (result.isError() || !result.isPresent()) {
+            java.util.function.Supplier<NMsg> message = result.message();
+            NMsg msg = message == null ? null : message.get();
+            String reason = msg == null ? null : msg.toString();
+            throw new NaruPlanException(reason == null || reason.isBlank() ? fallback : reason);
+        }
+        return result.orNull();
+    }
+
+    private static String requireText(String text, String complaint) {
+        String flat = text == null ? "" : text.replaceAll("\\s+", " ").trim();
+        if (flat.isEmpty()) {
+            throw new NaruPlanException(complaint);
+        }
+        return flat;
+    }
+
+    private static String messageOf(RuntimeException e, String fallback) {
+        return e.getMessage() == null || e.getMessage().isBlank() ? fallback : e.getMessage();
     }
 
     /**

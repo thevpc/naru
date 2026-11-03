@@ -1,6 +1,7 @@
 package net.thevpc.naru.desktop;
 
 import net.thevpc.naru.api.agent.NaruWorkspace;
+import net.thevpc.naru.api.plan.NaruPlanService;
 import net.thevpc.naru.desktop.host.InteractionHost;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.model.SessionGrouping;
@@ -1918,6 +1919,7 @@ public final class MainWindow extends JFrame {
             if (selected.model.session() != null) {
                 selected.id = selected.model.session().uuid();
             }
+            syncPlanTab();
             sessionList.repaint();
         };
         selected.model.addListener(loadingListener);
@@ -2390,10 +2392,10 @@ public final class MainWindow extends JFrame {
 
     private JTabbedPane sideTabs(TaskPane tasks, NaruSessionModel session) {
         JTabbedPane tabs = new JTabbedPane();tabs.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
-        // the plan board leads the rail: it says what the run is for, where the two tabs after it
-        // answer questions about a run that already happened
-        planPane = new PlanPane(session);
-        tabs.addTab("Plan", planPane);
+        // The plan board leads the rail when the plan extension is installed: it says what the run
+        // is for, where the tabs after it answer questions about a run that already happened. It is
+        // added by syncPlanTab() once the session has booted, because the extension may not be in
+        // the profile; a session without planning should not show an empty Plan tab.
         // moved from Phase 4 by the owner: §3.3 makes this the v1 answer to an approval prompt,
         // and §6 promises a jump into it from a permission denial
         JPanel taskPermissions = new JPanel(new BorderLayout());
@@ -2410,11 +2412,9 @@ public final class MainWindow extends JFrame {
         tabs.addTab("Inspect", inspector);
         workbench = new WorkbenchPane(session);
         tabs.addTab("Workspace", workbench);
-        // The four first-level tabs get a shape each. The words stay — they are what selectSideTab and
-        // a screenshot of "the Permissions tab" address — but four grey words in a two-row strip are
+        // The first-level tabs get a shape each. The words stay — they are what selectSideTab and
+        // a screenshot of "the Permissions tab" address — but grey words in a two-row strip are
         // hard to tell apart at a glance, and the tooltip says what is behind a tab before it is opened.
-        TabGlyphs.decorate(tabs, tabs.indexOfTab("Plan"), TabGlyphs.Kind.PLAN,
-                "what the run is for, step by step");
         TabGlyphs.decorate(tabs, tabs.indexOfTab("Permissions"), TabGlyphs.Kind.PERMISSIONS,
                 "what this task may and may not do");
         TabGlyphs.decorate(tabs, tabs.indexOfTab("Inspect"), TabGlyphs.Kind.INSPECT,
@@ -2424,7 +2424,47 @@ public final class MainWindow extends JFrame {
         // One pixel of underline vanishes in a strip that wraps to two rows.
         tabs.putClientProperty("JTabbedPane.tabSelectionHeight", 3);
         this.sideTabs = tabs;
+        syncPlanTab();
         return tabs;
+    }
+
+    /**
+     * Add or remove the Plan tab to match what this session actually loaded.
+     *
+     * <p>The extension is resolved by the session, not compiled in, so whether there is a plan
+     * service is only known after boot. The model listener calls this on every change; a session
+     * whose profile has no plan extension therefore never grows a tab that could only say "not
+     * installed".
+     */
+    private void syncPlanTab() {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(this::syncPlanTab);
+            return;
+        }
+        JTabbedPane tabs = sideTabs;
+        NaruSessionModel current = session;
+        if (tabs == null || current == null) {
+            return;
+        }
+        boolean available;
+        try {
+            available = NaruPlanService.of(current.session()) != null;
+        } catch (RuntimeException e) {
+            available = false;
+        }
+        int index = tabs.indexOfTab("Plan");
+        if (available && index < 0) {
+            planPane = new PlanPane(current);
+            tabs.insertTab("Plan", null, planPane, null, 0);
+            TabGlyphs.decorate(tabs, 0, TabGlyphs.Kind.PLAN,
+                    "what the run is for, step by step");
+        } else if (!available && index >= 0) {
+            tabs.remove(index);
+            if (planPane != null) {
+                planPane.dispose();
+                planPane = null;
+            }
+        }
     }
 
     /**

@@ -25,7 +25,8 @@
 - [9. Availability, probing, and listings](#9-availability-probing-and-listings)
 - [10. What was removed, and what replaces it](#10-what-was-removed-and-what-replaces-it)
 - [11. Provider API: `type()` and `newInstance()`](#11-provider-api-type-and-newinstance)
-- [12. Recap](#12-recap)
+- [12. In the desktop: Settings → Models & providers](#12-in-the-desktop-settings--models--providers)
+- [13. Recap](#13-recap)
 
 ---
 
@@ -113,15 +114,15 @@ Selection accepts, in this order:
 
 | Command | Effect |
 |---------|--------|
-| `/model add <id> --provider=<type> [--protocol=<wire>] [--model=<id>\|--models=a,b] [--url=…] [--apiKey=sk-…\|$VAR] [--temperature=… --contextLength=… --maxTokens=… …]` | Create (or, with an existing id, update) a registration |
+| `/model add <id> --provider=<type> [--protocol=<wire>] [--model=<id>\|--models=a,b] [--url=…] [--apiKey=sk-…\|$VAR] [--temperature=… --contextLength=… --maxTokens=… …] [--scope=project\|user]` | Create (or, with an existing id, update) a registration |
 | `/model add <id> --protocol=<wire> --url=… --models=a,b [--apiKey=…]` | Same, without a provider type: a generic HTTP endpoint speaking the wire (§8) |
-| `/model remove <id>` | Delete a registration and its stored parameters |
+| `/model remove <id> [--scope=project\|user]` | Delete a registration and its stored parameters from one scope (§5) |
 | `/model registered` | Table of registrations, keys **masked** (`sk-***abcd`) |
 | `/model list [<filter>] [--provider=<type>] [--free]` | Merged listing of every selectable model (built-ins + registrations) |
 | `/model use <id\|key\|index>` | Select a model |
 | `/model current` | Show the selected model |
 | `/model use-global <…>` | Select and persist as the session default |
-| `/model update <id> [--temperature=… --apiKey=…]` | Change a registration's parameters |
+| `/model update <id> [--temperature=… --apiKey=…] [--scope=project\|user]` | Change a registration's parameters in one scope |
 
 `--provider=` filters by **type**, so `/model list --provider=gemini` shows the
 base provider and every gemini registration together.
@@ -138,12 +139,42 @@ Removed commands (see §10 for what replaced them):
 
 ## 5. Storage and visibility
 
-Registrations live in two files on the same visibility axis as `env.tson`:
+Registrations live in four files on two axes. The visibility axis is the one
+`env.tson` uses — public structure, private secrets — and the scope axis says who
+owns the entry: this project, or you across every project.
 
 ```text
 .naru/config/registrations.tson         ← public, checked in: structure, params, env references
 .naru/local/config/registrations.tson   ← private, gitignored: literal secrets
+~/.naru/config/registrations.tson       ← your personal registrations, same split
+~/.naru/local/config/registrations.tson ← …and their literal secrets
 ```
+
+Reads merge the four, weakest first (user public, user private, project public,
+project private), so:
+
+```text
+/model add personal --provider=gemini --scope=user      # every project can use it
+/model add personal --apiKey=$WORK_KEY                  # this project overrides the key only
+```
+
+`personal` then resolves as *your* provider and URL with *this project's* key. A
+scope writes only its own two files: saving a project override never rewrites your
+personal entry, and rotating the personal one never touches the project's key.
+`--scope` defaults to `project`, and `remove` takes it too — deleting the project
+override uncovers the personal registration instead of destroying it.
+
+The merge refuses to mix endpoints. If the project's `personal` names a different
+`provider` (or a different `protocol`) than your personal one, the project's entry
+replaces it entirely rather than overlaying field by field: a hybrid would aim your
+gemini key at somebody else's API and fail as "the model rejected my key". An entry
+that re-declares the *same* provider in a different case (`Gemini` / `gemini`) is
+the same endpoint and overlays as usual.
+
+`-Dnaru.userHome=<dir>` relocates the personal layer — for a test that must not
+read your real `~/.naru`, or for a second set of machine-wide providers.
+
+The rest of the rules are the project's two files and the personal two alike:
 
 ```tson
 {
@@ -362,6 +393,57 @@ addresses nothing.
   so five gemini registrations sharing a key and endpoint cost one lookup, not
   five.
 
+### 9.1 Restricting what the project may use
+
+The catalog is what *can* be called. Four config keys say what **may** be called,
+and they apply to every session of the project — including ones started by a
+script, a routine, or a teammate who never heard of them:
+
+| Key | Value | Effect |
+|-----|-------|--------|
+| `model.filter.allowProviders` | comma-separated instance ids | only these providers survive |
+| `model.filter.denyProviders` | comma-separated instance ids | these are refused, even inside the allow-list |
+| `model.filter.denyModels` | comma-separated `provider/model` keys | hide one model, keep its provider |
+| `model.filter.localOnly` | `true` | only endpoints that are local (see §7, the `local` parameter) |
+
+```bash
+# a project that must not leave the machine
+/settings set --public model.filter.localOnly=true
+# ...and a personal escape hatch, in the private file that shadows it
+/settings set --private model.filter.localOnly=false
+```
+
+What the enforcement is worth: a denied model disappears from `/model list`, from
+the positional indexes, and from best-fit auto-selection, and a call to it is
+refused before any transport is built. The filter is a **policy**, not a display
+setting — the desktop's "hide this model" checkbox is the other, independent axis
+(see §12).
+
+Four rules worth knowing, each because the loose reading was worse:
+
+- **Ids are instance ids.** `allowProviders=team` speaks the vocabulary the
+  listing prints; `allowProviders=gemini` does not unlock a `team` registration
+  that happens to be on gemini.
+- **An empty allow-list allows everything.** It does not deny everything: writing
+  the key with no value is "no restriction", which is what people mean by it.
+- **`denyModels` needs a whole key.** A bare `s-model` is refused with a warning
+  instead of being guessed at as `ollama/s-model` — the guess would hide a model
+  on a server nobody named.
+- **A bad value is ignored and reported**, not fatal. `localOnly=maybe` restricts
+  nothing and says so in the transcript; a workspace that refuses to start over a
+  typo is a worse trade.
+
+Each key resolves through the normal env chain (see *Session settings*, §1): agent
+env, then the project's private file, then its public file, then `-Dkey=value` as
+the weakest layer. Two consequences worth planning around: a host embedding naru
+can override a checked-in policy for its own process with
+`workspace.agentEnv().put(...)`, and `-Dmodel.filter.localOnly=true` cannot loosen
+a project that already set the key — the policy file beats the launch flag, same as
+every other key. There is deliberately no "tools-only models" key: tool support is
+only known by building the protocol and probing it, which would cost one round trip
+per model per listing. Declare `tools=true` on a registration you own (§7) and hide
+the third-party ones you do not want with `model.filter.denyModels`.
+
 ## 10. What was removed, and what replaces it
 
 Everything below is a **clean cut**: no import, no compat reads — old config files
@@ -432,7 +514,41 @@ protocol or serializer changes are needed to support N instances with N keys.
 Type-scoped behaviour (`--provider=` filtering, ollama `pull`/`rm`/`ps`/`unload`,
 probe caching) reads `type()` instead of `name()`.
 
-## 12. Recap
+## 12. In the desktop: Settings → Models & providers
+
+The same store, without a command line. The section opens with one row per
+registration — `Id · Provider · Wire · Where · On` — where **Where** says which of
+§5's files owns each field: `project`, `user`, or `project over user` when this
+checkout overrides your personal entry. Selecting a row prints its parameters with
+the keys masked (`sk-***1234`), each tagged with the file it came from.
+
+The editor below the table writes one parameter at a time, the way `/settings`
+types values: an id, a parameter name, a value, and a **Project / User** radio that
+picks which file is written. The buttons are glyph-only, with tooltips:
+`✓` write, `⌫` clear that parameter, `⏻` enable or disable the selected
+registration, `×` delete it from the chosen scope, `⟳` reload from disk. Nothing
+here is a second set of rules — a write goes through `NaruModelRegistrationRules`,
+the same checks `/model add` and `/model update` apply, so an unknown provider type
+or a stripped identity refuses with the same sentence in the status line. `provider`
+and `protocol` offer their vocabularies as candidates, because guessing a provider
+type is the one typo that registers nothing.
+
+Deleting says what actually survives: a scope that does not declare the id refuses
+(it would delete nothing), and a scope that does warns when the other layer still
+declares it and will reappear underneath.
+
+**The hidden list at the bottom is a different axis.** It changes what the model
+picker shows in *this* window, on *this* machine, for *this* project, and writes no
+project file at all — a provider you never use is not a provider your teammates may
+not run. Type a provider name to hide the whole instance, or a full
+`provider/model` key to hide one model; `＋` hides and `－` shows the selected entry
+again. The chooser's typed text, sort and facet checkboxes are remembered the same
+way and restored when you reopen it, and an entry listed only as hidden keeps its
+original spelling so hiding twice is one row to remove, not two. Nothing is hidden
+by a policy: §9.1's keys still decide what may run, and a listing that dropped
+models says how many more this project's picker settings are hiding.
+
+## 13. Recap
 
 1. `/model add <id> --provider=<type> [--apiKey=$VAR] [--model=…] [--params…]`
    registers a named instance of a provider — repeat it to register the same

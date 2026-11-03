@@ -60,6 +60,14 @@ public class NaruModelRegistration implements NToElement {
      */
     private static final Set<String> FORBIDDEN_PROVIDERS = Set.of("custom", "anthropic");
 
+    /**
+     * The parameters that say <b>which endpoint</b> a registration is, and so whether two
+     * registrations of the same id are the same thing. One layer of the store may complete another
+     * field by field; it may not mix its key into a different provider or wire protocol, so a
+     * layer that rewrites one of these replaces the registration instead of overlaying it.
+     */
+    public static final Set<String> IDENTITY_PARAMS = Set.of("provider", "protocol");
+
     private final String id;
     private final Map<String, NElement> params;
 

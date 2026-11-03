@@ -130,7 +130,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("add", NText.ofPlain("create or update a model registration"),
-                new SubCommandHelp(NText.of("<id> --provider=<type> [--protocol=<wire>] [--url=…] [--model=<id>|--models=a,b] [--apiKey=sk-…|$VAR] [--temperature=… --contextLength=…] | <id> --protocol=<wire> --url=… --models=a,b [--apiKey=…]"), NText.ofPlain("register an instance of a built-in provider type, or a generic endpoint speaking a wire protocol; with an existing id, merges the given parameters into it"))
+                new SubCommandHelp(NText.of("<id> --provider=<type> [--protocol=<wire>] [--url=…] [--model=<id>|--models=a,b] [--apiKey=sk-…|$VAR] [--temperature=… --contextLength=…] [--scope=project|user] | <id> --protocol=<wire> --url=… --models=a,b [--apiKey=…]"), NText.ofPlain("register an instance of a built-in provider type, or a generic endpoint speaking a wire protocol; with an existing id, merges the given parameters into it. --scope=user writes the machine-wide config every project then inherits"))
         ) {
             @Override
             public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
@@ -138,7 +138,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("update", NText.ofPlain("change a registration's parameters"),
-                new SubCommandHelp(NText.of("<id> [--temperature=… --apiKey=…]"), NText.ofPlain("merge the given parameters into an existing registration; an empty value clears the parameter"))
+                new SubCommandHelp(NText.of("<id> [--temperature=… --apiKey=…] [--scope=project|user]"), NText.ofPlain("merge the given parameters into an existing registration; an empty value clears the parameter. --scope=user updates the machine-wide config instead of this project's"))
         ) {
             @Override
             public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
@@ -146,7 +146,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             }
         });
         register(new AbstractSubCommand("remove", NText.ofPlain("delete a registration"),
-                new SubCommandHelp(NText.of("<id>"), NText.ofPlain("delete a registration and its stored parameters"))
+                new SubCommandHelp(NText.of("<id> [--scope=project|user]"), NText.ofPlain("delete a registration and its stored parameters from one scope; a project override that sits on a user registration is removed and the user registration survives"))
         ) {
             @Override
             public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
@@ -709,223 +709,109 @@ public class NaruModelDirective extends NaruDirectiveBase {
             return fail(context, NMsg.ofC("Error: %s.", problems.get(0)));
         }
         String typedId = idRef.isNull() ? null : idRef.get();
-        if (NBlankable.isBlank(typedId)) {
-            return fail(context, update
-                    ? NMsg.ofC("Error: missing registration id (usage: /model update <id> --<param>=<value>)")
-                    : NMsg.ofC("Error: missing registration id (usage: /model add <id> --provider=<type> [--protocol=<wire>], "
-                            + "or /model add <id> --protocol=<wire> --url=\u2026 --models=a,b)"));
-        }
-        if (typedId.indexOf('/') >= 0) {
-            return fail(context, NMsg.ofC(
-                    "Error: invalid registration id '%s': '/' separates the instance from the model in a key like '%s'.",
-                    typedId, typedId + "/<model>"));
-        }
-
-        // the stored registration: exact id first, then case-insensitive so an id
-        // written differently never forks the entry
-        Map<String, NaruModelRegistration> regs = session.registrations();
-        String storedId = typedId;
-        NaruModelRegistration existing = regs == null ? null : regs.get(typedId);
-        if (existing == null && regs != null) {
-            String key = findRegistrationKey(regs, typedId);
-            if (key != null) {
-                storedId = key;
-                existing = regs.get(key);
-            }
-        }
-        if (update && existing == null) {
-            return fail(context, NMsg.ofC(
-                    "Error: no registration '%s' — see '/model registered' (create it with '/model add').", typedId));
-        }
-
-        // assemble the parameter map: stored parameters first (an update is a merge),
-        // then the flags — an empty value clears the parameter, and provider is kept
-        // first so a hand-edited file reads naturally
-        LinkedHashMap<String, NElement> params = new LinkedHashMap<>();
-        if (existing != null) {
-            params.putAll(existing.params());
-        }
+        // The cross-field rules (identity, provider type, wire shape, generic-endpoint
+        // requirements, id collisions) and the normalization they imply live in
+        // NaruModelRegistrationRules, so the desktop's registration form and this command line
+        // can never disagree about what a valid registration is.
+        LinkedHashMap<String, NElement> edits = new LinkedHashMap<>();
         for (Map.Entry<String, List<String>> f : flags.entrySet()) {
-            NElement v = flagElement(f.getKey(), f.getValue());
-            if (v == null) {
-                params.remove(f.getKey());
-            } else if (f.getKey().equals("provider")) {
-                params.remove("provider");
-                LinkedHashMap<String, NElement> ordered = new LinkedHashMap<>();
-                ordered.put("provider", v);
-                ordered.putAll(params);
-                params = ordered;
-            } else {
-                params.put(f.getKey(), v);
-            }
+            edits.put(f.getKey(), flagElement(f.getKey(), f.getValue()));
         }
-
-        // identity: --provider=<type> and/or --protocol=<wire> (design doc §8) —
-        // a registration is either a built-in type, or a generic endpoint selected
-        // by its wire shape alone. Validated on the *merged* params, so an update
-        // can never strip the identity through an empty --provider= / --protocol=
-        // and leave a parameter-less shell behind.
-        String providerValue = rawStringParam(params, "provider");
-        String protocolValue = rawStringParam(params, "protocol");
-        if (existing != null && providerValue == null && !"custom".equalsIgnoreCase(existing.provider())) {
-            return fail(context, NMsg.ofC(
-                    "Error: cannot clear '%s's provider with '--provider=' (an update only merges) — to turn it "
-                            + "into a generic endpoint, remove it and add it again with '--protocol=<wire> --url=\u2026 --models=a,b'.",
-                    typedId));
+        // --scope names the store, not the model: it decides which file the entry is written to,
+        // so it leaves the parameter map before the registration rules see it
+        NaruRegistrationScope scope = NaruRegistrationScope.PROJECT;
+        NElement scopeEdit = edits.remove("scope");
+        if (scopeEdit != null) {
+            String scopeWord = scopeEdit.asStringValue().orNull();
+            NOptional<NaruRegistrationScope> parsed = NaruRegistrationScope.parse(scopeWord);
+            if (!parsed.isPresent()) {
+                return fail(context, NMsg.ofC("Error: unknown scope '%s' — use 'project' or 'user'.",
+                        scopeWord));
+            }
+            scope = parsed.get();
         }
-        if (providerValue == null && protocolValue == null) {
-            return fail(context, NMsg.ofC(
-                    "Error: missing identity for '%s' — use '--provider=<type>' for a built-in provider, "
-                            + "or '--protocol=<wire> --url=\u2026 --models=a,b' for a generic endpoint.",
-                    typedId));
+        NaruModelRegistrationRules.Outcome outcome =
+                NaruModelRegistrationRules.apply(session, typedId, edits, update, scope);
+        if (!outcome.isOk()) {
+            return fail(context, NMsg.ofC("Error: %s", outcome.problem()));
         }
-        if (providerValue != null) {
-            String lower = providerValue.trim().toLowerCase();
-            if (lower.equals("openapi")) {
-                return fail(context, NMsg.ofC(
-                        "Error: '--provider=openapi' is gone — 'openai' is now both a wire id and a built-in "
-                                + "provider type: use '--provider=openai' for OpenAI's API itself, or "
-                                + "'--protocol=openai --url=\u2026 --models=a,b' for a generic endpoint."));
-            }
-            if (lower.equals("wire")) {
-                return fail(context, NMsg.ofC(
-                        "Error: '--provider=wire' was the old name of the internal endpoint type (now 'custom') — "
-                                + "a generic endpoint spells its wire shape with '--protocol=<wire> --url=\u2026 "
-                                + "--models=a,b', no --provider."));
-            }
-            if (lower.equals("custom")) {
-                return fail(context, NMsg.ofC(
-                        "Error: '--provider=custom' is internal to registrations — a generic endpoint spells its "
-                                + "wire shape with '--protocol=<wire> --url=\u2026 --models=a,b', no --provider."));
-            }
-            if (lower.equals("anthropic")) {
-                return fail(context, NMsg.ofC(
-                        "Error: '--provider=%s' is a wire protocol id, not a provider type — a generic endpoint "
-                                + "spells it as '--protocol=%s --url=\u2026 --models=a,b'.",
-                        providerValue, lower));
-            }
-        }
-
-        NaruModelRegistration reg;
-        try {
-            reg = NaruModelRegistration.of(storedId, params);
-        } catch (RuntimeException e) {
-            return fail(context, NMsg.ofC("Error: %s", e.getMessage()));
-        }
-
-        // a free id: a built-in (or any other non-registration) instance is never
-        // overwritten — the session reload refuses that too
-        if (existing == null) {
-            NaruModelProvider collides = findProvider(session, storedId);
-            if (collides != null) {
-                return fail(context, NMsg.ofC(
-                        "Error: id '%s' is already used by provider '%s' (type %s) — choose another id.",
-                        storedId, collides.name(), collides.type()));
-            }
-        }
-
-        // --provider names a *type*, never an instance id; a generic endpoint
-        // (no provider param) resolves to the internal custom type
-        NaruModelProvider typeProvider = findProviderType(session, reg.provider());
-        if (typeProvider == null) {
-            return fail(context, NMsg.ofC(
-                    "Error: unknown provider type '%s'. Known types: %s.",
-                    reg.provider(), knownProviderTypes(session)));
-        }
-
-        // --protocol must name a wire shape this type speaks (§8): naming the
-        // type's own default wire id is a no-op accepted idempotently; anything
-        // else is rejected rather than silently ignored — an unknown id is never
-        // guessed at
-        String protocol = null;
-        NOptional<String> proto = reg.protocol();
-        if (proto.isPresent()) {
-            String wanted = proto.get();
-            String match = null;
-            Set<String> supported = typeProvider.supportedProtocols();
-            if (supported != null) {
-                for (String sp : supported) {
-                    if (sp.equalsIgnoreCase(wanted)) {
-                        match = sp;
-                        break;
-                    }
-                }
-            }
-            if (match == null && typeProvider.defaultProtocol() != null
-                    && typeProvider.defaultProtocol().equalsIgnoreCase(wanted)) {
-                match = typeProvider.defaultProtocol(); // naming the default wire is a no-op
-            }
-            if (match == null) {
-                return fail(context, supported == null || supported.isEmpty()
-                        ? NMsg.ofC("Error: provider type '%s' does not support --protocol: its wire shape is fixed.", reg.provider())
-                        : NMsg.ofC("Error: unknown protocol '%s' for provider type '%s' (supported: %s).",
-                        wanted, reg.provider(), String.join(", ", new TreeSet<>(supported))));
-            }
-            if (reg.param("provider").isPresent()
-                    && typeProvider.defaultProtocol() != null
-                    && match.equalsIgnoreCase(typeProvider.defaultProtocol())) {
-                // naming a built-in type's own default wire is a no-op: nothing
-                // is stored and the wire falls back to the default (the message
-                // still shows it). A generic endpoint's protocol is its
-                // identity, so it is always stored.
-                reg = reg.withParam("protocol", (NElement) null);
-                protocol = null;
-            } else {
-                if (!match.equals(wanted)) {
-                    reg = reg.withParam("protocol", match);   // store the canonical id
-                }
-                protocol = match;
-            }
-        }
-
-        // a generic endpoint has no provider class to enumerate or address — it
-        // needs a base url and the models it serves, or there is nothing to call
-        boolean generic = "custom".equalsIgnoreCase(reg.provider());
-        if (generic) {
-            if (NBlankable.isBlank(reg.stringValue("url").orNull())) {
-                return fail(context, NMsg.ofC(
-                        "Error: a generic endpoint needs a base url — e.g. '/model add %s --protocol=%s --url=\u2026 --models=a,b'.",
-                        typedId, protocol == null ? typeProvider.defaultProtocol() : protocol));
-            }
-            if (!reg.param("model").isPresent() && !reg.param("models").isPresent()) {
-                return fail(context, NMsg.ofC(
-                        "Error: a generic endpoint needs --model=<id> or --models=a,b — no provider class exists "
-                                + "to enumerate its models (e.g. '/model add %s --protocol=%s --url=\u2026 --models=a,b').",
-                        typedId, protocol == null ? typeProvider.defaultProtocol() : protocol));
-            }
-        }
-
-        boolean created = existing == null;
-        session.putRegistration(reg);
-        NMsg ok = created
-                ? generic
-                ? NMsg.ofC("registration '%s' created (protocol=%s, generic endpoint)",
-                NMsg.ofStyledPrimary1(reg.id()),
-                protocol == null ? typeProvider.defaultProtocol() : protocol)
-                : NMsg.ofC("registration '%s' created (provider=%s%s)",
+        NaruModelRegistration reg = outcome.registration();
+        session.putRegistration(reg, scope);
+        // a built-in type's own default wire is dropped as a no-op, so the line falls back to
+        // whatever the stored registration actually names
+        String shownProtocol = outcome.protocol() != null ? outcome.protocol() : reg.protocol().orNull();
+        String where = scope == NaruRegistrationScope.PROJECT ? "" : ", in your user config";
+        NMsg ok = outcome.created()
+                ? outcome.generic()
+                ? NMsg.ofC("registration '%s' created (protocol=%s, generic endpoint%s)",
+                NMsg.ofStyledPrimary1(reg.id()), shownProtocol, where)
+                : NMsg.ofC("registration '%s' created (provider=%s%s%s)",
                 NMsg.ofStyledPrimary1(reg.id()), reg.provider(),
-                protocol == null ? "" : ", protocol=" + protocol)
-                : NMsg.ofC("registration '%s' updated", NMsg.ofStyledPrimary1(reg.id()));
+                shownProtocol == null ? "" : ", protocol=" + shownProtocol, where)
+                : NMsg.ofC("registration '%s' updated%s", NMsg.ofStyledPrimary1(reg.id()), where);
         context.outln(ok);
         return NaruStmtResult.ofSuccess(NElement.of(true),null);
     }
 
     /**
-     * Deletes a registration and its stored parameters from both visibility files.
+     * Deletes a registration and its stored parameters from one scope's visibility files —
+     * the project's unless {@code --scope=user} says otherwise. The other scope keeps whatever it
+     * declares: removing a project override from an id the user config also declares uncovers that
+     * registration instead of deleting it, and the reply names the file it survives in.
      */
     public NaruStmtResult executeRemoveRegistration(SubCommandContext context, NCmdLine cmdLine) {
         NaruTask task = context.task();
-        NOptional<NArg> n = cmdLine.next();
-        if (!n.isPresent() || NBlankable.isBlank(n.get().image())) {
+        NRef<String> idRef = NRef.of();
+        NaruRegistrationScope[] scopeRef = {NaruRegistrationScope.PROJECT};
+        List<String> problems = new ArrayList<>();
+        cmdLine.matcher()
+                .whenNonOption().asArg(a -> {
+                    if (idRef.isNull()) {
+                        idRef.set(NStringUtils.stripToNull(a.asString().orNull()));
+                    } else {
+                        problems.add("unexpected argument '" + a.image() + "'");
+                    }
+                })
+                .whenAny().asEntry(a -> {
+                    String k = NStringUtils.stripToNull(a.key());
+                    while (k != null && k.startsWith("-")) {
+                        k = k.substring(1);
+                    }
+                    if (!"scope".equals(k)) {
+                        problems.add("unexpected option '" + a.image() + "'");
+                        return;
+                    }
+                    String v = a.getStringValue().orNull();
+                    NOptional<NaruRegistrationScope> parsed = NaruRegistrationScope.parse(v);
+                    if (!parsed.isPresent()) {
+                        problems.add("unknown scope '" + v + "' — use 'project' or 'user'");
+                        return;
+                    }
+                    scopeRef[0] = parsed.get();
+                })
+                .requireAll();
+        if (!problems.isEmpty()) {
+            return fail(context, NMsg.ofC("Error: %s.", problems.get(0)));
+        }
+        String image = idRef.get();
+        if (NBlankable.isBlank(image)) {
             return fail(context, NMsg.ofC("Error: missing registration id (see '/model registered')."));
         }
         Map<String, NaruModelRegistration> regs = task.session().registrations();
-        String key = findRegistrationKey(regs, n.get().image());
+        String key = findRegistrationKey(regs, image);
         if (key == null) {
-            return fail(context, NMsg.ofC("Error: no registration '%s' — see '/model registered'.", n.get().image()));
+            return fail(context, NMsg.ofC("Error: no registration '%s' — see '/model registered'.", image));
         }
-        task.session().removeRegistration(key);
-        NMsg ok = NMsg.ofC("registration '%s' removed", NMsg.ofStyledPrimary1(key));
+        NaruRegistrationScope scope = scopeRef[0];
+        boolean removed = task.session().removeRegistration(key, scope);
+        NOptional<NaruRegistrationOrigin> origin = task.session().registrationOrigin(key);
+        NMsg ok = origin.isPresent()
+                ? NMsg.ofC("registration '%s' removed from the %s config — it is still declared in the %s config",
+                NMsg.ofStyledPrimary1(key), scope.word(), origin.get().scope().word())
+                : removed
+                ? NMsg.ofC("registration '%s' removed", NMsg.ofStyledPrimary1(key))
+                : NMsg.ofC("registration '%s' was not declared in the %s config",
+                NMsg.ofStyledPrimary1(key), scope.word());
         context.outln(ok);
         return NaruStmtResult.ofSuccess(NElement.of(true),null);
     }
@@ -1060,31 +946,6 @@ public class NaruModelDirective extends NaruDirectiveBase {
     }
 
     /**
-     * The provider implementing a <b>type</b> (never an instance id): materializing
-     * a registration and validating {@code --provider} both need the type's class,
-     * and a built-in always exists under its own type name.
-     */
-    private static NaruModelProvider findProviderType(NaruSession session, String type) {
-        if (NBlankable.isBlank(type)) {
-            return null;
-        }
-        NaruModelProvider p = findProvider(session, type);
-        if (p != null && type.equalsIgnoreCase(p.type())) {
-            return p;
-        }
-        Map<String, NaruModelProvider> all = session == null || session.registry() == null
-                ? null : session.registry().modelProviders();
-        if (all != null) {
-            for (NaruModelProvider v : all.values()) {
-                if (v != null && type.equalsIgnoreCase(v.type())) {
-                    return v;
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
      * The type behind an instance id (the id itself when it is a built-in or
      * unknown): {@code /model list} annotates and filters by type.
      */
@@ -1102,18 +963,6 @@ public class NaruModelDirective extends NaruDirectiveBase {
     }
 
     /**
-     * The trimmed string form of a parameter in a raw element map, or null when
-     * absent/blank.
-     */
-    private static String rawStringParam(Map<String, NElement> params, String name) {
-        NElement e = params == null ? null : params.get(name);
-        if (e == null || e.isNull()) {
-            return null;
-        }
-        return NStringUtils.stripToNull(e.asStringValue().orNull());
-    }
-
-    /**
      * The type column of {@code /model registered}: a provider-based registration
      * names its type; a generic endpoint (no provider param) names the wire
      * protocol it speaks instead of the internal {@code custom} type.
@@ -1123,21 +972,6 @@ public class NaruModelDirective extends NaruDirectiveBase {
             return r.protocol().orElse("custom");
         }
         return r.provider();
-    }
-
-    private static String knownProviderTypes(NaruSession session) {
-        Map<String, NaruModelProvider> all = session == null || session.registry() == null
-                ? null : session.registry().modelProviders();
-        if (all == null || all.isEmpty()) {
-            return "";
-        }
-        TreeSet<String> types = new TreeSet<>();
-        for (NaruModelProvider v : all.values()) {
-            if (v != null && !NBlankable.isBlank(v.type())) {
-                types.add(v.type());
-            }
-        }
-        return String.join(", ", types);
     }
 
     /**

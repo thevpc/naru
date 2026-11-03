@@ -51,7 +51,7 @@ public final class SettingsPane extends JPanel {
         add(headerWrap, BorderLayout.NORTH);
 
         JPanel navigation = new JPanel(new BorderLayout());
-        JList<String> sections = new JList<>(new String[]{"Appearance", "Input & shortcuts", "Workspace"});
+        JList<String> sections = new JList<>(new String[]{"Appearance", "Input & shortcuts", "Models & providers", "Workspace"});
         UiFonts.apply(sections, UiFonts.BODY, Font.PLAIN);
         // a row and a rail measured in pixels survive one interface size; both come from this list's
         // own font so the settings navigation grows with the words it holds
@@ -61,7 +61,7 @@ public final class SettingsPane extends JPanel {
         navigation.add(sections, BorderLayout.NORTH);
         navigation.setPreferredSize(new java.awt.Dimension(
                 Math.max(180, sections.getFontMetrics(sections.getFont())
-                        .stringWidth("Input & shortcuts") + 56), 100));
+                        .stringWidth("Models & providers") + 56), 100));
 
         JPanel appearance = new JPanel(new BorderLayout(10, 12));
         appearance.setBorder(BorderFactory.createEmptyBorder(20, 22, 22, 22));
@@ -106,6 +106,14 @@ public final class SettingsPane extends JPanel {
         WorkspaceEnvPane envPane = new WorkspaceEnvPane(workspace, liveSession);
         envPane.setBorder(BorderFactory.createEmptyBorder(20, 22, 22, 22));
         pageArea.add(envPane, "Workspace");
+        // the gateway reads the session through the same supplier the workspace pane uses, so a
+        // session opened or closed while settings are on screen is picked up on the next reload
+        ModelProvidersPane modelsPane = new ModelProvidersPane(() -> {
+            NaruWorkspace w = workspace.get();
+            return w == null ? null : w.projectDirectory();
+        }, new SessionModelRegistrations(liveSession));
+        modelsPane.setBorder(BorderFactory.createEmptyBorder(20, 22, 22, 22));
+        pageArea.add(modelsPane, "Models & providers");
         sections.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 String chosen = sections.getSelectedValue();

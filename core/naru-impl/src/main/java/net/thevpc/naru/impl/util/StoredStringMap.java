@@ -4,6 +4,7 @@ import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
 
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -88,33 +89,44 @@ public class StoredStringMap<T> {
             return;
         }
         NObjectElementBuilder b = object.builder();
-        Map<String, NElement> onDisk = new LinkedHashMap<>();
-        for (NPairElement p : object.namedPairs()) {
+        List<NPairElement> pairs = object.namedPairs();
+        Map<String, NPairElement> onDisk = new LinkedHashMap<>();
+        List<NPairElement> dropped = new ArrayList<>();
+        for (NPairElement p : pairs) {
             String k = p.key().asStringValue().orNull();
-            if (k != null) {
-                onDisk.put(k, p.value());
+            if (k == null) {
+                continue;
+            }
+            if (map.containsKey(k)) {
+                onDisk.putIfAbsent(k, p);
+            } else {
+                dropped.add(p);
             }
         }
         List<String> sorted = new ArrayList<>(map.keySet());
         sorted.sort(Comparator.naturalOrder());
         for (String k : sorted) {
             NElement wanted = serializeValue(map.get(k));
-            NElement had = onDisk.get(k);
+            NPairElement had = onDisk.get(k);
             if (had == null) {
-                NElement pair = NElement.ofPair(k, wanted);
+                NElement pair = NElement.ofPair(k, spaced(wanted));
                 // the newline is what separates the appended pair from the one before it: TSON
                 // tolerates a missing comma but not two pairs glued into one token
                 pair = pair.builder().addAffix(NElementNewLine.of(), NAffixAnchor.START)
                         .addAffix(NElementSpace.of(2), NAffixAnchor.START).build();
-                b.setAt(b.size(), pair);
-            } else if (!had.toString().equals(wanted.toString())) {
-                b.set(k, wanted);
+                b.add(pair);
+            } else if (!had.value().toString().equals(wanted.toString())) {
+                // rebuilt from the pair that is already on the tree, and committed as that pair:
+                // the builder matches it by its own key element, so a file that spells the key as
+                // the string "shared" is edited where it stands instead of gaining a second
+                // pair under a bare shared. Addressing pairs by their index in namedPairs() is
+                // not the same thing — the object's children include the comment lines between
+                // them, so that index lands on a comment and overwrites it.
+                b.set(had.builder().value(spaced(wanted)).build());
             }
         }
-        for (String k : onDisk.keySet()) {
-            if (!map.containsKey(k)) {
-                b.remove(k);
-            }
+        for (NPairElement p : dropped) {
+            b.removePair(p.key());
         }
         NElement out = root instanceof NFragmentElement fragment
                 ? fragment.builder().setAt(indexOfObject(fragment), b.build()).build()
@@ -122,9 +134,34 @@ public class StoredStringMap<T> {
         NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.VERBATIM).write(out, file);
     }
 
+    /**
+     * Give a freshly built value the separators TSON needs between its own parts.
+     *
+     * <p>An element off a builder carries no affixes, and affixes are what a file is made of:
+     * written verbatim, {@code {url:"u"temperature:0.3model:"s"}} re-parses as three pairs with one
+     * value swallowing the next key's name — the map still holds all four fields, and every reader
+     * after the save sees a registration with no {@code model} at all. Pretty-printing the value and
+     * reading it back attaches them, and only the edited value is reformatted, so the file's own
+     * comments and layout elsewhere survive as they did before.
+     */
+    private static NElement spaced(NElement value) {
+        if (value == null || !value.isListContainer()) {
+            // a literal has no parts to separate
+            return value;
+        }
+        StringWriter sw = new StringWriter();
+        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY).write(value, sw);
+        try {
+            return NElementReader.ofTson().ntf(false).read(sw.toString());
+        } catch (RuntimeException e) {
+            // a value that will not re-parse is still worth writing: the store's own map is the
+            // truth, and a corrupt-looking file is recoverable by hand
+            return value;
+        }
+    }
+
     /** The parsed file, or null when there is nothing to edit in place. */
-    private NElement readTreeForRewrite() {
-        if (!file.isRegularFile()) {
+    private NElement readTreeForRewrite() {        if (!file.isRegularFile()) {
             return null;
         }
         try {

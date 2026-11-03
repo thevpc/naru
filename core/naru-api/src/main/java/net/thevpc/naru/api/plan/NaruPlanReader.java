@@ -16,9 +16,10 @@ import java.util.List;
  * {@link net.thevpc.naru.api.registry.NaruRegistry#extension(String, Class)} already opens. The
  * extension implements it; a profile without the extension simply has no reader.
  *
- * <p><b>Read-only.</b> Writing a plan belongs to the model-facing tools and to {@code /plan}, both
- * of which live beside the graph and can validate it. A host that edited plans through this seam
- * would bypass the dependency and validator rules that keep a plan honest.
+ * <p><b>Read-only.</b> This interface only reads. A host that edits plans asks for
+ * {@link NaruPlanService}, the writable side of the same extension instance; writing through a
+ * reader or through the extension's state file would bypass the dependency and validator rules that
+ * keep a plan honest. The model-facing tools and {@code /plan} use the same underlying manager.
  *
  * <p>It extends {@link NaruSessionExtension} for the lookup alone — that registry query is typed
  * over session extensions, and the implementing extension already is one. Nothing here is a new
