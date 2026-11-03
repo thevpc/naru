@@ -88,6 +88,11 @@ public final class StatusDot extends JComponent {
         // state is in motion the halo widens and brightens, which is the only movement a 9px
         // circle can make without changing what it claims
         int halo = d + 4 + (int) Math.round(3 * breath);
+        // the halo is clamped inside this component's own box. Swing does not clip a child to its
+        // bounds when the parent repaints, so the two pixels it used to spill landed on the glyph
+        // beside the dot — a lit circle half-drawn over the expander caret, which reads as a widget
+        // that got stamped on top of the row.
+        halo = Math.min(halo, Math.min(getWidth(), getHeight()));
         g2.setColor(UiPalette.alpha(color, (int) (60 + 80 * breath)));
         g2.fillOval((getWidth() - halo) / 2, (getHeight() - halo) / 2, halo, halo);
         g2.setColor(color);
@@ -99,12 +104,17 @@ public final class StatusDot extends JComponent {
     public Dimension getPreferredSize() {
         FontMetrics fm = getFontMetrics(measuredFont());
         int h = fm == null ? 15 : fm.getHeight();
-        return new Dimension(Math.max(9, Math.min(14, h / 2 + 5)), h);
+        // wide enough that the widest halo {@link #paintComponent} can ask for still fits: the dot
+        // stays the same size, only the box it is centred in grows by the halo's margin.
+        return new Dimension(diameter(fm) + 8, h);
     }
 
     /** The circle inside the box the component reserves. */
     private int diameter() {
-        FontMetrics fm = getFontMetrics(measuredFont());
+        return diameter(getFontMetrics(measuredFont()));
+    }
+
+    private static int diameter(FontMetrics fm) {
         int h = fm == null ? 15 : fm.getHeight();
         return Math.max(5, Math.min(9, h / 2));
     }
