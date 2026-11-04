@@ -277,9 +277,7 @@ public class NaruModelPolicyTest {
     @Test
     public void anInstanceIsPolicedUnderItsOwnId() {
         start(Map.of(NaruModelPolicy.ALLOW_PROVIDERS, "team"));
-        session.putRegistration(NaruModelRegistration.of("team", Map.of(
-                "provider", NElement.ofString("stub")
-        )));
+        session.putRegistration(NaruModelRegistration.builder("team").put("provider", NElement.ofString("stub")).build());
         // instance ids, not type ids, are what a key names — the allow-list has to speak the
         // same vocabulary the listing prints, or every personal registration is invisible
         Assertions.assertTrue(allowed("team/s-model"), listed().toString());

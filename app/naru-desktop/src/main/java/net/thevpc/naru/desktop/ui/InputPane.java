@@ -1136,7 +1136,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
     private boolean isDeclaredFree(net.thevpc.naru.api.model.NaruModelInfo info) {
         var registration = registration(info.provider());
         try {
-            return registration != null && Boolean.TRUE.equals(registration.booleanValue("free").orNull());
+            return registration != null && Boolean.TRUE.equals(registration.free().orNull());
         } catch (RuntimeException ignored) {
             return false;
         }
@@ -1213,19 +1213,13 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             return true;
         var r = registration(info.provider());
         if (r == null) return false;
-        try {
-            if (Boolean.TRUE.equals(r.booleanValue("local").orNull())) return true;
-        } catch (RuntimeException ignored) {
+        if (Boolean.TRUE.equals(r.local().orNull())) return true;
+        // every endpoint spelling (baseUrl, endpoint, host) already folded onto url when read
+        String v = r.url().orNull();
+        if (v != null) {
+            String x = v.toLowerCase(java.util.Locale.ROOT);
+            return x.contains("localhost") || x.contains("127.0.0.1") || x.contains("::1");
         }
-        for (String key : new String[]{"url", "baseUrl", "endpoint", "host"})
-            try {
-                String v = r.stringValue(key).orNull();
-                if (v != null) {
-                    String x = v.toLowerCase(java.util.Locale.ROOT);
-                    if (x.contains("localhost") || x.contains("127.0.0.1") || x.contains("::1")) return true;
-                }
-            } catch (RuntimeException ignored) {
-            }
         return false;
     }
 

@@ -69,12 +69,12 @@ public class NaruSessionUserRegistrationTest {
     }
 
     private static NaruModelRegistration personal(String id) {
-        return NaruModelRegistration.of(id, Map.of(
-                "provider", NElement.ofString("stub"),
-                "model", NElement.ofString("s-model"),
-                "url", NElement.ofString("https://personal.test/v1"),
-                "temperature", NElement.of(0.3f)
-        ));
+        return NaruModelRegistration.builder(id)
+                .put("provider", NElement.ofString("stub"))
+                .put("model", NElement.ofString("s-model"))
+                .put("url", NElement.ofString("https://personal.test/v1"))
+                .put("temperature", NElement.of(0.3f))
+.build();
     }
 
     @Test
@@ -96,12 +96,12 @@ public class NaruSessionUserRegistrationTest {
     @Test
     public void aProjectOverrideKeepsItsCredentialOutOfTheHomeAndTheHomeOutOfItsFile() {
         session.putRegistration(personal("shared"), NaruRegistrationScope.USER);
-        session.putRegistration(NaruModelRegistration.of("shared", Map.of(
-                "provider", NElement.ofString("stub"),
-                "model", NElement.ofString("s-model"),
-                "temperature", NElement.of(0.9f),
-                "apiKey", NElement.ofString("sk-project-key")
-        )), NaruRegistrationScope.PROJECT);
+        session.putRegistration(NaruModelRegistration.builder("shared")
+                .put("provider", NElement.ofString("stub"))
+                .put("model", NElement.ofString("s-model"))
+                .put("temperature", NElement.of(0.9f))
+                .put("apiKey", NElement.ofString("sk-project-key"))
+.build(), NaruRegistrationScope.PROJECT);
 
         Assertions.assertEquals(0.9f, session.findModel("shared").get().temperature(), 0.0,
                 "the project override did not reach the resolved model");
@@ -134,10 +134,7 @@ public class NaruSessionUserRegistrationTest {
     @Test
     public void aProjectThatNamesAnotherProviderForAPersonalIdReplacesItEntirely() {
         session.putRegistration(personal("fast"), NaruRegistrationScope.USER);
-        session.putRegistration(NaruModelRegistration.of("fast", Map.of(
-                "provider", NElement.ofString("sysenv"),
-                "url", NElement.ofString("https://project.test/v1")
-        )), NaruRegistrationScope.PROJECT);
+        session.putRegistration(NaruModelRegistration.builder("fast").put("provider", NElement.ofString("sysenv")).put("url", NElement.ofString("https://project.test/v1")).build(), NaruRegistrationScope.PROJECT);
 
         NaruModelProvider instance = session.registry().modelProviders().get("fast");
         Assertions.assertEquals("sysenv", instance.type());

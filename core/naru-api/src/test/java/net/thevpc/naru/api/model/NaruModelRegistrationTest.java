@@ -40,52 +40,49 @@ public class NaruModelRegistrationTest {
     }
 
     @Test
-    public void genericEndpointHasProviderCustomAndNoProviderParam() {
+    public void genericEndpointNamesNoProviderAndIsAddressedByTheCustomType() {
         // --protocol alone: a generic endpoint with no stored provider
-        NaruModelRegistration r = NaruModelRegistration.of("ep", Map.of(
-                "protocol", NElement.ofString("openai"),
-                "url", NElement.ofString("https://x"),
-                "models", NElement.ofString("a,b")));
-        Assertions.assertEquals("custom", r.provider(), "no provider param means the internal custom type");
+        NaruModelRegistration r = NaruModelRegistration.builder("ep")
+                .put("protocol", NElement.ofString("openai"))
+                .put("url", NElement.ofString("https://x"))
+                .put("models", NElement.ofString("a,b"))
+.build();
+        Assertions.assertTrue(r.isGeneric(), "no provider param means no provider type");
+        Assertions.assertEquals("custom", r.endpointType(), "... but a provider class still serves its wire");
         Assertions.assertEquals("openai", r.protocol().get());
-        Assertions.assertFalse(r.param("provider").isPresent(), "nothing persists provider=custom");
-        Assertions.assertEquals(r, NaruModelRegistration.of(r.id(), r.params()), "generic endpoint round-trips");
+        Assertions.assertFalse(r.provider().isPresent(), "nothing persists provider=custom");
+        Assertions.assertEquals(r, NaruModelRegistration.of(r.id(), r.toElement()), "generic endpoint round-trips");
     }
 
     @Test
     public void nonProviderIdsAreRejected() {
         // openai is a provider type now: accepted, stored as-is
-        NaruModelRegistration o = NaruModelRegistration.of("ep",
-                Map.of("provider", NElement.ofString("openai")));
-        Assertions.assertEquals("openai", o.provider());
+        NaruModelRegistration o = NaruModelRegistration.builder("ep").put("provider", NElement.ofString("openai")).build();
+        Assertions.assertEquals("openai", o.provider().get());
 
         // wire protocol ids without a provider type are rejected, never normalized (clean cut)
-        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep",
-                Map.of("provider", NElement.ofString("anthropic"))));
-        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep",
-                Map.of("provider", NElement.ofString("custom"))));
+        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.builder("ep").put("provider", NElement.ofString("anthropic")).build());
+        Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.builder("ep").put("provider", NElement.ofString("custom")).build());
         Assertions.assertThrows(NIllegalArgumentException.class, () -> NaruModelRegistration.of("ep", "anthropic"));
 
         // the openapi rejection carries the rename hint (openai is now a type too)
         NIllegalArgumentException ex = Assertions.assertThrows(NIllegalArgumentException.class,
-                () -> NaruModelRegistration.of("ep", Map.of("provider", NElement.ofString("openapi"))));
+                () -> NaruModelRegistration.builder("ep").put("provider", NElement.ofString("openapi")).build());
         Assertions.assertTrue(ex.getMessage().contains("openai"));
 
         // 'wire' is the pre-rename spelling of the internal custom type: rejected with a hint
         NIllegalArgumentException wireEx = Assertions.assertThrows(NIllegalArgumentException.class,
-                () -> NaruModelRegistration.of("ep", Map.of("provider", NElement.ofString("wire"))));
+                () -> NaruModelRegistration.builder("ep").put("provider", NElement.ofString("wire")).build());
         Assertions.assertTrue(wireEx.getMessage().contains("custom"));
 
         // gemini as a provider is the built-in provider, never a shorthand
         NaruModelRegistration r = NaruModelRegistration.of("personal", "gemini");
-        Assertions.assertEquals("gemini", r.provider());
+        Assertions.assertEquals("gemini", r.provider().get());
         Assertions.assertFalse(r.protocol().isPresent());
 
         // ... its native wire shape is an explicit protocol on top of the type
-        r = NaruModelRegistration.of("native", Map.of(
-                "provider", NElement.ofString("gemini"),
-                "protocol", NElement.ofString("gemini")));
-        Assertions.assertEquals("gemini", r.provider());
+        r = NaruModelRegistration.builder("native").put("provider", NElement.ofString("gemini")).put("protocol", NElement.ofString("gemini")).build();
+        Assertions.assertEquals("gemini", r.provider().get());
         Assertions.assertEquals("gemini", r.protocol().get());
     }
 
@@ -103,35 +100,37 @@ public class NaruModelRegistrationTest {
         NaruModelRegistration r = NaruModelRegistration.of("personal", b.build());
 
         Assertions.assertEquals("personal", r.id());
-        Assertions.assertEquals("gemini", r.provider());
-        Assertions.assertEquals("gemini-2.5-pro", r.stringValue("model").get());
-        Assertions.assertEquals(0.2f, r.floatValue("temperature").get());
-        Assertions.assertEquals(163840L, r.longValue("contextLength").get());
-        Assertions.assertEquals(8192, r.intValue("maxTokens").get());
-        Assertions.assertTrue(r.booleanValue("stream").get());
-        Assertions.assertEquals(List.of("<eos>", "<bos>"), r.stringList("stop"));
-        Assertions.assertEquals(List.of("begin", "end"), r.stringList("thinkingTags"));
-        Assertions.assertFalse(r.param("absent").isPresent());
-        Assertions.assertTrue(r.stringValue("absent").isEmpty());
+        Assertions.assertEquals("gemini", r.provider().get());
+        Assertions.assertEquals("gemini-2.5-pro", r.model().get());
+        Assertions.assertEquals(0.2f, r.temperature().get());
+        Assertions.assertEquals(163840, r.contextLength().get());
+        Assertions.assertEquals(8192, r.maxTokens().get());
+        // an undeclared knob stays in extras: reading it is a different call from reading a field
+        Assertions.assertEquals(Boolean.TRUE, r.extra("stream").get().asBooleanValue().get());
+        Assertions.assertEquals(List.of("<eos>", "<bos>"), r.stop());
+        Assertions.assertEquals(List.of("begin", "end"),
+                NaruRegistrationFields.listValueOf(r.thinkingTags().get()));
+        Assertions.assertFalse(r.extra("absent").isPresent());
     }
 
     @Test
-    public void withParamDoesNotMutate() {
+    public void withFieldDoesNotMutate() {
         NObjectElementBuilder b = NElement.ofObjectBuilder();
         b.set("provider", "gemini");
         b.set("temperature", 0.2f);
         NaruModelRegistration r = NaruModelRegistration.of("personal", b.build());
 
-        NaruModelRegistration colder = r.withParam("temperature", NElement.of(0.1f));
+        NaruModelRegistration colder = r.with(NaruRegistrationFields.TEMPERATURE, 0.1f);
         Assertions.assertNotEquals(r, colder);
-        Assertions.assertEquals(0.2f, r.floatValue("temperature").get());
-        Assertions.assertEquals(0.1f, colder.floatValue("temperature").get());
+        Assertions.assertEquals(0.2f, r.temperature().get());
+        Assertions.assertEquals(0.1f, colder.temperature().get());
 
-        NaruModelRegistration noTemp = r.withoutParam("temperature");
-        Assertions.assertFalse(noTemp.param("temperature").isPresent());
-        Assertions.assertTrue(r.param("temperature").isPresent());
+        NaruModelRegistration noTemp = r.with(NaruRegistrationFields.TEMPERATURE, null);
+        Assertions.assertFalse(noTemp.temperature().isPresent());
+        Assertions.assertTrue(r.temperature().isPresent());
         // provider can never be dropped
-        Assertions.assertThrows(NIllegalArgumentException.class, () -> r.withoutParam("provider"));
+        Assertions.assertThrows(NIllegalArgumentException.class,
+                () -> r.with(NaruRegistrationFields.PROVIDER, null));
     }
 
     @Test
@@ -143,10 +142,9 @@ public class NaruModelRegistrationTest {
         b.set("temperature", 0.7f);
         NaruModelRegistration r = NaruModelRegistration.of("example", b.build());
 
-        Assertions.assertEquals("custom", r.provider());
+        Assertions.assertTrue(r.isGeneric());
         Assertions.assertEquals("openai", r.protocol().get());
         Assertions.assertEquals(r, NaruModelRegistration.of(r.id(), r.toElement()));
-        Assertions.assertEquals(r, NaruModelRegistration.of(r.id(), r.params()));
     }
 
     @Test
@@ -169,11 +167,10 @@ public class NaruModelRegistrationTest {
         Assertions.assertFalse(NaruModelRegistration.interpolate("pre $CC", env::get).isPresent());
 
         // resolve() goes through the real environment: an unset variable is not a value
-        NaruModelRegistration r = NaruModelRegistration.of("personal", Map.of(
-                "provider", NElement.ofString("gemini"),
-                "apiKey", NElement.ofString("$NARU_TEST_UNSET_VAR_42")));
-        Assertions.assertFalse(r.resolve("apiKey").isPresent());
-        Assertions.assertFalse(r.resolve("url").isPresent());
+        NaruModelRegistration r = NaruModelRegistration.builder("personal").put("provider", NElement.ofString("gemini")).put("apiKey", NElement.ofString("$NARU_TEST_UNSET_VAR_42")).build();
+        // an unset reference is not a value, and neither is an unset endpoint
+        Assertions.assertFalse(r.apiKeyResolved(null).isPresent());
+        Assertions.assertFalse(r.url().isPresent());
     }
 
     @Test
@@ -187,22 +184,18 @@ public class NaruModelRegistrationTest {
         Assertions.assertFalse(NaruModelRegistration.isSecretLiteral("apiKey", NElement.ofString("$GEMINI_KEY_A")));
         Assertions.assertFalse(NaruModelRegistration.isSecretLiteral("url", NElement.ofString("sk-abcdef1234")));
 
-        NaruModelRegistration r = NaruModelRegistration.of("personal", Map.of(
-                "provider", NElement.ofString("gemini"),
-                "apiKey", NElement.ofString("sk-abcdef1234")));
+        NaruModelRegistration r = NaruModelRegistration.builder("personal").put("provider", NElement.ofString("gemini")).put("apiKey", NElement.ofString("sk-abcdef1234")).build();
         // toString never leaks, even on the unmasked value
         Assertions.assertFalse(r.toString().contains("sk-abcdef1234"));
         Assertions.assertTrue(r.toString().contains("sk-***1234"));
         // masked() is the display copy; the stored value stays intact
-        Assertions.assertEquals("sk-***1234", r.masked().stringValue("apiKey").get());
-        Assertions.assertEquals("sk-abcdef1234", r.stringValue("apiKey").get());
+        Assertions.assertEquals("sk-***1234", r.masked().apiKey().get());
+        Assertions.assertEquals("sk-abcdef1234", r.apiKey().get());
 
-        NaruModelRegistration ref = NaruModelRegistration.of("work", Map.of(
-                "provider", NElement.ofString("gemini"),
-                "apiKey", NElement.ofString("$GEMINI_KEY_A")));
+        NaruModelRegistration ref = NaruModelRegistration.builder("work").put("provider", NElement.ofString("gemini")).put("apiKey", NElement.ofString("$GEMINI_KEY_A")).build();
         // a reference names a variable, not a value: shown as-is
         Assertions.assertTrue(ref.toString().contains("$GEMINI_KEY_A"));
-        Assertions.assertEquals("$GEMINI_KEY_A", ref.masked().stringValue("apiKey").get());
+        Assertions.assertEquals("$GEMINI_KEY_A", ref.masked().apiKey().get());
     }
 
     @Test

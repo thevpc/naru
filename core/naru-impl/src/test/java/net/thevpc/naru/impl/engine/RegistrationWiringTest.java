@@ -85,12 +85,12 @@ public class RegistrationWiringTest {
     @Test
     public void registrationMaterializesAsAPinnedInstanceAndMergesParams() {
         session.registry().registerModelProvider(new StubProvider());
-        session.putRegistration(NaruModelRegistration.of("fast", Map.of(
-                "provider", NElement.ofString("stub"),
-                "model", NElement.ofString("s-model"),
-                "temperature", NElement.of(0.2f),
-                "url", NElement.ofString("https://fast.test/v1")
-        )));
+        session.putRegistration(NaruModelRegistration.builder("fast")
+                .put("provider", NElement.ofString("stub"))
+                .put("model", NElement.ofString("s-model"))
+                .put("temperature", NElement.of(0.2f))
+                .put("url", NElement.ofString("https://fast.test/v1"))
+.build());
 
         // instance in the catalog under its own id, with the registration's params
         NaruModelProvider instance = session.registry().modelProviders().get("fast");
@@ -124,9 +124,7 @@ public class RegistrationWiringTest {
     @Test
     public void unpinnedRegistrationIsNeverAnImplicitChoice() {
         session.registry().registerModelProvider(new StubProvider());
-        session.putRegistration(NaruModelRegistration.of("cluster", Map.of(
-                "provider", NElement.ofString("stub")
-        )));
+        session.putRegistration(NaruModelRegistration.builder("cluster").put("provider", NElement.ofString("stub")).build());
 
         // no pin: the instance lists its type's models, but the bare id selects nothing
         // (the directive reports the available models instead of guessing)
@@ -145,10 +143,7 @@ public class RegistrationWiringTest {
     @Test
     public void disabledRegistrationHidesFromEveryListing() {
         session.registry().registerModelProvider(new StubProvider());
-        session.putRegistration(NaruModelRegistration.of("hidden", Map.of(
-                "provider", NElement.ofString("stub"),
-                "enabled", NElement.ofString("false")
-        )));
+        session.putRegistration(NaruModelRegistration.builder("hidden").put("provider", NElement.ofString("stub")).put("enabled", NElement.ofString("false")).build());
 
         // the instance exists (it can be re-enabled) but contributes no models
         Assertions.assertNotNull(session.registry().modelProviders().get("hidden"));
@@ -160,10 +155,7 @@ public class RegistrationWiringTest {
     @Test
     public void removingARegistrationRemovesItsInstance() {
         session.registry().registerModelProvider(new StubProvider());
-        session.putRegistration(NaruModelRegistration.of("fast", Map.of(
-                "provider", NElement.ofString("stub"),
-                "model", NElement.ofString("s-model")
-        )));
+        session.putRegistration(NaruModelRegistration.builder("fast").put("provider", NElement.ofString("stub")).put("model", NElement.ofString("s-model")).build());
         Assertions.assertNotNull(session.registry().modelProviders().get("fast"));
 
         Assertions.assertTrue(session.removeRegistration("fast"));
@@ -179,10 +171,7 @@ public class RegistrationWiringTest {
         session.registry().registerModelProvider(stub);
 
         // hand-edited entry (or a typo) whose id collides with the built-in type
-        session.putRegistration(NaruModelRegistration.of("stub", Map.of(
-                "provider", NElement.ofString("stub"),
-                "url", NElement.ofString("https://evil.test/v1")
-        )));
+        session.putRegistration(NaruModelRegistration.builder("stub").put("provider", NElement.ofString("stub")).put("url", NElement.ofString("https://evil.test/v1")).build());
 
         Assertions.assertSame(stub, session.registry().modelProviders().get("stub"));
         Assertions.assertFalse(stub.rawParam("url").isPresent(),
@@ -203,16 +192,9 @@ public class RegistrationWiringTest {
     public void apiKeyIsPickedUpFromSessionEnvThenAgentEnvThenSystemEnv() {
         session.registry().registerModelProvider(new StubProvider());
         session.registry().registerModelProvider(new SystemEnvStubProvider());
-        session.putRegistration(NaruModelRegistration.of("team", Map.of(
-                "provider", NElement.ofString("stub")
-        )));
-        session.putRegistration(NaruModelRegistration.of("rotated", Map.of(
-                "provider", NElement.ofString("stub"),
-                "apiKey", NElement.ofString("$ONLY_IN_SESSION")
-        )));
-        session.putRegistration(NaruModelRegistration.of("sys-team", Map.of(
-                "provider", NElement.ofString("sysenv")
-        )));
+        session.putRegistration(NaruModelRegistration.builder("team").put("provider", NElement.ofString("stub")).build());
+        session.putRegistration(NaruModelRegistration.builder("rotated").put("provider", NElement.ofString("stub")).put("apiKey", NElement.ofString("$ONLY_IN_SESSION")).build());
+        session.putRegistration(NaruModelRegistration.builder("sys-team").put("provider", NElement.ofString("sysenv")).build());
         NaruModelProvider team = session.registry().modelProviders().get("team");
         NaruModelProvider rotated = session.registry().modelProviders().get("rotated");
         NaruModelProvider sysTeam = session.registry().modelProviders().get("sys-team");

@@ -14,10 +14,12 @@ only thing saying "this is NARU" was the taskbar icon.
    two-row lit hairline in place of the matte border. Strength is theme-aware (0.22 dark / 0.13 light)
    and every colour is resolved at paint time, so a theme or size change moves the bar with the rest of
    the interface without a rebuild.
-2. *Brand mark.* `ui/BrandMark.java`: the app icon resampled once from the 1254² master to a 160² cache
-   and drawn at the bar's own height, beside a letterspaced bold "NARU" at the `UiFonts.HEADING` ratio.
-   Height comes from the font metrics, so the interface-size slider grows the mark; it is a `JLabel`, so
-   the word is also the accessible name.
+2. *Brand mark.* `ui/BrandMark.java`: the banner artwork (`naru-logo-banner.png`) cropped once to its
+   own alpha bounds, resampled to a 256px-tall cache, and drawn as a badge that rules the bar's height —
+   1.55× the `UiFonts.HEADING` line, never below 26px — at its own 4:1 aspect. The raven, "NARU" and the
+   kana are one piece now, replacing the earlier icon-plus-letterspaced word; the interface-size slider
+   still moves the mark, through the same font. It is a `JLabel`, so the name is still the accessible
+   name even where the artwork cannot be read.
 3. *Hover-only colour.* `ui/HoverTint.java`: a rounded pill in the control's own hue, crossed through
    `HoverFader` — settings → accent, minimize → amber, maximize → green, close → red — with the glyph
    taking the same hue at full hover. Justified against the palette rule ("colour carries state"): a

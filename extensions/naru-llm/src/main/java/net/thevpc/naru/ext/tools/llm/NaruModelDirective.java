@@ -15,6 +15,7 @@ import net.thevpc.nuts.cmdline.NArgCompletePosition;
 import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NPairElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.*;
@@ -164,13 +165,6 @@ public class NaruModelDirective extends NaruDirectiveBase {
 
     // ── autocomplete ──────────────────────────────────────────────────────────
 
-    private static final String[] REGISTRATION_PARAMS = {
-            "provider", "protocol", "model", "models", "apiKey", "url",
-            "temperature", "contextLength", "nucleusThreshold", "candidateCount",
-            "maxTokens", "maxRetries", "stop", "thinkingTags", "chatPath",
-            "tools", "probe", "enabled"
-    };
-
     /**
      * Tab completion for the whole command surface: subcommand names
      * filtered by what has been typed, then each subcommand's own arguments — a
@@ -279,7 +273,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
             for (Map.Entry<String, NaruModelRegistration> e : regs.entrySet()) {
                 if (extendsWord(prefix, e.getKey())) {
                     candidates.add(NArgCompleteCandidate.of(e.getKey(),
-                            "registration " + e.getKey() + " (provider " + e.getValue().provider() + ")"));
+                            "registration " + e.getKey() + " (provider " + e.getValue().endpointType() + ")"));
                 }
             }
         }
@@ -289,17 +283,19 @@ public class NaruModelDirective extends NaruDirectiveBase {
      * A {@code --param=…} token of {@code add}/{@code update}: option names while
      * the user is still typing the flag, then candidate values once the text
      * reaches the {@code =} — provider types, wire protocols supported by the
-     * provider chosen in the line, the catalog models of that provider, and
-     * {@code true}/{@code false} for the boolean flags.
+     * provider chosen in the line, the catalog models of that provider, and the
+     * closed value sets the vocabulary declares. The names come from
+     * {@link NaruRegistrationFields#fields()}, so the command line can never offer a
+     * parameter the store does not know or hide one the form shows.
      */
     private static void completeRegistrationOption(List<NArgCompleteCandidate> candidates, NaruSession session, String[] words, int wordIndex) {
         String current = currentWord(words, wordIndex);
         int eq = current.indexOf('=');
         if (eq < 0) {
-            for (String name : REGISTRATION_PARAMS) {
-                String cand = "--" + name + "=";
+            for (NaruRegistrationFields.Field<?> f : NaruRegistrationFields.fields()) {
+                String cand = "--" + f.key() + "=";
                 if (extendsWord(current, cand)) {
-                    candidates.add(NArgCompleteCandidate.of(cand, "--" + name + "=<value>"));
+                    candidates.add(NArgCompleteCandidate.of(cand, "--" + f.key() + "=" + valueHint(f)));
                 }
             }
             return;
@@ -326,15 +322,32 @@ public class NaruModelDirective extends NaruDirectiveBase {
             case "models":
                 completeModelsValue(candidates, session, words, wordIndex, prefix, current);
                 break;
-            case "tools":
-            case "probe":
-            case "enabled":
-                addValueCandidate(candidates, prefix, "true", "true", current);
-                addValueCandidate(candidates, prefix, "false", "false", current);
-                break;
             default:
-                // numeric or free-text parameters have no fixed vocabulary
+                for (String v : NaruRegistrationFields.suggestedValues(
+                        NaruRegistrationFields.find(key))) {
+                    addValueCandidate(candidates, prefix, v, v, current);
+                }
                 break;
+        }
+    }
+
+    /** The shape a parameter takes, shown after its name in the completion list. */
+    private static String valueHint(NaruRegistrationFields.Field<?> field) {
+        List<String> suggested = NaruRegistrationFields.suggestedValues(field);
+        if (!suggested.isEmpty()) {
+            return String.join("|", suggested);
+        }
+        if (field.isSecret()) {
+            return "sk-…|$NAME";
+        }
+        switch (field.kind()) {
+            case INT:
+            case FLOAT:
+                return "number";
+            case TEXT_LIST:
+                return "a,b";
+            default:
+                return "value";
         }
     }
 
@@ -746,7 +759,7 @@ public class NaruModelDirective extends NaruDirectiveBase {
                 ? NMsg.ofC("registration '%s' created (protocol=%s, generic endpoint%s)",
                 NMsg.ofStyledPrimary1(reg.id()), shownProtocol, where)
                 : NMsg.ofC("registration '%s' created (provider=%s%s%s)",
-                NMsg.ofStyledPrimary1(reg.id()), reg.provider(),
+                NMsg.ofStyledPrimary1(reg.id()), reg.provider().orNull(),
                 shownProtocol == null ? "" : ", protocol=" + shownProtocol, where)
                 : NMsg.ofC("registration '%s' updated%s", NMsg.ofStyledPrimary1(reg.id()), where);
         context.outln(ok);
@@ -843,21 +856,32 @@ public class NaruModelDirective extends NaruDirectiveBase {
             NaruModelRegistration r = e.getValue().masked();
             List<String> kv = new ArrayList<>();
             // the model pin reads first; models=auto when the registration lets its
-            // type enumerate (§9)
-            if (r.param("model").isPresent()) {
-                kv.add("model=" + displayValue(r.param("model").get()));
-            } else if (r.param("models").isPresent()) {
-                kv.add("models=" + displayValue(r.param("models").get()));
+            // type enumerate (§9). storedPairs() is the file's own order — declared
+            // fields in declaration order, then the undeclared knobs as they were read.
+            NElement model = null;
+            NElement models = null;
+            List<String> rest = new ArrayList<>();
+            for (NPairElement p : r.storedPairs()) {
+                String k = p.key().asStringValue().orNull();
+                if (k == null || "provider".equals(k)) {
+                    continue;
+                }
+                if ("model".equals(k)) {
+                    model = p.value();
+                } else if ("models".equals(k)) {
+                    models = p.value();
+                } else {
+                    rest.add(k + "=" + displayValue(p.value()));
+                }
+            }
+            if (model != null) {
+                kv.add("model=" + displayValue(model));
+            } else if (models != null) {
+                kv.add("models=" + displayValue(models));
             } else {
                 kv.add("models=auto");
             }
-            for (Map.Entry<String, NElement> p : r.params().entrySet()) {
-                String k = p.getKey();
-                if (k.equals("provider") || k.equals("model") || k.equals("models")) {
-                    continue;
-                }
-                kv.add(k + "=" + displayValue(p.getValue()));
-            }
+            kv.addAll(rest);
             NMsg row = NMsg.ofC("  %s  %s  %s",
                     String.format("%-" + width + "s", e.getKey()),
                     registrationTypeColumn(r),
@@ -968,10 +992,10 @@ public class NaruModelDirective extends NaruDirectiveBase {
      * protocol it speaks instead of the internal {@code custom} type.
      */
     private static String registrationTypeColumn(NaruModelRegistration r) {
-        if ("custom".equalsIgnoreCase(r.provider())) {
-            return r.protocol().orElse("custom");
+        if (r.isGeneric()) {
+            return r.protocol().orNull();
         }
-        return r.provider();
+        return r.provider().get();
     }
 
     /**

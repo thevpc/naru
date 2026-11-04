@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.model.NaruModelRegistration;
+import net.thevpc.naru.api.model.NaruRegistrationFields;
 import net.thevpc.naru.api.model.NaruRegistrationOrigin;
 import net.thevpc.naru.api.model.NaruRegistrationScope;
 import net.thevpc.naru.impl.util.StoredStringMap;
@@ -32,7 +33,9 @@ import java.util.TreeSet;
  * registration without copying it. Reads merge field by field, weakest layer first —
  * userPublic, userPrivate, projectPublic, projectPrivate — and writes recompute the split from
  * the registration being written and route it to the scope asked for. A {@code $NAME} reference
- * is not a secret, so it stays public even on an {@code apiKey}.
+ * is not a secret, so it stays public even on an {@code apiKey}. An alias spelling
+ * ({@code host}, {@code api_key}) folds onto its canonical field on the way in, so the merged
+ * view and the per-field origins name the same thing.
  *
  * <p>A layer does not always get to overlay the one below it: when the two do not describe the
  * same endpoint, the stronger layer replaces the registration wholesale. If the project's {@code
@@ -108,6 +111,18 @@ public class NaruRegistrationStore {
         return new StoredStringMap<>(path, NElement.class);
     }
 
+    /**
+     * The merged file view of one id, handed to the registration one field at a time: this map is the
+     * store's own merge buffer, never the API a caller manipulates, so it is poured through
+     * {@link NaruModelRegistration.Builder#put(String, NElement)} — which folds aliases and checks
+     * kinds — rather than accepted as a loose parameter bag.
+     */
+    private static NaruModelRegistration build(String id, Map<String, NElement> fields) {
+        NaruModelRegistration.Builder b = NaruModelRegistration.builder(id);
+        fields.forEach(b::put);
+        return b.build();
+    }
+
     public NOptional<NaruModelRegistration> get(String id) {
         String iid = id == null ? null : NStringUtils.stripToNull(id);
         if (iid == null) {
@@ -117,7 +132,7 @@ public class NaruRegistrationStore {
         if (m == null) {
             return NOptional.ofEmpty();
         }
-        return NOptional.of(NaruModelRegistration.of(iid, m.fields));
+        return NOptional.of(build(iid, m.fields));
     }
 
     /**
@@ -131,7 +146,7 @@ public class NaruRegistrationStore {
     public Map<String, NaruModelRegistration> toMap() {
         Map<String, NaruModelRegistration> out = new TreeMap<>();
         for (String k : allIds()) {
-            out.put(k, NaruModelRegistration.of(k, merge(k).fields));
+            out.put(k, build(k, merge(k).fields));
         }
         return out;
     }
@@ -175,12 +190,16 @@ public class NaruRegistrationStore {
         NObjectElementBuilder pub = NElement.ofObjectBuilder();
         NObjectElementBuilder priv = NElement.ofObjectBuilder();
         boolean hasPrivate = false;
-        for (Map.Entry<String, NElement> e : registration.params().entrySet()) {
-            if (NaruModelRegistration.isSecretLiteral(e.getKey(), e.getValue())) {
-                priv.set(e.getKey(), e.getValue());
+        for (NPairElement p : registration.storedPairs()) {
+            String key = p.key().asStringValue().orNull();
+            if (key == null) {
+                continue;
+            }
+            if (NaruModelRegistration.isSecretLiteral(key, p.value())) {
+                priv.set(key, p.value());
                 hasPrivate = true;
             } else {
-                pub.set(e.getKey(), e.getValue());
+                pub.set(key, p.value());
             }
         }
         layer.publicStore.put(registration.id(), pub.build());
@@ -280,11 +299,11 @@ public class NaruRegistrationStore {
             return null;
         }
         Map<String, NElement> m = new LinkedHashMap<>();
-        collectInto(m, pub);
-        collectInto(m, priv);
+        Set<String> canonical = new LinkedHashSet<>();
+        collectInto(m, canonical, pub);
+        collectInto(m, canonical, priv);
         return m;
     }
-
     /**
      * Whether two layers describe the same endpoint: a layer that names no {@code provider} (or
      * no {@code protocol}) says nothing about it and cannot conflict. The comparison ignores case —
@@ -310,14 +329,43 @@ public class NaruRegistrationStore {
         return NStringUtils.stripToNull(e.asStringValue().orNull());
     }
 
-    private static void collectInto(Map<String, NElement> m, NElement element) {
-        if (element != null && element.isListContainer()) {
-            for (NPairElement p : element.asListContainer().get().namedPairs()) {
-                String k = p.key().asStringValue().orNull();
-                if (k != null) {
-                    m.put(k, p.value());
-                }
+    /**
+     * One file's pairs, folded onto the vocabulary's canonical names as they are read. Folding here
+     * rather than only at {@link NaruModelRegistration} construction is what keeps
+     * {@link NaruRegistrationOrigin} honest: it and {@code NaruModelRegistrationRules} key their
+     * per-field bookkeeping by the names {@link NaruModelRegistration#storedPairs()} reports, so a
+     * {@code host} stored raw
+     * would answer {@code scopeOf("url") == null} and be dropped from the file on the next scoped
+     * save. A name the vocabulary does not declare keeps its own spelling — it belongs to whoever
+     * declared it.
+     *
+     * <p>Within one scope, a canonical spelling beats an alias, whichever file came last:
+     * {@code apiKey: $VAR} in the public pair is not silently displaced by {@code api_key: sk-…} in
+     * the private one.
+     */
+    private static void collectInto(Map<String, NElement> m, Set<String> canonical, NElement element) {
+        if (element == null || !element.isListContainer()) {
+            return;
+        }
+        for (NPairElement p : element.asListContainer().get().namedPairs()) {
+            String k = p.key().asStringValue().orNull();
+            if (k == null) {
+                continue;
             }
+            NaruRegistrationFields.Field<?> f = NaruRegistrationFields.find(k);
+            if (f == null) {
+                m.put(k, p.value());
+                continue;
+            }
+            String key = f.key();
+            boolean canonicalSpelling = key.equalsIgnoreCase(k);
+            if (!canonicalSpelling && canonical.contains(key)) {
+                continue;
+            }
+            if (canonicalSpelling) {
+                canonical.add(key);
+            }
+            m.put(key, p.value());
         }
     }
 

@@ -275,7 +275,7 @@ public class ModelListTool extends DefaultNaruTool {
             try {
                 net.thevpc.naru.api.model.NaruModelRegistration reg =
                         task.session().registrations().get(m.provider());
-                if (reg != null && Boolean.TRUE.equals(reg.booleanValue("free").orNull())) {
+                if (reg != null && Boolean.TRUE.equals(reg.free().orNull())) {
                     return true;
                 }
             } catch (RuntimeException ignored) {

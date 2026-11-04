@@ -46,11 +46,11 @@ public class NaruRegistrationStoreLayeringTest {
     }
 
     private static NaruModelRegistration registration(String id, Object... pairs) {
-        Map<String, NElement> m = new LinkedHashMap<>();
+        NaruModelRegistration.Builder b = NaruModelRegistration.builder(id);
         for (int i = 0; i < pairs.length; i += 2) {
-            m.put((String) pairs[i], NElement.ofString(String.valueOf((String) pairs[i + 1])));
+            b.put((String) pairs[i], NElement.ofString(String.valueOf((String) pairs[i + 1])));
         }
-        return NaruModelRegistration.of(id, m);
+        return b.build();
     }
 
     private NPath userPublic() {
@@ -77,14 +77,14 @@ public class NaruRegistrationStoreLayeringTest {
                 "url", "https://personal.test/v1", "apiKey", "sk-personal"), NaruRegistrationScope.USER);
 
         NaruModelRegistration r = store.get("personal").get();
-        Assertions.assertEquals("gemini", r.provider());
-        Assertions.assertEquals("sk-personal", r.stringValue("apiKey").get());
+        Assertions.assertEquals("gemini", r.provider().get());
+        Assertions.assertEquals("sk-personal", r.apiKey().get());
 
         // machine-wide means exactly that: another project, same home, same registration
         NaruRegistrationStore otherProject =
                 NaruRegistrationStore.of(userHome, NPath.ofTempFolder("naru-reg-layer-other-" + System.nanoTime()));
         Assertions.assertEquals("https://personal.test/v1",
-                otherProject.get("personal").get().stringValue("url").get());
+                otherProject.get("personal").get().url().get());
     }
 
     @Test
@@ -97,9 +97,9 @@ public class NaruRegistrationStoreLayeringTest {
                 NaruRegistrationScope.PROJECT);
 
         NaruModelRegistration r = store.get("shared").get();
-        Assertions.assertEquals("gemini", r.provider());
-        Assertions.assertEquals("https://shared.test/v1", r.stringValue("url").get());
-        Assertions.assertEquals("sk-team-key", r.stringValue("apiKey").get());
+        Assertions.assertEquals("gemini", r.provider().get());
+        Assertions.assertEquals("https://shared.test/v1", r.url().get());
+        Assertions.assertEquals("sk-team-key", r.apiKey().get());
 
         NaruRegistrationOrigin o = store.origin("shared").get();
         Assertions.assertEquals(NaruRegistrationScope.USER, o.scopeOf("url"));
@@ -116,11 +116,11 @@ public class NaruRegistrationStoreLayeringTest {
                 "model", "gpt-4o"), NaruRegistrationScope.PROJECT);
 
         NaruModelRegistration r = store.get("fast").get();
-        Assertions.assertEquals("openai", r.provider());
-        Assertions.assertEquals("gpt-4o", r.stringValue("model").get());
-        Assertions.assertEquals("https://openai.test/v1", r.stringValue("url").get());
+        Assertions.assertEquals("openai", r.provider().get());
+        Assertions.assertEquals("gpt-4o", r.model().get());
+        Assertions.assertEquals("https://openai.test/v1", r.url().get());
         // the personal gemini key is gone rather than being aimed at OpenAI's API
-        Assertions.assertFalse(r.param("apiKey").isPresent(), "a key from another endpoint leaked into the merge");
+        Assertions.assertFalse(r.apiKey().isPresent(), "a key from another endpoint leaked into the merge");
 
         NaruRegistrationOrigin o = store.origin("fast").get();
         Assertions.assertEquals(NaruRegistrationScope.PROJECT, o.scope());
@@ -135,8 +135,8 @@ public class NaruRegistrationStoreLayeringTest {
                 NaruRegistrationScope.PROJECT);
 
         NaruModelRegistration r = store.get("fast").get();
-        Assertions.assertEquals("https://gemini.test/v1", r.stringValue("url").get());
-        Assertions.assertEquals("0.7", r.stringValue("temperature").get());
+        Assertions.assertEquals("https://gemini.test/v1", r.url().get());
+        Assertions.assertEquals(0.7f, r.temperature().get(), "a quoted number parses as the float it names");
     }
 
     @Test
@@ -148,8 +148,8 @@ public class NaruRegistrationStoreLayeringTest {
 
         NaruModelRegistration r = store.get("proxy").get();
         Assertions.assertEquals("gemini", r.protocol().get());
-        Assertions.assertEquals("https://gemini-shape.test/v1", r.stringValue("url").get());
-        Assertions.assertEquals(List.of("c"), r.stringList("models"));
+        Assertions.assertEquals("https://gemini-shape.test/v1", r.url().get());
+        Assertions.assertEquals(List.of("c"), r.models());
     }
 
     // ── writes and deletes stay in their own scope ────────────────────────────
@@ -185,12 +185,12 @@ public class NaruRegistrationStoreLayeringTest {
         store.put(registration("shared", "provider", "gemini", "model", "gemini-flash"),
                 NaruRegistrationScope.PROJECT);
 
-        Assertions.assertEquals("gemini-flash", store.get("shared").get().stringValue("model").get());
+        Assertions.assertEquals("gemini-flash", store.get("shared").get().model().get());
         Assertions.assertTrue(store.remove("shared", NaruRegistrationScope.PROJECT));
 
         NaruModelRegistration still = store.get("shared").get();
-        Assertions.assertEquals("gemini", still.provider());
-        Assertions.assertFalse(still.param("model").isPresent());
+        Assertions.assertEquals("gemini", still.provider().get());
+        Assertions.assertFalse(still.model().isPresent());
         Assertions.assertEquals(NaruRegistrationScope.USER, store.origin("shared").get().scope());
 
         // the second delete has nothing left in the project, and does not reach the user file either
@@ -217,7 +217,7 @@ public class NaruRegistrationStoreLayeringTest {
         NaruRegistrationStore projectOnly = new NaruRegistrationStore(projectPublic(), projectPrivate());
         projectOnly.put(registration("fast", "provider", "gemini"));
 
-        Assertions.assertEquals("gemini", projectOnly.get("fast").get().provider());
+        Assertions.assertEquals("gemini", projectOnly.get("fast").get().provider().get());
         Assertions.assertEquals(NaruRegistrationScope.PROJECT, projectOnly.origin("fast").get().scope());
         Assertions.assertTrue(projectOnly.ids(NaruRegistrationScope.USER).isEmpty());
         Assertions.assertThrows(IllegalStateException.class, () -> projectOnly.remove("fast", NaruRegistrationScope.USER));

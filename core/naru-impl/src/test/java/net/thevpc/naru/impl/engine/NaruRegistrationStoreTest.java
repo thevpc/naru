@@ -1,6 +1,9 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.model.NaruModelRegistration;
+import net.thevpc.naru.api.model.NaruRegistrationFields;
+import net.thevpc.naru.api.model.NaruRegistrationOrigin;
+import net.thevpc.naru.api.model.NaruRegistrationScope;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
@@ -40,11 +43,11 @@ public class NaruRegistrationStoreTest {
     }
 
     private static NaruModelRegistration registration(String id, String apiKey) {
-        return NaruModelRegistration.of(id, Map.of(
-                "provider", NElement.ofString("gemini"),
-                "apiKey", NElement.ofString(apiKey),
-                "url", NElement.ofString("https://example.test/v1")
-        ));
+        return NaruModelRegistration.builder(id)
+                .put("provider", NElement.ofString("gemini"))
+                .put("apiKey", NElement.ofString(apiKey))
+                .put("url", NElement.ofString("https://example.test/v1"))
+.build();
     }
 
     @Test
@@ -74,19 +77,19 @@ public class NaruRegistrationStoreTest {
         // a fresh store proves the view comes from the files, not from memory
         NaruRegistrationStore fresh = new NaruRegistrationStore(publicFile, privateFile);
         NaruModelRegistration r = fresh.get("personal").get();
-        Assertions.assertEquals("gemini", r.provider());
-        Assertions.assertEquals("https://example.test/v1", r.stringValue("url").get());
-        Assertions.assertEquals("sk-abcdef1234", r.stringValue("apiKey").get());
+        Assertions.assertEquals("gemini", r.provider().get());
+        Assertions.assertEquals("https://example.test/v1", r.url().get());
+        Assertions.assertEquals("sk-abcdef1234", r.apiKey().get());
 
         // without the private file only the public half of the registration exists
         NaruRegistrationStore publicOnly = new NaruRegistrationStore(
                 publicFile, dir.resolve("absent/registrations.tson"));
         NaruModelRegistration pubR = publicOnly.get("personal").get();
-        Assertions.assertEquals("gemini", pubR.provider());
-        Assertions.assertFalse(pubR.param("apiKey").isPresent());
+        Assertions.assertEquals("gemini", pubR.provider().get());
+        Assertions.assertFalse(pubR.apiKey().isPresent());
         // a reference-based registration survives on its own
         Assertions.assertEquals("$ALPHA_GEMINI_KEY",
-                publicOnly.get("alpha").get().stringValue("apiKey").get());
+                publicOnly.get("alpha").get().apiKey().get());
 
         Assertions.assertFalse(fresh.get("nope").isPresent());
         Assertions.assertFalse(fresh.get(null).isPresent());
@@ -102,9 +105,9 @@ public class NaruRegistrationStoreTest {
         privateFile.writeString("{ personal : { apiKey : \"sk-abcdef1234\" } }");
 
         NaruModelRegistration r = store.get("personal").get();
-        Assertions.assertEquals("gemini", r.provider());
-        Assertions.assertEquals("https://example.test/v1", r.stringValue("url").get());
-        Assertions.assertEquals("sk-abcdef1234", r.stringValue("apiKey").get());
+        Assertions.assertEquals("gemini", r.provider().get());
+        Assertions.assertEquals("https://example.test/v1", r.url().get());
+        Assertions.assertEquals("sk-abcdef1234", r.apiKey().get());
     }
 
     @Test
@@ -121,15 +124,15 @@ public class NaruRegistrationStoreTest {
         store.put(registration("personal", "sk-abcdef1234"));
 
         // reference replaces literal: the secret must leave the private file
-        store.put(store.get("personal").get().withParam("apiKey", "$GEMINI_KEY_A"));
+        store.put(store.get("personal").get().with(NaruRegistrationFields.API_KEY, "$GEMINI_KEY_A"));
         Assertions.assertFalse(privateFile.readString().contains("sk-abcdef1234"));
         Assertions.assertTrue(publicFile.readString().contains("$GEMINI_KEY_A"));
 
         // literal replaces reference: the new secret must leave the public file
-        store.put(store.get("personal").get().withParam("apiKey", "sk-newKey9876"));
+        store.put(store.get("personal").get().with(NaruRegistrationFields.API_KEY, "sk-newKey9876"));
         Assertions.assertTrue(privateFile.readString().contains("sk-newKey9876"));
         Assertions.assertFalse(publicFile.readString().contains("sk-newKey9876"));
-        Assertions.assertEquals("sk-newKey9876", store.get("personal").get().stringValue("apiKey").get());
+        Assertions.assertEquals("sk-newKey9876", store.get("personal").get().apiKey().get());
     }
 
     @Test
@@ -144,8 +147,50 @@ public class NaruRegistrationStoreTest {
         Assertions.assertFalse(privateFile.readString().contains("personal"));
 
         // untouched registrations survive
-        Assertions.assertEquals("$WORK_GEMINI_KEY", store.get("work").get().stringValue("apiKey").get());
+        Assertions.assertEquals("$WORK_GEMINI_KEY", store.get("work").get().apiKey().get());
         Assertions.assertFalse(store.remove(null));
         Assertions.assertFalse(store.remove("  "));
+    }
+
+    @Test
+    public void anAliasSpelledFieldKeepsItsCanonicalNameAndItsScope() {
+        publicFile.parent().mkdirs();
+        privateFile.parent().mkdirs();
+        publicFile.writeString("{ a : { provider : \"gemini\" , host : \"https://example.test/v1\" } , "
+                + "b : { provider : \"gemini\" , apiKey : \"$GEMINI_KEY_A\" } }");
+        privateFile.writeString("{ a : { api_key : \"sk-abcdef1234\" } , "
+                + "b : { api_key : \"sk-abcdef1234\" } }");
+
+        NaruModelRegistration a = store.get("a").get();
+        Assertions.assertEquals("https://example.test/v1", a.url().get());
+        Assertions.assertEquals("sk-abcdef1234", a.apiKey().get());
+        Assertions.assertFalse(a.extra("host").isPresent(), "an alias is never kept as a second name");
+        Assertions.assertFalse(a.extra("api_key").isPresent());
+
+        // the origin is keyed by the canonical names storedPairs() reports: an alias kept raw
+        // would answer null
+        // here, and NaruModelRegistrationRules.ownedParams would drop the field from the file it
+        // rewrites — a silent loss of the user's own configuration on the next '/model update'
+        NaruRegistrationOrigin oa = store.origin("a").get();
+        Assertions.assertEquals(NaruRegistrationScope.PROJECT, oa.scopeOf("url"), "host spelled url");
+        Assertions.assertEquals(NaruRegistrationScope.PROJECT, oa.scopeOf("apiKey"), "api_key spelled apiKey");
+        NaruRegistrationOrigin ob = store.origin("b").get();
+        Assertions.assertEquals(NaruRegistrationScope.PROJECT, ob.scopeOf("apiKey"));
+        Assertions.assertNull(ob.scopeOf("url"), "a field no file declares has no scope");
+    }
+
+    @Test
+    public void aCanonicalSpellingBeatsAnAliasWithinOneScope() {
+        publicFile.parent().mkdirs();
+        privateFile.parent().mkdirs();
+        // one field named twice in one scope, once each way round: the winner is decided by the
+        // spelling, never by which of the two files the store happened to read last
+        publicFile.writeString("{ ref : { provider : \"gemini\" , apiKey : \"$GEMINI_KEY_A\" } , "
+                + "lit : { provider : \"gemini\" , api_key : \"sk-fromPublicAlias\" } }");
+        privateFile.writeString("{ ref : { api_key : \"sk-abcdef1234\" } , "
+                + "lit : { apiKey : \"sk-abcdef1234\" } }");
+
+        Assertions.assertEquals("$GEMINI_KEY_A", store.get("ref").get().apiKey().get());
+        Assertions.assertEquals("sk-abcdef1234", store.get("lit").get().apiKey().get());
     }
 }
