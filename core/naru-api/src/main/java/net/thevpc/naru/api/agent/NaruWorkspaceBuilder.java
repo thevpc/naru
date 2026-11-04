@@ -23,9 +23,8 @@ import java.util.function.Supplier;
  * </ul>
  *
  * <p>Nothing is resolved or loaded until {@link #build()}. When neither a profile nor an
- * extension is declared, the builder falls back to the {@code dev} profile if it is
- * resolvable and otherwise starts with a bare core — so the same call yields a fully
- * loaded harness or a minimal agent depending on what is installed.
+ * extension is declared, the builder falls back to the {@code dev} profile, whichever of
+ * its installed coordinates resolves first.
  *
  * <p>A builder needs a running nuts workspace (obtained via {@code Nuts.require()} or by
  * running inside a naru app). To create a workspace from the classes already on the
@@ -33,8 +32,8 @@ import java.util.function.Supplier;
  *
  * <pre>{@code
  * NaruWorkspace ws = NaruWorkspaceBuilder.of()
- *         .profile("net.thevpc.naru.profiles:naru-profile-dev")
- *         .importExtension("net.thevpc.naru:naru-budget")
+ *         .importExtension("net.thevpc.naru.modules:naru-profile-dev")
+ *         .importExtension("net.thevpc.naru.modules:naru-budget-impl")
  *         .projectDirectory(NPath.of("./my-app"))
  *         .build();
  * }</pre>
@@ -42,17 +41,6 @@ import java.util.function.Supplier;
 public interface NaruWorkspaceBuilder extends NComponent {
     static NaruWorkspaceBuilder of() {
         return NExtensions.of(NaruWorkspaceBuilder.class);
-    }
-
-    /**
-     * Resolves a profile reference to a Maven id: a coordinate containing a colon is used
-     * as-is; a bare name such as {@code dev} is expanded to
-     * {@code net.thevpc.naru.profiles:naru-profile-dev}.
-     */
-    static NId profileId(String nameOrId) {
-        return nameOrId.contains(":")
-                ? NId.of(nameOrId)
-                : NId.of("net.thevpc.naru.profiles", "naru-profile-" + nameOrId);
     }
 
     /**

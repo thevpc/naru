@@ -45,7 +45,7 @@ so far, not a limit on what the runtime can host.
 
 - `core/naru-api` — public APIs, models, task/session interfaces, and store contracts.
 - `core/naru-impl` — runtime, scheduler, file-backed session store, and CLI behavior.
-- `extensions/` — optional model providers and tool integrations.
+- `modules` — optional model providers and tool integrations.
 - `app/naru` — Nuts package/application entry point.
 - `test/` — shared test support and integration tests.
 

@@ -17,7 +17,7 @@
         <module>core/naru-api</module>
         <module>core/naru-impl</module>
 
-        <module>extensions</module>
+        <module>modules</module>
         <module>profiles</module>
         <module>test</module>
 

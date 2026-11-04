@@ -22,7 +22,6 @@ public class NaruSessionData implements NToElement {
     private String uuid;
     private String name;
     private NaruSessionNameSource nameSource;
-    private int titleAttempts;
     private Instant creationInstant;
     private Instant modificationInstant;
     private NElement model;
@@ -42,7 +41,6 @@ public class NaruSessionData implements NToElement {
         d.uuid = o.getStringValue("uuid").orNull();
         d.name = o.getStringValue("name").orNull();
         d.nameSource = NaruSessionNameSource.parse(o.getStringValue("nameSource").orNull());
-        d.titleAttempts = o.getIntValue("titleAttempts").orElse(0);
         d.creationInstant = o.getInstantValue("creationDate").orNull();
         d.modificationInstant = o.getInstantValue("modificationDate").orNull();
         d.model = o.get("model").orNull();
@@ -129,24 +127,6 @@ public class NaruSessionData implements NToElement {
 
     public NaruSessionData nameSource(NaruSessionNameSource nameSource) {
         this.nameSource = nameSource;
-        return this;
-    }
-
-    /**
-     * How many times titling has been attempted for this session.
-     *
-     * <p>Persisted, and written <em>before</em> the call rather than after it: a titling
-     * attempt that crashes the process must not buy itself another attempt on restart, or
-     * a model that hangs rather than fails would be retried forever. A count that is one
-     * too high after an aborted run costs a session its last try; a count that is one too
-     * low can cost the process its rest.
-     */
-    public int titleAttempts() {
-        return titleAttempts;
-    }
-
-    public NaruSessionData titleAttempts(int titleAttempts) {
-        this.titleAttempts = titleAttempts;
         return this;
     }
 
@@ -242,9 +222,6 @@ public class NaruSessionData implements NToElement {
         o.set("name", name);
         if (nameSource != null) {
             o.set("nameSource", nameSource.name());
-        }
-        if (titleAttempts != 0) {
-            o.set("titleAttempts", titleAttempts);
         }
         o.set("creationDate", NElement.ofInstant(creationInstant));
         o.set("modificationDate", NElement.ofInstant(modificationInstant));

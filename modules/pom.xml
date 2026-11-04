@@ -1,0 +1,46 @@
+<!-- 22-Nov-2011 AYA : BDT 26587 update profile for the Jenkins build. -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>net.thevpc.xprojects.builders.naru</groupId>
+    <artifactId>naru-modules-builder</artifactId>
+    <name>naru modules Builder</name>
+    <version>1.1.0.0</version>
+    <packaging>pom</packaging>
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+    </properties>
+    <modules>
+        <module>naru-store-file</module>
+        <module>naru-store-jdbc</module>
+        <module>fs</module>
+        <module>mcp</module>
+        <module>shell</module>
+        <module>web</module>
+        <module>coder-java</module>
+        <module>llm</module>
+        <module>skills</module>
+        <module>budget</module>
+        <module>compact</module>
+        <module>sessions</module>
+        <module>routines</module>
+        <module>plan</module>
+        <module>projects</module>
+        <module>titler</module>
+        <module>tasks</module>
+        <module>tags</module>
+        <module>permissions</module>
+        <module>llm-models</module>
+        <module>index</module>
+        <module>index-java</module>
+        <module>git</module>
+        <module>semantic</module>
+        <module>ollama</module>
+        <module>llama-cpp</module>
+    </modules>
+    <build>
+    </build>
+</project>

@@ -49,6 +49,11 @@ final class NaruWorkspaceSessionCatalog implements NaruSessionStoreManager {
         return store();
     }
 
+    @Override
+    public NaruSessionStore sessionStore() {
+        return store();
+    }
+
     private NaruSessionStore store() {
         NaruSessionStore current = store;
         if (current != null) {

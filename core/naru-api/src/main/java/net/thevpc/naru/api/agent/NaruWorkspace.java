@@ -76,6 +76,17 @@ public interface NaruWorkspace {
 
     NPath projectDirectory();
 
+    /**
+     * The directory a session gets when neither the caller nor a group states one.
+     *
+     * <p>Public because features that seed a session — a project store rooted next to the
+     * sessions, for instance — must derive their location from the same rule and not copy it.
+     */
+    default NPath defaultSessionDir() {
+        NPath dir = projectDirectory();
+        return dir != null ? dir : NPath.ofUserDirectory();
+    }
+
     NaruWorkspace projectDirectory(NPath projectDirectory);
 
     /**
@@ -90,17 +101,19 @@ public interface NaruWorkspace {
     NaruSessionBuilder newSession();
 
     /**
-     * The project service of this workspace: the only component that sees both the
-     * project store and the session store. Projects supply initial values to new
-     * sessions (folder to {@code sessionDir}, user to {@code user}) and group the
-     * session tree; they never restrict or propagate.
+     * Resolves a session-group reference for {@link NaruSessionBuilder#project(String)}.
      *
-     * @throws net.thevpc.nuts.util.NUnsupportedOperationException when the workspace
-     *         implementation provides no project store
+     * <p>Delegates to the installed {@link NaruSessionGroupResolver}s, first match wins, and
+     * is empty when none recognises the reference — which is the normal state of a build with
+     * no grouping feature. The kernel stores the resulting {@code id} on the session and
+     * copies {@code folder} and {@code user} as creation-time seeds; it never reads a group
+     * back and never resolves an id on its own.
+     *
+     * @param ref the reference as typed, never null or blank
+     * @return the group, or empty when nothing resolves it
      */
-    default net.thevpc.naru.api.project.NaruProjectService projects() {
-        throw new net.thevpc.nuts.util.NUnsupportedOperationException(
-                NMsg.ofC("this workspace provides no project service"));
+    default NOptional<NaruSessionGroup> sessionGroup(String ref) {
+        return NOptional.ofNamedEmpty(NMsg.ofC("no session group resolver is installed"));
     }
 
     /**

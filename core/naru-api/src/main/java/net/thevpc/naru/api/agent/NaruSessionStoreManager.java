@@ -1,5 +1,7 @@
 package net.thevpc.naru.api.agent;
 
+import net.thevpc.nuts.text.NMsg;
+
 import java.util.List;
 
 /**
@@ -47,5 +49,22 @@ public interface NaruSessionStoreManager {
      */
     default boolean setVisibility(String uuid, NaruVisibility visibility) {
         return false;
+    }
+
+    /**
+     * The store handle this catalog reads and writes.
+     *
+     * <p>Exposed for features that group sessions — a project tree must count and re-point
+     * rows, which {@link #list()} cannot ask for — and it hands back <b>the same shared
+     * handle</b>, never a fresh one. Opening a store of one's own over the same folder is the
+     * bug this catalog exists to prevent: a session was then listed once per handle and could
+     * not be deleted because the row and the handle disagreed.
+     *
+     * @throws net.thevpc.nuts.util.NUnsupportedOperationException when this catalog is backed
+     *         by no queryable store
+     */
+    default net.thevpc.naru.api.store.NaruSessionStore sessionStore() {
+        throw new net.thevpc.nuts.util.NUnsupportedOperationException(
+                NMsg.ofC("this session catalog exposes no store handle"));
     }
 }

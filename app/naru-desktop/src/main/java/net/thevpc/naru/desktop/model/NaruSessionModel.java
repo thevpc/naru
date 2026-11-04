@@ -290,9 +290,6 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                 .interaction(host)
                 .banner(false)
                 .richTerm(false)
-                // the desktop shows session names in its tree and has no titles of its own,
-                // so it opts into the runtime that generates them
-                .autoTitle(true)
                 .sessionListener(new NaruSessionListener() {
                     @Override
                     public void onEventAppended(net.thevpc.naru.api.scheduler.NaruEvent e) {

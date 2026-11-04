@@ -119,9 +119,6 @@ public class NaruCmdLineProcessor {
                     .interactive()
                     .banner(true)
                     .richTerm(true)
-                    // the terminal is a first-party host: it has no titles of its own, so a
-                    // session it opens is expected to name itself
-                    .autoTitle(true)
                     .id(sessionId))
                     .build();
             printRestoredConversation(session);
@@ -133,7 +130,6 @@ public class NaruCmdLineProcessor {
             try {
                 NaruSession session = applySessionCreationOptions(runner.newSession()
                         .statements(precommands.toArray(new String[0]))
-                        .autoTitle(true)
                         .id(sessionId))
                         .build();
                 printRestoredConversation(session);
@@ -180,11 +176,10 @@ public class NaruCmdLineProcessor {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
-     * Assembles the workspace for this run: every {@code --profile} is expanded to the
-     * extensions it bundles and every {@code --extension} is loaded on top. When neither
-     * is declared the builder itself falls back to the dev profile (if installed) and
-     * otherwise to a bare core, so the same invocation yields a full harness or a minimal
-     * agent depending on what is present.
+     * Assembles the workspace for this run: every {@code --extension} is loaded on top of
+     * the profiles the resolver finds. When no extension is declared, the run falls back to
+     * the dev profile, whichever of its installed coordinates resolves first, and fails if
+     * neither is present -- a session with no store backend cannot do anything.
      */
     private NaruWorkspace createWorkspace(NPath projectDirectory) {
         NaruWorkspaceBuilder builder = NaruWorkspaceBuilder.of();
@@ -214,8 +209,9 @@ public class NaruCmdLineProcessor {
                         "  -s|--session <uuid>     reopen a session saved in that project's store and\n" +
                         "                            reprint its conversation before the prompt\n" +
                         "  -p|--profile <name|id>    load a profile (a bundle of extensions);\n" +
-                        "                            repeatable. bare names resolve under\n" +
-                        "                            net.thevpc.naru.profiles:naru-profile-<name>\n" +
+                        "                            repeatable. a bare id is looked up as\n" +
+                        "                            net.thevpc.naru.modules:naru-profile-<name>, then\n" +
+                        "                            net.thevpc.naru.extensions:naru-profile-<name>\n" +
                         "  -e|--extension <id>       load a single extension (group:artifact[#version]);\n" +
                         "                            repeatable\n" +
                         "  --help, -h             Show this help\n\n" +

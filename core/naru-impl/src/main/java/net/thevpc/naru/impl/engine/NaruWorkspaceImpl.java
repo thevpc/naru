@@ -8,7 +8,6 @@ import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.model.NaruModelFilter;
-import net.thevpc.naru.api.project.NaruProjectService;
 import net.thevpc.naru.api.store.NaruDataStore;
 import net.thevpc.naru.api.store.NaruDataStoreConfig;
 import net.thevpc.naru.api.store.NaruDataStoreProvider;
@@ -52,8 +51,27 @@ import java.util.function.Predicate;
 public class NaruWorkspaceImpl implements NaruWorkspace {
     private static final NVersion API_VERSION = NVersion.of("1.1");
     private static final NVersion IMPL_VERSION = NVersion.of("1.1.0");
-    private static final String DEFAULT_PROFILE = "net.thevpc.naru.extensions:naru-profile-dev";
+    /**
+     * The profile a workspace installs when the caller named none.
+     *
+     * <p>Two coordinates are tried, in this order, because the build moved the artifacts from
+     * {@code naru.extensions} to {@code naru.modules}: the reactor's own profile is the one that
+     * lists the modules this tree just built, and the published one is what an install made from
+     * a release still has. Resolving only the published name silently drops every module added
+     * since that release -- a session came up with no titling and no project grouping and the
+     * only symptom was a feature that did nothing.
+     */
+    private static final String[] DEFAULT_PROFILES = {
+            "net.thevpc.naru.modules:naru-profile-dev",
+            "net.thevpc.naru.extensions:naru-profile-dev",
+    };
+    public static final String NET_THEVPC_NARU_MODULES = "net.thevpc.naru.modules";
     public static final String NET_THEVPC_NARU_EXTENSIONS = "net.thevpc.naru.extensions";
+    /**
+     * The groups a bare extension name may live in, in the order they are tried: a name typed
+     * without a group is resolved against what this build produces first.
+     */
+    private static final String[] BARE_NAME_GROUPS = {NET_THEVPC_NARU_MODULES, NET_THEVPC_NARU_EXTENSIONS};
 
     /**
      * Optional step listener for CLI progress printing.
@@ -83,8 +101,6 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
      * this class exists to prevent.
      */
     private NaruSessionStoreManager sessionCatalog;
-    private NaruProjectService projects;
-    private NPath projectsDirectory;
     private NPath catalogProjectDirectory;
     private final Object signal = new Object();
     private volatile Thread maintenanceThread;
@@ -215,6 +231,12 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
 
     @Override
     public <T extends NaruAgentExtension> NOptional<T> extension(String name, Class<T> as) {
+        NaruAgentExtension e = loadAgentExtensions().get(name);
+        return NOptional.ofNullable(e == null || !as.isInstance(e) ? null : as.cast(e));
+    }
+
+    /** The installed agent extensions, discovered and opened on first use. */
+    private Map<String, NaruAgentExtension> loadAgentExtensions() {
         if (!agentExtensionsLoaded) {
             synchronized (this) {
                 if (!agentExtensionsLoaded) {
@@ -237,8 +259,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                 }
             }
         }
-        NaruAgentExtension e = agentExtensions.get(name);
-        return NOptional.ofNullable(e == null || !as.isInstance(e) ? null : as.cast(e));
+        return agentExtensions;
     }
 
     @Override
@@ -498,7 +519,8 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
      * Where a session lives when the caller does not say: the project directory, or the
      * user's home directory when the agent has none.
      */
-    NPath defaultSessionDir() {
+    @Override
+    public NPath defaultSessionDir() {
         if (projectDirectory != null) {
             return projectDirectory;
         }
@@ -542,27 +564,27 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     }
 
     /**
-     * The project service, one per workspace directory — the same invalidation rule as
-     * {@link #sessionCatalog()}: both are disk state rooted at the project directory, and
-     * keeping the old one after a directory change would list the previous project's
-     * sessions under the new project's name. It shares the catalog's session-store handle:
-     * the tree and the catalog must be one view of one folder, never two handles that
-     * disagree.
+     * Resolves a session-group reference through the installed resolvers, first match wins.
+     *
+     * <p>Resolvers are agent extensions, so this reuses their lifecycle rather than loading a
+     * second instance: one per workspace, opened with it, and holding the same store handles as
+     * the rest of the workspace. A build with no grouping feature simply resolves nothing.
      */
     @Override
-    public NaruProjectService projects() {
-        NaruProjectService current = projects;
-        if (current != null && projectsDirectory == projectDirectory) {
-            return current;
+    public NOptional<NaruSessionGroup> sessionGroup(String ref) {
+        if (NBlankable.isBlank(ref)) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("no session group was named"));
         }
-        synchronized (this) {
-            if (projects == null || projectsDirectory != projectDirectory) {
-                projects = new NaruProjectServiceImpl(this,
-                        ((NaruWorkspaceSessionCatalog) sessionCatalog()).rawStore());
-                projectsDirectory = projectDirectory;
+        for (NaruAgentExtension e : loadAgentExtensions().values()) {
+            if (!(e instanceof NaruSessionGroupResolver resolver)) {
+                continue;
             }
-            return projects;
+            NOptional<NaruSessionGroup> group = resolver.resolve(ref);
+            if (group.isPresent()) {
+                return group;
+            }
         }
+        return NOptional.ofNamedEmpty(NMsg.ofC("no session group resolver recognises '%s'", ref));
     }
 
     @Override
@@ -578,71 +600,39 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                     Set<String> visited = new LinkedHashSet<>();
                     for (NId id : requestedExtensions) {
                         NIdBuilder bb = id.builder();
-                        if (NBlankable.isBlank(bb.groupId())) {
-                            bb.groupId(NET_THEVPC_NARU_EXTENSIONS);
-                        }
                         if (NBlankable.isBlank(bb.artifactId())) {
                             NErr.println(NMsg.ofC("extension not found %s", id));
                             continue;
                         }
-                        if (NET_THEVPC_NARU_EXTENSIONS.equals(bb.groupId())) {
-                            if (!bb.artifactId().startsWith("naru-")) {
-                                bb.artifactId("naru-" + bb.artifactId());
-                            }
-                        }
-                        if (
-                                !NBlankable.isBlank(bb.artifactId())
-                                        && !NBlankable.isBlank(bb.groupId())
-                        ) {
-                            if (visited.contains(bb.shortName())) {
-                                continue;
-                            }
-                        }
-                        NId found = NSearch.of(bb.build())
-                                .addDefinitionFilter(NDefinitionFilter.ofVersion(NVersionFilter.ofPredicate(
-                                        x ->
-                                                x.value().equals(currentVersion.value())
-                                                        || x.value().startsWith(currentVersion.value() + ".")
-                                )))
-                                .latest(true)
-                                .getResultIds().findFirst().orNull();
-                        if (found == null) {
-                            if (bb.version().isBlank()) {
-                                found = NSearch.of(bb.build())
-                                        .addDefinitionFilter(NDefinitionFilter.ofVersion(NVersionFilter.ofPredicate(
-                                                x ->
-                                                        x.value().equals(currentVersion.value())
-                                                                || x.value().startsWith(currentVersion.value() + ".")
-                                        )))
-                                        .latest(true)
-                                        .getResultIds().findFirst().orNull();
-                            }
-                            if (found == null) {
-                                NErr.println(NMsg.ofC("extension not found %s", id));
-                            } else {
-                                if (visited.add(found.shortName())) {
-                                    nopsClassLoader.add(found);
-                                    loaded.add(found);
-                                    NOut.println(NMsg.ofC("loaded extension %s", found));
-                                }
+                        List<NId> candidates = new ArrayList<>();
+                        if (NBlankable.isBlank(bb.groupId())) {
+                            for (String group : BARE_NAME_GROUPS) {
+                                candidates.add(withNaruPrefix(id.builder().groupId(group)).build());
                             }
                         } else {
-                            if (visited.add(found.shortName())) {
-                                nopsClassLoader.add(found);
-                                loaded.add(found);
-                                NOut.println(NMsg.ofC("loaded extension %s", found));
-                            }
+                            candidates.add(withNaruPrefix(bb).build());
+                        }
+                        NId found = searchLatest(candidates, currentVersion);
+                        if (found == null) {
+                            NErr.println(NMsg.ofC("extension not found %s", id));
+                        } else if (visited.add(found.shortName())) {
+                            nopsClassLoader.add(found);
+                            loaded.add(found);
+                            NOut.println(NMsg.ofC("loaded extension %s", found));
                         }
                     }
                     if (loaded.isEmpty()) {
-                        NId found = NSearch.of(NId.of(DEFAULT_PROFILE))
-                                .addDefinitionFilter(NDefinitionFilter.ofVersion(NVersionFilter.ofPredicate(
-                                        x ->
-                                                x.value().equals(currentVersion.value())
-                                                        || x.value().startsWith(currentVersion.value() + ".")
-                                )))
-                                .latest(true)
-                                .getResultIds().findFirst().get();
+                        List<NId> profiles = new ArrayList<>();
+                        for (String profile : DEFAULT_PROFILES) {
+                            profiles.add(NId.of(profile));
+                        }
+                        NId found = searchLatest(profiles, currentVersion);
+                        if (found == null) {
+                            // failing here is the point: a workspace that resolves no profile has
+                            // no features at all, and every one of them would just do nothing
+                            throw new IllegalStateException("no naru profile is installed, tried "
+                                    + String.join(" then ", DEFAULT_PROFILES));
+                        }
                         nopsClassLoader.add(found);
                         loaded.add(found);
                         log(NaruLogMode.TRACE, NMsg.ofC("loaded extension %s", found).asInfo().withIntent(NMsgIntent.SETTINGS));
@@ -653,6 +643,42 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
             }
         }
         return classLoader;
+    }
+
+    /**
+     * Applies the {@code naru-} artifact prefix, but only to the groups this build names its
+     * artifacts with, so an explicit third-party coordinate is never rewritten.
+     */
+    private static NIdBuilder withNaruPrefix(NIdBuilder builder) {
+        if (NET_THEVPC_NARU_MODULES.equals(builder.groupId())
+                || NET_THEVPC_NARU_EXTENSIONS.equals(builder.groupId())) {
+            if (!builder.artifactId().startsWith("naru-")) {
+                builder.artifactId("naru-" + builder.artifactId());
+            }
+        }
+        return builder;
+    }
+
+    /**
+     * The newest artifact matching the running API version, taken from the first candidate that
+     * resolves. Candidates are ordered, so a build can offer its own coordinate ahead of the
+     * published one without the caller naming either.
+     */
+    private static NId searchLatest(List<NId> candidates, NVersion currentVersion) {
+        for (NId candidate : candidates) {
+            NId found = NSearch.of(candidate)
+                    .addDefinitionFilter(NDefinitionFilter.ofVersion(NVersionFilter.ofPredicate(
+                            x ->
+                                    x.value().equals(currentVersion.value())
+                                            || x.value().startsWith(currentVersion.value() + ".")
+                    )))
+                    .latest(true)
+                    .getResultIds().findFirst().orNull();
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     @Override

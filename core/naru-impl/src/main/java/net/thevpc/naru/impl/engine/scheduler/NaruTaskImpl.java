@@ -2291,13 +2291,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
         fireChanged();
         ((NaruSessionImpl) session).checkpointMessage(id());
-        if (userTurn) {
-            // The one hook the automatic title needs. Last, after the append and the checkpoint:
-            // the titling worker reads this task's history, and a trigger posted before the
-            // message lands races its own input -- and loses, silently, because titling must
-            // never surface an error. Returns immediately; never throws.
-            ((NaruSessionImpl) session).maybeAutoTitle(this);
-        }
     }
 
     /**
@@ -3147,7 +3140,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         // every cached session look like a cold one in /stats. -1 means the provider does
         // not report cache accounting at all, and is passed through unchanged so a
         // consumer can tell "no cache" from "not measured".
-        ((NaruSessionImpl) session()).fireModelCallUsage(
+        ((NaruSessionImpl) session()).reportModelCallUsage(
                 this,
                 modelKey.key(),
                 r.getPromptTokens(),

@@ -34,7 +34,6 @@ import net.thevpc.naru.impl.engine.routine.RoutineHelper;
 import net.thevpc.naru.impl.engine.scheduler.NaruSchedulerImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruSessionEventLogImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
-import net.thevpc.naru.impl.engine.title.NaruSessionTitlerImpl;
 import net.thevpc.naru.impl.store.NaruStoreFactory;
 import net.thevpc.naru.impl.util.ImplNaruUtils;
 import net.thevpc.nuts.concurrent.NCallable;
@@ -87,7 +86,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      */
     private String name;
     private NaruSessionNameSource nameSource;
-    private int titleAttempts;
     private Instant creationInstant = Instant.now();
     private Instant modificationInstant = creationInstant;
     private long storeVersion;
@@ -207,26 +205,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      */
     private final NaruAccessPolicyImpl accessPolicy = new NaruAccessPolicyImpl();
 
-    /**
-     * Titles this session. Stateless, so one instance serves every call on it.
-     */
-    private final NaruSessionTitler titler = new NaruSessionTitlerImpl();
-
-    /**
-     * A host that supplies its own names -- a chatbot backend, an embedding application --
-     * turns automatic titling off here rather than in the global setting, because the global
-     * setting is what the same build does for a person sitting at a terminal.
-     */
-    private Boolean autoTitleOverride;
-
-    /**
-     * Guards the titling attempt. Its own lock, not {@code this}: {@code save()} and the
-     * teardown in {@code hibernate()} take the session monitor, and an attempt that commits
-     * takes it too via {@code persist()}. Guarding the flag on the same monitor would have
-     * the titling thread hold the monitor across a model call.
-     */
-    private final Object titlingLock = new Object();
-    private boolean titlingInFlight;
 
 
     public NaruSessionImpl(NaruWorkspace workspace, NPath sessionDir, NaruInteraction interaction, boolean configureDefaults
@@ -921,177 +899,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
     }
 
-    /**
-     * What a host passed to {@code newSession().autoTitle(...)}. A host that passed
-     * {@code false} -- which is what an embedding builder that said nothing amounts to -- has
-     * opted out entirely, and no setting can put a model call into its product. A host that
-     * passed {@code true} has opted in on its users' behalf, so {@code session.title.auto}
-     * decides per session and per project from then on.
-     */
-    void setAutoTitleOverride(Boolean enabled) {
-        this.autoTitleOverride = enabled;
-    }
-
-    private boolean isAutoTitleEnabled(NaruTask transport) {
-        if (Boolean.FALSE.equals(autoTitleOverride)) {
-            return false;
-        }
-        return NaruTaskConfig.getBoolean(transport, NaruSessionTitler.AUTO_CONFIG_KEY, true);
-    }
-
-    /**
-     * Ask for a title, if this session is still untitled and still has attempts left.
-     * Called every time a user message reaches the main task, which is what lets a session
-     * whose first attempt failed be named after the second one.
-     *
-     * <p>Returns as soon as the attempt is posted. The model call is never on the actor
-     * thread: a titling call that took a minute would hold up the conversation for a minute
-     * to buy a label, which is the wrong trade, and it would also mean the answer arrived
-     * between two statements rather than beside them.
-     *
-     * <h2>Hibernation</h2>
-     * The attempt is abandoned rather than waited for. A pending title must not keep a
-     * quiescent session awake -- the grace period exists so an idle session can be put down,
-     * and blocking it on a network call would be a worse outcome than the label it is trying
-     * to buy. So hibernation proceeds, {@link #commitAutomaticTitle(String)} sees the session
-     * stopped and drops the answer, and the attempt stays counted in {@code titleAttempts}.
-     * A session that wakes with attempts left titles itself on its next user message; one
-     * that has used them all keeps its placeholder until someone asks with
-     * {@code /session title}.
-     */
-    public void maybeAutoTitle(NaruTask task) {
-        if (stopped || !isMainTask(task)) {
-            return;
-        }
-        // Read the settings here, on the thread that owns the task: they come out of the
-        // task's env chain, and a worker reading them a statement later could see a value
-        // the user has since changed.
-        int maxAttempts = NaruTaskConfig.getInt(task, NaruSessionTitler.MAX_ATTEMPTS_CONFIG_KEY, 3);
-        if (!isAutoTitleEnabled(task)) {
-            return;
-        }
-        // Reading the source is what hands a session nobody has displayed yet its Session N
-        // placeholder: until something asks for the name, nameSource is null, and the claim
-        // below would read that as "already named" and never title it.
-        if (nameSource() != NaruSessionNameSource.PLACEHOLDER) {
-            return;
-        }
-        // Everything that follows is posted, including the write that counts the attempt:
-        // the attempt persists itself, and a session's own actor thread must not be made to
-        // stop the world for a label.
-        ((NaruWorkspaceImpl) workspace).runCallbackExecutor()
-                .execute(() -> {
-                    if (claimTitleAttempt(maxAttempts)) {
-                        runTitleAttempt(task);
-                    }
-                });
-    }
-
-    /**
-     * The task the session is being talked through, which is the only one it gets named after.
-     *
-     * <p>The foreground pointer is the answer when it points at a live task. A session restored
-     * from the store has no pointer at all -- the desktop answers a restored task's input request
-     * directly, through {@code NaruInputRequest.deliver}, which never sets one -- so the first
-     * task stands in, which is the same rule {@code NaruSessionTitlerImpl} uses to find the
-     * history it reads. Without that fallback a restored session is never titled: the pointer
-     * still says "task 0", and the guard reads that as a foreground task the message did not
-     * come from.
-     */
-    private boolean isMainTask(NaruTask task) {
-        if (task.id() == foregroundTaskId) {
-            return true;
-        }
-        if (findTask(foregroundTaskId).isPresent()) {
-            return false;
-        }
-        List<NaruTask> tasks = tasks();
-        return !tasks.isEmpty() && tasks.get(0).id() == task.id();
-    }
-
-    /**
-     * Take the one slot, count the attempt, and write it down before the call is made.
-     *
-     * <p>Persisting first is the point: a process that dies mid-call must not come back with
-     * its attempt counter untouched and try again forever. Counting an attempt that did not
-     * land is the cheaper mistake -- it costs one of three labels, and the cap exists to stop
-     * a session that cannot be titled from spending a model call on every message.
-     */
-    private boolean claimTitleAttempt(int maxAttempts) {
-        synchronized (titlingLock) {
-            if (titlingInFlight || nameSource != NaruSessionNameSource.PLACEHOLDER
-                    || titleAttempts >= maxAttempts) {
-                return false;
-            }
-            titlingInFlight = true;
-            titleAttempts++;
-        }
-        fireChanged();
-        return true;
-    }
-
-    private void runTitleAttempt(NaruTask transport) {
-        String title = null;
-        try {
-            title = titler.suggest(NaruTitleRequest.firstMessage(this, transport));
-        } catch (Exception e) {
-            // Deliberately not surfaced: a session that could not be named keeps its
-            // placeholder and says nothing, because titling is a convenience and a red error
-            // in the middle of a conversation is not what a user is here for.
-            log(NaruLogMode.SCRIPT, NMsg.ofC(
-                    "automatic session title failed: %s", e.getMessage()).asDebug());
-        }
-        if (title != null) {
-            commitAutomaticTitle(title);
-        } else {
-            releaseTitleAttempt();
-        }
-    }
-
-    private void releaseTitleAttempt() {
-        synchronized (titlingLock) {
-            titlingInFlight = false;
-        }
-    }
-
-    /**
-     * Store the title, unless the user named the session while the model was answering.
-     *
-     * <p>The check and the write are one step under {@link #titlingLock}; the version guard is
-     * {@code persist}'s own {@code compareAndSetData} on the store, which is the same token
-     * every other session write uses, so a second process that renamed this session loses the
-     * race the same way a rename in this process does: the write is rejected and the
-     * placeholder stands.
-     */
-    private void commitAutomaticTitle(String title) {
-        String previous;
-        synchronized (titlingLock) {
-            titlingInFlight = false;
-            if (stopped || nameSource != NaruSessionNameSource.PLACEHOLDER) {
-                // A rename landed, or the session went down while the model was thinking.
-                // Discard the answer; the user's name is the one that stays.
-                return;
-            }
-            previous = name;
-            this.name = NaruSessionNames.normalize(title);
-            this.nameSource = NaruSessionNameSource.AUTO;
-        }
-        try {
-            fireChanged();
-        } catch (RuntimeException e) {
-            releaseTitleAttempt();
-            log(NaruLogMode.SCRIPT, NMsg.ofC("session title could not be saved: %s",
-                    e.getMessage()).asDebug());
-            return;
-        }
-        fireSessionRenamed(previous, this.name, NaruSessionNameSource.AUTO);
-    }
-
-    @Override
-    public NaruSessionTitler titler() {
-        ensureNotStopped();
-        return titler;
-    }
 
 
     @Override
@@ -1441,7 +1248,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         NObjectElement o = data.toElement().asObject().get();
         this.uuid = NStringUtils.firstNonBlankStripped(o.getStringValue("uuid").orElse(null), UUID.randomUUID().toString());
         adoptStoredName(o);
-        this.titleAttempts = o.getIntValue("titleAttempts").orElse(0);
         this.creationInstant = NUtils.firstNonNull(o.getInstantValue("creationDate").orElse(null), Instant.now());
         this.modificationInstant = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationInstant);
         this.storeVersion = data.version();
@@ -1589,6 +1395,29 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
     }
 
+    /**
+     * Bring up one extension that was registered after this session was built.
+     *
+     * <p>Doing nothing else is not enough: an extension that owns durable state is only
+     * correct once it has seen what it saved, and a late-registered one would otherwise
+     * start from an empty state and then overwrite the stored one on the first save.
+     */
+    public void openSessionExtension(NaruSessionExtension extension) {
+        try {
+            NaruSessionScope scope = loadTimeScope == null ? scopeForNewState() : loadTimeScope;
+            NElement state = store.loadExtensionState(uuid(), scope, extension.name()).orNull();
+            extension.load(this, state);
+            if (state != null) {
+                persistedExtensionStates.put(extension.name(), state.toString());
+            }
+            extension.open(this);
+        } catch (Exception ex) {
+            // one broken extension must not cost the user the whole session
+            log(NaruLogMode.SCRIPT, NMsg.ofC(
+                    "session extension '%s' failed to open: %s", extension.name(), ex.getMessage()).asError());
+        }
+    }
+
     private static NaruRoutineMem loadRoutineTson(NPath x) {
         NaruRoutineMem r = null;
         try {
@@ -1628,7 +1457,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             this.uuid = UUID.randomUUID().toString();
             this.name = null;
             this.nameSource = null;
-            this.titleAttempts = 0;
             this.creationInstant = Instant.now();
             this.modificationInstant = creationInstant;
         }
@@ -1802,7 +1630,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 .uuid(uuid())
                 .name(name())
                 .nameSource(nameSource)
-                .titleAttempts(titleAttempts)
                 .creationInstant(creationInstant)
                 .modificationInstant(modificationInstant)
                 .model(model == null ? null : model.toElement())
@@ -1931,7 +1758,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private void _prepareInit() {
         this.name = null;
         this.nameSource = null;
-        this.titleAttempts = 0;
         this.creationInstant = Instant.now();
         this.modificationInstant = creationInstant;
         this.maxTaskId.set(0);
@@ -1944,7 +1770,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         o.set("uuid", uuid());
         o.set("name", name());
         o.set("nameSource", NElement.ofString(nameSource().name()));
-        o.set("titleAttempts", NElement.ofNumber(titleAttempts));
         o.set("creationDate", NElement.ofInstant(creationInstant));
         o.set("modificationDate", NElement.ofInstant(modificationInstant));
         o.set("model", model == null ? null : model.toElement());
@@ -2935,7 +2760,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * observing: metering and rate-limit reporting are side channels, and a broken one
      * must not cost the user their answer.
      */
-    public void fireModelCallUsage(NaruTask task, NaruModelKey model, long promptTokens, long completionTokens,
+    @Override
+    public void reportModelCallUsage(NaruTask task, NaruModelKey model, long promptTokens, long completionTokens,
                                    long cacheWriteTokens, long cacheReadTokens,
                                    Map<String, String> labels, NDuration duration) {
         Map<String, String> useLabels = labels == null ? Map.of() : labels;

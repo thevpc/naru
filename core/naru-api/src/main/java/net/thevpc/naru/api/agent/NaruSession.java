@@ -17,6 +17,7 @@ import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NOptional;
 
 import java.time.Instant;
@@ -332,15 +333,6 @@ public interface NaruSession {
      * @throws net.thevpc.nuts.util.NIllegalArgumentException when the name is empty
      */
     NaruSession rename(String name, NaruSessionNameSource source);
-
-    /**
-     * The service that names a session from what was said in it.
-     *
-     * <p>On the session rather than on the registry because titling needs the session's
-     * model access, its metering seam and its store, and {@code /session title} and the
-     * automatic trigger must go through exactly one implementation of those.
-     */
-    NaruSessionTitler titler();
 
     /**
      * The catalog of sessions <b>saved to disk</b> in this project.
@@ -843,6 +835,28 @@ public interface NaruSession {
      * headers; providers that send none never call it. Observers that throw are ignored.
      */
     void reportProviderRateLimits(NaruProviderRateLimitInfo info);
+
+    /**
+     * Announces a completed model call to every {@link NaruSessionUsageListener}.
+     *
+     * <p>The kernel makes its own calls this way, and so must a feature that calls a model
+     * outside a task turn -- titling, summarizing, naming a session. Without the seam the
+     * choice is worse either way: the feature routes through the conversation and puts
+     * off-topic output in the transcript, or it calls the provider quietly and the session's
+     * tokens are wrong.
+     *
+     * <p>{@code labels} carry whatever the caller can say about the call -- a titling call
+     * reports {@code purpose=title} -- and the kernel does not interpret them.
+     * Observers that throw are ignored.
+     */
+    void reportModelCallUsage(NaruTask task,
+                              NaruModelKey model,
+                              long promptTokens,
+                              long completionTokens,
+                              long cacheWriteTokens,
+                              long cacheReadTokens,
+                              Map<String, String> labels,
+                              NDuration duration);
 
     /**
      * Returns all routines available in this session.

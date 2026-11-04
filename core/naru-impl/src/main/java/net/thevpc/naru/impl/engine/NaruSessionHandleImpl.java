@@ -61,9 +61,6 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     private final NaruModelFilter modelFilter;
     /** A name the host chose at creation, or null for a placeholder. */
     private final String sessionName;
-    /** Whether this session may ask a model for a title; see {@code NaruSessionBuilder#autoTitle}. */
-    private final Boolean autoTitle;
-
     NaruSessionHandleImpl(NaruWorkspaceImpl agent, NPath sessionDir, NaruInteraction interaction,
                           NaruTaskSpec task, String id, NaruSessionStore store, NaruSessionScope scope,
                           NaruInputBlockPolicy inputPolicy, Duration grace, boolean streaming,
@@ -73,10 +70,10 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                           NaruSessionListener sessionListener, Predicate<NaruDirective> directiveFilter,
                           Predicate<NaruTool> toolFilter, Predicate<NaruToolTag> tagFilter,
                           NaruModelFilter modelFilter, String projectRef, String userSeed,
-                          String sessionName, Boolean autoTitle) {
+                          String sessionName) {
         this.agent = agent; this.sessionDir = sessionDir; this.customInteraction = interaction;
         this.projectRef = projectRef; this.userSeed = userSeed;
-        this.sessionName = sessionName; this.autoTitle = autoTitle;
+        this.sessionName = sessionName;
         this.task = task; this.id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id;
         this.requestedStore = store; this.newScope = scope == null ? NaruSessionScope.PRIVATE : scope;
         this.inputPolicy = inputPolicy == null ? NaruInputBlockPolicy.HIBERNATE : inputPolicy;
@@ -173,9 +170,9 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         // the effective-value rule at activation, mirroring NaruSessionBuilder.build():
         // explicit directory, else the project's folder, else the workspace default; a
         // project reference naming nothing is an error before any state is written
-        net.thevpc.naru.api.project.NaruProject project = null;
+        NaruSessionGroup project = null;
         if (projectRef != null && !projectRef.isBlank()) {
-            project = agent.projects().find(projectRef).orNull();
+            project = agent.sessionGroup(projectRef).orNull();
             if (project == null) {
                 throw new net.thevpc.nuts.util.NIllegalArgumentException(
                         NMsg.ofC("project not found: %s", projectRef));
@@ -187,7 +184,6 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         NaruSessionImpl session = new NaruSessionImpl(agent, dir, interaction, true,
                 sessionListener, directiveFilter, toolFilter, tagFilter, modelFilter, requestedStore);
         session.configureTurnPersistence(true, checkpointEachMessage);
-        session.setAutoTitleOverride(autoTitle);
         NaruSessionStore store = requestedStore == null ? session.rawSessionStore() : requestedStore;
         NaruSessionScope scope = store.scopeOf(id).orElse(newScope);
         if (store.exists(id, scope)) {

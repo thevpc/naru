@@ -256,7 +256,7 @@ class PermissionsModelTest {
      * A stand-in for the extension's store: the same interface the desktop binds to through
      * {@code session.registry().extension("permissions", NaruPermissionStore.class)}, with the
      * "file" held in memory. The format itself is tested where it is implemented
-     * ({@code NaruPermissionsRuleStoreTest} in {@code extensions/naru-permissions}); what this
+     * ({@code NaruPermissionsRuleStoreTest} in {@code modules/permissions/naru-permissions-impl}); what this
      * module owns is that it asks, counts and tags correctly — and that it asks at all only when the
      * user pressed the button.
      */

@@ -9,6 +9,7 @@ import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.impl.config.NaruCoreConfigKeyProvider;
+import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.ia.mode.NaruModeRegistry;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NPairElement;
@@ -573,6 +574,31 @@ public class NaruRegistryImpl implements NaruRegistry {
                         "session extension '%s' failed to close: %s", e.name(), ex.getMessage()).asError());
             }
         }
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The instance is kept like a discovered one and is brought up immediately, so an
+     * extension with durable state sees what it saved under this session rather than
+     * starting from nothing.
+     */
+    @Override
+    public NaruRegistry registerSessionExtension(NaruSessionExtension extension) {
+        if (extension == null) {
+            return this;
+        }
+        for (NaruSessionExtension e : sessionExtensions) {
+            if (e.name().equals(extension.name())) {
+                return this;
+            }
+        }
+        sessionExtensions.add(extension);
+        sessionExtensions.sort(Comparator.comparingInt(NaruSessionExtension::order));
+        if (session instanceof NaruSessionImpl) {
+            ((NaruSessionImpl) session).openSessionExtension(extension);
+        }
+        return this;
     }
 
     public NaruRegistry registerDefaults() {

@@ -738,7 +738,13 @@ public final class MainWindow extends JFrame {
                 if (transport == null) {
                     throw new IllegalStateException("this session has no conversation to title from");
                 }
-                return session.titler().regenerate(net.thevpc.naru.api.agent.NaruTitleRequest
+                net.thevpc.naru.api.title.NaruSessionTitler titler = session.registry()
+                        .extension(net.thevpc.naru.api.title.NaruSessionTitler.EXTENSION,
+                                net.thevpc.naru.api.title.NaruSessionTitler.class).orNull();
+                if (titler == null) {
+                    throw new IllegalStateException("no titling extension is installed");
+                }
+                return titler.regenerate(net.thevpc.naru.api.title.NaruTitleRequest
                         .excerpt(session, transport));
             }
             protected void done(){
@@ -1299,8 +1305,8 @@ public final class MainWindow extends JFrame {
      */
     private net.thevpc.naru.api.project.NaruProject readGroupFolder(
             NPath home, NClassLoader loader) {
-        net.thevpc.naru.api.store.NaruProjectStoreConfig config =
-                new net.thevpc.naru.api.store.NaruProjectStoreConfig(home, null);
+        net.thevpc.naru.api.project.NaruProjectStoreConfig config =
+                new net.thevpc.naru.api.project.NaruProjectStoreConfig(home, null);
         net.thevpc.naru.api.project.NaruProjectStore store =
                 net.thevpc.naru.api.project.NaruProjectStore.open(config, null, loader);
         try {
@@ -1816,13 +1822,19 @@ public final class MainWindow extends JFrame {
 
     private net.thevpc.naru.api.project.NaruProjectService projectService() {
         if (projectDirectory == null) return null;
-        try {
-            return NaruDesktop.workspace(projectDirectory).projects();
-        } catch (net.thevpc.nuts.util.NUnsupportedOperationException e) {
-            // a workspace built without a project store: every group action reports
-            // "no workspace is open yet" rather than throwing inside a menu listener
-            return null;
-        }
+        return projectServiceAt(projectDirectory);
+    }
+
+    /**
+     * The project service of one directory's workspace, or null when the feature is not
+     * installed. Projects left the kernel, so a desktop running without the naru-projects
+     * module on that workspace's classpath has no tree to show; every group action then
+     * reports "no workspace is open yet" rather than throwing inside a menu listener.
+     */
+    private net.thevpc.naru.api.project.NaruProjectService projectServiceAt(NPath dir) {
+        return NaruDesktop.workspace(dir).extension(
+                net.thevpc.naru.api.project.NaruProjectService.EXTENSION,
+                net.thevpc.naru.api.project.NaruProjectService.class).orNull();
     }
 
     private void refreshProjectSnapshot() {
@@ -1831,8 +1843,11 @@ public final class MainWindow extends JFrame {
         new javax.swing.SwingWorker<ProjectSnapshot, Void>() {
             @Override
             protected ProjectSnapshot doInBackground() {
-                net.thevpc.naru.api.project.NaruProjectService service =
-                        NaruDesktop.workspace(dir).projects();
+                net.thevpc.naru.api.project.NaruProjectService service = projectServiceAt(dir);
+                if (service == null) {
+                    throw new IllegalStateException(
+                            "no project service is installed for " + dir);
+                }
                 synchronized (projectListenersOwned) {
                     if (projectListenersOwned.add(dir.toString())) {
                         service.addListener(new net.thevpc.naru.api.project.NaruProjectListener() {

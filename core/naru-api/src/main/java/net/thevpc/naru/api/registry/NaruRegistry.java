@@ -117,6 +117,22 @@ public interface NaruRegistry {
     <T extends NaruSessionExtension> NOptional<T> extension(String name, Class<T> as);
 
     /**
+     * Installs one session extension by hand, alongside the ones discovery found.
+     *
+     * <p>The seam an assembly layer needs: a host that ships a fixed feature set says what
+     * runs instead of relying on whatever the classpath happens to hold, and a test builds
+     * the one feature it is about rather than the whole profile. An extension already
+     * registered under the same {@link NaruSessionExtension#name()} is left in place, since
+     * two features answering one name would make the lookup depend on discovery order.
+     *
+     * <p>The instance is brought up like a discovered one: restored from the state it saved
+     * under this session, then opened. A registration that arrived after the session loaded
+     * and never got its state would silently start a feature from zero -- for a titler, that
+     * means retrying attempts the session already spent.
+     */
+    NaruRegistry registerSessionExtension(NaruSessionExtension extension);
+
+    /**
      * The installed context compactor, if any.
      *
      * <p>Empty is the normal state for a build with no compaction extension, and callers

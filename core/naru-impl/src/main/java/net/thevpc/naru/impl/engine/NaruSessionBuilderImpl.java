@@ -81,13 +81,6 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
      */
     private String sessionName;
 
-    /**
-     * Whether this session may ask a model for a title. Defaults to false: a host that
-     * embeds NARU behind its own chatbot supplies its own titles and does not want a model
-     * call it did not ask for. A first-party launcher opts in with {@code autoTitle(true)}.
-     */
-    private Boolean autoTitle = Boolean.FALSE;
-
 
 
     private NaruSessionListener sessionListener;
@@ -145,12 +138,6 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
     @Override
     public NaruSessionBuilder name(String name) {
         this.sessionName = NaruSessionNames.normalize(name);
-        return this;
-    }
-
-    @Override
-    public NaruSessionBuilder autoTitle(boolean enabled) {
-        this.autoTitle = enabled;
         return this;
     }
 
@@ -331,7 +318,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
         // the project reference resolves now: a caller that names a project that does not
         // exist is told at build time, not silently dropped. The resolution is strict only
         // at creation; a session that merely keeps a dangling projectId stays readable.
-        net.thevpc.naru.api.project.NaruProject project = resolveProjectRef();
+        NaruSessionGroup project = resolveProjectRef();
         // effective-value rule, creation time only: explicit value, else the project's,
         // else the existing default. After build() the session owns its values outright.
         NPath dir = sessionDir != null
@@ -378,7 +365,6 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
             String effectiveUser = userSeed != null ? userSeed : (project == null ? null : project.user());
             session._setUserName(effectiveUser);
         }
-        session.setAutoTitleOverride(autoTitle);
         if (sessionName != null && !resumed) {
             // A host that named the session means that name, so the source is USER: an
             // automatic title must not come back later and overwrite what the embedder chose.
@@ -425,23 +411,24 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
                 streaming, busyPolicy, turnListener, maxLiveSessions,
                 checkpointEachMessage, capacityTimeout, agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter(),
                 combineModelFilters(agent.modelFilter(), modelFilter),
-                projectRef, userSeed, sessionName, autoTitle);
+                projectRef, userSeed, sessionName);
     }
 
     /**
-     * Resolves the {@code project(idOrName)} reference strictly: naming a project that
-     * does not exist is a build-time (or activation-time) error, not a silent standalone.
+     * Resolves the {@code project(idOrName)} reference strictly, through the workspace's
+     * session-group seam: naming a group that nothing resolves is a build-time (or
+     * activation-time) error, not a silent standalone.
      */
-    private net.thevpc.naru.api.project.NaruProject resolveProjectRef() {
+    private NaruSessionGroup resolveProjectRef() {
         if (projectRef == null || projectRef.isBlank()) {
             return null;
         }
-        net.thevpc.naru.api.project.NaruProject project = agent.projects().find(projectRef).orNull();
-        if (project == null) {
+        NaruSessionGroup group = agent.sessionGroup(projectRef).orNull();
+        if (group == null) {
             throw new net.thevpc.nuts.util.NIllegalArgumentException(
                     NMsg.ofC("project not found: %s", projectRef));
         }
-        return project;
+        return group;
     }
 
     /**
