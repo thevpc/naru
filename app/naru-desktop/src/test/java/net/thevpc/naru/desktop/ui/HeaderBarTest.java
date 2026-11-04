@@ -18,6 +18,7 @@ import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
@@ -309,6 +310,23 @@ class HeaderBarTest {
     // --- the brand mark -----------------------------------------------------------------------
 
     @Test
+    void theMarkIsABadgeThatRulesTheBar() throws Exception {
+        // The plate and its rim are what make the banner read as a name. Measured against the line the
+        // menus are written on, they collapse into a dark smudge, so the mark sets the bar's height.
+        BrandMark mark = new BrandMark();
+        int[] measured = onEdtReturn(() -> {
+            java.awt.FontMetrics fm = mark.getFontMetrics(mark.getFont());
+            Dimension preferred = mark.getPreferredSize();
+            return new int[]{fm.getHeight(), BrandMark.edge(fm), preferred.width, preferred.height};
+        });
+        assertTrue(measured[1] > measured[0], "the badge outgrows the line it sits on: "
+                + measured[1] + " over " + measured[0]);
+        assertEquals(measured[1], measured[3], "and the bar is measured to the badge, not the reverse");
+        assertTrue(measured[2] > 3 * measured[1] && measured[2] < 5 * measured[1],
+                "the width is the banner's own aspect, not a square: " + measured[2] + "x" + measured[1]);
+    }
+
+    @Test
     void theMarkIsDrawnInsideItsOwnBounds() throws Exception {
         BrandMark mark = new BrandMark();
         int width = onEdtReturn(() -> mark.getPreferredSize().width);
@@ -338,7 +356,7 @@ class HeaderBarTest {
         int smallEdge = onEdtReturn(() -> BrandMark.edge(small.getFontMetrics(small.getFont())));
         int largeEdge = onEdtReturn(() -> BrandMark.edge(large.getFontMetrics(large.getFont())));
         assertTrue(largeEdge > smallEdge, "the artwork is the line height, so the slider moves it");
-        assertTrue(largeWidth > smallWidth, "and the wordmark needs the room the tracking gives it");
+        assertTrue(largeWidth > smallWidth, "and the banner is given the room its own aspect needs");
     }
 
     // --- helpers ------------------------------------------------------------------------------

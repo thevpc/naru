@@ -12,6 +12,7 @@ import net.thevpc.naru.api.model.NaruModelInfo;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruModelProvider;
+import net.thevpc.naru.api.model.NaruRegistrationFields;
 import net.thevpc.naru.api.model.NaruModelRegistration;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -285,15 +286,15 @@ public class NaruModelDirectiveRegistrationTest {
      * (arrays comma-joined).
      */
     private void materialize(NaruModelRegistration reg) {
-        NaruModelProvider base = builtins.get(reg.provider() == null ? "" : reg.provider().toLowerCase());
+        NaruModelProvider base = builtins.get(reg.endpointType().toLowerCase());
         if (base == null) {
             return;
         }
         NaruModelProvider instance = base.newInstance(reg.id());
-        for (Map.Entry<String, NElement> e : reg.params().entrySet()) {
-            String v = paramValue(e.getValue());
+        for (net.thevpc.nuts.elem.NPairElement p : reg.storedPairs()) {
+            String v = paramValue(p.value());
             if (v != null) {
-                instance.setParam(e.getKey(), v);
+                instance.setParam(p.key().asStringValue().get(), v);
             }
         }
         instances.put(reg.id().toLowerCase(), instance);
@@ -365,33 +366,8 @@ public class NaruModelDirectiveRegistrationTest {
     }
 
     private static List<String> declaredModels(NaruModelRegistration reg) {
-        NElement m = reg.param("model").orNull();
-        if (m != null && !m.isNull()) {
-            return List.of(m.asStringValue().orElse("?"));
-        }
-        NElement ms = reg.param("models").orNull();
-        if (ms == null || ms.isNull()) {
-            return null;
-        }
-        List<String> out = new ArrayList<>();
-        if (ms.isArray()) {
-            for (NElement c : ms.asArray().map(x -> x.children()).orElse(List.of())) {
-                String s = c.asStringValue().orNull();
-                if (s != null) {
-                    out.add(s);
-                }
-            }
-        } else {
-            String s = ms.asStringValue().orNull();
-            if (s != null) {
-                for (String p : s.split(",")) {
-                    if (!p.isBlank()) {
-                        out.add(p.trim());
-                    }
-                }
-            }
-        }
-        return out;
+        List<String> pins = reg.allPins();
+        return pins.isEmpty() ? null : pins;
     }
 
     private NaruStmtResult add(String args) {
@@ -529,8 +505,9 @@ public class NaruModelDirectiveRegistrationTest {
 
         NaruModelRegistration reg = registrations.get("ex");
         Assertions.assertNotNull(reg);
-        Assertions.assertEquals("custom", reg.provider(), "no provider param defaults to the internal custom type");
-        Assertions.assertFalse(reg.param("provider").isPresent(), "a generic endpoint never stores a provider param");
+        Assertions.assertTrue(reg.isGeneric(), "no provider param means a generic endpoint");
+        Assertions.assertEquals("custom", reg.endpointType(), "...served by the internal custom type");
+        Assertions.assertFalse(reg.provider().isPresent(), "a generic endpoint never stores a provider param");
         Assertions.assertEquals("openai", reg.protocol().get());
         Assertions.assertEquals("custom", instances.get("ex").type(), "the instance must be typed by its provider type");
         Assertions.assertTrue(logged().contains("created (protocol=openai, generic endpoint)"),
@@ -555,7 +532,7 @@ public class NaruModelDirectiveRegistrationTest {
         // url can be re-pointed exactly like any built-in type
         NaruStmtResult ok = add("cpt --provider=openai --url=http://proxy:4000/v1");
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, ok.type(), () -> logged());
-        Assertions.assertEquals("openai", registrations.get("cpt").provider());
+        Assertions.assertEquals("openai", registrations.get("cpt").provider().get());
         Assertions.assertTrue(logged().contains("created (provider=openai"),
                 () -> "the created message must name the type, got: " + logged());
         Assertions.assertEquals("openai", instances.get("cpt").type());
@@ -621,7 +598,7 @@ public class NaruModelDirectiveRegistrationTest {
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         NaruModelRegistration reg = registrations.get("stubby");
         Assertions.assertFalse(reg.protocol().isPresent(),
-                "naming the default wire stores nothing, got: " + reg.params());
+                "naming the default wire stores nothing, got: " + reg.storedPairs());
 
         // a shape it does not speak is rejected even though it shares the default
         NaruStmtResult other = add("stubby2 --provider=stub --protocol=gemini");
@@ -695,10 +672,10 @@ public class NaruModelDirectiveRegistrationTest {
                 add("personal --contextLength=2000").type());
 
         NaruModelRegistration reg = registrations.get("personal");
-        Assertions.assertEquals("stub", reg.provider(), "the merge must keep the stored provider");
-        Assertions.assertEquals(0.2f, reg.floatValue("temperature").get());
-        Assertions.assertEquals(2000L, reg.longValue("contextLength").get());
-        Assertions.assertEquals("sk-secret1234", reg.stringValue("apiKey").get());
+        Assertions.assertEquals("stub", reg.provider().get(), "the merge must keep the stored provider");
+        Assertions.assertEquals(0.2f, reg.temperature().get());
+        Assertions.assertEquals(2000, reg.contextLength().get());
+        Assertions.assertEquals("sk-secret1234", reg.apiKey().get());
         Assertions.assertEquals("stub", instances.get("personal").type());
     }
 
@@ -715,13 +692,13 @@ public class NaruModelDirectiveRegistrationTest {
     public void emptyFlagValueClearsParameter() {
         Assertions.assertEquals(NaruStmtResultType.SUCCESS,
                 add("temp --provider=stub --temperature=0.2").type());
-        Assertions.assertTrue(registrations.get("temp").param("temperature").isPresent());
+        Assertions.assertTrue(registrations.get("temp").temperature().isPresent());
 
         NaruStmtResult res = add("temp --temperature=");
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         NaruModelRegistration reg = registrations.get("temp");
-        Assertions.assertFalse(reg.param("temperature").isPresent(), "an empty value must clear the parameter");
-        Assertions.assertEquals("stub", reg.provider(), "clearing one parameter must not drop the others");
+        Assertions.assertFalse(reg.temperature().isPresent(), "an empty value must clear the parameter");
+        Assertions.assertEquals("stub", reg.provider().get(), "clearing one parameter must not drop the others");
     }
 
     @Test
@@ -731,7 +708,7 @@ public class NaruModelDirectiveRegistrationTest {
         NaruStmtResult stripProvider = update("personal --provider=");
         Assertions.assertEquals(NaruStmtResultType.ERROR, stripProvider.type(), () -> logged());
         Assertions.assertTrue(logged().contains("cannot clear"), () -> logged());
-        Assertions.assertEquals("gemini", registrations.get("personal").provider(),
+        Assertions.assertEquals("gemini", registrations.get("personal").provider().get(),
                 "a rejected update must leave the registration untouched");
 
         // ... and a generic endpoint cannot be stripped of its only identity
@@ -777,7 +754,7 @@ public class NaruModelDirectiveRegistrationTest {
 
         // stored verbatim ...
         Assertions.assertEquals("sk-secret1234",
-                registrations.get("secret").stringValue("apiKey").get());
+                registrations.get("secret").apiKey().get());
 
         NaruStmtResult res = directive.executeRegisteredList(buildSubContext(), NCmdLine.of(""));
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
@@ -946,6 +923,20 @@ public class NaruModelDirectiveRegistrationTest {
         Assertions.assertTrue(c.contains("--provider="), () -> "got: " + c);
         Assertions.assertTrue(c.contains("--protocol="), () -> "got: " + c);
         Assertions.assertTrue(c.contains("--probe="), () -> "got: " + c);
+    }
+
+    @Test
+    public void optionNamesAreTheVocabularyInOrderAndNothingElse() {
+        List<String> offered = new ArrayList<>();
+        for (String v : complete("/model", "add", "x", "--")) {
+            if (v.startsWith("--") && v.endsWith("=")) {
+                offered.add(v.substring(2, v.length() - 1));
+            }
+        }
+        Assertions.assertEquals(NaruRegistrationFields.keys(), offered,
+                "the command line and the settings form must offer one list, in one order");
+        Assertions.assertFalse(offered.contains("baseUrl"),
+                "an alias folds onto its field at the store; it is not a second flag: " + offered);
     }
 
     @Test

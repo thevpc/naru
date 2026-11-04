@@ -129,7 +129,9 @@ public final class HeaderBar extends JPanel {
         this.maximized = maximized;
         this.toggleMaximize = toggleMaximize;
         // Bottom room for the hairline, so the chrome never sits on top of the rule it is drawn under.
-        setBorder(BorderFactory.createEmptyBorder(3, 8, HAIRLINE + 1, 8));
+        // The other edges are kept thin on purpose: the brand is a badge with its own plate, so the bar
+        // is measured to it and any real margin only shrinks the artwork that says what the window is.
+        setBorder(BorderFactory.createEmptyBorder(2, 5, HAIRLINE, 8));
         addMouseListener(drag);
         addMouseMotionListener(drag);
     }

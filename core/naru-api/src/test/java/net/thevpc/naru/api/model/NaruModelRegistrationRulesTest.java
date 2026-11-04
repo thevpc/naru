@@ -118,9 +118,9 @@ public class NaruModelRegistrationRulesTest {
         Assertions.assertTrue(out.generic(), "no provider param means a generic endpoint");
         Assertions.assertTrue(out.created());
         Assertions.assertEquals("openai", out.protocol());
-        Assertions.assertEquals("custom", out.registration().provider());
+        Assertions.assertEquals("custom", out.registration().endpointType());
         // the pin survives as written: no provider class exists to enumerate it
-        Assertions.assertEquals(List.of("a", "b"), out.registration().stringList("models"));
+        Assertions.assertEquals(List.of("a", "b"), out.registration().models());
     }
 
     // ── protocol normalization ─────────────────────────────────────────────────
@@ -130,7 +130,7 @@ public class NaruModelRegistrationRulesTest {
         NaruModelRegistrationRules.Outcome out = NaruModelRegistrationRules.apply(session, "p",
                 Map.of("provider", NElement.ofString("gemini"), "protocol", NElement.ofString("gemini")), false);
         Assertions.assertTrue(out.isOk(), out.problem());
-        Assertions.assertFalse(out.registration().param("protocol").isPresent(),
+        Assertions.assertFalse(out.registration().protocol().isPresent(),
                 "a registration must read as a delta over the type's defaults");
         Assertions.assertNull(out.protocol());
     }
@@ -183,11 +183,11 @@ public class NaruModelRegistrationRulesTest {
 
     @Test
     public void updateKeepsUntouchedParametersAndAClearValueDropsOne() {
-        Map<String, NElement> seeded = new LinkedHashMap<>();
-        seeded.put("provider", NElement.ofString("gemini"));
-        seeded.put("temperature", NElement.of(0.2f));
-        seeded.put("url", NElement.ofString("http://keep-me"));
-        registrations.put("temp", NaruModelRegistration.of("temp", seeded));
+        NaruModelRegistration.Builder seeded = NaruModelRegistration.builder("temp")
+                .put("provider", NElement.ofString("gemini"))
+                .put("temperature", NElement.of(0.2f))
+                .put("url", NElement.ofString("http://keep-me"));
+        registrations.put("temp", seeded.build());
 
         Map<String, NElement> edits = new LinkedHashMap<>();
         edits.put("temperature", null);
@@ -195,9 +195,9 @@ public class NaruModelRegistrationRulesTest {
         NaruModelRegistrationRules.Outcome out = NaruModelRegistrationRules.apply(session, "temp", edits, true);
 
         Assertions.assertTrue(out.isOk(), out.problem());
-        Assertions.assertFalse(out.registration().param("temperature").isPresent(), "an empty value clears");
-        Assertions.assertEquals("http://keep-me", out.registration().stringValue("url").get());
-        Assertions.assertTrue(out.registration().param("maxTokens").isPresent());
+        Assertions.assertFalse(out.registration().temperature().isPresent(), "an empty value clears");
+        Assertions.assertEquals("http://keep-me", out.registration().url().get());
+        Assertions.assertTrue(out.registration().maxTokens().isPresent());
     }
 
     @Test
@@ -220,11 +220,12 @@ public class NaruModelRegistrationRulesTest {
 
     @Test
     public void anUpdateOfTheUserScopeNeverCarriesTheProjectFields() {
-        Map<String, NElement> merged = new LinkedHashMap<>();
-        merged.put("provider", NElement.ofString("gemini"));
-        merged.put("url", NElement.ofString("http://personal"));
-        merged.put("apiKey", NElement.ofString("sk-from-project"));
-        registrations.put("shared", NaruModelRegistration.of("shared", merged));
+        NaruModelRegistration merged = NaruModelRegistration.builder("shared")
+                .put("provider", NElement.ofString("gemini"))
+                .put("url", NElement.ofString("http://personal"))
+                .put("apiKey", NElement.ofString("sk-from-project"))
+                .build();
+        registrations.put("shared", merged);
         origins.put("shared", new NaruRegistrationOrigin("shared", Map.of(
                 "provider", NaruRegistrationScope.USER,
                 "url", NaruRegistrationScope.USER,
@@ -234,40 +235,40 @@ public class NaruModelRegistrationRulesTest {
                 Map.of("temperature", NElement.of(0.7f)), true, NaruRegistrationScope.USER);
 
         Assertions.assertTrue(out.isOk(), out.problem());
-        Assertions.assertEquals("http://personal", out.registration().stringValue("url").get());
+        Assertions.assertEquals("http://personal", out.registration().url().get());
         // saving the personal registration must not adopt the project's credential
-        Assertions.assertFalse(out.registration().param("apiKey").isPresent(),
+        Assertions.assertFalse(out.registration().apiKey().isPresent(),
                 "a user-scope write copied the project's secret into the personal file");
     }
 
     @Test
     public void aProjectOverrideOfAPersonalRegistrationCarriesOnlyItsIdentity() {
-        Map<String, NElement> merged = new LinkedHashMap<>();
-        merged.put("provider", NElement.ofString("gemini"));
-        merged.put("url", NElement.ofString("http://personal"));
-        registrations.put("personal", NaruModelRegistration.of("personal", merged));
+        NaruModelRegistration personal = NaruModelRegistration.builder("personal")
+                .put("provider", NElement.ofString("gemini"))
+                .put("url", NElement.ofString("http://personal"))
+                .build();
+        registrations.put("personal", personal);
         origins.put("personal", NaruRegistrationOrigin.of("personal", NaruRegistrationScope.USER,
-                merged.keySet()));
+                Set.of("provider", "url")));
 
         NaruModelRegistrationRules.Outcome out = NaruModelRegistrationRules.apply(session, "personal",
                 Map.of("apiKey", NElement.ofString("sk-team")), true, NaruRegistrationScope.PROJECT);
 
         Assertions.assertTrue(out.isOk(), out.problem());
-        Assertions.assertEquals("gemini", out.registration().provider());
+        Assertions.assertEquals("gemini", out.registration().provider().get());
         // the identity travels so the two files describe one endpoint; the personal url stays put
-        Assertions.assertFalse(out.registration().param("url").isPresent(),
+        Assertions.assertFalse(out.registration().url().isPresent(),
                 "a project override copied the personal endpoint into the project file");
-        Assertions.assertEquals("sk-team", out.registration().stringValue("apiKey").get());
+        Assertions.assertEquals("sk-team", out.registration().apiKey().get());
     }
 
     @Test
     public void aStoreThatReportsNoOriginsMergesAsOneLayer() {
-        registrations.put("solo", NaruModelRegistration.of("solo", Map.of(
-                "provider", NElement.ofString("gemini"), "url", NElement.ofString("http://one"))));
+        registrations.put("solo", NaruModelRegistration.builder("solo").put("provider", NElement.ofString("gemini")).put("url", NElement.ofString("http://one")).build());
         NaruModelRegistrationRules.Outcome out = NaruModelRegistrationRules.apply(session, "solo",
                 Map.of("temperature", NElement.of(0.4f)), true, NaruRegistrationScope.PROJECT);
         Assertions.assertTrue(out.isOk(), out.problem());
-        Assertions.assertEquals("http://one", out.registration().stringValue("url").get());
+        Assertions.assertEquals("http://one", out.registration().url().get());
     }
 
     @Test

@@ -99,8 +99,10 @@ public class NaruLlmConfigKeysProvider implements NaruConfigKeyProvider {
             Map<String, NaruModelRegistration> regs = session.registrations();
             if (regs != null) {
                 for (NaruModelRegistration r : regs.values()) {
-                    addFamily(families, r.stringValue("model").orNull());
-                    addModelsFamily(families, r.stringValue("models").orNull());
+                    addFamily(families, r.model().orNull());
+                    for (String m : r.models()) {
+                        addFamily(families, m);
+                    }
                 }
             }
         } catch (RuntimeException ignored) {
@@ -125,15 +127,6 @@ public class NaruLlmConfigKeysProvider implements NaruConfigKeyProvider {
             return model == null ? null : model.asStringValue().orNull();
         } catch (RuntimeException e) {
             return null;
-        }
-    }
-
-    private static void addModelsFamily(Set<String> families, String models) {
-        if (models == null) {
-            return;
-        }
-        for (String m : models.split("[,\\s]+")) {
-            addFamily(families, m);
         }
     }
 

@@ -985,10 +985,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         for (NaruModelRegistration reg : regs.values()) {
             String id = reg.id();
-            NaruModelProvider base = registry.provider(reg.provider()).orNull();
+            // the registry key, which for a generic endpoint is the internal custom type — the
+            // registration declares no provider, but a provider class still speaks its wire
+            String endpointType = reg.endpointType();
+            NaruModelProvider base = registry.provider(endpointType).orNull();
             if (base == null) {
                 warn(NMsg.ofC("⚠ registration '%s' references unknown provider type '%s'",
-                        id, reg.provider()));
+                        id, endpointType));
                 continue;
             }
             NaruModelProvider existing = registry.modelProviders().get(id.toLowerCase());
@@ -999,10 +1002,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             }
             try {
                 NaruModelProvider instance = base.newInstance(id);
-                for (Map.Entry<String, NElement> e : reg.params().entrySet()) {
-                    String v = registrationParamValue(e.getValue());
+                for (NPairElement p : reg.storedPairs()) {
+                    String key = p.key().asStringValue().orNull();
+                    if (key == null) {
+                        continue;
+                    }
+                    String v = registrationParamValue(p.value());
                     if (v != null) {
-                        instance.setParam(e.getKey(), v);
+                        instance.setParam(key, v);
                     }
                 }
                 registry.registerModelProvider(instance);
@@ -1093,8 +1100,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             NaruRegistrationStore store = registrationStore();
             NaruModelRegistration reg = store == null ? null : store.get(ref).orNull();
             if (reg != null) {
-                List<String> pins = new ArrayList<>(reg.stringList("model"));
-                pins.addAll(reg.stringList("models"));
+                List<String> pins = reg.allPins();
                 if (pins.size() == 1) {
                     NaruModelKey k = new NaruModelKey(ref, pins.get(0));
                     if (catalog.contains(k)) {
@@ -1145,25 +1151,25 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         if (reg == null) {
             return c;
         }
-        if (reg.param("contextLength").isPresent()) {
-            c = c.withContextLength(reg.longValue("contextLength").orElse(c.contextLength()));
+        if (reg.contextLength().isPresent()) {
+            c = c.withContextLength(reg.contextLength().map(Integer::longValue).orElse(c.contextLength()));
         }
-        if (reg.param("temperature").isPresent()) {
-            c = c.withTemperature(reg.floatValue("temperature").orElse(c.temperature()));
+        if (reg.temperature().isPresent()) {
+            c = c.withTemperature(reg.temperature().orElse(c.temperature()));
         }
-        if (reg.param("nucleusThreshold").isPresent()) {
-            c = c.withNucleusThreshold(reg.floatValue("nucleusThreshold").orElse(c.nucleusThreshold()));
+        if (reg.nucleusThreshold().isPresent()) {
+            c = c.withNucleusThreshold(reg.nucleusThreshold().orElse(c.nucleusThreshold()));
         }
-        if (reg.param("candidateCount").isPresent()) {
-            c = c.withCandidateCount(reg.intValue("candidateCount").orElse(c.candidateCount()));
+        if (reg.candidateCount().isPresent()) {
+            c = c.withCandidateCount(reg.candidateCount().orElse(c.candidateCount()));
         }
-        if (reg.param("maxTokens").isPresent()) {
-            c = c.withMaxTokens(reg.intValue("maxTokens").orElse(c.maxTokens()));
+        if (reg.maxTokens().isPresent()) {
+            c = c.withMaxTokens(reg.maxTokens().orElse(c.maxTokens()));
         }
-        if (reg.param("stop").isPresent()) {
-            c = c.withStop(reg.stringList("stop"));
+        if (!reg.stop().isEmpty()) {
+            c = c.withStop(reg.stop());
         }
-        if (reg.param("thinkingTags").isPresent()) {
+        if (reg.thinkingTags().isPresent()) {
             c = c.withThinkingTags(mergeThinkingTags(reg));
         }
         return c;
@@ -1178,14 +1184,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * pairing it with something that never matches.
      */
     private static NaruThinkingTags mergeThinkingTags(NaruModelRegistration reg) {
-        NElement e = reg.param("thinkingTags").orNull();
+        NElement e = reg.thinkingTags().orNull();
         if (e == null || e.isNull()) {
             return null;
         }
         if (e.isAnyObject()) {
             return NaruThinkingTags.of(e);
         }
-        List<String> p = reg.stringList("thinkingTags");
+        List<String> p = NaruRegistrationFields.listValueOf(e);
         if (p.size() >= 2) {
             return NaruThinkingTags.of(p.get(0), p.get(1));
         }

@@ -124,7 +124,11 @@ public final class NaruModelRegistrationRules {
                     "no registration '%s' \u2014 see '/model registered' (create it with '/model add').", typedId));
         }
 
-        Map<String, NElement> params = new LinkedHashMap<>(ownedParams(session, storedId, existing, scope));
+        // An update merges into what its own scope already declares, never into the merged view:
+        // seed that base with the existing registration and take the other scope's fields back out.
+        NaruModelRegistration.Builder builder = existing == null
+                ? NaruModelRegistration.builder(storedId)
+                : ownedBase(session, storedId, existing, scope);
         Map<String, NElement> input = edits == null ? Map.of() : edits;
         for (Map.Entry<String, NElement> e : input.entrySet()) {
             String k = e.getKey();
@@ -135,24 +139,12 @@ public final class NaruModelRegistrationRules {
             if (k.isEmpty()) {
                 continue;
             }
-            NElement v = e.getValue();
-            if (v == null || v.isNull()) {
-                params.remove(k);
-            } else if (k.equals("provider")) {
-                // provider stays first so a hand-edited file reads naturally
-                params.remove("provider");
-                LinkedHashMap<String, NElement> ordered = new LinkedHashMap<>();
-                ordered.put("provider", v);
-                ordered.putAll(params);
-                params = ordered;
-            } else {
-                params.put(k, v);
-            }
+            builder.put(k, e.getValue());
         }
 
-        String providerValue = rawStringParam(params, "provider");
-        String protocolValue = rawStringParam(params, "protocol");
-        if (existing != null && providerValue == null && !"custom".equalsIgnoreCase(existing.provider())) {
+        String providerValue = builder.providerValue().orNull();
+        String protocolValue = builder.protocolValue().orNull();
+        if (existing != null && providerValue == null && !existing.isGeneric()) {
             return fail(problems, String.format(
                     "cannot clear '%s's provider with '--provider=' (an update only merges) \u2014 to turn it "
                             + "into a generic endpoint, remove it and add it again with "
@@ -188,7 +180,7 @@ public final class NaruModelRegistrationRules {
 
         NaruModelRegistration reg;
         try {
-            reg = NaruModelRegistration.of(storedId, params);
+            reg = builder.build();
         } catch (RuntimeException e) {
             return fail(problems, String.valueOf(e.getMessage()));
         }
@@ -204,11 +196,13 @@ public final class NaruModelRegistrationRules {
             }
         }
 
-        NaruModelProvider typeProvider = findProviderType(session, reg.provider());
+        // the type that serves this endpoint: the declared provider type, or the internal custom
+        // class for a generic one — which is why the lookup asks endpointType(), not provider()
+        NaruModelProvider typeProvider = findProviderType(session, reg.endpointType());
         if (typeProvider == null) {
             return fail(problems, String.format(
                     "unknown provider type '%s'. Known types: %s.",
-                    reg.provider(), knownProviderTypes(session)));
+                    reg.endpointType(), knownProviderTypes(session)));
         }
 
         // --protocol must name a wire shape this type speaks: naming the type's own default wire
@@ -235,21 +229,21 @@ public final class NaruModelRegistrationRules {
             if (match == null) {
                 return fail(problems, supported == null || supported.isEmpty()
                         ? String.format("provider type '%s' does not support --protocol: its wire shape is fixed.",
-                        reg.provider())
+                        reg.endpointType())
                         : String.format("unknown protocol '%s' for provider type '%s' (supported: %s).",
-                        wanted, reg.provider(), String.join(", ", new TreeSet<>(supported))));
+                        wanted, reg.endpointType(), String.join(", ", new TreeSet<>(supported))));
             }
-            if (reg.param("provider").isPresent()
+            if (!reg.isGeneric()
                     && typeProvider.defaultProtocol() != null
                     && match.equalsIgnoreCase(typeProvider.defaultProtocol())) {
                 // naming a built-in type's own default wire is a no-op: nothing is stored and the
                 // wire falls back to the default. A generic endpoint's protocol is its identity,
                 // so it is always stored.
-                reg = reg.withParam("protocol", (NElement) null);
+                reg = reg.with(NaruRegistrationFields.PROTOCOL, null);
                 protocol = null;
             } else {
                 if (!match.equals(wanted)) {
-                    reg = reg.withParam("protocol", match);
+                    reg = reg.with(NaruRegistrationFields.PROTOCOL, match);
                 }
                 protocol = match;
             }
@@ -257,15 +251,15 @@ public final class NaruModelRegistrationRules {
 
         // a generic endpoint has no provider class to enumerate or address — it needs a base url
         // and the models it serves, or there is nothing to call
-        boolean generic = "custom".equalsIgnoreCase(reg.provider());
+        boolean generic = reg.isGeneric();
         if (generic) {
-            if (NBlankable.isBlank(reg.stringValue("url").orNull())) {
+            if (NBlankable.isBlank(reg.url().orNull())) {
                 return fail(problems, String.format(
                         "a generic endpoint needs a base url \u2014 e.g. '/model add %s --protocol=%s "
                                 + "--url=\u2026 --models=a,b'.",
                         typedId, protocol == null ? typeProvider.defaultProtocol() : protocol));
             }
-            if (!reg.param("model").isPresent() && !reg.param("models").isPresent()) {
+            if (!reg.model().isPresent() && reg.models().isEmpty()) {
                 return fail(problems, String.format(
                         "a generic endpoint needs --model=<id> or --models=a,b \u2014 no provider class exists "
                                 + "to enumerate its models (e.g. '/model add %s --protocol=%s --url=\u2026 "
@@ -321,47 +315,41 @@ public final class NaruModelRegistrationRules {
     }
 
     /**
-     * The parameters the written scope already owns for an existing registration — the base an
-     * update merges into.
+     * The base an update merges into: the existing registration with everything the written scope
+     * does <b>not</b> own taken back out.
      *
      * <p>Merging the stored <b>view</b> instead would copy another scope's fields into the file
      * being written: saving a personal registration would carry this project's literal key into
      * {@code ~/.naru}, and the two files would then disagree about which one owns the value. The
-     * identity params travel anyway. A file that names no provider is a different endpoint, and
+     * identity fields travel anyway. A file that names no provider is a different endpoint, and
      * the store would replace the entry wholesale rather than complete it.
      */
-    private static Map<String, NElement> ownedParams(NaruSession session, String id,
-                                                     NaruModelRegistration existing,
-                                                     NaruRegistrationScope scope) {
-        if (existing == null) {
-            return new LinkedHashMap<>();
-        }
+    private static NaruModelRegistration.Builder ownedBase(NaruSession session, String id,
+                                                           NaruModelRegistration existing,
+                                                           NaruRegistrationScope scope) {
+        NaruModelRegistration.Builder b = existing.toBuilder();
         if (scope == null) {
-            return existing.params();
+            // merge the stored registration as a whole: a host whose store has no scope axis
+            return b;
         }
         NOptional<NaruRegistrationOrigin> o = session == null ? null : session.registrationOrigin(id);
         NaruRegistrationOrigin origin = o == null ? null : o.orNull();
         if (origin == null) {
             // a host that answers nothing about origins has one layer, so its stored registration
             // is already the scope being written
-            return existing.params();
+            return b;
         }
-        LinkedHashMap<String, NElement> out = new LinkedHashMap<>();
-        for (Map.Entry<String, NElement> e : existing.params().entrySet()) {
-            if (isIdentityParam(e.getKey()) || origin.scopeOf(e.getKey()) == scope) {
-                out.put(e.getKey(), e.getValue());
+        for (NaruRegistrationFields.Field<?> f : NaruRegistrationFields.fields()) {
+            if (!f.isIdentity() && origin.scopeOf(f.key()) != scope) {
+                f.set(b, null);
             }
         }
-        return out;
-    }
-
-    private static boolean isIdentityParam(String key) {
-        for (String k : NaruModelRegistration.IDENTITY_PARAMS) {
-            if (k.equalsIgnoreCase(key)) {
-                return true;
+        for (String key : existing.extras().keySet()) {
+            if (origin.scopeOf(key) != scope) {
+                b.extras(key, null);
             }
         }
-        return false;
+        return b;
     }
 
     private static Map<String, NaruModelRegistration> registrations(NaruSession session) {
@@ -429,16 +417,5 @@ public final class NaruModelRegistrationRules {
 
     private static String knownProviderTypes(NaruSession session) {
         return String.join(", ", providerTypes(session));
-    }
-
-    /**
-     * The trimmed string form of a parameter in a raw element map, or null when absent/blank.
-     */
-    private static String rawStringParam(Map<String, NElement> params, String name) {
-        NElement e = params == null ? null : params.get(name);
-        if (e == null || e.isNull()) {
-            return null;
-        }
-        return NStringUtils.stripToNull(e.asStringValue().orNull());
     }
 }

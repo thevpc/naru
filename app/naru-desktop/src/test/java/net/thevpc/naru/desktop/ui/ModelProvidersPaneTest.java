@@ -1,6 +1,8 @@
 package net.thevpc.naru.desktop.ui;
 
+import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.model.NaruModelRegistration;
+import net.thevpc.naru.api.model.NaruRegistrationFields;
 import net.thevpc.naru.api.model.NaruRegistrationOrigin;
 import net.thevpc.naru.api.model.NaruRegistrationScope;
 import net.thevpc.nuts.Nuts;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
@@ -36,8 +39,12 @@ import java.util.TreeMap;
  *
  * <p>Written against {@link ModelRegistrationGateway} rather than a live session, for the reason
  * {@link PlanPaneTest} gives for its service: what is worth pinning here is that a click turns into
- * exactly one write naming the right scope and the right parameter — not that the engine accepted
+ * exactly one write naming the right scope and the right parameters — not that the engine accepted
  * the endpoint, which the store's own tests cover.
+ *
+ * <p>The form is generated from {@link NaruRegistrationFields}, so these tests read it the same way:
+ * by canonical field name. A widget looked up by position would pass after the vocabulary grew and
+ * the reader would still be typing into a different parameter.
  */
 class ModelProvidersPaneTest {
 
@@ -84,8 +91,8 @@ class ModelProvidersPaneTest {
 
     @Test
     void oneRowPerRegistrationNamesItsEndpointAndTheLayerThatOwnsIt() throws Exception {
-        JTable table = onEdtReturn(() -> first(pane, JTable.class, c -> true));
         List<List<String>> drawn = onEdtReturn(() -> {
+            JTable table = list();
             List<List<String>> out = new ArrayList<>();
             for (int r = 0; r < table.getRowCount(); r++) {
                 List<String> row = new ArrayList<>();
@@ -104,44 +111,133 @@ class ModelProvidersPaneTest {
         Assertions.assertEquals("no", drawn.get(2).get(4), "the disabled flag is read from the store");
     }
 
+    // ── the form the vocabulary generates ─────────────────────────────────────
+
     @Test
-    void selectingARowShowsItsFieldsWithTheCredentialMasked() throws Exception {
+    void everyDeclaredFieldHasItsOwnInputInTheVocabularySOrder() throws Exception {
+        List<String> keys = NaruRegistrationFields.keys();
+        Assertions.assertEquals(NaruRegistrationFields.fields().size(), keys.size(),
+                "the form has one row per declared field, so the two counts must be the same thing");
+        for (String key : keys) {
+            Assertions.assertNotNull(pane.fieldInput(key), "'" + key + "' has no input of its own");
+        }
+        Map<String, String> widgets = onEdtReturn(() -> {
+            Map<String, String> out = new LinkedHashMap<>();
+            for (NaruRegistrationFields.Field<?> f : NaruRegistrationFields.fields()) {
+                JComponent w = pane.fieldInput(f.key());
+                out.put(f.key(), w instanceof JComboBox<?> ? "choice"
+                        : w instanceof JTextField ? "text" : w.getClass().getSimpleName());
+            }
+            return out;
+        });
+        Assertions.assertEquals("choice", widgets.get("provider"), "a provider type is picked or typed");
+        Assertions.assertEquals("choice", widgets.get("protocol"));
+        Assertions.assertEquals("choice", widgets.get("enabled"), "a flag is true or false, not free text");
+        Assertions.assertEquals("text", widgets.get("url"), "an endpoint is not a closed set");
+        Assertions.assertEquals("text", widgets.get("temperature"));
+    }
+
+    @Test
+    void selectingARowFillsEveryFieldAndNeverEchoesTheLiteralKey() throws Exception {
         selectRow(1);
-        JLabel detail = onEdtReturn(() -> first(pane, JLabel.class,
-                l -> String.valueOf(l.getText()).contains("apiKey")));
-        Assertions.assertNotNull(detail, "the selected registration lists its own parameters");
-        Assertions.assertTrue(detail.getText().contains("sk-***1234"),
-                "a literal key is never echoed back in full: " + detail.getText());
-        Assertions.assertTrue(detail.getText().contains("gemini-2.5-pro[user]"),
-                "and each field says which file it came from: " + detail.getText());
-        JTextField id = onEdtReturn(() -> fieldNamed("Registration id"));
-        Assertions.assertEquals("shared", id.getText());
+        Assertions.assertEquals("shared", onEdtReturn(() -> idField().getText()));
+        Assertions.assertEquals("gemini", onEdtReturn(() -> pane.fieldText("provider")));
+        Assertions.assertEquals("gemini-2.5-pro", onEdtReturn(() -> pane.fieldText("model")));
+        String key = onEdtReturn(() -> pane.fieldText("apiKey"));
+        Assertions.assertEquals("sk-***1234", key,
+                "the credential a registration holds is a literal, so the form shows its mask");
+        Assertions.assertFalse(key.contains("personal"), "and never the value itself");
+        Assertions.assertEquals("user", onEdtReturn(() -> pane.fieldBadge("model").getText()),
+                "each field says which file it came from");
+        Assertions.assertEquals("project", onEdtReturn(() -> pane.fieldBadge("apiKey").getText()));
+    }
+
+    @Test
+    void anAliasSpelledKeyReadsIntoTheFieldItFoldsOnto() throws Exception {
+        // a file that says baseUrl has one meaning, and the form's url field is where it shows up
+        Map<String, NElement> local = new LinkedHashMap<>();
+        local.put("provider", NElement.of("llamacpp"));
+        local.put("baseUrl", NElement.of("http://127.0.0.1:8080"));
+        gateway.put("aliasy", NaruRegistrationScope.PROJECT, local);
+        refresh();
+        selectId("aliasy");
+        Assertions.assertEquals("aliasy", onEdtReturn(() -> idField().getText()));
+        Assertions.assertEquals("http://127.0.0.1:8080", onEdtReturn(() -> pane.fieldText("url")),
+                "the alias is folded at the vocabulary, so there is no second row for it");
+        Assertions.assertEquals("project", onEdtReturn(() -> pane.fieldBadge("url").getText()));
+        Assertions.assertEquals("", onEdtReturn(() -> pane.fieldText("apiKey")),
+                "a parameter the file does not carry stays empty, not invented");
+    }
+
+    @Test
+    void theProviderFieldOffersTheTypesTheSessionKnowsAndChoosingOneRefillsTheProtocols()
+            throws Exception {
+        selectRow(0);
+        JComboBox<String> providers = onEdtReturn(() -> (JComboBox<String>) pane.fieldInput("provider"));
+        Assertions.assertEquals(List.of("gemini", "llamacpp", "ollama"), items(providers),
+                "a provider type is an id, and guessing one registers nothing");
+        Assertions.assertEquals(List.of("openai"),
+                items(onEdtReturn(() -> (JComboBox<String>) pane.fieldInput("protocol"))),
+                "the wire list starts from the endpoint being edited");
+
+        onEdt(() -> setInput("provider", "llamacpp"));
+        Assertions.assertEquals(List.of("llama-cpp", "openai"),
+                items(onEdtReturn(() -> (JComboBox<String>) pane.fieldInput("protocol"))),
+                "and follows the provider chosen");
+        Assertions.assertTrue(onEdtReturn(() -> pane.fieldInput("url") instanceof JTextField),
+                "a free-text parameter is not offered a list it cannot know");
     }
 
     // ── the writes ────────────────────────────────────────────────────────────
 
     @Test
-    void saveSendsOneWriteNamingTheChosenScope() throws Exception {
+    void oneClickProducesExactlyOneSaveNamingTheChosenScope() throws Exception {
+        selectRow(0);
         onEdt(() -> {
-            fieldNamed("Registration id").setText("fast");
-            fieldNamed("Parameter to write").setText("temperature");
-            valueBox().setSelectedItem("0.2");
+            setInput("temperature", "0.2");
             user().setSelected(true);
             button("✓").doClick();
         });
-        Assertions.assertEquals(List.of("save user update fast {temperature=0.2}"), gateway.writes,
-                "one write, in the scope the radio names, carrying only the field typed");
+        Assertions.assertEquals(List.of("save user update fast temperature=0.2"), gateway.writes,
+                "one click, one write, in the scope the radio names, carrying only the field changed");
         Assertions.assertEquals("0.2", String.valueOf(gateway.store("fast").params.get("temperature")));
+    }
+
+    @Test
+    void oneClickWritesEveryChangedFieldInThatOneSave() throws Exception {
+        selectRow(0);
+        onEdt(() -> {
+            setInput("contextLength", "8192");
+            setInput("stop", "</s>");
+            button("✓").doClick();
+        });
+        Assertions.assertEquals(List.of("save project update fast contextLength=8192, stop=</s>"),
+                gateway.writes, "two fields, one write, in the file order the vocabulary declares");
+    }
+
+    @Test
+    void aChangedFieldNamesTheFileItsWriteWillLandIn() throws Exception {
+        selectRow(0);
+        onEdt(() -> {
+            setInput("maxTokens", "4096");
+            // clicked, not setSelected: moving the destination is a user action, and only the click
+            // is what the pane listens to
+            user().doClick();
+        });
+        Assertions.assertEquals("-> user", onEdtReturn(() -> pane.fieldBadge("maxTokens").getText()),
+                "the badge moves from where the value lives to where the write goes");
+        Assertions.assertEquals("project", onEdtReturn(() -> pane.fieldBadge("provider").getText()),
+                "and stays on the file it came from when the field was not touched");
     }
 
     @Test
     void clearingAFieldSendsANullEditSoTheRulesCanRefuseItForIdentityParams() throws Exception {
         selectRow(0);
         onEdt(() -> {
-            fieldNamed("Parameter to write").setText("provider");
-            button("⌫").doClick();
+            setInput("provider", "");
+            button("✓").doClick();
         });
-        Assertions.assertEquals(List.of("save project update fast {provider=null}"), gateway.writes,
+        Assertions.assertEquals(List.of("save project update fast provider=null"), gateway.writes,
                 "a clear is a null value, not an empty one");
         JLabel refused = onEdtReturn(() -> first(pane, JLabel.class,
                 l -> String.valueOf(l.getText()).startsWith("not saved:")));
@@ -151,19 +247,34 @@ class ModelProvidersPaneTest {
     }
 
     @Test
+    void aFieldThatWantsANumberRefusesTextInsteadOfFilingItAway() throws Exception {
+        selectRow(0);
+        onEdt(() -> {
+            setInput("temperature", "warm");
+            button("✓").doClick();
+        });
+        Assertions.assertEquals(List.of(), gateway.writes,
+                "'warm' stored as a string would read back as unset — the silent kind of lost setting");
+        JLabel problem = onEdtReturn(() -> first(pane, JLabel.class,
+                l -> String.valueOf(l.getText()).contains("wants a number")));
+        Assertions.assertNotNull(problem, "and the reader is told which field and why");
+    }
+
+    @Test
     void thePowerGlyphFlipsEnabledAndTheTableSeesIt() throws Exception {
         selectRow(2);
         onEdt(() -> button("⏻").doClick());
-        Assertions.assertEquals(List.of("save project update slow {enabled=true}"), gateway.writes);
+        Assertions.assertEquals(List.of("save project update slow enabled=true"), gateway.writes);
         Assertions.assertEquals("true", String.valueOf(gateway.store("slow").params.get("enabled")));
+        Assertions.assertEquals("true", onEdtReturn(() -> pane.fieldText("enabled")),
+                "the form refills from the store rather than keeping the old answer");
 
-        JTable table = onEdtReturn(() -> first(pane, JTable.class, c -> true));
-        Assertions.assertEquals("yes", onEdtReturn(() -> String.valueOf(table.getValueAt(2, 4))),
-                "the row redraws from the store rather than keeping the old answer");
+        JTable table = onEdtReturn(this::list);
+        Assertions.assertEquals("yes", onEdtReturn(() -> String.valueOf(table.getValueAt(2, 4))));
 
         onEdt(() -> button("⏻").doClick());
-        Assertions.assertEquals("false", String.valueOf(gateway.store("slow").params.get("enabled")),
-                "and flipping again disables it");
+        Assertions.assertEquals("false", String.valueOf(gateway.store("slow").params.get("enabled")));
+        Assertions.assertEquals("false", onEdtReturn(() -> pane.fieldText("enabled")));
     }
 
     @Test
@@ -194,6 +305,59 @@ class ModelProvidersPaneTest {
         Assertions.assertNotNull(notice, "empty is explained, not left to be guessed");
     }
 
+    // ── the undeclared parameters ─────────────────────────────────────────────
+
+    @Test
+    void undeclaredParametersGetTheirOwnRowsAndACellCommitIsOneWrite() throws Exception {
+        Map<String, NElement> local = new LinkedHashMap<>();
+        local.put("provider", NElement.of("llamacpp"));
+        local.put("bin", NElement.of("/usr/bin/llama-server"));
+        local.put("n_ctx", NElement.of(4096L));
+        gateway.put("local", NaruRegistrationScope.PROJECT, local);
+        refresh();
+        selectId("local");
+        Assertions.assertEquals("local", onEdtReturn(() -> idField().getText()));
+
+        List<List<String>> shown = onEdtReturn(() -> {
+            JTable extras = extras();
+            List<List<String>> out = new ArrayList<>();
+            for (int r = 0; r < extras.getRowCount(); r++) {
+                List<String> row = new ArrayList<>();
+                for (int c = 0; c < extras.getColumnCount(); c++) {
+                    row.add(String.valueOf(extras.getValueAt(r, c)));
+                }
+                out.add(row);
+            }
+            return out;
+        });
+        Assertions.assertEquals(List.of("bin", "n_ctx", ""),
+                shown.stream().map(r -> r.get(0)).toList(),
+                "the stored knobs, then one blank row that adds another");
+        Assertions.assertEquals(List.of("/usr/bin/llama-server", "4096", ""),
+                shown.stream().map(r -> r.get(1)).toList());
+        Assertions.assertEquals("project", shown.get(0).get(2));
+
+        onEdt(() -> extras().setValueAt("/opt/llama-server", 0, 1));
+        Assertions.assertEquals(List.of("save project update local bin=/opt/llama-server"), gateway.writes,
+                "one cell, one write");
+
+        gateway.writes.clear();
+        onEdt(() -> {
+            extras().setValueAt("threads", 2, 0);
+            extras().setValueAt("8", 2, 1);
+        });
+        Assertions.assertEquals(List.of("save project update local threads=8"), gateway.writes,
+                "an undeclared key is added by naming it, not by guessing a field core owns");
+
+        gateway.writes.clear();
+        onEdt(() -> {
+            extras().setRowSelectionInterval(0, 0);
+            button("⌫").doClick();
+        });
+        Assertions.assertEquals(List.of("save project update local bin=null"), gateway.writes);
+        Assertions.assertNull(gateway.store("local").params.get("bin"));
+    }
+
     // ── the view axis ─────────────────────────────────────────────────────────
 
     @Test
@@ -216,31 +380,61 @@ class ModelProvidersPaneTest {
         Assertions.assertTrue(ModelViewPreferences.of(project).hiddenProviders().isEmpty());
     }
 
-    @Test
-    void theValueFieldOffersTheProviderTypesForProviderAndNothingElse() throws Exception {
-        onEdt(() -> fieldNamed("Parameter to write").setText("provider"));
-        JComboBox<String> values = onEdtReturn(this::valueBox);
-        Assertions.assertEquals(List.of("gemini", "llamacpp", "ollama"), items(values),
-                "a provider type is an id, and guessing one registers nothing");
-
-        onEdt(() -> fieldNamed("Parameter to write").setText("url"));
-        Assertions.assertEquals(List.of(), items(onEdtReturn(this::valueBox)),
-                "a free-text parameter is not offered a list it cannot know");
-    }
-
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private void selectRow(int index) throws Exception {
-        onEdt(() -> first(pane, JTable.class, c -> true).setRowSelectionInterval(index, index));
+        onEdt(() -> list().setRowSelectionInterval(index, index));
+    }
+
+    /** Select by id rather than index: a test that adds a registration should not count rows. */
+    private void selectId(String id) throws Exception {
+        int index = onEdtReturn(() -> {
+            JTable table = list();
+            for (int r = 0; r < table.getRowCount(); r++) {
+                if (id.equals(String.valueOf(table.getValueAt(r, 0)))) {
+                    return r;
+                }
+            }
+            return -1;
+        });
+        Assertions.assertTrue(index >= 0, "'" + id + "' is not in the listing");
+        selectRow(index);
+    }
+
+    /** Pull the store back off the gateway, the way the ⟳ button does. */
+    private void refresh() throws Exception {
+        onEdt(() -> button("⟳").doClick());
+    }
+
+    private void setInput(String key, String value) {
+        JComponent w = pane.fieldInput(key);
+        if (w instanceof JComboBox<?> box) {
+            box.getEditor().setItem(value);
+        } else {
+            ((JTextField) w).setText(value);
+        }
+    }
+
+    private JTable list() {
+        return named("naru.registration.list");
+    }
+
+    private JTable extras() {
+        return named("naru.registration.extras");
+    }
+
+    private JTable named(String name) {
+        return first(pane, JTable.class, t -> name.equals(t.getName()));
+    }
+
+    private JTextField idField() {
+        return first(pane, JTextField.class,
+                f -> String.valueOf(f.getToolTipText()).contains("Registration id"));
     }
 
     private JTextField fieldNamed(String tooltipFragment) {
         return first(pane, JTextField.class,
                 f -> String.valueOf(f.getToolTipText()).contains(tooltipFragment));
-    }
-
-    private JComboBox<String> valueBox() {
-        return first(pane, JComboBox.class, c -> c.isEditable());
     }
 
     private JRadioButton user() {
@@ -342,27 +536,35 @@ class ModelProvidersPaneTest {
         @Override
         public Map<String, NaruModelRegistration> registrations() {
             Map<String, NaruModelRegistration> out = new TreeMap<>();
-            store.forEach((id, r) -> out.put(id, NaruModelRegistration.of(id, r.params)));
+            store.forEach((id, r) -> {
+                NaruModelRegistration.Builder b = NaruModelRegistration.builder(id);
+                r.params.forEach(b::put);
+                out.put(id, b.build());
+            });
             return out;
         }
 
         @Override
         public NaruRegistrationOrigin origin(String id) {
             Map<String, NaruRegistrationScope> scopes = new LinkedHashMap<>();
-            for (String f : projectFields.getOrDefault(id, List.of())) {
-                scopes.put(f, NaruRegistrationScope.PROJECT);
-            }
-            for (String f : userFields.getOrDefault(id, List.of())) {
-                scopes.putIfAbsent(f, NaruRegistrationScope.USER);
-            }
+            // a real origin names canonical parameters even when the file spelled them as an alias,
+            // because that is the only way an editor can find the owner of the field it shows
+            java.util.function.Function<String, String> canonical = name -> {
+                NaruRegistrationFields.Field<?> f = NaruRegistrationFields.find(name);
+                return f == null ? name : f.key();
+            };
+            projectFields.getOrDefault(id, List.of()).forEach(f -> scopes.put(canonical.apply(f),
+                    NaruRegistrationScope.PROJECT));
+            userFields.getOrDefault(id, List.of()).forEach(f -> scopes.putIfAbsent(canonical.apply(f),
+                    NaruRegistrationScope.USER));
             return scopes.isEmpty() ? null : new NaruRegistrationOrigin(id, scopes);
         }
 
         @Override
         public String save(String id, Map<String, NElement> edits, boolean update,
                            NaruRegistrationScope scope) {
-            writes.add("save " + scope.word() + " " + (update ? "update" : "create") + " " + id
-                    + " " + edits);
+            writes.add("save " + scope.word() + " " + (update ? "update" : "create") + " " + id + " "
+                    + describe(edits));
             FakeRegistration r = store.computeIfAbsent(id, FakeRegistration::new);
             Map<String, NElement> params = new LinkedHashMap<>(r.params);
             Map<String, List<String>> owned =
@@ -391,6 +593,13 @@ class ModelProvidersPaneTest {
             return null;
         }
 
+        /** One line per write: the edits are printed by value, so an assertion can name what was sent. */
+        private static String describe(Map<String, NElement> edits) {
+            List<String> parts = new ArrayList<>();
+            edits.forEach((k, v) -> parts.add(k + "=" + (v == null ? "null" : NaruTaskConfig.toText(v))));
+            return String.join(", ", parts);
+        }
+
         private static String identityOf(String id, Map<String, NElement> params) {
             if (params.get("provider") != null || params.get("protocol") != null) {
                 return null;
@@ -412,7 +621,11 @@ class ModelProvidersPaneTest {
 
         @Override
         public Set<String> protocols(String providerType) {
-            return Set.of("openai");
+            return switch (providerType == null ? "" : providerType) {
+                case "llamacpp" -> Set.of("openai", "llama-cpp");
+                case "gemini" -> Set.of("gemini");
+                default -> Set.of("openai");
+            };
         }
     }
 }
