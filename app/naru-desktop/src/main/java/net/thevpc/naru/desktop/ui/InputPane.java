@@ -292,7 +292,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
 
     // ── prompt ────────────────────────────────────────────────────────────────
 
-    private void showPrompt(NaruInputRequest request) {
+    void showPrompt(NaruInputRequest request) {
         SwingUtilities.invokeLater(() -> {
             shownFor = request;
             promptChoices.removeAll();
@@ -331,8 +331,40 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             promptChoices.add(skip);
             promptPanel.setVisible(true);
             promptPanel.revalidate();
+            ensureComposerRoom();
             area.requestFocusInWindow();
             updateEnabledState();
+        });
+    }
+
+    /**
+     * The prompt panel sits above the field inside a card whose height the split pane owns. When it
+     * appears the card asks for more room than the divider may currently give it, and a field with
+     * zero height looks exactly like a composer that vanished until the next window resize. Asking
+     * the split for the card's preferred height (never more than the window can give) keeps the
+     * field visible as soon as the agent asks a question.
+     */
+    private void ensureComposerRoom() {
+        revalidate();
+        SwingUtilities.invokeLater(() -> {
+            if (!(getParent() instanceof javax.swing.JSplitPane split)
+                    || split.getBottomComponent() != this) {
+                return;
+            }
+            int total = split.getHeight();
+            if (total <= 0) {
+                return;
+            }
+            int wanted = getPreferredSize().height;
+            if (wanted <= 0) {
+                return;
+            }
+            int location = Math.max(0, total - split.getDividerSize() - wanted);
+            if (split.getDividerLocation() > location) {
+                split.setDividerLocation(location);
+            }
+            revalidate();
+            repaint();
         });
     }
 
@@ -815,15 +847,19 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         list.setCellRenderer((l, value, index, selected, focus) -> {
             var cap = value.capabilities();
             String features = cap == null ? "" : String.join(" ", java.util.stream.Stream.of(cap.isVision() ? "V" : null, cap.isTools() ? "T" : null, cap.isThinking() ? "R" : null, cap.isEmbedding() ? "E" : null).filter(java.util.Objects::nonNull).toList());
-            String context = cap == null || cap.contextLength() <= 0 ? "?" : String.format(java.util.Locale.ROOT, "%dk", cap.contextLength() / 1024);
-            String meta = String.join(" · ", java.util.stream.Stream.of(value.quantization(), value.parameterSize(), context + "tok", features, rateStatus(value.provider())).filter(s -> s != null && !s.isBlank()).toList());
+            long configuredContext = configuredContextLength(value);
+            long reportedContext = cap == null ? -1 : cap.contextLength();
+            boolean local = isLocal(value);
+            String context = contextLabel(configuredContext, reportedContext, local);
+            String contextTip = contextTip(configuredContext, reportedContext, local);
+            String meta = String.join(" · ", java.util.stream.Stream.of(value.quantization(), value.parameterSize(), context, features, rateStatus(value.provider())).filter(s -> s != null && !s.isBlank()).toList());
             JLabel label = new JLabel("<html><b><font color='" + ModelIcons.colorHex(value.provider()) + "'>" + ModelIcons.glyph(value.provider()) + "</font> "
                     + value.provider() + "/" + value.model() + "</b> <small>" + meta + "</small></html>");
             label.setOpaque(true);
             label.setBackground(selected ? l.getSelectionBackground() : l.getBackground());
             label.setForeground(selected ? l.getSelectionForeground() : l.getForeground());
             label.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
-            label.setToolTipText(value.provider() + "/" + value.model() + " — " + meta);
+            label.setToolTipText(value.provider() + "/" + value.model() + " — " + meta + " — " + contextTip);
             return label;
         });
         list.setFixedCellHeight(22);
@@ -955,7 +991,11 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                         matches.add(x);
                 }
                 if ("Context size".equals(sort.getSelectedItem()))
-                    matches.sort(java.util.Comparator.comparingLong((net.thevpc.naru.api.model.NaruModelInfo x) -> x.capabilities() == null ? 0 : x.capabilities().contextLength()).reversed());
+                    matches.sort(java.util.Comparator.comparingLong((net.thevpc.naru.api.model.NaruModelInfo x) -> {
+                        long configured = configuredContextLength(x);
+                        if (configured > 0) return configured;
+                        return x.capabilities() == null ? 0 : x.capabilities().contextLength();
+                    }).reversed());
                 else
                     matches.sort(java.util.Comparator.comparing(x -> x.provider() + "/" + x.model(), String.CASE_INSENSITIVE_ORDER));
                 rows.clear();
@@ -1110,6 +1150,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         // run the filter once so the empty-list note states the real reason before the reader
         // has touched anything; without this the dialog opens claiming no filter matched
         refilterHolder[0].run();
+        DesktopDialog.makeResizable(dialog);
         DesktopDialog.showCentered(dialog, SwingUtilities.getWindowAncestor(this), 760, 560);
     }
 
@@ -1228,6 +1269,60 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             return session.session() == null ? null : session.session().registrations().get(provider);
         } catch (RuntimeException ignored) {
             return null;
+        }
+    }
+
+    /**
+     * What the chooser should print for a model's context window: the registration's own
+     * {@code contextLength} when it sets one, because that is the value the request carries; a
+     * plain {@code default} for a local endpoint that leaves it unset, because the server's
+     * default (Ollama's included) is what actually runs and the model's reported maximum is not;
+     * and the reported maximum for a hosted model, where that is the window.
+     *
+     * <p>Package-private so the label rules can be tested without building a live registry.
+     */
+    static String contextLabel(long configured, long reported, boolean local) {
+        if (configured > 0) {
+            return formatTokens(configured) + " ctx";
+        }
+        if (local) {
+            return "default ctx";
+        }
+        return reported > 0 ? formatTokens(reported) + " max ctx" : "? ctx";
+    }
+
+    private static String contextTip(long configured, long reported, boolean local) {
+        if (configured > 0) {
+            return "Context window: " + formatTokens(configured)
+                    + " tokens, from this registration's contextLength";
+        }
+        if (local) {
+            return "No contextLength is set, so the local server's default context window applies"
+                    + (reported > 0
+                    ? " (the model reports " + formatTokens(reported) + " tokens maximum)"
+                    : "");
+        }
+        if (reported > 0) {
+            return "Context window: " + formatTokens(reported) + " tokens (model maximum)";
+        }
+        return "The model does not report a context window";
+    }
+
+    private static String formatTokens(long tokens) {
+        return String.format(java.util.Locale.ROOT, "%,d", tokens);
+    }
+
+    /** The registration's contextLength when it has one, or -1 when the provider's own value applies. */
+    private long configuredContextLength(net.thevpc.naru.api.model.NaruModelInfo info) {
+        var registration = registration(info.provider());
+        if (registration == null) {
+            return -1;
+        }
+        try {
+            Integer value = registration.contextLength().orNull();
+            return value == null || value <= 0 ? -1 : value;
+        } catch (RuntimeException ignored) {
+            return -1;
         }
     }
 

@@ -1,6 +1,7 @@
 package net.thevpc.naru.desktop.ui;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelRegistration;
 import net.thevpc.naru.api.model.NaruModelRegistrationRules;
 import net.thevpc.naru.api.model.NaruRegistrationOrigin;
@@ -8,6 +9,7 @@ import net.thevpc.naru.api.model.NaruRegistrationScope;
 import net.thevpc.nuts.elem.NElement;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -132,5 +134,51 @@ final class SessionModelRegistrations implements ModelRegistrationGateway {
         } catch (RuntimeException e) {
             return Set.of();
         }
+    }
+
+    /**
+     * The listing of the instance being edited when it exists, otherwise of the first instance
+     * of that type. Reading it from the registry — rather than from the type's built-in
+     * provider — is what makes a registration with its own url/key list the models <em>that</em>
+     * endpoint serves.
+     */
+    @Override
+    public List<String> models(String registrationId, String providerType) {
+        NaruSession s = session();
+        if (s == null || providerType == null || providerType.isBlank() || s.registry() == null) {
+            return List.of();
+        }
+        try {
+            Map<String, NaruModelProvider> providers = s.registry().modelProviders();
+            NaruModelProvider chosen = findInstance(providers, registrationId, providerType);
+            if (chosen == null) {
+                return List.of();
+            }
+            List<String> ids = chosen.findModelIds(s);
+            return ids == null ? List.of() : List.copyOf(ids);
+        } catch (RuntimeException e) {
+            // an unreachable endpoint is a picker with no candidates, not a form that fails
+            return List.of();
+        }
+    }
+
+    private static NaruModelProvider findInstance(Map<String, NaruModelProvider> providers,
+                                                  String registrationId, String providerType) {
+        if (registrationId != null && !registrationId.isBlank()) {
+            NaruModelProvider exact = providers.get(registrationId);
+            if (exact == null) {
+                exact = providers.get(registrationId.toLowerCase(Locale.ROOT));
+            }
+            if (exact != null && exact.type() != null && exact.type().equalsIgnoreCase(providerType)) {
+                return exact;
+            }
+        }
+        for (NaruModelProvider provider : providers.values()) {
+            if (provider != null && provider.type() != null
+                    && provider.type().equalsIgnoreCase(providerType)) {
+                return provider;
+            }
+        }
+        return null;
     }
 }

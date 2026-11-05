@@ -75,6 +75,7 @@ class ModelProvidersPaneTest {
         gateway.put("slow", NaruRegistrationScope.PROJECT, Map.of(
                 "provider", NElement.of("llamacpp"),
                 "enabled", NElement.of("false")));
+        gateway.models.put("ollama", List.of("qwen2.5-coder:7b", "llama3:8b"));
         onEdt(() -> {
             pane = new ModelProvidersPane(() -> project, gateway);
             pane.setSize(720, 520);
@@ -132,7 +133,13 @@ class ModelProvidersPaneTest {
         });
         Assertions.assertEquals("choice", widgets.get("provider"), "a provider type is picked or typed");
         Assertions.assertEquals("choice", widgets.get("protocol"));
-        Assertions.assertEquals("choice", widgets.get("enabled"), "a flag is true or false, not free text");
+        Assertions.assertEquals("choice", widgets.get("model"), "a model is picked or typed");
+        Assertions.assertEquals("MultiValueField", widgets.get("models"),
+                "a model list is free text with a multi-select picker");
+        Assertions.assertEquals("choice", widgets.get("contextLength"),
+                "a context length offers the common sizes and still takes an exact number");
+        Assertions.assertEquals("choice", widgets.get("enabled"),
+                "a flag is true or false, with blank meaning inherited, not free text");
         Assertions.assertEquals("text", widgets.get("url"), "an endpoint is not a closed set");
         Assertions.assertEquals("text", widgets.get("temperature"));
     }
@@ -176,16 +183,85 @@ class ModelProvidersPaneTest {
         JComboBox<String> providers = onEdtReturn(() -> (JComboBox<String>) pane.fieldInput("provider"));
         Assertions.assertEquals(List.of("gemini", "llamacpp", "ollama"), items(providers),
                 "a provider type is an id, and guessing one registers nothing");
-        Assertions.assertEquals(List.of("openai"),
+        Assertions.assertEquals(List.of("anthropic", "gemini", "mistral", "ollama", "openai", "openrouter"),
                 items(onEdtReturn(() -> (JComboBox<String>) pane.fieldInput("protocol"))),
-                "the wire list starts from the endpoint being edited");
+                "the wire list starts from the common protocols plus the endpoint being edited");
 
         onEdt(() -> setInput("provider", "llamacpp"));
-        Assertions.assertEquals(List.of("llama-cpp", "openai"),
+        Assertions.assertEquals(List.of("anthropic", "gemini", "llama-cpp", "mistral", "ollama",
+                        "openai", "openrouter"),
                 items(onEdtReturn(() -> (JComboBox<String>) pane.fieldInput("protocol"))),
                 "and follows the provider chosen");
         Assertions.assertTrue(onEdtReturn(() -> pane.fieldInput("url") instanceof JTextField),
                 "a free-text parameter is not offered a list it cannot know");
+    }
+
+    @Test
+    void theModelFieldOffersTheModelsTheProviderReportsAndStillTakesFreeText() throws Exception {
+        selectRow(0);
+        JComboBox<String> model = onEdtReturn(() -> (JComboBox<String>) pane.fieldInput("model"));
+        Assertions.assertEquals(List.of("llama3:8b", "qwen2.5-coder:7b"), items(model),
+                "the provider's own listing is what the picker offers");
+
+        onEdt(() -> setInput("model", "my-private:latest"));
+        onEdt(() -> button("✓").doClick());
+        Assertions.assertEquals(List.of("save project update fast model=my-private:latest"), gateway.writes,
+                "a model the endpoint does not report is still a legal pin");
+    }
+
+    @Test
+    void theModelsFieldIsFreeTextWithAMultiSelectPicker() throws Exception {
+        selectRow(0);
+        MultiValueField models = onEdtReturn(() -> (MultiValueField) pane.fieldInput("models"));
+        Assertions.assertEquals(List.of("llama3:8b", "qwen2.5-coder:7b"), models.candidates(),
+                "the picker lists every model the endpoint reports");
+
+        onEdt(() -> {
+            models.setText("my-private:latest");
+            models.applySelection(List.of("llama3:8b"));
+        });
+        Assertions.assertEquals("my-private:latest, llama3:8b", models.getText(),
+                "picking a reported model must not erase a typed one");
+
+        onEdt(() -> button("✓").doClick());
+        Assertions.assertEquals(List.of("save project update fast models=my-private:latest, llama3:8b"),
+                gateway.writes, "both selected and typed models travel as one list");
+    }
+
+    @Test
+    void aFlagOffersBlankTrueAndFalseAndBlankClearsTheKey() throws Exception {
+        selectRow(2);
+        JComboBox<String> enabled = onEdtReturn(() -> (JComboBox<String>) pane.fieldInput("enabled"));
+        Assertions.assertEquals(List.of("", "true", "false"), items(enabled),
+                "the blank entry is the inherited state, not a flag value");
+
+        onEdt(() -> setInput("enabled", ""));
+        onEdt(() -> button("✓").doClick());
+        Assertions.assertEquals(List.of("save project update slow enabled=null"), gateway.writes,
+                "blank is a null edit, so the provider's default applies again");
+        Assertions.assertNull(gateway.store("slow").params.get("enabled"));
+
+        onEdt(() -> setInput("enabled", "inherit"));
+        onEdt(() -> button("✓").doClick());
+        Assertions.assertEquals(List.of("save project update slow enabled=null"), gateway.writes,
+                "'inherit' is a state, not a flag: it must not be filed as if it were one");
+        JLabel problem = onEdtReturn(() -> first(pane, JLabel.class,
+                l -> String.valueOf(l.getText()).contains("wants true or false")));
+        Assertions.assertNotNull(problem, "and the reader is told a flag is true or false");
+    }
+
+    @Test
+    void contextLengthOffersCommonSizesAndKeepsAnExactValue() throws Exception {
+        selectRow(0);
+        JComboBox<String> context = onEdtReturn(
+                () -> (JComboBox<String>) pane.fieldInput("contextLength"));
+        Assertions.assertTrue(items(context).containsAll(List.of("4096", "8192", "32768", "131072")),
+                "the common context sizes are the picker");
+
+        onEdt(() -> setInput("contextLength", "12345"));
+        onEdt(() -> button("✓").doClick());
+        Assertions.assertEquals(List.of("save project update fast contextLength=12345"), gateway.writes,
+                "an exact length the list does not hold is still accepted");
     }
 
     // ── the writes ────────────────────────────────────────────────────────────
@@ -499,6 +575,7 @@ class ModelProvidersPaneTest {
         final Map<String, FakeRegistration> store = new TreeMap<>();
         final Map<String, List<String>> projectFields = new LinkedHashMap<>();
         final Map<String, List<String>> userFields = new LinkedHashMap<>();
+        final Map<String, List<String>> models = new LinkedHashMap<>();
         final List<String> writes = new ArrayList<>();
         boolean available = true;
 
@@ -626,6 +703,11 @@ class ModelProvidersPaneTest {
                 case "gemini" -> Set.of("gemini");
                 default -> Set.of("openai");
             };
+        }
+
+        @Override
+        public List<String> models(String registrationId, String providerType) {
+            return models.getOrDefault(providerType, List.of());
         }
     }
 }

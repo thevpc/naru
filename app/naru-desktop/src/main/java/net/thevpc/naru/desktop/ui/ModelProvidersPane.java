@@ -39,7 +39,9 @@ import java.awt.Insets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.Function;
@@ -58,12 +60,14 @@ import java.util.function.Supplier;
  * <p>The form is the vocabulary drawn out, not a key/value dialog. {@link
  * NaruRegistrationFields#fields()} decides the rows, their order and their headings, so a parameter
  * the store learns tomorrow appears here as a named field without anything in this file being told
- * about it. The widget follows {@code Kind} — a flag is picked, a list is comma-separated, a duration
- * is typed — the candidates come from {@code suggestedValues()} and from what the live session offers
- * for {@code provider} and {@code protocol}, and the badge beside each row names the file that owns
- * <b>that</b> parameter, which is the one thing a merged endpoint cannot show any other way. A blank
- * field means the parameter is unset, and clearing one is a null edit, so the same engine rules that
- * refuse to strip a live endpoint's provider refuse it here too.
+ * about it. The widget follows {@code Kind} — a flag is picked true/false or left blank to inherit,
+ * a list is free text with a multi-select picker, a duration is typed — and every closed or common
+ * set stays editable: a model can be picked from what the endpoint reports or typed by hand, a
+ * context length from the common sizes or typed exactly, a protocol from the common wires or the
+ * type's own list. The badge beside each row names the file that owns <b>that</b> parameter, which
+ * is the one thing a merged endpoint cannot show any other way. A blank field means the parameter is
+ * unset, and clearing one is a null edit, so the same engine rules that refuse to strip a live
+ * endpoint's provider refuse it here too.
  *
  * <p>Parameters the vocabulary does not declare get no fake row: they keep their own table and are
  * edited one cell at a time, because their names and shapes belong to whoever registered them.
@@ -72,6 +76,28 @@ public final class ModelProvidersPane extends JPanel {
 
     /** Prefix of every field input's component name, so a test and the a11y tree can point at one. */
     static final String FIELD_NAME = "naru.registration.field.";
+
+    /**
+     * The words a flag can be. The blank entry is not a value: it is the widget's way of showing
+     * that the key is absent, so the provider's own default applies.
+     */
+    private static final List<String> FLAG_VALUES = List.of("", "true", "false");
+
+    /**
+     * Context sizes most models are published with. A picker of these is a convenience, never a
+     * restriction: the field stays editable, because a model may expose any exact length.
+     */
+    private static final List<String> COMMON_CONTEXT_LENGTHS = List.of(
+            "2048", "4096", "8192", "16384", "32768", "65536",
+            "131072", "200000", "262144", "524288", "1048576");
+
+    /**
+     * Wire shapes a generic endpoint is commonly registered with. A provider type's own
+     * {@link ModelRegistrationGateway#protocols(String)} still supplies the authoritative list;
+     * these keep the field useful while no provider is chosen yet (a generic endpoint).
+     */
+    private static final List<String> COMMON_PROTOCOLS = List.of(
+            "openai", "anthropic", "gemini", "ollama", "mistral", "openrouter");
 
     private final ModelRegistrationGateway gateway;
     /** The project whose view settings this pane reads and writes; null when none is open. */
@@ -102,6 +128,8 @@ public final class ModelProvidersPane extends JPanel {
 
     /** The registration the form currently shows, or null while nothing is bound to it. */
     private String editingId;
+    /** Model listings already fetched, by instance and type: a picker is not a per-keystroke probe. */
+    private final Map<String, List<String>> modelCandidates = new LinkedHashMap<>();
     /** Set while the pane fills the widgets itself, so filling is never read as editing. */
     private boolean loading;
     /** Set while the pane moves the table selection, so a refresh is never read as a switch. */
@@ -203,6 +231,8 @@ public final class ModelProvidersPane extends JPanel {
         final JLabel badge = new JLabel(" ");
         /** What the store holds, in the widget's own spelling: what "changed" is measured against. */
         private String storedText = "";
+        /** Whether the store actually declares this field (an inherited flag shows blank). */
+        private boolean storedSet;
 
         FieldRow(NaruRegistrationFields.Field<?> f) {
             field = f;
@@ -212,6 +242,7 @@ public final class ModelProvidersPane extends JPanel {
             widget = newWidget(f);
             UiFonts.apply(widget, UiFonts.BODY, Font.PLAIN);
             widget.setName(FIELD_NAME + f.key());
+            candidates(defaultCandidates(f));
             String tip = f.key() + ": " + wordsFor(f) + ".";
             if (!f.aliases().isEmpty()) {
                 tip += " Reads " + String.join(", ", f.aliases()) + ", stored as " + f.key() + ".";
@@ -234,9 +265,10 @@ public final class ModelProvidersPane extends JPanel {
         }
 
         void load(NaruModelRegistration masked, NaruRegistrationOrigin origin) {
-            storedText = masked == null ? "" : displayOf(field, masked);
+            storedSet = masked != null && field.get(masked) != null;
+            storedText = storedSet ? displayOf(field, masked) : "";
             setWidgetText(widget, storedText);
-            badge.setText(ownerOf(field.key(), origin, storedText));
+            badge.setText(ownerOf(field.key(), origin, storedSet ? storedText : ""));
         }
 
         boolean isDirty() {
@@ -248,7 +280,7 @@ public final class ModelProvidersPane extends JPanel {
             if (isDirty()) {
                 badge.setText("-> " + currentScope().word());
             } else {
-                badge.setText(ownerOf(field.key(), currentOrigin(), storedText));
+                badge.setText(ownerOf(field.key(), currentOrigin(), storedSet ? storedText : ""));
             }
         }
 
@@ -263,6 +295,7 @@ public final class ModelProvidersPane extends JPanel {
             }
             String v = text();
             if (v.isEmpty()) {
+                // blank is not a value: it removes the key, so the provider's default applies
                 edits.put(field.key(), null);
                 return null;
             }
@@ -283,12 +316,24 @@ public final class ModelProvidersPane extends JPanel {
         void candidates(List<String> values) {
             if (widget instanceof JComboBox<?> box) {
                 setCandidates((JComboBox<String>) box, values);
+            } else if (widget instanceof MultiValueField multi) {
+                multi.setCandidates(values);
             }
         }
 
         private JComponent newWidget(NaruRegistrationFields.Field<?> f) {
+            if (f == NaruRegistrationFields.MODELS) {
+                return new MultiValueField(f.key(),
+                        "Type model ids separated by commas, or pick from what the endpoint reports",
+                        this::edited);
+            }
             if (f == NaruRegistrationFields.PROVIDER || f == NaruRegistrationFields.PROTOCOL
+                    || f == NaruRegistrationFields.MODEL
+                    || f == NaruRegistrationFields.CONTEXT_LENGTH
                     || f.kind() == NaruRegistrationFields.Kind.BOOL) {
+                // editable on purpose: a closed list helps, and never forbids a value the
+                // vocabulary cannot know (a provider the session has not loaded, an exact
+                // context length, a model id an endpoint does not enumerate)
                 JComboBox<String> box = new JComboBox<>();
                 box.setEditable(true);
                 JTextField editor = (JTextField) box.getEditor().getEditorComponent();
@@ -303,6 +348,9 @@ public final class ModelProvidersPane extends JPanel {
         }
 
         private void bindChanges(JComponent w) {
+            if (w instanceof MultiValueField multi) {
+                return; // the field reports its own edits through the callback it was built with
+            }
             JTextField editor = w instanceof JComboBox<?> box
                     ? (JTextField) box.getEditor().getEditorComponent()
                     : (JTextField) w;
@@ -322,8 +370,9 @@ public final class ModelProvidersPane extends JPanel {
             }
             if (field == NaruRegistrationFields.PROVIDER) {
                 // which wires a provider speaks is not something this form can guess, and choosing
-                // the provider is exactly what makes the protocol list worth opening
-                protocolRow.candidates(sorted(gateway.protocols(text())));
+                // the provider is exactly what makes the protocol and model lists worth opening
+                protocolRow.candidates(protocolsFor(text()));
+                refreshModelCandidates(text());
             }
             refreshStates();
         }
@@ -398,11 +447,15 @@ public final class ModelProvidersPane extends JPanel {
         saveButton = GlyphButton.of("✓", "Write every changed field into the chosen scope");
         toggleButton = GlyphButton.of("⏻", "Enable or disable the selected registration");
         deleteButton = GlyphButton.of("×", "Delete the selected registration from the chosen scope");
-        reloadButton = GlyphButton.of("⟳", "Reload the registrations from disk");
+        reloadButton = GlyphButton.of("⟳", "Reload the registrations and refetch the model lists");
         saveButton.addActionListener(e -> saveForm());
         toggleButton.addActionListener(e -> toggleEnabled());
         deleteButton.addActionListener(e -> deleteRegistration());
-        reloadButton.addActionListener(e -> reload());
+        reloadButton.addActionListener(e -> {
+            // a listing first fetched while Ollama was down must be refetchable without a restart
+            modelCandidates.clear();
+            reload();
+        });
 
         JPanel scopes = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         scopes.add(projectChoice);
@@ -638,8 +691,9 @@ public final class ModelProvidersPane extends JPanel {
                 fr.load(masked, origin);
             }
             extrasModel.load(masked, origin);
-            protocolRow.candidates(sorted(gateway.protocols(
-                    row == null ? null : row.registration.endpointType())));
+            String providerType = row == null ? "" : providerRow.text();
+            protocolRow.candidates(protocolsFor(providerType));
+            refreshModelCandidates(providerType);
             updateDetail(row);
             if (row != null) {
                 // the hide field starts one provider away from what the reader is looking at: hiding
@@ -847,6 +901,9 @@ public final class ModelProvidersPane extends JPanel {
             b.setEnabled(available);
         }
         providerRow.candidates(sorted(gateway.providerTypes()));
+        // a reload (and the refresh button, which clears the cache first) refills the model
+        // pickers even when the selected row itself stayed bound
+        refreshModelCandidates(providerRow.text());
         NPath dir = projectDirectory == null ? null : projectDirectory.get();
         if (!available) {
             copy.setText("Open a session in this project to read or edit its registered endpoints.");
@@ -919,19 +976,28 @@ public final class ModelProvidersPane extends JPanel {
     private static String wordsFor(NaruRegistrationFields.Field<?> f) {
         switch (f.kind()) {
             case BOOL:
-                return "true or false";
+                return "true or false, or blank to inherit";
             case INT:
-                return "a whole number";
+                return f == NaruRegistrationFields.CONTEXT_LENGTH
+                        ? "a whole number of tokens (pick a common size or type any)"
+                        : "a whole number";
             case FLOAT:
                 return "a number";
             case TEXT_LIST:
-                return "a comma-separated list";
+                return "a comma-separated list (pick the endpoint's models or type your own)";
             case RAW:
                 return "an open,close pair or a {openTag, closeTag} object, stored as written";
             default:
-                return f == NaruRegistrationFields.PROVIDER
-                        ? "a provider type this build offers"
-                        : "text";
+                if (f == NaruRegistrationFields.PROVIDER) {
+                    return "a provider type this build offers";
+                }
+                if (f == NaruRegistrationFields.MODEL) {
+                    return "a model id (pick one the endpoint reports or type your own)";
+                }
+                if (f == NaruRegistrationFields.PROTOCOL) {
+                    return "a wire protocol (pick a common one or type your own)";
+                }
+                return "text";
         }
     }
 
@@ -961,6 +1027,10 @@ public final class ModelProvidersPane extends JPanel {
      */
     private static NElement parseAs(NaruRegistrationFields.Field<?> f, String v) {
         switch (f.kind()) {
+            case BOOL:
+                // a flag typed as "yes" would be stored as a string and read back as unset
+                return NLiteral.of(v.trim().toLowerCase(Locale.ROOT)).asBoolean()
+                        .map(NElement::of).orNull();
             case INT:
                 return NLiteral.of(v).asLong().isPresent() ? NaruTaskConfig.parseValue(v) : null;
             case FLOAT:
@@ -976,6 +1046,68 @@ public final class ModelProvidersPane extends JPanel {
             default:
                 return NaruTaskConfig.parseValue(v);
         }
+    }
+
+    /**
+     * The protocol field's rows: the common wires first (useful for a generic endpoint, which has
+     * no provider type to ask), then whatever the selected type says it speaks. Editable still, so
+     * a wire this build does not know can be typed and left to the engine's validator.
+     */
+    private List<String> protocolsFor(String providerType) {
+        LinkedHashSet<String> values = new LinkedHashSet<>(COMMON_PROTOCOLS);
+        if (providerType != null && !providerType.isBlank()) {
+            values.addAll(gateway.protocols(providerType));
+        }
+        return sorted(values);
+    }
+
+    /** Fill the model pickers from one provider type, fetching at most once per instance/type. */
+    private void refreshModelCandidates(String providerType) {
+        List<String> models = modelsFor(providerType);
+        FieldRow modelRow = rowsByKey.get(NaruRegistrationFields.MODEL.key());
+        if (modelRow != null) {
+            modelRow.candidates(models);
+        }
+        FieldRow modelsRow = rowsByKey.get(NaruRegistrationFields.MODELS.key());
+        if (modelsRow != null) {
+            modelsRow.candidates(models);
+        }
+    }
+
+    /**
+     * The endpoint's own listing. Cached because the form repaints on every keystroke and a
+     * provider listing can be a network round trip; the refresh button clears the cache.
+     */
+    private List<String> modelsFor(String providerType) {
+        if (!gateway.isAvailable() || providerType == null || providerType.isBlank()) {
+            return List.of();
+        }
+        String key = (editingId == null ? "" : editingId) + "|"
+                + providerType.trim().toLowerCase(Locale.ROOT);
+        List<String> cached = modelCandidates.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        List<String> fetched;
+        try {
+            fetched = gateway.models(editingId, providerType.trim());
+        } catch (RuntimeException e) {
+            fetched = List.of();
+        }
+        List<String> sorted = sorted(fetched == null ? List.of() : fetched);
+        modelCandidates.put(key, sorted);
+        return sorted;
+    }
+
+    /** Candidate values a field has without asking a session: flags and common context sizes. */
+    private static List<String> defaultCandidates(NaruRegistrationFields.Field<?> f) {
+        if (f.kind() == NaruRegistrationFields.Kind.BOOL) {
+            return FLAG_VALUES;
+        }
+        if (f == NaruRegistrationFields.CONTEXT_LENGTH) {
+            return COMMON_CONTEXT_LENGTHS;
+        }
+        return List.of();
     }
 
     private static String ownerOf(String key, NaruRegistrationOrigin origin, String storedText) {
@@ -999,12 +1131,21 @@ public final class ModelProvidersPane extends JPanel {
             Object item = box.getEditor() == null ? box.getSelectedItem() : box.getEditor().getItem();
             return item == null ? "" : String.valueOf(item).trim();
         }
+        if (w instanceof MultiValueField multi) {
+            return multi.getText();
+        }
         return ((JTextField) w).getText().trim();
     }
 
     private static void setWidgetText(JComponent w, String text) {
         if (w instanceof JComboBox<?> box) {
-            box.getEditor().setItem(text);
+            if (box.getEditor() == null) {
+                box.setSelectedItem(text);
+            } else {
+                box.getEditor().setItem(text);
+            }
+        } else if (w instanceof MultiValueField multi) {
+            multi.setText(text);
         } else {
             ((JTextField) w).setText(text);
         }

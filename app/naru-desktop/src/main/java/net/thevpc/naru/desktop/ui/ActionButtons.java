@@ -24,6 +24,11 @@ public final class ActionButtons {
     public static void glyphSized(AbstractButton... buttons) {
         for (AbstractButton b : buttons) {
             b.setMargin(new java.awt.Insets(0, 0, 0, 0));
+            // the interface rounds buttons with a 16px pill radius, which is wider than these
+            // squares are tall: FlatLaf clamps it to half the height and paints the hover as a
+            // disc, so the pointer turns a glyph into what reads as a spinner. The radius here
+            // belongs to the button's own box.
+            b.putClientProperty("FlatLaf.style", "arc: 6");
             b.addPropertyChangeListener("font", e -> fit((AbstractButton) e.getSource()));
             fit(b);
         }

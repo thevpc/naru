@@ -10,6 +10,8 @@ import net.thevpc.naru.desktop.host.InteractionHost;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
+import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
+import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JEditorPane;
+import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
@@ -226,6 +229,64 @@ class PlanPaneTest {
         onEdt(() -> goal.setText("migrate the build"));
         submit(goal);
         assertEquals(List.of("create migrate the build"), writes);
+    }
+
+    @Test
+    void theNewPlanEditorTakesTheWholeColumnWidth() throws Exception {
+        // the editor row used to clamp to its own preferred width, so on a rail wider than that it
+        // drew as a narrow field glued to one side instead of the full-width form the reader aimed
+        // at; only a realised frame lays the column out, so this test opens one
+        java.util.concurrent.atomic.AtomicReference<JFrame> frameBox = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<JTextField> goalBox = new java.util.concurrent.atomic.AtomicReference<>();
+        // the board the reader clicks + on is most often the empty one, whose placeholder is the
+        // only centred line in the column; it used to drag the editor's axis to the right
+        onEdt(() -> {
+            board = new ArrayList<>();
+            pane.sessionModelChanged();
+        });
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline
+                && !Boolean.TRUE.equals(onEdtReturn(
+                        () -> findLabelStartingWith(pane, "No plan yet") != null))) {
+            Thread.sleep(60);
+        }
+        onEdt(() -> {
+            JFrame frame = new JFrame("plan-pane-width");
+            frame.setUndecorated(true);
+            frame.getContentPane().add(pane);
+            frame.setSize(700, 520);
+            frame.setVisible(true);
+            frameBox.set(frame);
+            newPlanButton().doClick();
+            frame.validate();
+            goalBox.set(findField(pane));
+        });
+        try {
+            JTextField goal = goalBox.get();
+            assertNotNull(goal, "the new-plan control opens a field for the goal");
+            Container row = goal.getParent();
+            Container column = row.getParent();
+            assertTrue(column.getWidth() > 436,
+                    "the fixture rail is wider than the editor's own preferred width: " + column.getSize());
+            assertTrue(row.getWidth() >= column.getWidth() - 2,
+                    "the create editor spans the board: row=" + row.getWidth()
+                            + " column=" + column.getWidth());
+            assertEquals(0, row.getX(),
+                    "the create editor starts at the column's left edge, not its middle");
+        } finally {
+            onEdt(() -> frameBox.get().dispose());
+        }
+    }
+
+    @Test
+    void thePlanDescriptionIsEditedInAMarkdownSyntaxArea() throws Exception {
+        click(onEdtReturn(() -> findRendered(pane, "fix the")));
+        JTextArea area = onEdtReturn(() -> findArea(pane));
+        assertTrue(area instanceof RSyntaxTextArea,
+                "the prose editor is the desktop's own text widget, so undo and wrapping match");
+        assertEquals(SyntaxConstants.SYNTAX_STYLE_MARKDOWN,
+                ((RSyntaxTextArea) area).getSyntaxEditingStyle(),
+                "the description field colours Markdown as the reader writes it");
     }
 
     @Test

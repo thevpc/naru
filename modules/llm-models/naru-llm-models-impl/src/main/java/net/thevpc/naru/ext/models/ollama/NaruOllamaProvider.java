@@ -270,7 +270,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
         for (String line : parameters.split("\n")) {
             line = line.trim();
             if (line.startsWith("num_ctx")) {
-                line.replace('=', ' ').trim();
+                line = line.replace('=', ' ').trim();
                 String[] parts = line.split("\\s+");
                 if (parts.length >= 2) {
                     try {

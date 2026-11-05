@@ -55,4 +55,14 @@ interface ModelRegistrationGateway {
 
     /** The wire protocols one provider type speaks. */
     Set<String> protocols(String providerType);
+
+    /**
+     * The model ids an endpoint reports for its picker, or empty when it cannot enumerate any
+     * (a generic endpoint, an unreachable server, a provider with no key yet).
+     *
+     * @param registrationId the instance being edited, so a registration with its own url/key
+     *                       lists its own models; null while a new id is being typed
+     * @param providerType   the provider type whose listing supplies the candidates
+     */
+    List<String> models(String registrationId, String providerType);
 }

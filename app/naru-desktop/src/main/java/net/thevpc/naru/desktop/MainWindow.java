@@ -245,8 +245,10 @@ public final class MainWindow extends JFrame {
     private NaruSessionModel.Listener sessionListSync;
     private boolean sessionFilterBound;
     private long sessionSwitchGeneration;
-    /** The transcript/composer divider, saved across sessions so the user keeps the room they made. */
-    private int composerDivider;
+    /** How tall the composer pane should stay when the frame is resized; -1 until first placed. */
+    private int composerPaneHeight = -1;
+    /** True while {@link #placeComposer} moves the divider, so that move is not read as a user drag. */
+    private boolean placingComposer;
     private JSplitPane composerSplit;
     private JPanel loadingPanel;
     private JLabel loadingLabel;
@@ -1976,39 +1978,27 @@ public final class MainWindow extends JFrame {
         whole.setResizeWeight(0.78);
         // The transcript and the composer share the middle column through a draggable divider, so
         // the user can give the composer room for a long prompt (or hide it) instead of living
-        // with whatever fixed height the layout picked. The divider is remembered for the next
-        // session/relaunch; resizeWeight keeps the transcript growing when the window does.
+        // with whatever fixed height the layout picked. What is remembered is the composer's
+        // height, not the divider's absolute position: an absolute position from a taller window
+        // used to leave the composer with no height at all on the next session, which looked like
+        // the field had disappeared until the next resize.
         JSplitPane conversationAndComposer = SplitPanes.vertical(whole, input);
         conversationAndComposer.setResizeWeight(1.0);
-        // Zero is not a divider location, it is the absence of one. Applying it collapsed the
-        // whole conversation column to nothing on the first session of a run, which read as
-        // "the window only shows the input area". A remembered value is applied only when there
-        // is one; otherwise the split is placed once it has a height, so the first activation
-        // shows the conversation above a composer with room to write.
-        if (composerDivider > 0) {
-            conversationAndComposer.setDividerLocation(composerDivider);
-        } else {
-            conversationAndComposer.addComponentListener(new java.awt.event.ComponentAdapter() {
-                private boolean placed;
-
-                @Override
-                public void componentResized(java.awt.event.ComponentEvent e) {
-                    if (placed || composerDivider > 0) {
-                        return;
-                    }
-                    int total = conversationAndComposer.getHeight();
-                    int composerHeight = Math.max(input.getPreferredSize().height, total / 3);
-                    if (total > 0 && composerHeight > 0) {
-                        placed = true;
-                        conversationAndComposer.setDividerLocation(Math.max(0, total - composerHeight));
-                    }
-                }
-            });
-        }
+        conversationAndComposer.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                placeComposer(conversationAndComposer);
+            }
+        });
         conversationAndComposer.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, e -> {
             Object value = e.getNewValue();
-            if (value instanceof Integer location && location > 0) composerDivider = location;
+            int total = conversationAndComposer.getHeight();
+            if (!placingComposer && value instanceof Integer location && location >= 0 && total > location) {
+                composerPaneHeight = Math.max(0,
+                        total - location - conversationAndComposer.getDividerSize());
+            }
         });
+        placeComposer(conversationAndComposer);
         composerSplit = conversationAndComposer;
         JPanel body = new JPanel(new BorderLayout());
         body.add(conversationAndComposer, BorderLayout.CENTER);
@@ -2021,6 +2011,35 @@ public final class MainWindow extends JFrame {
         tasks.sessionModelChanged();
         sessionList.repaint();
         if (selected.model.isBooting()) showLoading("Opening " + selected.toString() + "…"); else hideLoading();
+    }
+
+    /**
+     * Put the transcript/composer divider where the remembered composer height asks for it. A
+     * window that shrank clamps the pane rather than forgetting its height, so growing the window
+     * back restores the room the user chose instead of leaving the composer at whatever survived.
+     */
+    private void placeComposer(JSplitPane split) {
+        int total = split.getHeight();
+        if (total <= 0) {
+            return;
+        }
+        int available = total - split.getDividerSize();
+        if (available <= 0) {
+            return;
+        }
+        int wanted = composerPaneHeight >= 0
+                ? composerPaneHeight
+                : Math.max(input.getPreferredSize().height, total / 3);
+        if (composerPaneHeight < 0) {
+            composerPaneHeight = wanted;
+        }
+        int shown = Math.min(wanted, available);
+        placingComposer = true;
+        try {
+            split.setDividerLocation(available - shown);
+        } finally {
+            placingComposer = false;
+        }
     }
 
     private void showSettings() {

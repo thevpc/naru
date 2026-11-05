@@ -88,6 +88,8 @@ public final class TextAreas {
         if (root instanceof RSyntaxTextArea area) {
             Color bg=UIManager.getColor("TextArea.background"), fg=UIManager.getColor("TextArea.foreground");
             if(bg!=null) area.setBackground(bg); if(fg!=null) area.setForeground(fg);
+            // a Markdown editor's hues came from the previous background, not from the new one
+            if (MarkdownSyntax.isInstalled(area)) MarkdownSyntax.applyPalette(area);
         }
         for(java.awt.Component child:root.getComponents()) if(child instanceof java.awt.Container c) refreshThemeColors(c);
     }

@@ -8,6 +8,8 @@ import net.thevpc.naru.api.plan.NaruPlanSnapshot;
 import net.thevpc.naru.api.plan.NaruPlanState;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.render.MarkdownHtml;
+import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
+import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 
 import javax.swing.*;
 import javax.swing.text.JTextComponent;
@@ -52,6 +54,11 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
     /** A declaration key: the short handle an item is referred to by in the plan's own text. */
     private static final java.util.regex.Pattern KEY =
             java.util.regex.Pattern.compile("[A-Za-z0-9._-]+");
+
+    /** A plan's prose is a document: the editor is tall enough to hold a page of Markdown. */
+    private static final int PROSE_HEIGHT = 240;
+    /** An item is one sentence most of the time: the editor gives its rail row back quickly. */
+    private static final int ITEM_HEIGHT = 110;
 
     private final NaruSessionModel model;
     /** The service as the session exposes it; a test installs its own board. */
@@ -387,7 +394,7 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
      * goal they meant to replace.
      */
     private JComponent planEditor(NaruPlanSnapshot p) {
-        return form(p.goal(), p.description(), false, "what is this plan for?",
+        return form(p.goal(), p.description(), false, "what is this plan for?", PROSE_HEIGHT,
                 (head, body) -> !flatten(head).isEmpty(),
                 (head, body) -> write(s -> {
                     String goal = flatten(head);
@@ -522,7 +529,7 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         if (target == null) {
             return;
         }
-        JPanel row = form("", "", true, "key (optional)",
+        JPanel row = form("", "", true, "key (optional)", ITEM_HEIGHT,
                 (head, body) -> isNotBlank(body) && (head.isBlank() || KEY.matcher(head).matches()),
                 (head, body) -> write(s -> {
                     NaruPlanSnapshot after = s.addItem(planId, body);
@@ -661,7 +668,7 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
             east.add(action("↓", "Move this item later",
                     () -> write(s -> s.moveItem(planId, i.id(), index + 1), null)));
         }
-        Supplier<JComponent> build = () -> form(i.key(), i.description(), true, "key",
+        Supplier<JComponent> build = () -> form(i.key(), i.description(), true, "key", ITEM_HEIGHT,
                 (head, body) -> isNotBlank(body) && (head.isBlank() || KEY.matcher(head).matches()),
                 (head, body) -> write(s -> {
                     String key = flatten(head);
@@ -689,7 +696,8 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
      * how a checklist loses its bullets.
      */
     private JPanel form(String head, String body, boolean monospaceHead, String headPlaceholder,
-                        BiPredicate<String, String> accept, BiConsumer<String, String> commit) {
+                        int bodyHeight, BiPredicate<String, String> accept,
+                        BiConsumer<String, String> commit) {
         JPanel row = new JPanel();
         row.setOpaque(false);
         row.setLayout(new BoxLayout(row, BoxLayout.Y_AXIS));
@@ -699,10 +707,14 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         JTextField headField = new JTextField(head);
         UiFonts.apply(headField, UiFonts.BODY, monospaceHead ? Font.PLAIN : Font.BOLD);
         headField.putClientProperty("JTextField.placeholderText", headPlaceholder);
-        JTextArea area = new JTextArea(nullToEmpty(body), 5, 30);
+        // an RSyntaxTextArea is a JTextArea, so every call site below keeps its meaning; the swap
+        // buys Markdown colouring and undo for a description that is prose, not a sentence
+        RSyntaxTextArea area = TextAreas.plain(8, 30);
+        area.setSyntaxEditingStyle(SyntaxConstants.SYNTAX_STYLE_MARKDOWN);
         UiFonts.apply(area, UiFonts.BODY, Font.PLAIN);
-        area.setLineWrap(true);
-        area.setWrapStyleWord(true);
+        MarkdownSyntax.install(area);
+        area.setText(nullToEmpty(body));
+        area.setCaretPosition(0);
         JScrollPane bodyScroll = new JScrollPane(area,
                 ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
                 ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
@@ -747,13 +759,16 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         actions.add(buttons, BorderLayout.EAST);
 
         stretch(headField, headField.getPreferredSize().height);
-        stretch(bodyScroll, 96);
+        stretch(bodyScroll, bodyHeight);
         stretch(actions, actions.getPreferredSize().height);
         row.add(headField);
         row.add(Box.createVerticalStrut(3));
         row.add(bodyScroll);
         row.add(Box.createVerticalStrut(2));
         row.add(actions);
+        // a vertical BoxLayout already lets its panel grow to the widest sibling, but stating it here
+        // keeps that true if this row's layout or children ever change
+        stretch(row, row.getPreferredSize().height);
         return row;
     }
 
@@ -822,7 +837,7 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         if (openEditor != null) {
             return;
         }
-        JPanel row = form("", "", false, "what is this plan for?",
+        JPanel row = form("", "", false, "what is this plan for?", PROSE_HEIGHT,
                 (head, body) -> !flatten(head).isEmpty(),
                 (head, body) -> write(s -> s.createPlan(flatten(head), body), created -> {
                     // open the plan that was just made, so creating one never looks like nothing
@@ -1117,7 +1132,9 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         JLabel label = new JLabel(message);
         UiFonts.apply(label, UiFonts.BODY, Font.PLAIN);
         label.setForeground(UiPalette.muted());
-        label.setAlignmentX(Component.CENTER_ALIGNMENT);
+        // every other child of the column is left-aligned, and BoxLayout glues a mixed row of
+        // alignments onto one axis: a centred placeholder would shove an open editor off to the right
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
         stack.add(label);
         stack.add(Box.createVerticalGlue());
         drawn = false;
