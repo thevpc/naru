@@ -279,6 +279,53 @@ class PlanPaneTest {
     }
 
     @Test
+    void theSelectedPlanWashPaintsAnOpaqueColour() throws Exception {
+        JLabel goal = onEdtReturn(() -> findLabel(pane, "ship the cockpit"));
+        assertNotNull(goal, "the open plan is drawn");
+        onEdt(() -> {
+            Container header = goal.getParent().getParent();
+            assertTrue(header.isOpaque(), "the selected row paints its own wash");
+            assertEquals(255, header.getBackground().getAlpha(),
+                    "a translucent wash over an opaque row darkens whenever a child repaints");
+        });
+    }
+
+    @Test
+    void openingThePlanEditorTakesTheHeaderActionsWidthBack() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<JFrame> frameBox = new java.util.concurrent.atomic.AtomicReference<>();
+        JLabel goal = onEdtReturn(() -> findLabel(pane, "ship the cockpit"));
+        assertNotNull(goal, "the plan row is on the board");
+        onEdt(() -> {
+            JFrame frame = new JFrame("plan-editor-width");
+            frame.setUndecorated(true);
+            frame.getContentPane().add(pane);
+            frame.setSize(700, 520);
+            frame.setVisible(true);
+            frameBox.set(frame);
+        });
+        try {
+            click(goal);
+            onEdt(() -> frameBox.get().validate());
+            JTextField field = onEdtReturn(() -> findField(pane));
+            assertNotNull(field, "the plan editor opened");
+            onEdt(() -> {
+                Container row = field.getParent();
+                Container header = row.getParent();
+                assertTrue(header.getLayout() instanceof java.awt.BorderLayout,
+                        "the header lays its controls out in columns");
+                assertNull(((java.awt.BorderLayout) header.getLayout())
+                                .getLayoutComponent(java.awt.BorderLayout.EAST),
+                        "the action column is not left beside an open editor");
+                assertTrue(row.getWidth() >= header.getWidth() - 60,
+                        "the description spans the row the buttons used to reserve: row="
+                                + row.getWidth() + " header=" + header.getWidth());
+            });
+        } finally {
+            onEdt(() -> frameBox.get().dispose());
+        }
+    }
+
+    @Test
     void thePlanDescriptionIsEditedInAMarkdownSyntaxArea() throws Exception {
         click(onEdtReturn(() -> findRendered(pane, "fix the")));
         JTextArea area = onEdtReturn(() -> findArea(pane));

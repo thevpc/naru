@@ -314,7 +314,12 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
         // the only thing that says which body below belongs to which row
         if (selected) {
             header.setOpaque(true);
-            header.setBackground(UiPalette.alpha(UiPalette.accent(), UiPalette.dark() ? 48 : 22));
+            // An opaque component has to paint an opaque colour. A translucent background is
+            // composited over whatever pixels are already in the window, so repainting a child —
+            // hovering one of the row's buttons — darkens that child's slice of the wash while the
+            // rest of the row keeps the old one. Resolve the wash against the surface beneath it.
+            header.setBackground(UiPalette.mix(header.getBackground(), UiPalette.accent(),
+                    (UiPalette.dark() ? 48 : 22) / 255f));
             header.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createMatteBorder(0, 2, 0, 0, UiPalette.accent()),
                     BorderFactory.createEmptyBorder(2, 2, 2, 2)));
@@ -823,6 +828,17 @@ public final class PlanPane extends JPanel implements NaruSessionModel.Listener 
             return;
         }
         host.remove(center);
+        // The row's controls use the EAST column, and the editor used to take only CENTER: a page
+        // of prose was held to the width left over by a column of glyphs whose own rows ended above
+        // it, and the rest of that column was empty space. The editor owns the row while it is
+        // open — save and cancel are part of the form — so the action column goes away and the
+        // description gets the whole width back.
+        if (host.getLayout() instanceof BorderLayout layout) {
+            Component actions = layout.getLayoutComponent(BorderLayout.EAST);
+            if (actions != null) {
+                host.remove(actions);
+            }
+        }
         host.add(editor, BorderLayout.CENTER);
         host.revalidate();
         host.repaint();
