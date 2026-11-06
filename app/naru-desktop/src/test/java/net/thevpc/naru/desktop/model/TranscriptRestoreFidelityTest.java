@@ -10,6 +10,7 @@ import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
 import net.thevpc.naru.desktop.util.EDT;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -73,7 +74,7 @@ class TranscriptRestoreFidelityTest {
     /** The conversation the report was made from: a question, a think call, and an answer. */
     private static List<NaruMessage> oneTurn() {
         NaruToolCall think = new NaruToolCall("call-1", "think",
-                Map.of("thought", "##{p9:fix the grammar}##"));
+                Map.of("thought", NElement.of("##{p9:fix the grammar}##")));
         NaruMessage assistantTurn = NaruMessage.assistantWithToolCalls(
                         "Voici une version corrigée.", List.of(think))
                 .setThinkingSegments(List.of(new NaruThinkingSegment(
@@ -158,7 +159,7 @@ class TranscriptRestoreFidelityTest {
 
     @Test
     void aToolCallWatchedLiveIsNotDrawnTwiceByItsCheckpoint() throws Exception {
-        NaruToolCall read = new NaruToolCall("call-9", "file_read", Map.of("path", "a.txt"));
+        NaruToolCall read = new NaruToolCall("call-9", "file_read", Map.of("path", NElement.of("a.txt")));
         onEdt(() -> {
             TranscriptModel m = new TranscriptModel();
             m.apply(List.of(new TranscriptEvent.ToolCall(

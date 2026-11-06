@@ -6,6 +6,7 @@ import net.thevpc.naru.api.context.NaruContextCompactor;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.*;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.*;
@@ -44,7 +45,7 @@ public interface NaruRegistry {
      */
     List<NaruConfigKey> configKeys();
 
-    String dispatch(String name, Map<String, Object> arguments, NaruTask context);
+    String dispatch(String name, Map<String, NElement> arguments, NaruTask context);
 
     String dispatch(NaruToolCall toolCall, NaruTask context);
 

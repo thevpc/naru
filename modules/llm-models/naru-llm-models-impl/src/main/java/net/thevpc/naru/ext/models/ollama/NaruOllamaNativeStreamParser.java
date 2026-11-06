@@ -151,34 +151,18 @@ public class NaruOllamaNativeStreamParser implements NaruStreamResponseParser {
         if (NBlankable.isBlank(name)) {
             return;
         }
-        Map<String, Object> arguments = new LinkedHashMap<>();
+        Map<String, NElement> arguments = new LinkedHashMap<>();
         NElement args = fn.get("arguments").orNull();
         if (args != null && args.isAnyObject()) {
             for (net.thevpc.nuts.elem.NPairElement entry : args.asObject().get().namedPairs()) {
                 String key = entry.key().asStringValue().orNull();
                 if (!NBlankable.isBlank(key)) {
-                    arguments.put(key, plainValue(entry.value()));
+                    arguments.put(key, entry.value());
                 }
             }
         }
         toolCalls.add(new NaruToolCall(
                 id != null ? id : UUID.randomUUID().toString(), name, arguments));
-    }
-
-    /**
-     * A primitive element's {@code toString} is TSON, not the plain value, which
-     * would corrupt a path handed to a tool.
-     */
-    private static Object plainValue(NElement value) {
-        if (value == null || value.isNull()) {
-            return null;
-        }
-        if (value.isPrimitive()) {
-            return value.asPrimitive().orNull() == null
-                    ? value.asStringValue().orNull()
-                    : value.asPrimitive().get().value();
-        }
-        return NElement.simpleOf(value);
     }
 
     private void acceptUsage(NObjectElement root) {

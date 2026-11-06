@@ -13,6 +13,7 @@ import net.thevpc.naru.ext.models.ollama.NaruOllamaNativeResponseParser;
 import net.thevpc.naru.ext.models.ollama.NaruOllamaNativeStreamParser;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -201,8 +202,8 @@ public class NaruOllamaNativeStreamParserTest {
         Assertions.assertTrue(r.hasToolCalls());
         NaruToolCall call = r.getMessage().getToolCalls().get(0);
         Assertions.assertEquals("read", call.getName());
-        Assertions.assertEquals("src/main.java", call.getArguments().get("path"),
-                "an argument value must be the plain string, not its TSON rendering");
+        Assertions.assertEquals(NElement.of("src/main.java"), call.getArguments().get("path"),
+                "an argument value must be the string itself, not its TSON rendering");
     }
 
     @Test
@@ -217,8 +218,8 @@ public class NaruOllamaNativeStreamParserTest {
                 "a bare object naming a tool must surface as a call, not as the answer");
         NaruToolCall call = r.getMessage().getToolCalls().get(0);
         Assertions.assertEquals("run_shell", call.getName());
-        Assertions.assertEquals("echo hi", call.getArguments().get("command"));
-        Assertions.assertEquals(60, ((Number) call.getArguments().get("timeout_seconds")).intValue());
+        Assertions.assertEquals(NElement.of("echo hi"), call.getArguments().get("command"));
+        Assertions.assertEquals(60, call.getArguments().get("timeout_seconds").asNumberValue().get().intValue());
         Assertions.assertNull(r.getMessage().getContent(),
                 "the recovered object must not linger as answer text");
     }
@@ -232,7 +233,7 @@ public class NaruOllamaNativeStreamParserTest {
                 "{\"done\":true,\"done_reason\":\"stop\"}");
         Assertions.assertTrue(r.hasToolCalls());
         Assertions.assertEquals("run_shell", r.getMessage().getToolCalls().get(0).getName());
-        Assertions.assertEquals("echo hi", r.getMessage().getToolCalls().get(0).getArguments().get("command"));
+        Assertions.assertEquals(NElement.of("echo hi"), r.getMessage().getToolCalls().get(0).getArguments().get("command"));
     }
 
     @Test

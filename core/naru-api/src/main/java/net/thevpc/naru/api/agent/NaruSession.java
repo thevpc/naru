@@ -115,7 +115,7 @@ public interface NaruSession {
      * {@code sessiondir-change}; task-scoped events go through
      * {@link NaruTask#fireEvent(String, java.util.Map, net.thevpc.naru.api.scheduler.NaruEventTarget, net.thevpc.naru.api.scheduler.NaruRetentionPolicy)}.
      */
-    NaruSession fireEvent(String eventName, java.util.Map<String, Object> payload);
+    NaruSession fireEvent(String eventName, java.util.Map<String, NElement> payload);
 
     /**
      * Terminates the session, stopping all tasks and releasing resources.
@@ -459,7 +459,7 @@ public interface NaruSession {
      * @param key the environment variable key, must not be null
      * @return an optional containing the value if present, empty otherwise
      */
-    NOptional<Object> getSessionEnv(String key);
+    NOptional<NElement> getSessionEnv(String key);
 
     /**
      * Session env value, optionally walking the wider chain when the session env
@@ -476,8 +476,8 @@ public interface NaruSession {
      * {@code inherited=true} delegates here after exhausting the task env, so a tool
      * that reads a setting once through the task can be overridden at any level.
      */
-    default NOptional<Object> getSessionEnv(String key, boolean inherited) {
-        NOptional<Object> sessionValue = getSessionEnv(key);
+    default NOptional<NElement> getSessionEnv(String key, boolean inherited) {
+        NOptional<NElement> sessionValue = getSessionEnv(key);
         if (sessionValue.isPresent()) {
             return sessionValue;
         }
@@ -518,7 +518,7 @@ public interface NaruSession {
      * @param value the value to set
      * @return this session for chaining
      */
-    NaruSession setSessionEnv(String key, Object value);
+    NaruSession setSessionEnv(String key, NElement value);
 
     /**
      * Returns all tasks in this session.
@@ -880,5 +880,5 @@ public interface NaruSession {
      *
      * @return a map of session environment variables, never null
      */
-    Map<String, Object> sessionEnv();
+    Map<String, NElement> sessionEnv();
 }

@@ -104,7 +104,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             // host see it while the turn is still running.
             task.addHistory(NaruMessage.engine(NMsg.ofP(err).asError()));
             task.defaultAdvance(this);
-            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
             return;
         }
 
@@ -112,7 +112,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         if (assistantMsg == null) {
             task.addHistory(NaruMessage.engine(NMsg.ofC("Model returned empty response.")));
             task.defaultAdvance(this);
-            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
             return;
         }
         // Interrupted (Ctrl+C) while this call was running: the stream stopped at
@@ -136,7 +136,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                         "%s Interrupted.", NMsg.ofStyledPrimary8("⏹")).asError()));
                 task.setLastResult(assistantMsg);
             }
-            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
             task.defaultAdvance(this);
             return;
         }
@@ -151,7 +151,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                         NMsg.ofStyledPrimary8("⏹")).asWarning()));
                 reportSilentTurn(task, assistantMsg);
                 task.setLastResult(assistantMsg);
-                task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
+                task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
                 task.defaultAdvance(this);
                 return;
             }
@@ -171,13 +171,13 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             int rounds = task.getTaskEnv(TOOL_CALL_ROUNDS_KEY, false)
                     .map(x -> NLiteral.ofInt(x).orElse(0))
                     .orElse(0) + 1;
-            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, rounds);
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(rounds));
             if (rounds >= maxSteps) {
                 task.addHistory(NaruMessage.engine(NMsg.ofC(
                         "Reached max tool-call rounds (%s); ending agent loop.", maxSteps).asWarning()));
                 reportSilentTurn(task, assistantMsg);
                 task.setLastResult(assistantMsg);
-                task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
+                task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
                 task.defaultAdvance(this);
                 return;
             }
@@ -192,7 +192,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             return;
         }
         task.setLastResult(assistantMsg);
-        task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
+        task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
         task.defaultAdvance(this);
     }
 

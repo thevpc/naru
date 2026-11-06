@@ -1,6 +1,8 @@
 package net.thevpc.naru.desktop.util;
 
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
+import net.thevpc.naru.api.util.NaruUtils;
+import net.thevpc.nuts.elem.NElement;
 
 import java.util.Collection;
 import java.util.Map;
@@ -58,13 +60,13 @@ public final class ToolCardText {
     }
 
     /** One line, whatever the arguments are: {@code {path:"a.txt",limit:40}}. */
-    public static String arguments(Map<String, Object> args) {
+    public static String arguments(Map<String, NElement> args) {
         if (args == null || args.isEmpty()) {
             return "{}";
         }
         StringBuilder sb = new StringBuilder("{");
         boolean first = true;
-        for (Map.Entry<String, Object> e : args.entrySet()) {
+        for (Map.Entry<String, NElement> e : args.entrySet()) {
             if (!first) {
                 sb.append(',');
             }
@@ -75,6 +77,9 @@ public final class ToolCardText {
     }
 
     private static String value(Object v) {
+        // unwrap before the null test: a NULL element is not a Java null, and the
+        // quoted rendering below would otherwise print it as the string "null"
+        v = NaruUtils.plainValue(v);
         if (v == null) {
             return "null";
         }

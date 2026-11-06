@@ -31,7 +31,7 @@ public class NaruReturnStmt extends NaruStatement implements Cloneable {
 
     @Override
     public void exec(NaruTask task) {
-        Object ret = expression==null?null:task.evalExpression(expression);
+        NElement ret = expression==null?null:task.evalExpression(expression);
         task.frame().lastResult(NaruStmtResult.ofSuccess(NElement.of(ret), NMsg.ofC("%s",ret)));
         task.popFrame();
         // A return that unwinds past the last frame is the task's own return value, and

@@ -15,6 +15,7 @@ import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -67,7 +68,7 @@ public class NaruShellGuardTest {
         NaruTask task = s.newTask(NaruTaskSpec.of());
         s.accessPolicy().putRule(denyExecute("deny-rm", "rm **"));
 
-        NaruToolCallContext ctx = new NaruToolCallContextImpl(Map.of("command", "rm -rf /tmp/x"), task);
+        NaruToolCallContext ctx = new NaruToolCallContextImpl(Map.of("command", NElement.of("rm -rf /tmp/x")), task);
         String denied = new RunShellTool().execute(ctx);
         assertTrue(denied.startsWith("ERROR: permission denied"), denied);
         assertTrue(denied.contains("rm -rf /tmp/x"), denied);
@@ -93,7 +94,7 @@ public class NaruShellGuardTest {
         NaruSession s = session();
         NaruTask task = s.newTask(NaruTaskSpec.of());
 
-        NaruToolCallContext ctx = new NaruToolCallContextImpl(Map.of("command", "echo naru-guard-ok"), task);
+        NaruToolCallContext ctx = new NaruToolCallContextImpl(Map.of("command", NElement.of("echo naru-guard-ok")), task);
         String output = new RunShellTool().execute(ctx);
         assertFalse(output.startsWith("ERROR: permission denied"), output);
         assertTrue(output.contains("naru-guard-ok"), output);

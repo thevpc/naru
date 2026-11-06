@@ -11,6 +11,7 @@ import net.thevpc.naru.api.access.NaruPermissionStore;
 import net.thevpc.naru.api.access.NaruSubject;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
+import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.spawn.NaruSpawnContext;
@@ -128,10 +129,10 @@ public class NaruPermissionsExtension implements NaruSessionExtension, NaruSessi
         }
         // A session-level default effect is the fallback posture; the project file
         // still wins, because it is applied after this and is the committed policy.
-        Object configured = session.getSessionEnv("naru.perm.defaultEffect").orNull();
+        NElement configured = session.getSessionEnv("naru.perm.defaultEffect").orNull();
         if (configured != null) {
             session.accessPolicy().defaultEffect(
-                    NaruPermissionsUtil.parseEffect(String.valueOf(configured)));
+                    NaruPermissionsUtil.parseEffect(NaruTaskConfig.toText(configured)));
         }
         installBuiltins(session);
         store.loadProjectRules();
@@ -204,7 +205,7 @@ public class NaruPermissionsExtension implements NaruSessionExtension, NaruSessi
     public void sessionStopped(NaruSession session) {
     }
 
-    private void handleGrant(NaruSession s, Map<String, Object> payload) {
+    private void handleGrant(NaruSession s, Map<String, NElement> payload) {
         NaruPermissionsDirectiveProvider.Parsed p = NaruPermissionsDirectiveProvider.Parsed.of(payload);
         String id = p.one("id");
         if (id == null) {
@@ -220,14 +221,14 @@ public class NaruPermissionsExtension implements NaruSessionExtension, NaruSessi
         }
     }
 
-    private void handleRevoke(NaruSession s, Map<String, Object> payload) {
+    private void handleRevoke(NaruSession s, Map<String, NElement> payload) {
         String id = NaruPermissionsDirectiveProvider.Parsed.of(payload).one("id");
         if (id != null) {
             s.accessPolicy().removeRule(id);
         }
     }
 
-    private void handleDefault(NaruSession s, Map<String, Object> payload) {
+    private void handleDefault(NaruSession s, Map<String, NElement> payload) {
         String effect = NaruPermissionsDirectiveProvider.Parsed.of(payload).one("effect");
         if (effect != null) {
             s.accessPolicy().defaultEffect(NaruPermissionsUtil.parseEffect(effect));

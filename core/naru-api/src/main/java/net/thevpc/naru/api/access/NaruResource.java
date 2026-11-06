@@ -37,9 +37,9 @@ public final class NaruResource implements NToElement {
     private final NaruResourceType type;
     private final String locator;
     private final String scope;
-    private final Map<String, Object> attributes;
+    private final Map<String, NElement> attributes;
 
-    private NaruResource(NaruResourceType type, String locator, String scope, Map<String, Object> attributes) {
+    private NaruResource(NaruResourceType type, String locator, String scope, Map<String, NElement> attributes) {
         if (type == null) {
             throw new NIllegalArgumentException(NMsg.ofC("resource type must not be null"));
         }
@@ -71,9 +71,9 @@ public final class NaruResource implements NToElement {
     }
 
     public static NaruResource tool(String toolName, Set<String> toolTags) {
-        Map<String, Object> attrs = new LinkedHashMap<>();
+        Map<String, NElement> attrs = new LinkedHashMap<>();
         if (toolTags != null && !toolTags.isEmpty()) {
-            attrs.put("tags", toolTags);
+            attrs.put("tags", NElement.of(toolTags));
         }
         return new NaruResource(NaruResourceType.TOOL, toolName, null, attrs);
     }
@@ -88,9 +88,9 @@ public final class NaruResource implements NToElement {
 
     public static NaruResource model(String provider, String model) {
         String loc = provider == null ? model : provider + "/" + model;
-        Map<String, Object> attrs = new LinkedHashMap<>();
-        attrs.put("provider", provider);
-        attrs.put("model", model);
+        Map<String, NElement> attrs = new LinkedHashMap<>();
+        attrs.put("provider", NElement.of(provider));
+        attrs.put("model", NElement.of(model));
         return new NaruResource(NaruResourceType.MODEL, loc, null, attrs);
     }
 
@@ -112,16 +112,16 @@ public final class NaruResource implements NToElement {
         return NOptional.ofNullable(scope);
     }
 
-    public Map<String, Object> attributes() {
+    public Map<String, NElement> attributes() {
         return attributes;
     }
 
-    public NOptional<Object> attribute(String name) {
+    public NOptional<NElement> attribute(String name) {
         return NOptional.ofNullable(attributes.get(name));
     }
 
-    public NaruResource withAttribute(String name, Object value) {
-        Map<String, Object> a = new LinkedHashMap<>(attributes);
+    public NaruResource withAttribute(String name, NElement value) {
+        Map<String, NElement> a = new LinkedHashMap<>(attributes);
         if (value == null) {
             a.remove(name);
         } else {
@@ -146,9 +146,9 @@ public final class NaruResource implements NToElement {
         }
         if (!attributes.isEmpty()) {
             NObjectElementBuilder a = NObjectElementBuilder.of();
-            for (Map.Entry<String, Object> e : attributes.entrySet()) {
-                Object v = e.getValue();
-                a.set(e.getKey(), v == null ? null : NElement.ofString(String.valueOf(v)));
+            for (Map.Entry<String, NElement> e : attributes.entrySet()) {
+                NElement v = e.getValue();
+                a.set(e.getKey(), v == null ? null : v.asString().get());
             }
             o.set("attributes", a.build());
         }
@@ -166,7 +166,7 @@ public final class NaruResource implements NToElement {
         NaruResourceType type = NaruResourceType.of(o.getStringValue("type").orNull());
         String locator = o.getStringValue("locator").orNull();
         String scope = o.getStringValue("scope").orNull();
-        Map<String, Object> attrs = new LinkedHashMap<>();
+        Map<String, NElement> attrs = new LinkedHashMap<>();
         NElement ae = o.get("attributes").orNull();
         if (ae != null && ae.isAnyObject()) {
             for (NElement c : ae.asObject().get().children()) {
@@ -174,7 +174,7 @@ public final class NaruResource implements NToElement {
                     String k = c.asPair().get().key().asStringValue().orNull();
                     String v = c.asPair().get().value().asStringValue().orNull();
                     if (k != null) {
-                        attrs.put(k, v);
+                        attrs.put(k, NElement.of(v));
                     }
                 }
             }

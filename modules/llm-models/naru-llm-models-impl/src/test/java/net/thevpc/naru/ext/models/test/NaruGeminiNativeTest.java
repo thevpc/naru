@@ -116,7 +116,7 @@ public class NaruGeminiNativeTest {
     @Test
     public void assistantToolCallsBecomeFunctionCallParts() {
         NaruToolCall call = new NaruToolCall("c1", "search",
-                Collections.singletonMap("q", "naru"));
+                Collections.singletonMap("q", NElement.of("naru")));
         NObjectElement body = serialize(new NaruModelRequest(
                 Collections.singletonList(NaruMessage.assistantWithToolCalls("", List.of(call))),
                 Collections.emptyMap()));
@@ -183,7 +183,7 @@ public class NaruGeminiNativeTest {
         List<NaruToolCall> calls = r.getMessage().getToolCalls();
         Assertions.assertEquals(1, calls.size());
         Assertions.assertEquals("search", calls.get(0).getName());
-        Assertions.assertEquals("naru", calls.get(0).getArguments().get("q"));
+        Assertions.assertEquals(NElement.of("naru"), calls.get(0).getArguments().get("q"));
     }
 
     @Test

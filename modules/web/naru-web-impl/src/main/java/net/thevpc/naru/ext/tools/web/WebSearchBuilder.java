@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.web;
 
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.net.NHttpClient;
 import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.io.*;
@@ -82,10 +83,10 @@ public class WebSearchBuilder {
         String cx = searchEngineId;
         String key = apiKey;
         if (NBlankable.isBlank(cx)) {
-            cx = (String)task.getTaskEnv("websearch.google.cx", true).orNull();
+            cx = (String)task.getTaskEnv("websearch.google.cx", true).flatMap(NElement::asStringValue).orNull();
         }
         if (NBlankable.isBlank(key)) {
-            key = (String)task.getTaskEnv("websearch.google.apikey", true).orNull();
+            key = (String)task.getTaskEnv("websearch.google.apikey", true).flatMap(NElement::asStringValue).orNull();
         }
         if (NBlankable.isBlank(cx) || NBlankable.isBlank(key)) {
 //            return "Error: `websearch.google.cx` is required";

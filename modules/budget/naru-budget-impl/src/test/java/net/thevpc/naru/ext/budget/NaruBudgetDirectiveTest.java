@@ -170,8 +170,8 @@ public class NaruBudgetDirectiveTest {
      */
     @Test
     public void toolCallsAreChargedForNameAndArguments() {
-        Map<String, Object> args = new LinkedHashMap<>();
-        args.put("path", "src/main/java/Foo.java");
+        Map<String, NElement> args = new LinkedHashMap<>();
+        args.put("path",NElement.of( "src/main/java/Foo.java"));
         NaruBudgetDirective.PromptStats s = estimate(
                 NaruMessage.assistantWithToolCalls("", List.of(new NaruToolCall("c1", "read_file", args))));
 
@@ -209,7 +209,7 @@ public class NaruBudgetDirectiveTest {
                 NaruMessage.system("you are a careful assistant with a long brief"),
                 NaruMessage.user("please read this file"),
                 NaruMessage.assistantWithToolCalls("reading",
-                        List.of(new NaruToolCall("c1", "read_file", Map.of("path", "A.java")))),
+                        List.of(new NaruToolCall("c1", "read_file", Map.of("path", NElement.of("A.java") )))),
                 NaruMessage.tool("read_file", "c1", "contents"));
 
         long sum = 0;

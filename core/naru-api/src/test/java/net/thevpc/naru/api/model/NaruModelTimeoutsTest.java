@@ -99,14 +99,14 @@ public class NaruModelTimeoutsTest {
     @Test
     public void taskEnvResolves() {
         Scopes s = new Scopes();
-        s.task.put("model.readTimeout", "45s");
+        s.task.put("model.readTimeout", NElement.of("45s"));
         Assertions.assertEquals(45, find(s, "qwen3:32b", "readTimeout"));
     }
 
     @Test
     public void sessionEnvIsConsultedWhenTaskEnvIsEmpty() {
         Scopes s = new Scopes();
-        s.session.put("model.readTimeout", "90s");
+        s.session.put("model.readTimeout", NElement.of("90s"));
         Assertions.assertEquals(90, find(s, "qwen3:32b", "readTimeout"));
     }
 
@@ -128,8 +128,8 @@ public class NaruModelTimeoutsTest {
     @Test
     public void aNarrowerScopeBeatsAWiderOne() {
         Scopes s = new Scopes();
-        s.task.put("model.readTimeout", "45s");
-        s.session.put("model.readTimeout", "90s");
+        s.task.put("model.readTimeout", NElement.of("45s"));
+        s.session.put("model.readTimeout", NElement.of("90s"));
         s.privateConfig.put("model.readTimeout", NElement.ofString("30s"));
         Assertions.assertEquals(45, find(s, "qwen3:32b", "readTimeout"));
     }
@@ -147,9 +147,9 @@ public class NaruModelTimeoutsTest {
     @Test
     public void familyIndexedKeyBeatsTheGlobalOne() {
         Scopes s = new Scopes();
-        s.task.put("model.readTimeout", "90s");
+        s.task.put("model.readTimeout", NElement.of("90s"));
         Assertions.assertEquals(90, find(s, "qwen3:32b", "readTimeout"));
-        s.task.put("model.qwen.readTimeout", "45s");
+        s.task.put("model.qwen.readTimeout", NElement.of("45s"));
         Assertions.assertEquals(45, find(s, "qwen3:32b", "readTimeout"),
                 "the family is the more specific instruction and wins over the global key");
     }
@@ -160,7 +160,7 @@ public class NaruModelTimeoutsTest {
         System.setProperty("model.qwen.readTimeout", "45s");
         try {
             Scopes s = new Scopes();
-            s.task.put("model.readTimeout", "90s");
+            s.task.put("model.readTimeout", NElement.of("90s"));
             Assertions.assertEquals(45, find(s, "qwen3:32b", "readTimeout"));
         } finally {
             System.clearProperty("model.qwen.readTimeout");
@@ -170,7 +170,7 @@ public class NaruModelTimeoutsTest {
     @Test
     public void aFamilyIndexedValueOnlyAppliesToThatFamily() {
         Scopes s = new Scopes();
-        s.task.put("model.qwen.readTimeout", "45s");
+        s.task.put("model.qwen.readTimeout", NElement.of("45s"));
         Assertions.assertEquals(45, find(s, "qwen3:32b", "readTimeout"));
         Assertions.assertFalse(NaruModelTimeouts
                         .findScoped(task(s), new NaruModelConfig("endpointA", "gpt-4o"), "readTimeout")
@@ -181,7 +181,7 @@ public class NaruModelTimeoutsTest {
     @Test
     public void aNullModelOnlySeesTheGlobalKey() {
         Scopes s = new Scopes();
-        s.task.put("model.readTimeout", "45s");
+        s.task.put("model.readTimeout", NElement.of("45s"));
         Assertions.assertEquals(45, NaruModelTimeouts
                 .findScoped(task(s), null, "readTimeout").get().toSeconds());
     }
@@ -201,8 +201,8 @@ public class NaruModelTimeoutsTest {
     }
 
     private static final class Scopes {
-        final Map<String, Object> task = new HashMap<>();
-        final Map<String, Object> session = new HashMap<>();
+        final Map<String, NElement> task = new HashMap<>();
+        final Map<String, NElement> session = new HashMap<>();
         final Map<String, NElement> agent = new HashMap<>();
         final Map<String, NElement> privateConfig = new HashMap<>();
         final Map<String, NElement> publicConfig = new HashMap<>();
@@ -217,8 +217,7 @@ public class NaruModelTimeoutsTest {
                     switch (method.getName()) {
                         case "getTaskEnv":
                             if (args != null && args.length == 2) {
-                                Object v = s.task.get((String) args[0]);
-                                return v == null ? NOptional.ofEmpty() : NOptional.of(v);
+                                return element(s.task.get((String) args[0]));
                             }
                             return s.task;
                         case "session":
@@ -239,8 +238,7 @@ public class NaruModelTimeoutsTest {
                 (proxy, method, args) -> {
                     switch (method.getName()) {
                         case "getSessionEnv": {
-                            Object v = s.session.get((String) args[0]);
-                            return v == null ? NOptional.ofEmpty() : NOptional.of(v);
+                            return element(s.session.get((String) args[0]));
                         }
                         case "agent":
                             return agent;

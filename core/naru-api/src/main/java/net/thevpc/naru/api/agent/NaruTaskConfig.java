@@ -72,7 +72,7 @@ public final class NaruTaskConfig {
      * {@code NElement} from the project file and as plain Java objects from {@code /set},
      * and the right coercion depends on what the caller wants.
      */
-    public static NOptional<Object> find(NaruTask task, String key) {
+    public static NOptional<NElement> find(NaruTask task, String key) {
         return resolve(task, key).map(Resolved::value);
     }
 
@@ -98,18 +98,18 @@ public final class NaruTaskConfig {
      * unable to tell which file to edit.
      */
     public static final class Resolved {
-        private final Object value;
+        private final NElement value;
         private final String scope;
         private final NaruVisibility visibility;
 
-        private Resolved(Object value, String scope, NaruVisibility visibility) {
+        private Resolved(NElement value, String scope, NaruVisibility visibility) {
             this.value = value;
             this.scope = scope;
             this.visibility = visibility;
         }
 
         /** The raw value, exactly as the winning store held it. */
-        public Object value() {
+        public NElement value() {
             return value;
         }
 
@@ -140,14 +140,14 @@ public final class NaruTaskConfig {
         //    already walks session/agent/settings, and labeling the answer "task"
         //    would be wrong. The task env here still holds what the parent granted at
         //    spawn, which is the "inherited from its parent" part of the contract.
-        NOptional<Object> taskEnv = task.getTaskEnv(key, false);
+        NOptional<NElement> taskEnv = task.getTaskEnv(key, false);
         if (taskEnv != null && taskEnv.isPresent()) {
             return NOptional.of(new Resolved(taskEnv.get(), SCOPE_TASK, null));
         }
         NaruSession session = task.session();
         // 2. session env, shared by sibling tasks
         if (session != null) {
-            NOptional<Object> sessionEnv = session.getSessionEnv(key);
+            NOptional<NElement> sessionEnv = session.getSessionEnv(key);
             if (sessionEnv != null && sessionEnv.isPresent()) {
                 return NOptional.of(new Resolved(sessionEnv.get(), SCOPE_SESSION, null));
             }
@@ -173,7 +173,7 @@ public final class NaruTaskConfig {
         // 5. JVM system property, the operator's escape hatch
         String property = System.getProperty(key);
         if (property != null && !property.isBlank()) {
-            return NOptional.of(new Resolved(property, SCOPE_SYSTEM_PROPERTY, null));
+            return NOptional.of(new Resolved(NElement.of(property), SCOPE_SYSTEM_PROPERTY, null));
         }
         return NOptional.ofNamedEmpty(NMsg.ofC("'%s' is not set in any scope", key));
     }
@@ -224,7 +224,7 @@ public final class NaruTaskConfig {
             throw new IllegalArgumentException(
                     "getIntInRange(" + key + "): min (" + min + ") must not exceed max (" + max + ")");
         }
-        NOptional<Object> found = find(task, key);
+        NOptional<NElement> found = find(task, key);
         if (!found.isPresent()) {
             return defaultValue;
         }
@@ -260,7 +260,7 @@ public final class NaruTaskConfig {
      * configuration key should not care which door it came through.
      */
     public static List<String> getStringList(NaruTask task, String key, List<String> defaultValue) {
-        NOptional<Object> found = find(task, key);
+        NOptional<NElement> found = find(task, key);
         if (!found.isPresent()) {
             return defaultValue;
         }

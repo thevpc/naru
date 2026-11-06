@@ -217,14 +217,14 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                         collected.add(NMsg.ofC("[%s] %s <%s> %s", index, item.index(), item.name(), item.instruction()).toString());
                         context.outln( NMsg.ofC("\tparams : %s", item.params().size()));
                         collected.add(NMsg.ofC("\tparams : %s", item.params().size()).toString());
-                        for (Map.Entry<String, Object> e : item.params().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
-                            context.outln( NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()));
-                            collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()).toString());
+                        for (Map.Entry<String, NElement> e : item.params().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
+                            context.outln( NMsg.ofC("\t\t %s = %s", e.getKey(), NaruUtils.plainValue(e.getValue())));
+                            collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), NaruUtils.plainValue(e.getValue())).toString());
                         }
                         context.outln( NMsg.ofC("\tlocal vars :%s", item.localVars().size()));
-                        for (Map.Entry<String, Object> e : item.localVars().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
-                            context.outln( NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()));
-                            collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()).toString());
+                        for (Map.Entry<String, NElement> e : item.localVars().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
+                            context.outln( NMsg.ofC("\t\t %s = %s", e.getKey(), NaruUtils.plainValue(e.getValue())));
+                            collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), NaruUtils.plainValue(e.getValue())).toString());
                         }
                         index++;
                     }
@@ -245,15 +245,15 @@ public class NaruTaskDirective extends NaruDirectiveBase {
                                     collected.add(NMsg.ofC("[%s] %s <%s> %s", index, item.index(), item.name(), item.instruction()).toString());
                                     context.outln( NMsg.ofC("\tparams : %s", item.params().size()));
                                     collected.add(NMsg.ofC("\tparams : %s", item.params().size()).toString());
-                                    for (Map.Entry<String, Object> e : item.params().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
-                                        context.outln( NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()));
-                                        collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()).toString());
+                                    for (Map.Entry<String, NElement> e : item.params().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
+                                        context.outln( NMsg.ofC("\t\t %s = %s", e.getKey(), NaruUtils.plainValue(e.getValue())));
+                                        collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), NaruUtils.plainValue(e.getValue())).toString());
                                     }
                                     context.outln( NMsg.ofC("\tlocal vars :%s", item.localVars().size()));
                                     collected.add(NMsg.ofC("\tlocal vars :%s", item.localVars().size()).toString());
-                                    for (Map.Entry<String, Object> e : item.localVars().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
-                                        context.outln( NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()));
-                                        collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), e.getValue()).toString());
+                                    for (Map.Entry<String, NElement> e : item.localVars().entrySet().stream().sorted(Comparator.comparing(x -> x.getKey())).toList()) {
+                                        context.outln( NMsg.ofC("\t\t %s = %s", e.getKey(), NaruUtils.plainValue(e.getValue())));
+                                        collected.add(NMsg.ofC("\t\t %s = %s", e.getKey(), NaruUtils.plainValue(e.getValue())).toString());
                                     }
                                     index++;
                                 }

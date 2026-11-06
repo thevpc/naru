@@ -5,6 +5,7 @@ import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelInfo;
+import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
 import net.thevpc.naru.api.registry.NaruRegistry;
 import net.thevpc.naru.api.routine.NaruStmtResult;
@@ -225,7 +226,8 @@ public class NaruModelDirectiveSelectionTest {
         String logged() {
             StringBuilder sb = new StringBuilder();
             for (net.thevpc.nuts.text.NMsg m : logs) {
-                sb.append(m.toString()).append('\n');
+                // plain, like the terminal: toString() keeps the ##{p1:…}## style markers
+                sb.append(m.toString(true)).append('\n');
             }
             return sb.toString();
         }
@@ -250,8 +252,9 @@ public class NaruModelDirectiveSelectionTest {
         NaruDirectiveCallContext[] ctx = new NaruDirectiveCallContext[1];
         Harness h = buildTask(ctx);
 
-        NaruStmtResult res = new NaruModelDirective()
-                .executeList(NaruModelDirectiveRegistrationTest.buildSubContext(ctx[0]), NCmdLine.of("ollama/qwen2.5-coder:7b"));
+        NaruDirectiveBase.SubCommandContext sctx = NaruModelDirectiveRegistrationTest.buildSubContext(ctx[0]);
+        NaruStmtResult res = new NaruModelDirective().executeList(sctx, NCmdLine.of("ollama/qwen2.5-coder:7b"));
+        NaruModelDirectiveRegistrationTest.flush(sctx);
 
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         Assertions.assertNotNull(h.task.model());
@@ -262,8 +265,9 @@ public class NaruModelDirectiveSelectionTest {
         NaruDirectiveCallContext[] ctx = new NaruDirectiveCallContext[1];
         Harness h = buildTask(ctx);
 
-        NaruStmtResult res = new NaruModelDirective()
-                .executeList(NaruModelDirectiveRegistrationTest.buildSubContext(ctx[0]), NCmdLine.of("coder"));
+        NaruDirectiveBase.SubCommandContext sctx = NaruModelDirectiveRegistrationTest.buildSubContext(ctx[0]);
+        NaruStmtResult res = new NaruModelDirective().executeList(sctx, NCmdLine.of("coder"));
+        NaruModelDirectiveRegistrationTest.flush(sctx);
 
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         Assertions.assertNull(h.task.model(),
@@ -277,8 +281,9 @@ public class NaruModelDirectiveSelectionTest {
         NaruDirectiveCallContext[] ctx = new NaruDirectiveCallContext[1];
         Harness h = buildTask(ctx);
 
-        NaruStmtResult res = new NaruModelDirective()
-                .executeList(NaruModelDirectiveRegistrationTest.buildSubContext(ctx[0]), NCmdLine.of("ollama/no-such-model:1b"));
+        NaruDirectiveBase.SubCommandContext sctx = NaruModelDirectiveRegistrationTest.buildSubContext(ctx[0]);
+        NaruStmtResult res = new NaruModelDirective().executeList(sctx, NCmdLine.of("ollama/no-such-model:1b"));
+        NaruModelDirectiveRegistrationTest.flush(sctx);
 
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         Assertions.assertNull(h.task.model());

@@ -2,7 +2,6 @@ package net.thevpc.naru.api.registry;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.util.NaruExprs;
@@ -177,7 +176,7 @@ public abstract class NaruDirectiveBase implements NaruDirective {
             if (a.image().equals("help") || a.image().equals("--help")) {
                 cmdLine.next().get();
                 NMsg u = executeHelp0(context, cmdLine);
-                task.addHistory(NaruMessage.directive(u));
+                task.log(NaruLogMode.DIRECTIVE, u);
                 return NaruStmtResult.ofSuccess(NElement.of(u.toString()));
             } else {
                 s = subCommand("").orNull();
@@ -192,7 +191,11 @@ public abstract class NaruDirectiveBase implements NaruDirective {
     private NaruStmtResult prepareExecuteResult(NaruStmtResult sub, SubCommandContext sctx, NaruTask task) {
         NTextBuilder other = sctx.out();
         NMsg msg = NMsg.ofC("%s", other.build());
-        task.addHistory(NaruMessage.directive(msg));
+        // the text a sub-command accumulated is its answer to the user, so it is logged;
+        // a silent command must not add an empty line to the transcript
+        if (!msg.isBlank()) {
+            task.log(NaruLogMode.DIRECTIVE, msg);
+        }
         return sub;
     }
 

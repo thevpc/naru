@@ -19,6 +19,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskStackFrame;
 import net.thevpc.naru.api.task.NaruTaskStackItem;
 import net.thevpc.naru.api.util.NaruExprs;
+import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.engine.stmt.*;
 import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
@@ -131,7 +132,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     /**
      * result pushed by RETURN stmt
      */
-    private Object returnResult;
+    private NElement returnResult;
     private boolean held;
     private NaruEventFilter eventFilter;
     private final Stack<NaruTaskFrameImpl> frames = new Stack<>();
@@ -165,7 +166,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private boolean reasoningStreamed;
     private final List<NaruEvent> awaitReceived = new ArrayList<>();
     private final Map<String, NaruEventSubscription> eventSubscriptions = new ConcurrentHashMap<>();
-    private final Map<String, NOptional<Object>> env = new ConcurrentHashMap<>();
+    private final Map<String, NOptional<NElement>> env = new ConcurrentHashMap<>();
     private final Map<String, String> eventHooks = new ConcurrentHashMap<>();
     private final Semaphore stepPermit = new Semaphore(0);
     private NaruSchedulerMode schedulerMode = NaruSchedulerMode.AUTO;
@@ -213,9 +214,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     // the environment would let a later write quietly rewrite history. Each is null (or 0, or an
     // empty map) until settleCompletion fills it in, which is what makes endTime the marker for
     // "the outcome is settled".
-    private volatile Object frozenValue;
+    private volatile NElement frozenValue;
     private volatile int frozenExitCode;
-    private volatile Map<String, Object> frozenVars;
+    private volatile Map<String, NElement> frozenVars;
     /**
      * Whether the outcome has been frozen and the callback list drained. Not the same question as
      * whether the future is done: a subscriber that arrives in between must be answered, and
@@ -535,8 +536,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             String u = null;
             int index = -1;
             String routineName = null;
-            Map<String, Object> params = frame.params();
-            Map<String, Object> localVars = frame.params();
+            Map<String, NElement> params = frame.params();
+            Map<String, NElement> localVars = frame.params();
             if (!frames.isEmpty()) {
                 if (frames.peek().todo.isEmpty()) {
                     u = "<empty>";
@@ -730,7 +731,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 terminationReason = newStatus == NaruTaskStatus.DONE ? "done"
                         : newStatus == NaruTaskStatus.KILLED
                         ? (cancelReason == null ? "killed" : cancelReason)
-                        : (envValue(ENV_ERROR) == null ? "failed" : String.valueOf(envValue(ENV_ERROR)));
+                        : (envValue(ENV_ERROR) == null ? "failed" : NaruTaskConfig.toText(envValue(ENV_ERROR)));
             }
             switch (status) {
                 case KILLED:
@@ -874,13 +875,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public NOptional<Object> value() {
+    public NOptional<NElement> value() {
         if (endTime != null) {
             return NOptional.of(frozenValue);
         }
         // an explicit /return is the script stating what it produced, so it wins; falling back
         // to the last result means a script that simply ends still reports what it computed
-        Object returned = returnResult;
+        NElement returned = returnResult;
         if (returned != null) {
             return NOptional.of(returned);
         }
@@ -896,7 +897,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     private int computeExitCode() {
-        Object raw = envValue(ENV_EXIT_CODE);
+        NElement raw = envValue(ENV_EXIT_CODE);
         if (raw instanceof Number n) {
             return n.intValue();
         }
@@ -918,8 +919,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public Map<String, Object> vars() {
-        Map<String, Object> frozen = frozenVars;
+    public Map<String, NElement> vars() {
+        Map<String, NElement> frozen = frozenVars;
         if (frozen != null) {
             return frozen;
         }
@@ -1054,15 +1055,16 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         }
     }
 
-    private Object computeValue() {
-        Object returned = returnResult;
+    private NElement computeValue() {
+        NElement returned = returnResult;
         return returned != null ? returned : envValue(ENV_RESULT);
     }
 
     private String deriveError() {
-        Object raw = envValue(ENV_ERROR);
-        if (raw instanceof String s) {
-            return s.isBlank() ? cancelReason : s;
+        NElement raw = envValue(ENV_ERROR);
+        if (raw !=null && raw.isAnyString()) {
+            String stringValue = raw.asStringValue().orNull();
+            return stringValue.isBlank() ? cancelReason : stringValue;
         }
         if (raw != null) {
             return raw.toString();
@@ -1081,8 +1083,8 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
      * handing a caller an {@code Optional} where a result was promised would be a nasty
      * surprise to debug.
      */
-    private Object envValue(String key) {
-        NOptional<Object> v = env.get(key);
+    private NElement envValue(String key) {
+        NOptional<NElement> v = env.get(key);
         return v == null ? null : v.orNull();
     }
 
@@ -1190,7 +1192,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             _history.add(a.toElement());
         }
         NObjectElementBuilder _props = NObjectElementBuilder.of();
-        for (Map.Entry<String, NOptional<Object>> e : env.entrySet()) {
+        for (Map.Entry<String, NOptional<NElement>> e : env.entrySet()) {
             _props.add(e.getKey(), NElement.of(e.getValue().orNull()));
         }
         o.set("history", _history.build());
@@ -1318,7 +1320,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (props1 != null) {
             for (NPairElement nElement : props1.namedPairs()) {
                 env.put(nElement.key().asStringValue().orNull(),
-                        NOptional.ofNullable(NElement.simpleOf(nElement.value()))
+                        NOptional.ofNullable(nElement.value())
                 );
             }
         }
@@ -1397,7 +1399,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         return this;
     }
 
-    public NaruTaskImpl _setReturnResult(Object returnResult) {
+    public NaruTaskImpl _setReturnResult(NElement returnResult) {
         this.returnResult = returnResult;
         return this;
     }
@@ -2356,13 +2358,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public void setReturnResult(Object returnResult) {
+    public void setReturnResult(NElement returnResult) {
         this.returnResult = returnResult;
         fireChanged();
     }
 
     @Override
-    public Object getReturnResult() {
+    public NElement getReturnResult() {
         return returnResult;
     }
 
@@ -2554,7 +2556,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             r = NaruStmtResult.ofError(msg, 127);
             addHistory(NaruMessage.directive(msg));
         }
-        setTaskEnv("lastExitCode", r.exitCode());
+        setTaskEnv("lastExitCode", NElement.of(r.exitCode()));
         setTaskEnv("lastResult", r.successValue());
         setTaskEnv("lastError", r.errorValue());
         return r;
@@ -2795,17 +2797,20 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         @Override
         public NOptional<NExprVar> getVar(String varName, NExprContext context) {
             return NOptional.of(NExprVar.ofVar(varName,
-                    a -> resolveVariable(varName).orNull(),
-                    (a, v) -> setVariable(varName, a)
+                    // expressions are value code: nuts' operators branch on Number/String, and an
+                    // element operand matches neither, which would sort `attempts < 3` by class
+                    // name instead of by the number the variable holds
+                    a -> NaruUtils.plainValue(resolveVariable(varName).orNull()),
+                    (a, v) -> setVariable(varName, NElement.of(a))
             ));
         }
     }
 
-    public void setVariable(String key, Object value) {
+    public void setVariable(String key, NElement value) {
         NaruTaskFrame ctx = frame();
         if (ctx != null) {
             boolean inheritVars = ctx.isInheritVars();
-            NOptional<Object> k = ctx.getParam(key);
+            NOptional<NElement> k = ctx.getParam(key);
             if (k.isPresent()) {
                 return;
             }
@@ -2817,7 +2822,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             if (inheritVars) {
                 for (int i = frames.size() - 2; i >= 0; i--) {
                     ctx = frames.get(i);
-                    NOptional<Object> k2 = ctx.getParam(key);
+                    NOptional<NElement> k2 = ctx.getParam(key);
                     if (k2.isPresent()) {
                         ctx.setLocalVar(key, value);
                         return;
@@ -2827,7 +2832,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                     }
                 }
             }
-            NOptional<Object> s = getTaskEnv(key, false);
+            NOptional<NElement> s = getTaskEnv(key, false);
             if (s.isPresent()) {
                 setTaskEnv(key, value);
             } else {
@@ -2853,7 +2858,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public NaruTask setTaskEnv(String key, Object value) {
+    public NaruTask setTaskEnv(String key, NElement value) {
         if (env.containsKey(key) && Objects.equals(env.get(key).get(), value)) {
             return this;
         }
@@ -2863,7 +2868,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public NOptional<Object> getTaskEnv(String key, boolean inherited) {
+    public NOptional<NElement> getTaskEnv(String key, boolean inherited) {
         if (env.containsKey(key)) {
             return NOptional.ofNullable(env.get(key).get());
         }
@@ -2876,7 +2881,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public NOptional<Object> resolveVariable(String key) {
+    public NOptional<NElement> resolveVariable(String key) {
         if ("_".equals(key)) {
             // '_' is the alias of lastResult: resolve through the same channel all
             // result-producing directives publish into (they set both the task env
@@ -2886,11 +2891,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         NaruTaskFrame ctx = frame();
         boolean inherit = ctx != null && ctx.isInheritVars();
         if (ctx != null) {
-            NOptional<Object> k = ctx.getParam(key);
+            NOptional<NElement> k = ctx.getParam(key);
             if (k.isPresent()) {
                 return k;
             }
-            NOptional<Object> s = ctx.getLocalVar(key);
+            NOptional<NElement> s = ctx.getLocalVar(key);
             if (s.isPresent()) {
                 return s;
             }
@@ -2939,14 +2944,14 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public Object evalExpression(String condition) {
+    public NElement evalExpression(String condition) {
         NExprContext ctx = expressionBuilder().build();
         NOptional<NExprNode> n = ctx.parse(condition);
         if (!n.isPresent()) {
             throwError(NMsg.ofC("Error parsing expression '%s'", condition));
         }
         try {
-            NOptional<Object> eval = n.get().eval(ctx);
+            NOptional<NElement> eval = n.get().eval(ctx).map(x->NElement.of(x));
             if (!eval.isPresent()) {
                 throwError(NMsg.ofC("Error evaluating expression '%s'", condition));
                 return null;
@@ -3184,13 +3189,15 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (protocol.getCapabilities() == null || !protocol.getCapabilities().isStreaming()) {
             return false;
         }
-        Object disabled = session().getSessionEnv("model.noStream").orNull();
+        NElement disabled = session().getSessionEnv("model.noStream").orNull();
         if (disabled == null) {
-            disabled = session().agent().env().get("model.noStream")
-                    .flatMap(NElement::asBooleanValue).orNull();
+            disabled = session().agent().env().get("model.noStream").orNull();
         }
-        if (disabled instanceof Boolean) {
-            return !((Boolean) disabled);
+        if (disabled!=null) {
+            NOptional<Boolean> booleanValue = disabled.asBooleanValue();
+            if (booleanValue.isPresent()) {
+                return !booleanValue.get();
+            }
         }
         return disabled == null || !Boolean.parseBoolean(disabled.toString());
     }
@@ -3380,7 +3387,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public NaruTask fireEvent(String eventType, Map<String, Object> args, NaruEventTarget target, NaruRetentionPolicy retention) {
+    public NaruTask fireEvent(String eventType, Map<String, NElement> args, NaruEventTarget target, NaruRetentionPolicy retention) {
         NaruEvent event = new NaruEvent(
                 eventType, args,
                 id(),
@@ -3476,13 +3483,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     @Override
-    public Map<String, Object> getTaskEnv() {
+    public Map<String, NElement> getTaskEnv() {
         // Collected by hand rather than with Collectors.toMap, which throws on a null value:
         // an entry may legitimately hold NOptional.empty (a variable explicitly set to
         // nothing), and a snapshot of the environment must not blow up on it. Insertion
         // order is preserved too, which matters when this is presented as a task's output.
-        Map<String, Object> out = new LinkedHashMap<>();
-        for (Map.Entry<String, NOptional<Object>> entry : env.entrySet()) {
+        Map<String, NElement> out = new LinkedHashMap<>();
+        for (Map.Entry<String, NOptional<NElement>> entry : env.entrySet()) {
             out.put(entry.getKey(), entry.getValue() == null ? null : entry.getValue().orNull());
         }
         return out;
@@ -3496,20 +3503,20 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             return;
         }
         String cc = cmd.next().get().image();
-        Map<String, Object> params = new LinkedHashMap<>();
+        Map<String, NElement> params = new LinkedHashMap<>();
         while (!cmd.isEmpty()) {
             NArg aa = cmd.next().get();
             if (aa.value() == null || NBlankable.isBlank(aa.key())) {
                 this.throwError(NMsg.ofC("routine inputs must be named as name=value; got '%s'", aa.image()));
                 return;
             }
-            params.put(aa.key(), aa.stringValue());
+            params.put(aa.key(), NElement.of(aa.stringValue()));
         }
         NaruTaskFrame ff = this.pushFrame(cc, false);
         if (ff == null) {
             return;
         }
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
+        for (Map.Entry<String, NElement> entry : params.entrySet()) {
             ff.setParam(entry.getKey(), entry.getValue());
         }
     }

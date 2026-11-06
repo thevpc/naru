@@ -30,7 +30,7 @@ public class NaruSessionData implements NToElement {
     private String projectId;
     private String user;
     private long version;
-    private final Map<String, Object> env = new LinkedHashMap<>();
+    private final Map<String, NElement> env = new LinkedHashMap<>();
 
     public NaruSessionData() {
     }
@@ -57,7 +57,7 @@ public class NaruSessionData implements NToElement {
             for (NElement child : e.asObject().get().children()) {
                 if (child.isNamedPair()) {
                     d.env.put(child.asPair().get().key().asStringValue().orNull(),
-                            plainValue(child.asPair().get().value()));
+                            child.asPair().get().value());
                 }
             }
         }
@@ -66,35 +66,6 @@ public class NaruSessionData implements NToElement {
 
     private static String blankToNull(String value) {
         return value == null || value.trim().isEmpty() ? null : value;
-    }
-
-    /**
-     * The Java value behind a stored one.
-     *
-     * <p>Env entries are stored as TSON, so reading them back naturally yields
-     * {@link NElement}s. Handing those to a caller who put in a {@code String} would make
-     * {@code env().get(k).equals("x")} silently false, which is the kind of thing that only
-     * shows up as a missing environment variable three layers away. Scalars therefore come
-     * back as scalars, and anything structured stays an element rather than losing its shape.
-     */
-    private static Object plainValue(NElement element) {
-        if (element.isNull()) {
-            return null;
-        }
-        if (element.isString()) {
-            return element.asStringValue().orNull();
-        }
-        if (element.isNumber()) {
-            Object number = element.asNumberValue().orNull();
-            if (number instanceof Integer) {
-                return ((Integer) number).longValue();
-            }
-            return number;
-        }
-        if (element.isBoolean()) {
-            return element.asBooleanValue().orNull();
-        }
-        return NElement.simpleOf(element);
     }
 
     public String uuid() {
@@ -203,11 +174,11 @@ public class NaruSessionData implements NToElement {
         return this;
     }
 
-    public Map<String, Object> env() {
+    public Map<String, NElement> env() {
         return env;
     }
 
-    public NaruSessionData env(Map<String, Object> env) {
+    public NaruSessionData env(Map<String, NElement> env) {
         this.env.clear();
         if (env != null) {
             this.env.putAll(env);
@@ -239,7 +210,7 @@ public class NaruSessionData implements NToElement {
         }
         o.set("version", version);
         NObjectElementBuilder envBuilder = NObjectElementBuilder.of();
-        for (Map.Entry<String, Object> e : env.entrySet()) {
+        for (Map.Entry<String, NElement> e : env.entrySet()) {
             envBuilder.add(e.getKey(), NElement.of(e.getValue()));
         }
         o.set("env", envBuilder.build());

@@ -7,6 +7,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NEmptyOptionalException;
@@ -205,9 +206,9 @@ public class NaruTaskCompletionTest {
     @Timeout(60)
     public void specVarsSeedTheTaskEnvWithoutStringifying() {
         NaruWorkspace agent = newAgent("vars");
-        Map<String, Object> seed = new LinkedHashMap<>();
-        seed.put("count", 41);
-        seed.put("label", "hello world");
+        Map<String, NElement> seed = new LinkedHashMap<>();
+        seed.put("count", NElement.of(41));
+        seed.put("label", NElement.of("hello world"));
         NaruTaskSpec withVars = spec("/print count+1").vars(seed);
 
         NaruTask result = await(agent.newSession()
@@ -220,7 +221,7 @@ public class NaruTaskCompletionTest {
         // one value rather than two shell-ish words
         Assertions.assertEquals(42L, asLong(result.value().orNull()));
         Assertions.assertEquals(41, NLiteral.ofLong(result.var("count").orNull()).get());
-        Assertions.assertEquals("hello world", result.var("label").orElse(null));
+        Assertions.assertEquals(NElement.of("hello world"), result.var("label").orElse(null));
         Assertions.assertTrue(result.vars().containsKey("label"));
     }
 
@@ -232,7 +233,7 @@ public class NaruTaskCompletionTest {
         NaruTask run = agent.newSession()
                 .interaction(deaf())
                 .interactive()
-                .task(spec("/print 1").vars(Map.of("seeded", 5)).name("live"))
+                .task(spec("/print 1").vars(Map.of("seeded", NElement.of(5))).name("live"))
                 .build()
                 .run();
 
@@ -257,7 +258,7 @@ public class NaruTaskCompletionTest {
                 .run());
 
         Assertions.assertThrows(UnsupportedOperationException.class,
-                () -> result.vars().put("b", 2));
+                () -> result.vars().put("b", NElement.of(2)));
     }
 
     // ── the wide result: value, exit code and error together ───────────────────
@@ -278,7 +279,7 @@ public class NaruTaskCompletionTest {
         NaruWorkspace agent = newAgent("soft");
         NaruTask result = await(agent.newSession()
                 .interaction(silent())
-                .task(spec("/assert 1 == 2").vars(Map.of("input", "kept")))
+                .task(spec("/assert 1 == 2").vars(Map.of("input", NElement.of("kept"))))
                 .build()
                 .run());
 
@@ -288,7 +289,7 @@ public class NaruTaskCompletionTest {
                 "the soft failure must be visible as an exit code");
         Assertions.assertFalse(result.isSuccess());
         Assertions.assertNotNull(result.error());
-        Assertions.assertEquals("kept", result.var("input").orElse(null),
+        Assertions.assertEquals(NElement.of("kept"), result.var("input").orElse(null),
                 "data handed to the task must not be lost just because it complained");
         // opting in to the exception is a choice, not something forced on the caller
         Assertions.assertThrows(IllegalStateException.class, result::throwIfFailed);
@@ -304,7 +305,7 @@ public class NaruTaskCompletionTest {
         NaruWorkspace agent = newAgent("clean2");
         NaruTask result = await(agent.newSession()
                 .interaction(silent())
-                .task(spec("/print 5").vars(Map.of("noise", "harmless")))
+                .task(spec("/print 5").vars(Map.of("noise", NElement.of("harmless"))))
                 .build()
                 .run());
 
@@ -785,7 +786,7 @@ public class NaruTaskCompletionTest {
                 .build()
                 .run());
 
-        Assertions.assertEquals("fallback", run.varOrDefault("missing", "fallback"));
+        Assertions.assertEquals(NElement.of("fallback"), run.varOrDefault("missing", NElement.of("fallback")));
         Assertions.assertTrue(run.var("missing").isEmpty(), "absent is not the same as null-valued");
         // Reading an absent variable as a number is a caller error, not something to default
         // quietly -- and because var() is empty rather than null, the failure names the missing
@@ -814,13 +815,13 @@ public class NaruTaskCompletionTest {
         NaruWorkspace agent = newAgent("frozen");
         NaruTask run = await(agent.newSession()
                 .interaction(silent())
-                .task(spec("/return 7").vars(Map.of("x", 1L)))
+                .task(spec("/return 7").vars(Map.of("x", NElement.of(1L))))
                 .build()
                 .run());
 
         Object value = run.value().orNull();
         int exit = run.exitCode();
-        Map<String, Object> vars = run.vars();
+        Map<String, NElement> vars = run.vars();
         Assertions.assertEquals(7L, asLong(value));
         Assertions.assertEquals(0, exit);
         Assertions.assertEquals(1L, asLong(vars.get("x")));
@@ -829,7 +830,7 @@ public class NaruTaskCompletionTest {
         // go by now -- so writing to its variables afterwards must not quietly rewrite that. The
         // setters stay live because they describe the task rather than its run; the outcome
         // readers do not move.
-        run.setTaskEnv("x", 999L).setTaskEnv("lastResult", "tampered").setTaskEnv("lastExitCode", 5L);
+        run.setTaskEnv("x", NElement.of(999L)).setTaskEnv("lastResult", NElement.of("tampered")).setTaskEnv("lastExitCode", NElement.of(5L));
 
         Assertions.assertEquals(7L, asLong(run.value().orNull()), "value must not follow a later write");
         Assertions.assertEquals(0, run.exitCode(), "exit code must not follow a later write");

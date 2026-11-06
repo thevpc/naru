@@ -11,6 +11,7 @@ import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -148,10 +149,10 @@ public class NaruSkillsToolTest {
     }
 
     private static String executeTool(NaruTask task, String name) {
-        return executeTool(task, Map.of("name", name));
+        return executeTool(task, Map.of("name", NElement.of(name)));
     }
 
-    private static String executeTool(NaruTask task, Map<String, Object> args) {
+    private static String executeTool(NaruTask task, Map<String, NElement> args) {
         NaruTool tool = task.session().registry().findTool("skill")
                 .orElseThrow(() -> new AssertionError("the skill tool is not registered"));
         return tool.execute(new NaruToolCallContextImpl(args, task));
@@ -239,7 +240,7 @@ public class NaruSkillsToolTest {
     public void theToolSearchesByQueryWithoutLoading() {
         NaruTask t = taskWithSkillsTag();
 
-        String result = executeTool(t, Map.of("query", "javadoc"));
+        String result = executeTool(t, Map.of("query", NElement.of("javadoc")));
 
         assertTrue(result.contains("javadoc"), result);
         assertFalse(result.contains("git-flow"), () -> "an unrelated skill must not be returned: " + result);
@@ -254,7 +255,7 @@ public class NaruSkillsToolTest {
         ext.reload();
         NaruTask t = taskWithSkillsTag();
 
-        String result = executeTool(t, Map.of("query", "extract text from pdf documents", "semantic", true));
+        String result = executeTool(t, Map.of("query", NElement.of("extract text from pdf documents"), "semantic", NElement.of(true)));
 
         assertTrue(result.contains("ranked by relevance"), result);
         assertTrue(result.contains("pdf-reader"), result);
@@ -267,7 +268,7 @@ public class NaruSkillsToolTest {
     @Test
     public void theToolReportsNoMatchRatherThanAnEmptyBody() {
         NaruTask t = taskWithSkillsTag();
-        String result = executeTool(t, Map.of("query", "zzz-nothing-matches"));
+        String result = executeTool(t, Map.of("query", NElement.of("zzz-nothing-matches")));
         assertTrue(result.startsWith("no skill matches"), result);
     }
 

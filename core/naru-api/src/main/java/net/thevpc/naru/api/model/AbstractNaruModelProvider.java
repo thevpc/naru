@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NIllegalArgumentException;
@@ -114,7 +115,7 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
     @Override
     public void setParam(String name, String value) {
         if (name != null) {
-            Object old = params.get(name);
+            String old = params.get(name);
             if (!Objects.equals(old, value)) {
                 if (value != null) {
                     params.put(name, value);

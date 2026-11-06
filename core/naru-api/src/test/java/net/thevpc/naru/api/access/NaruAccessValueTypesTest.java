@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.access;
 
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -256,7 +257,7 @@ public class NaruAccessValueTypesTest {
     @Test
     public void attributeCarryingIsCopyOnWrite() {
         NaruResource r = NaruResource.of(NaruResourceType.TOOL, "web_fetch")
-                .withAttribute("tags", new LinkedHashSet<>(List.of("network")));
+                .withAttribute("tags", NElement.ofArray(NElement.of("network")));
         assertEquals(1, r.attributes().size());
         NaruResource r2 = r.withAttribute("tags", null);
         assertEquals(0, r2.attributes().size(), "removing an attribute does not disturb the original");

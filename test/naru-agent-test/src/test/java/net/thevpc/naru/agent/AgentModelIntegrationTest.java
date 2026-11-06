@@ -1,5 +1,6 @@
 package net.thevpc.naru.agent;
 
+import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruMessage;
@@ -11,6 +12,7 @@ import net.thevpc.naru.impl.engine.stmt.NaruNopStmt;
 import net.thevpc.naru.impl.engine.stmt.NaruPromptStmt;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NOut;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
@@ -295,25 +297,26 @@ public class AgentModelIntegrationTest {
                             + "bleed into each other: " + task.findToolExclusions());
 
             // /file find --save / --dir published usable values
+            // (toText, not toString: an env value is an element, and its TSON has the quotes)
             assertEquals("proj/pom.xml",
-                    task.getTaskEnv("pom", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("pom", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /file find to save the first matching path relative to the search root");
             assertEquals("proj",
-                    task.getTaskEnv("pomDir", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("pomDir", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /file find to save the parent dir of the first match");
             assertEquals("data.txt",
-                    task.getTaskEnv("data", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("data", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /file find to save the top-level file path");
             assertEquals(".",
-                    task.getTaskEnv("dataDir", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("dataDir", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /file find to save '.' as parent dir of a top-level file");
 
             // /system --save captured the trimmed output
             assertEquals("42",
-                    task.getTaskEnv("answer", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("answer", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /system --save to store the trimmed command output");
             assertEquals("hi",
-                    task.getTaskEnv("out", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("out", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /system --save to store the trimmed 'cat' output");
 
             // the /if conditions all evaluated true (markers prove grep-like exit
@@ -499,7 +502,7 @@ public class AgentModelIntegrationTest {
                     "expected ff to stay 0 after a failed then a passing assert");
 
             // lastResult / _ reflect the last result-producing directive
-            assertEquals("hi", task.getTaskEnv("out", true).map(Object::toString).orNull(),
+            assertEquals("hi", task.getTaskEnv("out", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /system --save to store the trimmed 'cat' output");
             assertTrue(folder.resolve("lr-ok").isRegularFile(),
                     "lastResult == \"hi\" && _ == \"hi\" after /system --save out cat data.txt");
@@ -543,7 +546,7 @@ public class AgentModelIntegrationTest {
             ).build().start();
             // Bound the agent loop: if the model keeps emitting (emulated) tool calls
             // instead of answering, the session must still terminate promptly.
-            session.setSessionEnv("maxSteps", 3);
+            session.setSessionEnv("maxSteps", NElement.of(3));
 
             // Capture the task *before* waitFor(): once the session stops, tasks()
             // and findTask() are no longer usable, but the task object itself keeps
@@ -603,7 +606,7 @@ public class AgentModelIntegrationTest {
                     "/ollama stop"
             ).build().start();
             // Bound the agent loop: a couple of tool calls + a final answer is enough.
-            session.setSessionEnv("maxSteps", 6);
+            session.setSessionEnv("maxSteps", NElement.of(6));
 
             NaruTask task = captureForegroundTask(session);
 

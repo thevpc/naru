@@ -116,7 +116,7 @@ public interface NaruTask extends NToElement {
      * Prefers an explicit {@code /return}, and falls back to the task's last result so that a
      * script which simply ends still reports what it last computed.
      */
-    NOptional<Object> value();
+    NOptional<NElement> value();
 
     /**
      * The task's own verdict, from the exit code its last statement published. A killed task
@@ -132,7 +132,7 @@ public interface NaruTask extends NToElement {
      * make every task's output a dump of the session it happened to run in. Frozen at
      * termination, and unmodifiable.
      */
-    Map<String, Object> vars();
+    Map<String, NElement> vars();
 
     /**
      * One of this task's variables.
@@ -142,8 +142,8 @@ public interface NaruTask extends NToElement {
      * variable that exists and holds nothing is present with a null value. Collapsing the two
      * would make a script's explicit emptiness indistinguishable from never having set it.
      */
-    default NOptional<Object> var(String key) {
-        Map<String, Object> vars = vars();
+    default NOptional<NElement> var(String key) {
+        Map<String, NElement> vars = vars();
         if (!vars.containsKey(key)) {
             return NOptional.ofNamedEmpty(NMsg.ofC("no variable named %s", key));
         }
@@ -153,7 +153,7 @@ public interface NaruTask extends NToElement {
     /**
      * One of this task's variables, or {@code fallback} if it has no such variable.
      */
-    default Object varOrDefault(String key, Object fallback) {
+    default NElement varOrDefault(String key, NElement fallback) {
         return vars().getOrDefault(key, fallback);
     }
 
@@ -479,9 +479,9 @@ public interface NaruTask extends NToElement {
 
     void setLastResult(NaruMessage lastResult);
 
-    void setReturnResult(Object returnResult);
+    void setReturnResult(NElement returnResult);
 
-    Object getReturnResult();
+    NElement getReturnResult();
 
     NaruMessage getLastResult();
 
@@ -513,11 +513,11 @@ public interface NaruTask extends NToElement {
 
     NaruTask unsetTaskEnv(String key);
 
-    NaruTask setTaskEnv(String key, Object value);
+    NaruTask setTaskEnv(String key, NElement value);
 
-    NOptional<Object> getTaskEnv(String key, boolean inherited);
+    NOptional<NElement> getTaskEnv(String key, boolean inherited);
 
-    Object resolveVariable(String key);
+    NOptional<NElement> resolveVariable(String key);
 
     NaruTask pushStatementModelCall(String prompt);
 
@@ -525,7 +525,7 @@ public interface NaruTask extends NToElement {
 
     NExprContextBuilder expressionBuilder();
 
-    Object evalExpression(String condition);
+    NElement evalExpression(String condition);
 
     String expandString(String condition);
 
@@ -618,7 +618,7 @@ public interface NaruTask extends NToElement {
     // NaruTask — consumes delivered input
     String consumeInput();
 
-    NaruTask fireEvent(String eventType, Map<String, Object> args, NaruEventTarget target, NaruRetentionPolicy retention);
+    NaruTask fireEvent(String eventType, Map<String, NElement> args, NaruEventTarget target, NaruRetentionPolicy retention);
 
     NaruTask sleep(NDuration duration);
 
@@ -634,7 +634,7 @@ public interface NaruTask extends NToElement {
 
     void appendRoutineLine(int increment, String name);
 
-    Map<String, Object> getTaskEnv();
+    Map<String, NElement> getTaskEnv();
 
     void call(String cmdline);
 

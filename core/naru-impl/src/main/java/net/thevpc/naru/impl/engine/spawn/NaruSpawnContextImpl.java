@@ -11,6 +11,7 @@ import net.thevpc.naru.api.spawn.NaruSpawnSource;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NNameFormat;
 
 import java.util.ArrayList;
@@ -39,7 +40,7 @@ public class NaruSpawnContextImpl implements NaruSpawnContext {
     private final Map<String, NaruSpawnSeed<String>> revokeTagSeeds = new LinkedHashMap<>();
     private final Map<String, NaruSpawnSeed<String>> exclusionSeeds = new LinkedHashMap<>();
     private final Map<String, NaruSpawnSeed<String>> skillSeeds = new LinkedHashMap<>();
-    private final Map<String, NaruSpawnSeed<Object>> envSeeds = new LinkedHashMap<>();
+    private final Map<String, NaruSpawnSeed<NElement>> envSeeds = new LinkedHashMap<>();
     private final Map<String, NaruSpawnSeed<String>> labelSeeds = new LinkedHashMap<>();
     private final Map<String, NaruSpawnSeed<String>> revokeLabelSeeds = new LinkedHashMap<>();
     private final Map<NaruSpawnInherit, NaruSpawnSeed<NaruSpawnInherit>> inheritSeeds = new LinkedHashMap<>();
@@ -134,7 +135,7 @@ public class NaruSpawnContextImpl implements NaruSpawnContext {
     }
 
     @Override
-    public NaruSpawnContext seedEnv(String key, Object value, NaruSpawnSource source) {
+    public NaruSpawnContext seedEnv(String key, NElement value, NaruSpawnSource source) {
         if (key == null || key.isBlank()) {
             return this;
         }
@@ -229,7 +230,7 @@ public class NaruSpawnContextImpl implements NaruSpawnContext {
         return Collections.unmodifiableMap(skillSeeds);
     }
 
-    Map<String, NaruSpawnSeed<Object>> envSeeds() {
+    Map<String, NaruSpawnSeed<NElement>> envSeeds() {
         return Collections.unmodifiableMap(envSeeds);
     }
 

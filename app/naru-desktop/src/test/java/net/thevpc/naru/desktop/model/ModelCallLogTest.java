@@ -7,6 +7,7 @@ import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.desktop.util.EDT;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.time.NDuration;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -147,7 +148,7 @@ class ModelCallLogTest {
     void producedNothingFlagsACallThatMovedTheTurnNowhere() throws Exception {
         ModelCallLog log = new ModelCallLog();
         NaruResponse toolCall = new NaruResponse(
-                NaruMessage.assistantWithToolCalls("", List.of(new NaruToolCall("c1", "bash", Map.of("cmd", "ls")))), true);
+                NaruMessage.assistantWithToolCalls("", List.of(new NaruToolCall("c1", "bash", Map.of("cmd", NElement.of("ls"))))), true);
         toolCall.setPromptTokens(40);
         record(log, request("a"), answer("   ", 50, 0), 100);
         record(log, request("b"), toolCall, 100);

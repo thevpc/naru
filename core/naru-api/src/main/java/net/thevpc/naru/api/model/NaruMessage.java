@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NMsgSnapshot;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NCopiable;
 
@@ -21,7 +22,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     private String sourceName;
     private NaruSource source = NaruSource.USER;
     private NaruRole role;
-    private NormalizedMsg content;
+    private NMsgSnapshot content;
     /**
      * Base64-encoded images (for multimodal/vision messages)
      */
@@ -110,7 +111,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
         this.sourceName = sourceName;
         this.source = source;
         this.role = role;
-        this.content = content == null ? null : new NormalizedMsg(content);
+        this.content = content == null ? null : new NMsgSnapshot(content);
         this.images = images;
         this.toolCallId = toolCallId;
         this.toolName = toolName;
@@ -214,7 +215,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     public NaruMessage(NElement element) {
         NObjectElement o = element.asObject().get();
         this.role = NaruRole.valueOf(o.getStringValue("role").get());
-        this.content = NormalizedMsg.of(o.get("content").orNull()).orNull();
+        this.content = NMsgSnapshot.of(o.get("content").orNull()).orNull();
         this.toolCallId = o.getStringValue("toolCallId").orNull();
         this.toolName = o.getStringValue("toolName").orNull();
         this.sourceName = o.getStringValue("sourceName").orNull();
@@ -326,7 +327,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
 
     private NaruMessage(NaruRole role, NMsg content) {
         this.role = role;
-        this.content = content == null ? null : new NormalizedMsg(content);
+        this.content = content == null ? null : new NMsgSnapshot(content);
     }
 
     /**
@@ -472,7 +473,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public void setContent(NMsg content) {
-        this.content = content == null ? null : new NormalizedMsg(content);
+        this.content = content == null ? null : new NMsgSnapshot(content);
     }
 
     public List<String> getImages() {

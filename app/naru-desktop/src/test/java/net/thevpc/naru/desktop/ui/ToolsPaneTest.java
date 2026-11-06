@@ -7,6 +7,7 @@ import net.thevpc.naru.desktop.model.ToolCallModel;
 import net.thevpc.naru.desktop.model.DrawnCalls;
 import net.thevpc.naru.desktop.util.EDT;
 import net.thevpc.naru.desktop.util.PermissionsText;
+import net.thevpc.nuts.elem.NElement;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -94,7 +95,7 @@ class ToolsPaneTest {
 
     private static TranscriptEvent started(long task, String id, String name) {
         return new TranscriptEvent.ToolCall(
-                NaruToolCallEvent.started(task, new NaruToolCall(id, name, Map.of("cmd", "ls"))));
+                NaruToolCallEvent.started(task, new NaruToolCall(id, name, Map.of("cmd", NElement.of("ls")))));
     }
 
     private static TranscriptEvent result(long task, String id, String name, String text, long ms) {

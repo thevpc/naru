@@ -117,7 +117,7 @@ public class NaruGeminiNativeResponseParser implements NElementDeserializer<Naru
      * Gemini and Anthropic cannot drift apart on how a tool's arguments become
      * Java values.
      */
-    private static Map<String, Object> args(NObjectElement fnCall) {
+    private static Map<String, NElement> args(NObjectElement fnCall) {
         return NaruAnthropicResponseParser.parseInput(fnCall.get("args").orNull());
     }
 }

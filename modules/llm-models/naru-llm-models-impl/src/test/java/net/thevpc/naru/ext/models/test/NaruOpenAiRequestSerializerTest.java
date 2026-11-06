@@ -78,8 +78,8 @@ public class NaruOpenAiRequestSerializerTest {
     @Test
     public void testToolCallAndToolResultBlocks() {
         NaruOpenAiRequestSerializer serializer = new NaruOpenAiRequestSerializer();
-        Map<String, Object> args = new LinkedHashMap<>();
-        args.put("q", "what is naru");
+        Map<String, NElement> args = new LinkedHashMap<>();
+        args.put("q", NElement.of("what is naru"));
         NaruToolCall call = new NaruToolCall("call_01ABC", "web_search", args);
 
         List<NaruMessage> messages = Arrays.asList(

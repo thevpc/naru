@@ -2,6 +2,7 @@ package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
@@ -44,7 +45,7 @@ public final class NaruThinkingConfig {
      * {@code false} and quietly switch reasoning off.
      */
     public static NOptional<Boolean> find(NaruTask task) {
-        NOptional<Object> raw = NaruTaskConfig.find(task, THINKING_KEY);
+        NOptional<NElement> raw = NaruTaskConfig.find(task, THINKING_KEY);
         if (raw == null || !raw.isPresent()) {
             return NOptional.ofNamedEmpty(NMsg.ofC("'%s' is not set in any scope", THINKING_KEY));
         }

@@ -1,6 +1,7 @@
 package net.thevpc.naru.ext.tools.llm;
 
 import net.thevpc.naru.api.agent.NaruSource;
+import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.DefaultNaruTool;
 import net.thevpc.naru.api.registry.NaruToolCallContext;
@@ -111,10 +112,9 @@ public class ModelDelegateTool extends DefaultNaruTool {
                 return "Error: agent file " + target.agentPath() + " has no spawn contract in its front-matter.";
             }
             // the configured named policy: the model path never picks a policy itself
-            String policyName = null;
-            Object configured = task.getTaskEnv().get(NaruSpawnPolicy.ENV_CONFIG_POLICY);
-            if (configured != null && !NBlankable.isBlank(configured.toString())) {
-                policyName = configured.toString().trim();
+            String configured = NaruTaskConfig.toText(task.getTaskEnv().get(NaruSpawnPolicy.ENV_CONFIG_POLICY));
+            String policyName = configured == null ? null : configured.trim();
+            if (!NBlankable.isBlank(policyName)) {
                 if (task.session().findSpawnPolicy(policyName).isNotPresent()) {
                     return "Error: configured spawn policy '" + policyName
                             + "' (env " + NaruSpawnPolicy.ENV_CONFIG_POLICY + ") is not defined in this session.";
@@ -141,7 +141,7 @@ public class ModelDelegateTool extends DefaultNaruTool {
             }
             // the delegation prompt travels as a task variable the routine can read
             if (!NBlankable.isBlank(prompt)) {
-                spec.var("delegate.prompt", prompt);
+                spec.var("delegate.prompt", NElement.of(prompt));
             }
             spec.resolveName();
             String warning = checkSkillsRequestedWithoutExtension(task, spec, target.contract());

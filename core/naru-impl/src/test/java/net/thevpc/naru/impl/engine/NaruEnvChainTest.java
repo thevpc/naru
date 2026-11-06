@@ -62,21 +62,21 @@ public class NaruEnvChainTest {
     public void taskEnvWinsOverTheWiderStores() {
         NaruTask task = taskFor(tempProject());
         task.session().agent().agentEnv().put(P, NElement.ofString("from-agent"), NaruVisibility.PRIVATE);
-        task.session().setSessionEnv(P, "from-session");
-        task.setTaskEnv(P, "from-task");
+        task.session().setSessionEnv(P, NElement.of("from-session"));
+        task.setTaskEnv(P, NElement.of("from-task"));
 
-        Assertions.assertEquals("from-task", task.getTaskEnv(P, true).orNull(),
+        Assertions.assertEquals("from-task", NaruTaskConfig.toText(task.getTaskEnv(P, true).orNull()),
                 "the task env must win the inherited lookup");
-        Assertions.assertEquals("from-session", task.session().getSessionEnv(P, true).orNull(),
+        Assertions.assertEquals("from-session", NaruTaskConfig.toText(task.session().getSessionEnv(P, true).orNull()),
                 "the session lookup holds its own store before looking down");
     }
 
     @Test
     public void theInheritedLookupWalksSessionThenAgentThenSettings() {
         NaruTask sessionOnly = taskFor(tempProject());
-        sessionOnly.session().setSessionEnv(P, "from-session");
-        Assertions.assertEquals("from-session", sessionOnly.session().getSessionEnv(P, true).orNull());
-        Assertions.assertEquals("from-session", sessionOnly.getTaskEnv(P, true).orNull(),
+        sessionOnly.session().setSessionEnv(P, NElement.of("from-session"));
+        Assertions.assertEquals("from-session", NaruTaskConfig.toText(sessionOnly.session().getSessionEnv(P, true).orNull()));
+        Assertions.assertEquals("from-session", NaruTaskConfig.toText(sessionOnly.getTaskEnv(P, true).orNull()),
                 "the task lookup must hand the inherited half to the session");
 
         NaruTask agentOnly = taskFor(tempProject());
@@ -105,7 +105,7 @@ public class NaruEnvChainTest {
         Assertions.assertFalse(task.session().getSessionEnv(P, false).isPresent(),
                 "session env without inheritance must not reach the agent env");
 
-        task.session().setSessionEnv(P, "from-session");
+        task.session().setSessionEnv(P, NElement.of("from-session"));
         Assertions.assertFalse(task.getTaskEnv(P, false).isPresent(),
                 "task env without inheritance must not reach the session env");
     }
@@ -127,7 +127,7 @@ public class NaruEnvChainTest {
         Assertions.assertEquals(NaruVisibility.PRIVATE, configValue.visibility());
 
         NaruTask sessionTask = taskFor(tempProject());
-        sessionTask.session().setSessionEnv(P, "session");
+        sessionTask.session().setSessionEnv(P, NElement.of("session"));
         Assertions.assertEquals(NaruTaskConfig.SCOPE_SESSION,
                 NaruTaskConfig.resolve(sessionTask, P).get().scope());
     }
@@ -141,15 +141,15 @@ public class NaruEnvChainTest {
         int def = 42;
         Assertions.assertEquals(def, NaruTaskConfig.getPositiveInt(task, key, def), "unset stays the default");
 
-        task.setTaskEnv(key, "0");
+        task.setTaskEnv(key, NElement.of("0"));
         Assertions.assertEquals(def, NaruTaskConfig.getPositiveInt(task, key, def), "0 must fall back");
-        task.setTaskEnv(key, "-3");
+        task.setTaskEnv(key, NElement.of("-3"));
         Assertions.assertEquals(def, NaruTaskConfig.getPositiveInt(task, key, def), "negative must fall back");
-        task.setTaskEnv(key, "abc");
+        task.setTaskEnv(key, NElement.of("abc"));
         Assertions.assertEquals(def, NaruTaskConfig.getPositiveInt(task, key, def), "non-numeric must fall back");
-        task.setTaskEnv(key, 7);
+        task.setTaskEnv(key, NElement.of(7));
         Assertions.assertEquals(7, NaruTaskConfig.getPositiveInt(task, key, def));
-        task.setTaskEnv(key, "125");
+        task.setTaskEnv(key, NElement.of("125"));
         Assertions.assertEquals(125, NaruTaskConfig.getPositiveInt(task, key, def));
     }
 
@@ -159,11 +159,11 @@ public class NaruEnvChainTest {
         NaruTask task = taskFor(tempProject());
         int def = 10;
         Assertions.assertEquals(def, NaruTaskConfig.getIntInRange(task, key, def, 1, 100));
-        task.setTaskEnv(key, "0");
+        task.setTaskEnv(key, NElement.of("0"));
         Assertions.assertEquals(def, NaruTaskConfig.getIntInRange(task, key, def, 1, 100), "below min must fall back");
-        task.setTaskEnv(key, "150");
+        task.setTaskEnv(key, NElement.of("150"));
         Assertions.assertEquals(def, NaruTaskConfig.getIntInRange(task, key, def, 1, 100), "above max must fall back");
-        task.setTaskEnv(key, "50");
+        task.setTaskEnv(key, NElement.of("50"));
         Assertions.assertEquals(50, NaruTaskConfig.getIntInRange(task, key, def, 1, 100));
     }
 

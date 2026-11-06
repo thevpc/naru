@@ -3,6 +3,7 @@ package net.thevpc.naru.ext.models;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolSchema;
 import net.thevpc.nuts.elem.*;
@@ -232,7 +233,7 @@ public class NoToolWrapHelper {
                 NaruToolCall call = new NaruToolCall();
                 call.setId("emulated-" + UUID.randomUUID().toString().substring(0, 8));
                 call.setName(toolName);
-                call.setArguments(argsEl != null ? (Map) argsEl.convertTo(Map.class) : new HashMap<>());
+                call.setArguments(NaruUtils.fields(argsEl));
                 calls.add(call);
             } catch (Exception e) {
                 if (task != null) {
@@ -369,7 +370,7 @@ public class NoToolWrapHelper {
             NaruToolCall call = new NaruToolCall();
             call.setId("emulated-" + UUID.randomUUID().toString().substring(0, 8));
             call.setName(name);
-            call.setArguments((Map) argsEl.convertTo(Map.class));
+            call.setArguments(NaruUtils.fields(argsEl));
             return call;
         } catch (Exception e) {
             return null;

@@ -1,6 +1,10 @@
 package net.thevpc.naru.api.agent;
 
 import net.thevpc.naru.api.model.NaruToolCall;
+import net.thevpc.nuts.elem.NCreator;
+import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NProperty;
+import net.thevpc.nuts.elem.NToElement;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -25,7 +29,7 @@ import java.util.Map;
  * several tasks can fire at once. The consumer must not block. A consumer that throws is
  * ignored — this is a side channel and must never fail the tool call it describes.
  */
-public class NaruToolCallEvent {
+public class NaruToolCallEvent implements NToElement {
 
     /**
      * The four states a host can distinguish. A host that only knows how to draw
@@ -66,19 +70,43 @@ public class NaruToolCallEvent {
     private final long taskId;
     private final String callId;
     private final String toolName;
-    private final Map<String, Object> arguments;
+    private final Map<String, NElement> arguments;
     private final String result;
     private final long durationMillis;
 
-    private NaruToolCallEvent(Kind kind, long taskId, NaruToolCall call, String result,
-                              long durationMillis) {
+
+    @NCreator
+    public NaruToolCallEvent(
+            @NProperty("kind") Kind kind,
+            @NProperty("taskId") long taskId,
+            @NProperty("callId") String callId,
+            @NProperty("toolName") String toolName,
+            @NProperty("arguments") Map<String, NElement> arguments,
+            @NProperty("result") String result,
+            @NProperty("durationMillis") long durationMillis
+    ) {
+        this.kind = kind;
+        this.taskId = taskId;
+        this.callId = callId;
+        this.toolName = toolName;
+        this.arguments = arguments;
+        this.result = result;
+        this.durationMillis = durationMillis;
+    }
+
+    private NaruToolCallEvent(
+            Kind kind,
+            long taskId,
+            NaruToolCall call,
+            String result,
+            long durationMillis) {
         this.kind = kind;
         this.taskId = taskId;
         // the id comes from the model and some models omit it: a host keys a card on this and
         // must be able to tell "no id" from "the empty id", so it is kept as it arrived
         this.callId = call == null ? null : call.getId();
         this.toolName = call == null ? null : call.getName();
-        Map<String, Object> a = call == null ? null : call.getArguments();
+        Map<String, NElement> a = call == null ? null : call.getArguments();
         // a copy, and in insertion order: the tool may still be running and mutating its
         // argument map while a host is drawing this event
         this.arguments = a == null || a.isEmpty()
@@ -86,6 +114,11 @@ public class NaruToolCallEvent {
                 : Collections.unmodifiableMap(new LinkedHashMap<>(a));
         this.result = result;
         this.durationMillis = durationMillis;
+    }
+
+    @Override
+    public NElement toElement() {
+        return NElement.defaultToNamedElement(this);
     }
 
     /** The call is about to run. */
@@ -139,7 +172,7 @@ public class NaruToolCallEvent {
     }
 
     /** Unmodifiable copy of the arguments, in the order the model sent them. Never null. */
-    public Map<String, Object> arguments() {
+    public Map<String, NElement> arguments() {
         return arguments;
     }
 

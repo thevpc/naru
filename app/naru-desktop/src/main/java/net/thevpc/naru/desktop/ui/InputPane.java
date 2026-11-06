@@ -7,6 +7,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.desktop.model.InputPrompt;
 import net.thevpc.naru.desktop.model.NaruSessionModel;
 import net.thevpc.naru.desktop.util.MsgText;
+import net.thevpc.nuts.elem.NElement;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -178,7 +179,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         thinking.addActionListener(e -> {
             NaruTask task = selectedTask();
             if (task != null) task.setTaskEnv(net.thevpc.naru.api.model.NaruThinkingConfig.THINKING_KEY,
-                    thinking.isSelected());
+                    NElement.of(thinking.isSelected()));
         });
         attach.addActionListener(e -> {
             javax.swing.JFileChooser chooser = new javax.swing.JFileChooser();

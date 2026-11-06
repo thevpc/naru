@@ -6,6 +6,7 @@ import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.ext.models.anthropic.NaruAnthropicResponseParser;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -60,7 +61,7 @@ public class NaruAnthropicResponseParserTest {
         NaruToolCall call = r.getMessage().getToolCalls().get(0);
         Assertions.assertEquals("toolu_1", call.getId());
         Assertions.assertEquals("web_search", call.getName());
-        Assertions.assertEquals("naru", call.getArguments().get("q"));
+        Assertions.assertEquals(NElement.of("naru"), call.getArguments().get("q"));
     }
 
     @Test

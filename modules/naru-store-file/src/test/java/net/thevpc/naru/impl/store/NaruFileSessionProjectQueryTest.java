@@ -56,8 +56,8 @@ public class NaruFileSessionProjectQueryTest {
     // ---------------------------------------------------------------- fixtures
 
     private NaruSessionData data(String uuid, String name, String projectId, String user) {
-        Map<String, Object> env = new LinkedHashMap<>();
-        env.put("mode", "test");
+        Map<String, NElement> env = new LinkedHashMap<>();
+        env.put("mode", NElement.of("test"));
         return new NaruSessionData()
                 .uuid(uuid)
                 .name(name)

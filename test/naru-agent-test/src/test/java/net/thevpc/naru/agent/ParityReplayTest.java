@@ -9,6 +9,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.elem.NElementWriter;
 import net.thevpc.nuts.io.NPath;
@@ -109,29 +110,29 @@ public class ParityReplayTest {
                     .orElseThrow(() -> new RuntimeException("Missing tool: " + naruToolName));
 
             // Translate Opencode parameter names to STRICT wire-declared schema parameter names:
-            Map<String, Object> callArgs = new HashMap<>();
+            Map<String, NElement> callArgs = new HashMap<>();
             for (Map.Entry<String, Object> entry : probeArgs.entrySet()) {
                 String k = entry.getKey();
                 Object v = entry.getValue();
                 if ("filePath".equals(k)) {
-                    callArgs.put("path", v);
+                    callArgs.put("path", NElement.of(v));
                 } else if ("offset".equals(k)) {
-                    callArgs.put("line_start", v);
+                    callArgs.put("line_start", NElement.of(v));
                 } else if ("limit".equals(k)) {
                     // In NARU schema: line_end = start + limit - 1
                     long startVal = probeArgs.containsKey("offset") ? ((Number) probeArgs.get("offset")).longValue() : 1L;
                     long limitVal = ((Number) v).longValue();
-                    callArgs.put("line_end", startVal + limitVal - 1);
+                    callArgs.put("line_end", NElement.of(startVal + limitVal - 1));
                 } else if ("oldString".equals(k)) {
-                    callArgs.put("search", v);
+                    callArgs.put("search",NElement.of( v));
                 } else if ("newString".equals(k)) {
-                    callArgs.put("replace", v);
+                    callArgs.put("replace", NElement.of(v));
                 } else if ("workdir".equals(k)) {
-                    callArgs.put("working_dir", v);
+                    callArgs.put("working_dir",NElement.of( v));
                 } else if ("timeout".equals(k)) {
-                    callArgs.put("timeout_seconds", ((Number) v).longValue() / 1000);
+                    callArgs.put("timeout_seconds", NElement.of(((Number) v).longValue() / 1000));
                 } else {
-                    callArgs.put(k, v);
+                    callArgs.put(k, NElement.of(v));
                 }
             }
 

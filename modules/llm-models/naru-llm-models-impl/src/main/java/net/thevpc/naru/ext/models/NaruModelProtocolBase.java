@@ -162,7 +162,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         // Find all parameters
         Matcher paramMatcher = Pattern.compile("<parameter=([^>]+)>(.*?)</parameter>", Pattern.DOTALL).matcher(input);
         while (paramMatcher.find()) {
-            c.getArguments().put(paramMatcher.group(1), paramMatcher.group(2).trim());
+            c.getArguments().put(paramMatcher.group(1), NElement.of(paramMatcher.group(2).trim()));
         }
         return c;
     }

@@ -86,7 +86,7 @@ public class NaruAssertDirective extends NaruDirectiveBase {
                 if (setVar != null && !setVar.isEmpty()) {
                     Object current = task.getTaskEnv(setVar, false).orNull();
                     boolean prev = NLiteral.of(current).asBoolean().orElse(true);
-                    task.setTaskEnv(setVar, (prev && ok) ? 1 : 0);
+                    task.setTaskEnv(setVar, NElement.of((prev && ok) ? 1 : 0));
                 }
                 if (!ok && fail) {
                     task.throwError(NMsg.ofC("assert failed: %s", condition));

@@ -60,7 +60,7 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
                     NObjectElement fn = tcObj.getObject("function").orElse(tcObj);
                     String name = fn.getStringValue("name").orElse("unknown");
 
-                    Map<String, Object> args = new LinkedHashMap<>();
+                    Map<String, NElement> args = new LinkedHashMap<>();
                     if (fn.get("arguments").isPresent()) {
                         NElement argsEl = fn.get("arguments").get();
 
@@ -69,7 +69,7 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
                             for (NPairElement entry : argsEl.asObject().get().namedPairs()) {
                                 String k = entry.key().asStringValue().orNull();
                                 if (!NBlankable.isBlank(k)) {
-                                    args.put(k, toPlainValue(entry.value()));
+                                    args.put(k, entry.value());
                                 }
                             }
                         } else if (argsEl.isPrimitive()) {
@@ -78,10 +78,10 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
                             try {
                                 Map<?, ?> readMap = NElementReader.ofJson().read(argsStr, Map.class);
                                 for (Map.Entry<?, ?> entry : readMap.entrySet()) {
-                                    args.put(String.valueOf(entry.getKey()), entry.getValue());
+                                    args.put(String.valueOf(entry.getKey()), NElement.of(entry.getValue()));
                                 }
                             } catch (Exception ignored) {
-                                args.put("raw", argsStr);
+                                args.put("raw", NElement.of(argsStr));
                             }
                         }
                     }
@@ -143,28 +143,5 @@ public class NaruOllamaNativeResponseParser implements NElementDeserializer<Naru
             response = NoToolWrapHelper.recoverPlainTextToolCalls(response);
         }
         return response;
-    }
-
-    /**
-     * Convert a tool-call argument element to its raw Java value. {@code
-     * NElement} string primitives must NOT be passed around as elements: their
-     * {@code toString()} yields the TSON representation (delimiter quotes and
-     * doubled inner quotes, e.g. {@code "pom.xml"} / {@code ""1.0""}) instead of
-     * the plain value ({@code pom.xml} / {@code "1.0"}), which would corrupt any
-     * file path or content handed to a tool. Nested objects/arrays are kept as
-     * elements (rare in flat tool arguments).
-     */
-    private static Object toPlainValue(NElement v) {
-        if (v == null || v.isNull()) {
-            return null;
-        }
-        if (v.isPrimitive()) {
-            NPrimitiveElement pv = v.asPrimitive().orNull();
-            if (pv != null && pv.value() != null) {
-                return pv.value();
-            }
-            return v.asStringValue().orNull();
-        }
-        return NElement.simpleOf(v);
     }
 }

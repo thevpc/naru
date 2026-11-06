@@ -24,6 +24,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.engine.stmt.NaruPromptStmt;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NOptional;
@@ -142,7 +143,7 @@ public class NaruTaskInterruptTest {
             NaruResponse r = new NaruResponse();
             r.setMessage(toolCallAnswer
                     ? NaruMessage.assistantWithToolCalls("calling shell",
-                    List.of(new NaruToolCall("c1", "shell", Map.of("command", "ls"))))
+                    List.of(new NaruToolCall("c1", "shell", Map.of("command", NElement.of("ls")))))
                     : NaruMessage.assistant("partial answer"));
             return r;
         }

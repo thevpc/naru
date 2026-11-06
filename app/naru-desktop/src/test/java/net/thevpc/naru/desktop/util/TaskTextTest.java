@@ -7,6 +7,9 @@ import net.thevpc.naru.api.task.NaruTaskStackFrame;
 import net.thevpc.naru.api.task.NaruTaskStackItem;
 import net.thevpc.naru.desktop.model.NaruSessionModel.TaskDetail;
 import net.thevpc.naru.desktop.model.NaruSessionModel.TaskRow;
+import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -28,6 +31,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * runs.
  */
 class TaskTextTest {
+
+    @BeforeEach
+    void session() {
+        Nuts.require();
+    }
 
     private static final Instant NOW = Instant.parse("2026-10-18T12:00:00Z");
 
@@ -81,10 +89,10 @@ class TaskTextTest {
         assertEquals("0s", TaskText.age(NOW.plusSeconds(3), NOW));
     }
 
-    private static Map<String, Object> vars() {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("beta", 2);
-        m.put("alpha", 1);
+    private static Map<String, NElement> vars() {
+        Map<String, NElement> m = new LinkedHashMap<>();
+        m.put("beta", NElement.of(2));
+        m.put("alpha", NElement.of(1));
         return m;
     }
 

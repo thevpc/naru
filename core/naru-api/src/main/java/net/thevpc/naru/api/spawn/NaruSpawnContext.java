@@ -3,6 +3,7 @@ package net.thevpc.naru.api.spawn;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.nuts.elem.NElement;
 
 import java.util.List;
 import java.util.Map;
@@ -79,7 +80,7 @@ public interface NaruSpawnContext {
     NaruSpawnContext seedSkill(String skill, NaruSpawnSource source);
 
     /** Seeds one environment variable for the spawned task, with provenance. */
-    NaruSpawnContext seedEnv(String key, Object value, NaruSpawnSource source);
+    NaruSpawnContext seedEnv(String key, NElement value, NaruSpawnSource source);
 
     /** Seeds one user-defined budget label for the spawned task, with provenance. */
     NaruSpawnContext seedLabel(String key, String value, NaruSpawnSource source);

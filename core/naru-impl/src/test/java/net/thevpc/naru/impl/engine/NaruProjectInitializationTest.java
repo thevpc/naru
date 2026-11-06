@@ -15,6 +15,7 @@ import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.naru.impl.registry.builtindirectives.NaruSessionDirDirective;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.AfterEach;
@@ -180,7 +181,7 @@ public class NaruProjectInitializationTest {
     public void initOnCdFlagRestoresOldBehaviourWithAWarning() {
         NPath sub = projectDir.resolve("sub");
         initHook(sub, "cd-marker");
-        session.setSessionEnv("naru.initOnCd", true);
+        session.setSessionEnv("naru.initOnCd", NElement.of(true));
         NaruTaskImpl task = newTask(projectDir);
 
         task.setWorkingDir(sub);
@@ -204,7 +205,7 @@ public class NaruProjectInitializationTest {
                 .filter(e -> NaruEvent.SESSION_START.equals(e.name()))
                 .toList();
         assertEquals(1, starts.size(), "session-start is fired exactly once per session");
-        assertEquals(projectDir.normalize().toString(), starts.get(0).payload("sessionDir"));
+        assertEquals(NElement.of(projectDir.normalize().toString()), starts.get(0).payload("sessionDir"));
     }
 
     // ── help ─────────────────────────────────────────────────────────────────

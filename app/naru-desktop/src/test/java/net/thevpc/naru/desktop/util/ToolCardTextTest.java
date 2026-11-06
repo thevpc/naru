@@ -2,6 +2,9 @@ package net.thevpc.naru.desktop.util;
 
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.api.model.NaruToolCall;
+import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -19,7 +22,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ToolCardTextTest {
 
-    private static NaruToolCallEvent ev(NaruToolCallEvent.Kind kind, Map<String, Object> args,
+    @BeforeEach
+    void session() {
+        Nuts.require();
+    }
+
+    private static NaruToolCallEvent ev(NaruToolCallEvent.Kind kind, Map<String, NElement> args,
                                         String result, long ms) {
         NaruToolCall c = new NaruToolCall("call-1", "my_tool", args);
         return switch (kind) {
@@ -32,13 +40,13 @@ class ToolCardTextTest {
 
     @Test
     void argumentsRenderOnOneLineInOrder() {
-        Map<String, Object> args = new LinkedHashMap<>();
-        args.put("path", "notes.txt");
-        args.put("limit", 40);
-        args.put("raw", false);
-        args.put("offset", null);
-        args.put("nested", Map.of("a", 1));
-        args.put("list", List.of("x", 2));
+        Map<String, NElement> args = new LinkedHashMap<>();
+        args.put("path", NElement.of("notes.txt"));
+        args.put("limit", NElement.of(40));
+        args.put("raw", NElement.of(false));
+        args.put("offset", NElement.of(null));
+        args.put("nested", NElement.of(Map.of("a", 1)));
+        args.put("list", NElement.of(List.of("x", 2)));
         String s = ToolCardText.arguments(args);
         assertTrue(s.startsWith("{path:\"notes.txt\",limit:40,raw:false,offset:null"), s);
         assertTrue(s.contains("nested:{a:1}"), s);
@@ -48,14 +56,14 @@ class ToolCardTextTest {
 
     @Test
     void aLongArgumentValueIsClippedWithItsSizeStated() {
-        String s = ToolCardText.arguments(Map.of("content", "z".repeat(10_000)));
+        String s = ToolCardText.arguments(Map.of("content", NElement.of("z".repeat(10_000))));
         assertTrue(s.length() < 400, "the header stays short: " + s.length());
         assertTrue(s.contains("(10000 chars)"), "but never pretends the value was that short");
     }
 
     @Test
     void quotesAndNewlinesStayInsideTheStringTheyBelongTo() {
-        String s = ToolCardText.arguments(Map.of("cmd", "echo \"hi\"\nls"));
+        String s = ToolCardText.arguments(Map.of("cmd", NElement.of("echo \"hi\"\nls")));
         assertEquals("{cmd:\"echo \\\"hi\\\"\\nls\"}", s);
     }
 
@@ -74,7 +82,7 @@ class ToolCardTextTest {
 
     @Test
     void eachKindWritesItsOwnHeaderLine() {
-        Map<String, Object> args = Map.of("path", "a.txt");
+        Map<String, NElement> args = Map.of("path", NElement.of("a.txt"));
         assertTrue(ToolCardText.header(ev(NaruToolCallEvent.Kind.STARTED, args, null, -1))
                 .startsWith("▶ my_tool {path:\"a.txt\"}"));
         assertTrue(ToolCardText.header(ev(NaruToolCallEvent.Kind.PARKED, args, null, -1))

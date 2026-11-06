@@ -226,12 +226,12 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public void setReturnResult(Object returnResult) {
+    public void setReturnResult(NElement returnResult) {
 
     }
 
     @Override
-    public Object getReturnResult() {
+    public NElement getReturnResult() {
         throw new NUnsupportedOperationException();
     }
 
@@ -304,17 +304,17 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NaruTask setTaskEnv(String key, Object value) {
+    public NaruTask setTaskEnv(String key, NElement value) {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public NOptional<Object> getTaskEnv(String key, boolean inherited) {
+    public NOptional<NElement> getTaskEnv(String key, boolean inherited) {
         throw new NUnsupportedOperationException();
     }
 
     @Override
-    public Object resolveVariable(String key) {
+    public NOptional<NElement> resolveVariable(String key) {
         throw new NUnsupportedOperationException();
     }
 
@@ -334,7 +334,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public Object evalExpression(String condition) {
+    public NElement evalExpression(String condition) {
         throw new NUnsupportedOperationException();
     }
 
@@ -567,7 +567,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NaruTask fireEvent(String eventType, Map<String, Object> args, NaruEventTarget target, NaruRetentionPolicy retention) {
+    public NaruTask fireEvent(String eventType, Map<String, NElement> args, NaruEventTarget target, NaruRetentionPolicy retention) {
         throw new NUnsupportedOperationException();
     }
 
@@ -607,7 +607,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public Map<String, Object> getTaskEnv() {
+    public Map<String, NElement> getTaskEnv() {
         throw new NUnsupportedOperationException();
     }
 
@@ -701,7 +701,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public NOptional<Object> value() {
+    public NOptional<NElement> value() {
         throw new NUnsupportedOperationException();
     }
 
@@ -711,7 +711,7 @@ public class NaruPoisonTask implements NaruTask {
     }
 
     @Override
-    public Map<String, Object> vars() {
+    public Map<String, NElement> vars() {
         throw new NUnsupportedOperationException();
     }
 

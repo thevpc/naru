@@ -7,8 +7,10 @@ import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NArrayElement;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementReader;
+import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.util.NBlankable;
@@ -194,14 +196,14 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                     if (d instanceof NaruToolDefinitionFunction) {
                         params = ((NaruToolDefinitionFunction) d).getParams();
                     }
-                    Map<String, Object> args = new HashMap<>();
+                    Map<String, NElement> args = new HashMap<>();
                     while (!cmdLine.isEmpty()) {
                         String k = cmdLine.peek().get().key();
                         NaruToolParameter p = params.stream().filter(x -> x.getName().equals(k)).findFirst().orElse(null);
                         if (p != null) {
                             NArg e = cmdLine.nextEntry().get();
-                            String v = e.value();
-                            Object ov = v;
+                            NElement v = NElement.of(e.value());
+                            NElement ov = v;
                             NaruToolParameter.Type pt = p.getType();
                             if (pt == null) {
                                 pt = NaruToolParameter.Type.STRING;
@@ -212,30 +214,40 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                                     break;
                                 }
                                 case BOOLEAN: {
-                                    ov = NLiteral.ofBoolean(v).orNull();
+                                    ov = v.asBoolean().orNull();
                                     break;
                                 }
                                 case NUMBER: {
-                                    ov = NLiteral.ofNumber(v).orNull();
+                                    ov = v.asNumber().orNull();
                                     break;
                                 }
                                 case INTEGER: {
-                                    ov = NLiteral.ofInt(v).orNull();
+                                    ov = v.asInt().orNull();
                                     break;
                                 }
                                 case ARRAY: {
-                                    if (v.startsWith("[") && v.endsWith("]")) {
-                                        ov = NElementReader.ofTson().read(v).asArray().get().children().stream().map(x -> NElement.simpleOf(x)).toArray();
-                                    } else {
-                                        ov = NStringUtils.split(v, ",::", true, true).toArray();
+                                    if(v instanceof NArrayElement){
+                                        ov=v;
+                                    }else {
+                                        String vv=v.asStringValue().orElse("");
+                                        if (vv.startsWith("[") && vv.endsWith("]")) {
+                                            ov = NElementReader.ofTson().read(vv).asArray().get();
+                                        } else {
+                                            ov = NElement.ofStringArray(NStringUtils.split(vv, ",::", true, true).toArray(new String[0]));
+                                        }
                                     }
                                     break;
                                 }
                                 case OBJECT: {
-                                    if (v.startsWith("{") && v.endsWith("}")) {
-                                        ov = NElement.simpleOf(NElementReader.ofTson().read(v).asObject().get());
-                                    } else {
-                                        ov = v;
+                                    if(v instanceof NObjectElement){
+                                        ov=v;
+                                    }else {
+                                        String vv=v.asStringValue().orElse("");
+                                        if (vv.startsWith("{") && vv.endsWith("}")) {
+                                            ov = NElementReader.ofTson().read(vv).asObject().get();
+                                        } else {
+                                            ov = v;
+                                        }
                                     }
                                     break;
                                 }
@@ -319,7 +331,7 @@ public class NaruToolsDirective extends NaruDirectiveBase {
                 param.isRequired()?NMsg.ofC(" %s",NMsg.ofStyledError("required")):"",
                 param.isNullable()?NMsg.ofC(" %s",NMsg.ofStyledWarn("nullable")):"",
                 !NBlankable.isBlank(param.getFormat()) ?NMsg.ofC(" (format: %s)",param.getFormat()):"",
-                !(param.getEnumValues()==null ||param.getEnumValues().isEmpty()) ?NMsg.ofC(" (values: %s)",param.getEnumValues()):"",
+                !(param.getEnumValues()==null ||param.getEnumValues().isEmpty()) ?NMsg.ofC(" (values: %s)",param.getEnumValues().stream().map(net.thevpc.naru.api.util.NaruUtils::plainValue).toList()):"",
                 param.getDescription());
 
         context.outln( msg);

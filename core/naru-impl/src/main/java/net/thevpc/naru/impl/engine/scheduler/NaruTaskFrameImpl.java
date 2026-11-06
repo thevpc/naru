@@ -17,8 +17,8 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     public List<NaruStatement> todo = new ArrayList<>();
     private Integer returnPc = null;          // to resume after /return
     private NaruStmtResult lastResult = null;          // to resume after /return
-    private final Map<String, Object> params = new HashMap<>(); // local param frame
-    private final Map<String, Object> localVars = new HashMap<>(); // Local mutable state
+    private final Map<String, NElement> params = new HashMap<>(); // local param frame
+    private final Map<String, NElement> localVars = new HashMap<>(); // Local mutable state
     private String runningRoutine;
     private String editRoutine;
     private boolean inheritVars;
@@ -32,10 +32,10 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
         this.returnPc = o.getIntValue("returnPc").orNull();
         this.inheritVars = o.getBooleanValue("inheritVars").orNull();
         for (NPairElement p : o.getObject("params").orElse(NObjectElement.ofEmpty()).namedPairs()) {
-            this.params.put(p.key().asStringValue().orNull(), NElement.simpleOf(p.value())); // NEW
+            this.params.put(p.key().asStringValue().orNull(), p.value()); // NEW
         }
         for (NPairElement p : o.getObject("localVars").orElse(NObjectElement.ofEmpty()).namedPairs()) {
-            this.localVars.put(p.key().asStringValue().orNull(), NElement.simpleOf(p.value())); // NEW
+            this.localVars.put(p.key().asStringValue().orNull(), p.value()); // NEW
         }
         for (NElement item : o.getArray("todo").get().children()) {
             this.todo.add(NaruStatementHelper.of(item));
@@ -90,22 +90,22 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
         return returnPc;
     }
 
-    public Map<String, Object> params() {
+    public Map<String, NElement> params() {
         return new HashMap<>(params);
     }
 
     @Override
-    public Map<String, Object> localVars() {
+    public Map<String, NElement> localVars() {
         return new HashMap<>(localVars);
     }
 
     @Override
-    public void setLocalVar(String key, Object value) {
+    public void setLocalVar(String key, NElement value) {
         localVars.put(key, value);
     }
 
     @Override
-    public NOptional<Object> getLocalVar(String name) {
+    public NOptional<NElement> getLocalVar(String name) {
         if ("_".equals(name)) {
             return NOptional.of(NaruStmtResult.nonNull(lastResult).successValue());
         }
@@ -126,8 +126,8 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     }
 
     @Override
-    public Map<String, Object> getAllVars() {
-        HashMap<String, Object> e = new HashMap<>();
+    public Map<String, NElement> getAllVars() {
+        HashMap<String, NElement> e = new HashMap<>();
         e.putAll(params);
         e.putAll(localVars);
         return e;
@@ -141,12 +141,12 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     }
 
     @Override
-    public void setParam(String name, Object value) {
+    public void setParam(String name, NElement value) {
         params.put(name, value);
     }
 
     @Override
-    public NOptional<Object> getParam(String name) {
+    public NOptional<NElement> getParam(String name) {
         if (params.containsKey(name)) {
             return NOptional.ofNullable(params.get(name));
         }
@@ -156,12 +156,12 @@ public class NaruTaskFrameImpl implements NaruTaskFrame {
     @Override
     public NElement toElement() {
         NObjectElementBuilder pb = NObjectElementBuilder.of();
-        for (Map.Entry<String, Object> e : params.entrySet()) {
-            pb.set(e.getKey(), NElement.of(e.getValue()));
+        for (Map.Entry<String, NElement> e : params.entrySet()) {
+            pb.set(e.getKey(), e.getValue());
         }
         NObjectElementBuilder ps = NObjectElementBuilder.of();
-        for (Map.Entry<String, Object> e : localVars.entrySet()) {
-            ps.set(e.getKey(), NElement.of(e.getValue()));
+        for (Map.Entry<String, NElement> e : localVars.entrySet()) {
+            ps.set(e.getKey(), e.getValue());
         }
         return NElement.ofObjectBuilder()
                 .set("pc", pc)

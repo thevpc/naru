@@ -2,7 +2,9 @@ package net.thevpc.naru.desktop.model;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
+import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
+import net.thevpc.nuts.elem.NElement;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -202,11 +204,11 @@ public final class TurnActivity {
         }
     }
 
-    private void noteFiles(Map<String, Object> arguments) {
+    private void noteFiles(Map<String, NElement> arguments) {
         if (arguments == null || arguments.isEmpty()) {
             return;
         }
-        for (Map.Entry<String, Object> entry : arguments.entrySet()) {
+        for (Map.Entry<String, NElement> entry : arguments.entrySet()) {
             if (entry.getKey() == null
                     || !FILE_KEYS.contains(entry.getKey().toLowerCase(Locale.ROOT))) {
                 continue;
@@ -215,10 +217,11 @@ public final class TurnActivity {
         }
     }
 
-    private void collectFiles(Object value) {
-        if (value == null) {
+    private void collectFiles(Object evalue) {
+        if (evalue == null) {
             return;
         }
+        Object value = NaruUtils.plainValue(evalue);
         if (value instanceof String text) {
             String path = text.strip();
             if (!path.isEmpty() && !path.contains("://")) {

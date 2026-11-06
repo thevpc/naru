@@ -68,7 +68,7 @@ public class NoToolWrapHelperTest {
 
         Assertions.assertTrue(unwrapped.hasToolCalls());
         Assertions.assertEquals("file_read", unwrapped.getMessage().getToolCalls().get(0).getName());
-        Assertions.assertEquals("/x", unwrapped.getMessage().getToolCalls().get(0).getArguments().get("path"));
+        Assertions.assertEquals(NElement.of("/x"), unwrapped.getMessage().getToolCalls().get(0).getArguments().get("path"));
         Assertions.assertFalse(unwrapped.getMessage().getContent().toString().contains("tool_call"),
                 "the emulated block must be stripped from the answer text");
     }
@@ -112,7 +112,7 @@ public class NoToolWrapHelperTest {
         Assertions.assertTrue(unwrapped.hasToolCalls(),
                 "a bare tool-call object must become a call, not be shown as the answer");
         Assertions.assertEquals("file_grep", unwrapped.getMessage().getToolCalls().get(0).getName());
-        Assertions.assertEquals("poem", unwrapped.getMessage().getToolCalls().get(0).getArguments().get("pattern"));
+        Assertions.assertEquals(NElement.of("poem"), unwrapped.getMessage().getToolCalls().get(0).getArguments().get("pattern"));
         Assertions.assertNull(unwrapped.getMessage().getContent(),
                 "the recovered object must not linger as answer text");
     }
@@ -127,7 +127,7 @@ public class NoToolWrapHelperTest {
 
         Assertions.assertTrue(unwrapped.hasToolCalls());
         Assertions.assertEquals("bash", unwrapped.getMessage().getToolCalls().get(0).getName());
-        Assertions.assertEquals("ls", unwrapped.getMessage().getToolCalls().get(0).getArguments().get("command"));
+        Assertions.assertEquals(NElement.of("ls"), unwrapped.getMessage().getToolCalls().get(0).getArguments().get("command"));
     }
 
     @Test
@@ -157,7 +157,7 @@ public class NoToolWrapHelperTest {
                 "both bare objects must become calls");
         Assertions.assertEquals("pwd", unwrapped.getMessage().getToolCalls().get(0).getName());
         Assertions.assertEquals("folder_find", unwrapped.getMessage().getToolCalls().get(1).getName());
-        Assertions.assertEquals(true,
+        Assertions.assertEquals(NElement.of(true),
                 unwrapped.getMessage().getToolCalls().get(1).getArguments().get("recursive"));
         Assertions.assertNull(unwrapped.getMessage().getContent());
     }
@@ -171,7 +171,7 @@ public class NoToolWrapHelperTest {
         NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
 
         Assertions.assertTrue(unwrapped.hasToolCalls());
-        Assertions.assertEquals("*.java,*.py",
+        Assertions.assertEquals(NElement.of("*.java,*.py"),
                 unwrapped.getMessage().getToolCalls().get(0).getArguments().get("include_filename"));
     }
 

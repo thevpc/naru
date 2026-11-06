@@ -404,7 +404,7 @@
       "command": "seq 1 5000"
     },
     "len": 10102,
-    "head": "...output truncated...\n\nFull output saved to: /tmp/naru-tool-output/tool_792e167fc3034189bacaa2d5f31b68b0\n\n3002\n3003\n3004\n3005\n3006\n3007\n3008\n3009\n3010\n3011\n3012\n3013\n3014\n3015\n3016\n3017\n3018\n3019\n3020\n3021\n3022\n3023\n3024\n3025\n3026\n3027\n3028\n3029\n303",
+    "head": "...output truncated...\n\nFull output saved to: /tmp/naru-tool-output/tool_1cf17b5b9100485497e7628d89e2b20f\n\n3002\n3003\n3004\n3005\n3006\n3007\n3008\n3009\n3010\n3011\n3012\n3013\n3014\n3015\n3016\n3017\n3018\n3019\n3020\n3021\n3022\n3023\n3024\n3025\n3026\n3027\n3028\n3029\n303",
     "tail": "4951\n4952\n4953\n4954\n4955\n4956\n4957\n4958\n4959\n4960\n4961\n4962\n4963\n4964\n4965\n4966\n4967\n4968\n4969\n4970\n4971\n4972\n4973\n4974\n4975\n4976\n4977\n4978\n4979\n4980\n4981\n4982\n4983\n4984\n4985\n4986\n4987\n4988\n4989\n4990\n4991\n4992\n4993\n4994\n4995\n4996\n4997\n4998\n4999\n5000\n",
     "semanticMatch": true,
     "note": "Exact/Semantic Match"
@@ -459,7 +459,7 @@
       "command": "head -c 100000 /dev/zero | tr '\\0' 'a'"
     },
     "len": 51307,
-    "head": "...output truncated...\n\nFull output saved to: /tmp/naru-tool-output/tool_d68a4f3a2bbd4954a538d32eb1696f57\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "head": "...output truncated...\n\nFull output saved to: /tmp/naru-tool-output/tool_64ab88f9432d4649819b41b0b9fdcfaa\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "tail": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "semanticMatch": true,
     "note": "Exact/Semantic Match"

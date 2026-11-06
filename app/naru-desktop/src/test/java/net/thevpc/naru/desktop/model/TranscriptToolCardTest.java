@@ -5,6 +5,7 @@ import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
 import net.thevpc.naru.desktop.util.EDT;
+import net.thevpc.nuts.elem.NElement;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,7 +50,7 @@ class TranscriptToolCardTest {
     }
 
     private static NaruToolCall call(String id, String name) {
-        return new NaruToolCall(id, name, Map.of("path", "notes.txt", "limit", 40));
+        return new NaruToolCall(id, name, Map.of("path", NElement.of("notes.txt"), "limit", NElement.of(40)));
     }
 
     private static TranscriptEvent started(long task, String id, String name) {

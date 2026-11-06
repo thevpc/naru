@@ -16,6 +16,7 @@ import net.thevpc.naru.api.spawn.NaruSpawnSource;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NNameFormat;
 
@@ -199,13 +200,13 @@ public final class NaruSpawnPlanner {
         List<NaruSpawnSeed<String>> skills = new ArrayList<>(skillMap.values());
 
         // ── env ─────────────────────────────────────────────────────────────
-        Map<String, NaruSpawnSeed<Object>> envMap = new TreeMap<>();
-        for (Map.Entry<String, NaruSpawnSeed<Object>> e : ctx.envSeeds().entrySet()) {
+        Map<String, NaruSpawnSeed<NElement>> envMap = new TreeMap<>();
+        for (Map.Entry<String, NaruSpawnSeed<NElement>> e : ctx.envSeeds().entrySet()) {
             mergeEnvSeed(envMap, e.getKey(), e.getValue());
         }
         if (inherited.containsKey(NaruSpawnInherit.ENV) && parent != null) {
             NaruSpawnSource envSource = inherited.get(NaruSpawnInherit.ENV);
-            for (Map.Entry<String, Object> e : parent.getTaskEnv().entrySet()) {
+            for (Map.Entry<String, NElement> e : parent.getTaskEnv().entrySet()) {
                 mergeEnvSeed(envMap, e.getKey(), NaruSpawnSeed.of(e.getValue(), envSource));
             }
         }
@@ -484,9 +485,9 @@ public final class NaruSpawnPlanner {
         }
     }
 
-    private static void mergeEnvSeed(Map<String, NaruSpawnSeed<Object>> map, String key,
-                                     NaruSpawnSeed<Object> seed) {
-        NaruSpawnSeed<Object> old = map.get(key);
+    private static void mergeEnvSeed(Map<String, NaruSpawnSeed<NElement>> map, String key,
+                                     NaruSpawnSeed<NElement> seed) {
+        NaruSpawnSeed<NElement> old = map.get(key);
         if (old == null || rank(seed.source()) >= rank(old.source())) {
             map.put(key, seed);
         }

@@ -5,6 +5,8 @@ import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.desktop.model.ModelCallLog;
+import net.thevpc.nuts.Nuts;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -21,6 +23,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * act on.
  */
 class BudgetTextTest {
+
+    @BeforeEach
+    void session() {
+        Nuts.require();
+    }
 
     private static NaruModelRequest request(String prompt) {
         return new NaruModelRequest(List.of(NaruMessage.system("sys"), NaruMessage.user(prompt)),

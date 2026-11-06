@@ -8,6 +8,7 @@ import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.access.NaruResource;
+import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -15,6 +16,7 @@ import net.thevpc.naru.api.registry.NaruDirectiveProviderBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextBuilder;
@@ -328,25 +330,29 @@ public class NaruPermissionsDirectiveProvider extends NaruDirectiveProviderBase 
         }
 
         /** Adapts a tool's argument map to the same shape the directive parses to. */
-        static Parsed of(Map<String, Object> args) {
+        static Parsed of(Map<String, NElement> args) {
             Parsed p = new Parsed();
             if (args != null) {
-                for (Map.Entry<String, Object> e : args.entrySet()) {
-                    Object v = e.getValue();
+                for (Map.Entry<String, NElement> e : args.entrySet()) {
+                    NElement v = e.getValue();
                     if (v == null) {
                         continue;
                     }
-                    if (v instanceof Iterable) {
+                    if (v instanceof NListContainerElement) {
                         StringBuilder sb = new StringBuilder();
-                        for (Object o : (Iterable<?>) v) {
+                        for (NElement o : ((NListContainerElement) v).children()) {
                             if (sb.length() > 0) {
                                 sb.append(',');
                             }
-                            sb.append(o);
+                            sb.append(o.asStringValue().orNull());
                         }
                         p.put(e.getKey(), sb.toString());
                     } else {
-                        p.put(e.getKey(), String.valueOf(v));
+                        // the option strings are what the command line would have
+                        // produced, so a scalar element must contribute its value:
+                        // String.valueOf(element) hands parseEffect the TSON text
+                        // '"deny"' and the rule is refused as an unknown effect
+                        p.put(e.getKey(), NaruTaskConfig.toText(v));
                     }
                 }
             }

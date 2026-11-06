@@ -10,6 +10,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.registry.NaruRegistryImpl;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -66,12 +67,17 @@ public class NaruPermissionsToolsTest {
                 .actions(NaruAction.CALL).effect(NaruAccessEffect.DENY));
 
         String denied = s.registry().dispatch("permission_check",
-                Map.of("type", "tool", "resource", "echo_tool", "action", "call"), task);
+                Map.of("type", NElement.of("tool"),
+                        "resource", NElement.of("echo_tool"),
+                        "action", NElement.of("call")
+                ), task);
         assertTrue(denied.startsWith("DENY"), denied);
         assertTrue(denied.contains("deny-echo"), denied);
 
         String allowed = s.registry().dispatch("permission_check",
-                Map.of("type", "tool", "resource", "other_tool", "action", "call"), task);
+                Map.of("type", NElement.of("tool"),
+                        "resource", NElement.of("other_tool"),
+                        "action", NElement.of("call")), task);
         assertTrue(allowed.startsWith("ALLOW"), allowed);
     }
 
@@ -81,11 +87,11 @@ public class NaruPermissionsToolsTest {
         NaruTask task = NaruPermissionsTestSupport.task(s);
 
         String added = s.registry().dispatch("permission_add", Map.of(
-                "id", "model-added",
-                "type", "tool",
-                "pattern", "echo_tool",
-                "actions", "call",
-                "effect", "deny"), task);
+                "id", NElement.of("model-added"),
+                "type", NElement.of("tool"),
+                "pattern", NElement.of("echo_tool"),
+                "actions", NElement.of("call"),
+                "effect", NElement.of("deny")), task);
         assertTrue(added.startsWith("rule added"), added);
 
         NaruAccessPolicy policy = s.accessPolicy();
@@ -95,7 +101,7 @@ public class NaruPermissionsToolsTest {
                 "a model-added rule rides the session state, never the project file");
         assertEquals(NaruAccessEffect.DENY, r.effect());
 
-        String removed = s.registry().dispatch("permission_remove", Map.of("id", "model-added"), task);
+        String removed = s.registry().dispatch("permission_remove", Map.of("id", NElement.of("model-added")), task);
         assertTrue(removed.startsWith("rule removed"), removed);
         assertFalse(policy.rule("model-added").isPresent());
     }
@@ -122,7 +128,9 @@ public class NaruPermissionsToolsTest {
                 .actions(NaruAction.CALL).effect(NaruAccessEffect.DENY));
 
         String denied = s.registry().dispatch("permission_add", Map.of(
-                "id", "x", "type", "tool", "pattern", "y"), task);
+                "id", NElement.of("x"),
+                "type", NElement.of("tool"),
+                "pattern", NElement.of("y")), task);
 
         assertTrue(denied.startsWith("ERROR: permission denied"), denied);
         assertTrue(s.accessPolicy().rule("x").isEmpty(), "a denied mutation writes nothing");

@@ -13,6 +13,7 @@ import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -164,8 +165,8 @@ public class NaruSpawnDirectiveTest {
         assertEquals(Set.of("run_shell"), child.findToolExclusions());
 
         NaruEvent spawned = lastSpawned(fromSeq);
-        assertEquals("review-safe", spawned.payload().get("policy"));
-        assertEquals("routine", spawned.payload().get("kind"));
+        assertEquals(NElement.of("review-safe"), spawned.payload().get("policy"));
+        assertEquals(NElement.of("routine"), spawned.payload().get("kind"));
     }
 
     // ── --explain ───────────────────────────────────────────────────────────
@@ -179,7 +180,7 @@ public class NaruSpawnDirectiveTest {
         assertNull(r.errorValue(), () -> "--explain must not error, got " + r);
         assertEquals(0, r.exitCode());
         // --explain resolves and prints instead of spawning; its success carries no value
-        assertNull(r.successValue());
+        assertTrue(r.successValue().isNull(), () -> "--explain carries no value, got " + r.successValue());
 
         assertTrue(session.eventLog().scan(fromSeq, e -> NaruEvent.TASK_SPAWNED.equals(e.name())).isEmpty(),
                 "--explain must not spawn");
@@ -200,7 +201,7 @@ public class NaruSpawnDirectiveTest {
 
         NaruStmtResult r = call(parent, "start", "probe.naru --fork --summary");
         NaruEvent spawned = lastSpawned(fromSeq);
-        assertEquals("summary (flag)", spawned.payload().get("strategy"),
+        assertEquals(NElement.of("summary (flag)"), spawned.payload().get("strategy"),
                 "of two strategy flags the last one must win");
         assertNotNull(r.successValue());
     }
@@ -232,7 +233,7 @@ public class NaruSpawnDirectiveTest {
         NaruTask child = session.findTask(childId).orElseThrow(() -> new AssertionError("no task " + childId));
         session.start();
         child.await();
-        assertEquals(42L, ((Number) child.value().orNull()).longValue());
+        assertEquals(42L, child.value().get().asNumberValue().get().longValue());
         assertEquals(0, child.exitCode());
     }
 
@@ -268,7 +269,7 @@ public class NaruSpawnDirectiveTest {
         assertNotNull(r.successValue());
 
         NaruEvent spawned = lastSpawned(fromSeq);
-        assertEquals("agent", spawned.payload().get("kind"));
+        assertEquals(NElement.of("agent"), spawned.payload().get("kind"));
         NaruTask child = session.findTask(r.successValue().asLongValue().get()).orElseThrow(() -> new AssertionError("no child " + r.successValue()));
         assertEquals(Set.of("write"), child.findToolTagNames());
     }

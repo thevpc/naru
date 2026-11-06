@@ -136,19 +136,19 @@ public class NaruModelRetryAndAuditTest {
     public void testToolArgumentsParsingWithMarkdownAndWhitespace() {
         // Plain JSON
         NElement el1 = NElement.ofString("{\"path\":\"/home/user/file.txt\",\"line\":10}");
-        Map<String, Object> args1 = NaruOpenAiResponseParser.parseArguments(el1);
-        Assertions.assertEquals("/home/user/file.txt", args1.get("path"));
-        Assertions.assertEquals(10, ((Number) args1.get("line")).intValue());
+        Map<String, NElement> args1 = NaruOpenAiResponseParser.parseArguments(el1);
+        Assertions.assertEquals(NElement.of("/home/user/file.txt"), args1.get("path"));
+        Assertions.assertEquals(10, args1.get("line").asNumberValue().get().intValue());
 
         // Markdown-wrapped JSON
         NElement el2 = NElement.ofString("```json\n{\"command\":\"ls -la\",\"timeout\":30}\n```");
-        Map<String, Object> args2 = NaruOpenAiResponseParser.parseArguments(el2);
-        Assertions.assertEquals("ls -la", args2.get("command"));
-        Assertions.assertEquals(30, ((Number) args2.get("timeout")).intValue());
+        Map<String, NElement> args2 = NaruOpenAiResponseParser.parseArguments(el2);
+        Assertions.assertEquals(NElement.of("ls -la"), args2.get("command"));
+        Assertions.assertEquals(30, args2.get("timeout").asNumberValue().get().intValue());
 
         // Empty / whitespace
         NElement el3 = NElement.ofString("  ");
-        Map<String, Object> args3 = NaruOpenAiResponseParser.parseArguments(el3);
+        Map<String, NElement> args3 = NaruOpenAiResponseParser.parseArguments(el3);
         Assertions.assertTrue(args3.isEmpty());
     }
 
@@ -159,14 +159,14 @@ public class NaruModelRetryAndAuditTest {
         List<NaruToolCall> calls1 = NaruOpenAiResponseParser.parseEmbeddedToolCalls(text1);
         Assertions.assertEquals(1, calls1.size());
         Assertions.assertEquals("file_read", calls1.get(0).getName());
-        Assertions.assertEquals("src/Main.java", calls1.get(0).getArguments().get("path"));
+        Assertions.assertEquals(NElement.of("src/Main.java"), calls1.get(0).getArguments().get("path"));
 
         // <|tool_call|> format
         String text2 = "<|tool_call|>\n{\"tool\": \"calculator\", \"args\": {\"expression\": \"2 + 2\"}}\n<|end_tool_call|>";
         List<NaruToolCall> calls2 = NaruOpenAiResponseParser.parseEmbeddedToolCalls(text2);
         Assertions.assertEquals(1, calls2.size());
         Assertions.assertEquals("calculator", calls2.get(0).getName());
-        Assertions.assertEquals("2 + 2", calls2.get(0).getArguments().get("expression"));
+        Assertions.assertEquals(NElement.of("2 + 2"), calls2.get(0).getArguments().get("expression"));
     }
 
     @Test

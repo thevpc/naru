@@ -75,20 +75,17 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                             // guess which plan to run.
                             List<NaruPlan> unfinished = NaruPlanExtension.unfinishedPlans(task.session());
                             if(unfinished.isEmpty()){
-                                logInfo(context, NMsg.ofStyledError("no active plan"));
-                                return NaruStmtResult.ofError();
+                                return fail(context, NMsg.ofStyledError("no active plan"));
                             }else if(unfinished.size()==1){
                                 currentPlan = unfinished.get(0);
                             }else{
-                                logInfo(context, NMsg.ofStyledError("multiple active plans exist; please specify which plan to show\n" + logListing(context)));
-                                return NaruStmtResult.ofError();
+                                return fail(context, NMsg.ofStyledError("multiple active plans exist; please specify which plan to show\n" + logListing(context)));
                             }
                         }
                     }else{
                         currentPlan=NaruPlanExtension.plans(task.session()).findPlan(ref).orNull();
                         if(currentPlan==null){
-                            logInfo(context, NMsg.ofStyledError("no such plan "+ref));
-                            return NaruStmtResult.ofError();
+                            return fail(context, NMsg.ofStyledError("no such plan " + ref));
                         }
                     }
 
@@ -113,20 +110,17 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                 public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                     // Check if we are in planning mode
                     if ("plan".equals(context.task().promptMode().name())) {
-                        context.errln("cannot activate plan while in planning mode; switch to another mode first");
-                        return NaruStmtResult.ofError();
+                        return fail(context, "cannot activate plan while in planning mode; switch to another mode first");
                     }
                     NaruTask task = context.task();
                     if (cmdLine.isEmpty()) {
                         // No argument: activate the only non-finished plan if exactly one exists
                         List<NaruPlan> plans = NaruPlanExtension.unfinishedPlans(task.session());
                         if (plans.isEmpty()) {
-                            context.errln("no non-finished plan to activate");
-                            return NaruStmtResult.ofError();
+                            return fail(context, "no non-finished plan to activate");
                         }
                         if (plans.size() > 1) {
-                            context.errln(NMsg.ofC("multiple non-finished plans exist; please specify which plan to activate\n%s", logListing(context)));
-                            return NaruStmtResult.ofError();
+                            return fail(context, NMsg.ofC("multiple non-finished plans exist; please specify which plan to activate\n%s", logListing(context)));
                         }
                         NaruPlan p = plans.get(0);
                         NaruPlanExtension.plans(task.session()).setActivePlanId(p.id());
@@ -137,8 +131,7 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
                         String id = cmdLine.next().get().image();
                         NaruPlan p = NaruPlanExtension.plans(task.session()).findPlan(id).orNull();
                         if (p == null) {
-                            context.errln("no plan '" + id + "'\n" + logListing(context));
-                            return NaruStmtResult.ofError();
+                            return fail(context, NMsg.ofC("no plan '%s'\n%s", id, logListing(context)));
                         }
                         NaruPlanExtension.plans(task.session()).setActivePlanId(p.id());
                         logInfo(context, NMsg.ofC("plan %s activated; ready items will be dispatched",NMsg.ofStyledPrimary1(p.id())));
@@ -494,9 +487,12 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
          * same complaint.
          */
         private NaruStmtResult fail(SubCommandContext context, String message) {
-            NMsg msg = NMsg.ofC("%s", message).asError();
-            context.errln(msg);
-            return NaruStmtResult.ofError(msg);
+            return fail(context, NMsg.ofC("%s", message).asError());
+        }
+
+        private NaruStmtResult fail(SubCommandContext context, NMsg message) {
+            context.errln(message);
+            return NaruStmtResult.ofError(message);
         }
 
         /**

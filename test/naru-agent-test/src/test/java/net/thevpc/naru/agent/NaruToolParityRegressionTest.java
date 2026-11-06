@@ -12,6 +12,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.*;
 
@@ -75,7 +76,7 @@ public class NaruToolParityRegressionTest {
                 continue;
             }
             NaruToolDefinitionFunction fn = (NaruToolDefinitionFunction) def;
-            Map<String, Object> dummyArgs = new HashMap<>();
+            Map<String, NElement> dummyArgs = new HashMap<>();
 
             for (NaruToolParameter param : fn.getParams()) {
                 if (param.isRequired()) {
@@ -83,25 +84,25 @@ public class NaruToolParityRegressionTest {
                     NaruToolParameter.Type type = param.getType();
                     if (type == NaruToolParameter.Type.STRING) {
                         if ("path".equalsIgnoreCase(name) || "filePath".equalsIgnoreCase(name)) {
-                            dummyArgs.put(name, tempProjectDir.resolve("dummy.txt").toString());
+                            dummyArgs.put(name, NElement.of(tempProjectDir.resolve("dummy.txt").toString()));
                         } else if ("command".equalsIgnoreCase(name)) {
-                            dummyArgs.put(name, "echo test");
+                            dummyArgs.put(name, NElement.of("echo test"));
                         } else if ("url".equalsIgnoreCase(name)) {
-                            dummyArgs.put(name, "http://127.0.0.1:8099/spec.html");
+                            dummyArgs.put(name, NElement.of("http://127.0.0.1:8099/spec.html"));
                         } else {
-                            dummyArgs.put(name, "dummy_value");
+                            dummyArgs.put(name, NElement.of("dummy_value"));
                         }
                     } else if (type == NaruToolParameter.Type.INTEGER || type == NaruToolParameter.Type.NUMBER) {
-                        dummyArgs.put(name, 1);
+                        dummyArgs.put(name, NElement.of(1));
                     } else if (type == NaruToolParameter.Type.BOOLEAN) {
-                        dummyArgs.put(name, false);
+                        dummyArgs.put(name, NElement.of(false));
                     } else if (type == NaruToolParameter.Type.ARRAY) {
-                        Map<String, Object> sampleItem = new HashMap<>();
-                        sampleItem.put("description", "item 1");
-                        sampleItem.put("title", "item 1");
-                        dummyArgs.put(name, Collections.singletonList(sampleItem));
+                        Map<String, NElement> sampleItem = new HashMap<>();
+                        sampleItem.put("description", NElement.of("item 1"));
+                        sampleItem.put("title", NElement.of("item 1"));
+                        dummyArgs.put(name, NElement.of(Collections.singletonList(sampleItem)));
                     } else {
-                        dummyArgs.put(name, "dummy");
+                        dummyArgs.put(name, NElement.of("dummy"));
                     }
                 }
             }
@@ -128,27 +129,27 @@ public class NaruToolParityRegressionTest {
         assertNotNull(editTool);
 
         // Ambiguous match without replaceAll
-        Map<String, Object> args1 = new HashMap<>();
-        args1.put("path", testFile.toString());
-        args1.put("search", "foo");
-        args1.put("replace", "baz");
+        Map<String, NElement> args1 = new HashMap<>();
+        args1.put("path", NElement.of(testFile.toString()));
+        args1.put("search", NElement.of("foo"));
+        args1.put("replace", NElement.of("baz"));
         String res1 = editTool.execute(new NaruToolCallContextImpl(args1, task));
         assertEquals("Found multiple matches for oldString. Provide more surrounding context to make the match unique.", res1);
 
         // Identical search and replace
-        Map<String, Object> args2 = new HashMap<>();
-        args2.put("path", testFile.toString());
-        args2.put("search", "foo");
-        args2.put("replace", "foo");
+        Map<String, NElement> args2 = new HashMap<>();
+        args2.put("path", NElement.of(testFile.toString()));
+        args2.put("search", NElement.of("foo"));
+        args2.put("replace", NElement.of("foo"));
         String res2 = editTool.execute(new NaruToolCallContextImpl(args2, task));
         assertEquals("No changes to apply: oldString and newString are identical.", res2);
 
         // ReplaceAll = true
-        Map<String, Object> args3 = new HashMap<>();
-        args3.put("path", testFile.toString());
-        args3.put("search", "foo");
-        args3.put("replace", "baz");
-        args3.put("replaceAll", true);
+        Map<String, NElement> args3 = new HashMap<>();
+        args3.put("path", NElement.of(testFile.toString()));
+        args3.put("search", NElement.of("foo"));
+        args3.put("replace", NElement.of("baz"));
+        args3.put("replaceAll", NElement.of(true));
         String res3 = editTool.execute(new NaruToolCallContextImpl(args3, task));
         assertEquals("Edit applied successfully.", res3);
         assertEquals("baz\nbar\nbaz\n", testFile.readString());
@@ -160,9 +161,9 @@ public class NaruToolParityRegressionTest {
         NaruTool writeTool = session.registry().findTool("file_write").get();
         assertNotNull(writeTool);
 
-        Map<String, Object> args = new HashMap<>();
-        args.put("path", testFile.toString());
-        args.put("content", "hello parity\n");
+        Map<String, NElement> args = new HashMap<>();
+        args.put("path", NElement.of(testFile.toString()));
+        args.put("content", NElement.of("hello parity\n"));
         String res = writeTool.execute(new NaruToolCallContextImpl(args, task));
         assertEquals("Wrote file successfully.", res);
         assertEquals("hello parity\n", testFile.readString());

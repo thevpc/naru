@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.access;
 
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 
@@ -16,7 +17,7 @@ import java.util.Objects;
  * <p>This is a request and not a bare triple of arguments because a decision can
  * depend on context that is not part of the resource: the task (for resolving
  * project-relative patterns), the session, anything a domain attaches through
- * {@link #context(String, Object)}. Bundling it keeps {@code check} one method
+ * {@link #context(String, NElement)}. Bundling it keeps {@code check} one method
  * while leaving room to grow.
  *
  * <p>The request is immutable; {@code task(...)} and {@code context(...)} return
@@ -29,10 +30,10 @@ public final class NaruAccessRequest {
     private final NaruAction action;
     private final NaruActor actor;
     private final NaruTask task;
-    private final Map<String, Object> context;
+    private final Map<String, NElement> context;
 
     private NaruAccessRequest(NaruResource resource, NaruAction action, NaruActor actor,
-                              NaruTask task, Map<String, Object> context) {
+                              NaruTask task, Map<String, NElement> context) {
         if (resource == null || action == null) {
             throw new NIllegalArgumentException(NMsg.ofC("access request requires a resource and an action"));
         }
@@ -53,8 +54,8 @@ public final class NaruAccessRequest {
         return new NaruAccessRequest(resource, action, actor, task, context);
     }
 
-    public NaruAccessRequest context(String key, Object value) {
-        Map<String, Object> c = new LinkedHashMap<>(context);
+    public NaruAccessRequest context(String key, NElement value) {
+        Map<String, NElement> c = new LinkedHashMap<>(context);
         if (value == null) {
             c.remove(key);
         } else {
@@ -79,7 +80,7 @@ public final class NaruAccessRequest {
         return task;
     }
 
-    public Map<String, Object> context() {
+    public Map<String, NElement> context() {
         return context;
     }
 

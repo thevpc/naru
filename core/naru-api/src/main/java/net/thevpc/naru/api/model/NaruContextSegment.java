@@ -1,6 +1,8 @@
 package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.registry.NaruToolParameter;
+import net.thevpc.naru.api.util.NaruUtils;
+import net.thevpc.nuts.elem.NElement;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -150,23 +152,23 @@ public record NaruContextSegment(
         sb.append(s.length()).append(':').append(s);
     }
 
-    private static void appendEnum(StringBuilder sb, List<Object> values) {
+    private static void appendEnum(StringBuilder sb, List<NElement> values) {
         if (values == null || values.isEmpty()) {
             return;
         }
         List<String> sorted = new ArrayList<>();
-        for (Object o : values) {
-            sorted.add(String.valueOf(o));
+        for (NElement o : values) {
+            sorted.add(String.valueOf(NaruUtils.plainValue(o)));
         }
         sorted.sort(String::compareTo);
         sb.append("enum").append(UNIT).append(sorted).append(UNIT);
     }
 
-    private static void appendArgs(StringBuilder sb, Map<String, Object> args) {
+    private static void appendArgs(StringBuilder sb, Map<String, NElement> args) {
         if (args == null || args.isEmpty()) {
             return;
         }
-        for (Map.Entry<String, Object> e : new TreeMap<>(args).entrySet()) {
+        for (Map.Entry<String, NElement> e : new TreeMap<>(args).entrySet()) {
             sb.append(e.getKey()).append(UNIT).append(e.getValue()).append(UNIT);
         }
     }

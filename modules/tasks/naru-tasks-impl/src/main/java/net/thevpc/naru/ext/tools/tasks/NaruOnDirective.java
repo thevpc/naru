@@ -36,7 +36,7 @@ public class NaruOnDirective extends NaruDirectiveBase {
                 NaruTask task = context.task();
                 String event = null;
                 String routine = null;
-                Map<String, Object> args = new HashMap<>();
+                Map<String, net.thevpc.nuts.elem.NElement> args = new HashMap<>();
                 String filter = null;
                 boolean once = false;
                 while (!cmdLine.isEmpty()) {
@@ -50,7 +50,7 @@ public class NaruOnDirective extends NaruDirectiveBase {
                             routine = p.image();
                         } else {
                             p = cmdLine.nextEntry().get();
-                            args.put(p.key(), p.value());
+                            args.put(p.key(), net.thevpc.nuts.elem.NElement.of(p.value()));
                         }
                     } else if (p.isOption()) {
                         if (p.key().equals("--from")) {

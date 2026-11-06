@@ -97,7 +97,7 @@ public class NaruFileToolEnvOverrideTest {
         assertTrue(full.contains("line number 10"), "the default read must show the whole file");
         assertTrue(full.contains("(End of file - total 10 lines)"));
 
-        task.setTaskEnv(MAX_LINES_KEY, 3);
+        task.setTaskEnv(MAX_LINES_KEY, NElement.of(3));
         String truncated = FileToolHelper.fileRead(task, "doc.txt", null, null);
         assertFalse(truncated.contains("line number 10"), "the 10th line must not be shown anymore");
         assertTrue(truncated.contains("(Showing lines 1-3 of 10"),
@@ -109,11 +109,11 @@ public class NaruFileToolEnvOverrideTest {
         writeDoc(10);
         NaruTask task = runScript("/print 1");
 
-        task.setTaskEnv(MAX_LINES_KEY, "0");
+        task.setTaskEnv(MAX_LINES_KEY, NElement.of("0"));
         assertTrue(FileToolHelper.fileRead(task, "doc.txt", null, null).contains("(End of file - total 10 lines)"),
                 "0 must fall back to the default cap instead of hiding the file");
 
-        task.setTaskEnv(MAX_LINES_KEY, "not-a-number");
+        task.setTaskEnv(MAX_LINES_KEY, NElement.of("not-a-number"));
         assertTrue(FileToolHelper.fileRead(task, "doc.txt", null, null).contains("(End of file - total 10 lines)"),
                 "a typo must fall back, not turn a read into an error or an empty answer");
     }
@@ -128,11 +128,11 @@ public class NaruFileToolEnvOverrideTest {
         assertTrue(FileToolHelper.fileRead(task, "doc.txt", null, null).contains("(Showing lines 1-2 of 10"),
                 "the settings (config) level must apply");
 
-        taskSession.setSessionEnv(MAX_LINES_KEY, 3);
+        taskSession.setSessionEnv(MAX_LINES_KEY, NElement.of(3));
         assertTrue(FileToolHelper.fileRead(task, "doc.txt", null, null).contains("(Showing lines 1-3 of 10"),
                 "the session env must beat the settings file");
 
-        task.setTaskEnv(MAX_LINES_KEY, 1);
+        task.setTaskEnv(MAX_LINES_KEY, NElement.of(1));
         assertTrue(FileToolHelper.fileRead(task, "doc.txt", null, null).contains("(Showing lines 1-1 of 10"),
                 "the task env must beat the session env");
     }
@@ -146,7 +146,7 @@ public class NaruFileToolEnvOverrideTest {
         assertFalse(defaultPreview.contains("[preview truncated]"),
                 "36 chars must fit the built-in 8k preview");
 
-        task.setTaskEnv(PREVIEW_CHARS_KEY, 8);
+        task.setTaskEnv(PREVIEW_CHARS_KEY, NElement.of(8));
         String limited = FileToolHelper.fileWrite(task, "out.txt", content, true);
         assertTrue(limited.contains("... [preview truncated]"),
                 "a lowered preview cap must truncate the dry-run preview");

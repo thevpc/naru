@@ -245,7 +245,7 @@ public class NaruOpenAiStreamParser extends NaruSseResponseParser {
                 if (NBlankable.isBlank(builder.name)) {
                     continue;
                 }
-                Map<String, Object> arguments = NaruOpenAiResponseParser.parseArguments(
+                Map<String, NElement> arguments = NaruOpenAiResponseParser.parseArguments(
                         toJsonElement(builder.arguments.toString()));
                 calls.add(new NaruToolCall(
                         builder.id != null ? builder.id : "call_" + java.util.UUID.randomUUID(),

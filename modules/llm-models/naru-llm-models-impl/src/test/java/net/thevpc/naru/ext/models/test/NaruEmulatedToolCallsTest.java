@@ -77,7 +77,7 @@ public class NaruEmulatedToolCallsTest {
 
         Assertions.assertTrue(response.hasToolCalls());
         Assertions.assertEquals("bash", response.getMessage().getToolCalls().get(0).getName());
-        Assertions.assertEquals("ls", response.getMessage().getToolCalls().get(0).getArguments().get("command"));
+        Assertions.assertEquals(NElement.of("ls"), response.getMessage().getToolCalls().get(0).getArguments().get("command"));
         // the block was the whole answer, so the stripped content is empty
         Assertions.assertNull(response.getMessage().getContent(),
                 "an emulated-only answer must come back with no leftover tag text");
@@ -94,7 +94,7 @@ public class NaruEmulatedToolCallsTest {
         Assertions.assertTrue(response.hasToolCalls(),
                 "the streamed emulated block must surface as a tool call, exactly like the batched path");
         Assertions.assertEquals("bash", response.getMessage().getToolCalls().get(0).getName());
-        Assertions.assertEquals("ls", response.getMessage().getToolCalls().get(0).getArguments().get("command"));
+        Assertions.assertEquals(NElement.of("ls"), response.getMessage().getToolCalls().get(0).getArguments().get("command"));
         Assertions.assertNull(response.getMessage().getContent());
     }
 
@@ -108,7 +108,7 @@ public class NaruEmulatedToolCallsTest {
 
         Assertions.assertTrue(response.hasToolCalls());
         Assertions.assertEquals("file_read", response.getMessage().getToolCalls().get(0).getName());
-        Assertions.assertEquals("/x", response.getMessage().getToolCalls().get(0).getArguments().get("path"));
+        Assertions.assertEquals(NElement.of("/x"), response.getMessage().getToolCalls().get(0).getArguments().get("path"));
     }
 
     @Test
@@ -122,8 +122,8 @@ public class NaruEmulatedToolCallsTest {
         Assertions.assertTrue(response.hasToolCalls(),
                 "the bare object must surface as a tool call, not as the answer");
         Assertions.assertEquals("file_grep", response.getMessage().getToolCalls().get(0).getName());
-        Assertions.assertEquals("poem", response.getMessage().getToolCalls().get(0).getArguments().get("pattern"));
-        Assertions.assertEquals("current_working_directory",
+        Assertions.assertEquals(NElement.of("poem"), response.getMessage().getToolCalls().get(0).getArguments().get("pattern"));
+        Assertions.assertEquals(NElement.of("current_working_directory"),
                 response.getMessage().getToolCalls().get(0).getArguments().get("path"));
         Assertions.assertNull(response.getMessage().getContent(),
                 "the recovered object must not linger as answer text");
@@ -140,7 +140,7 @@ public class NaruEmulatedToolCallsTest {
         Assertions.assertTrue(response.hasToolCalls(),
                 "the streamed bare object must surface as a tool call too");
         Assertions.assertEquals("file_grep", response.getMessage().getToolCalls().get(0).getName());
-        Assertions.assertEquals("poem", response.getMessage().getToolCalls().get(0).getArguments().get("pattern"));
+        Assertions.assertEquals(NElement.of("poem"), response.getMessage().getToolCalls().get(0).getArguments().get("pattern"));
     }
 
     @Test

@@ -1,7 +1,7 @@
 package net.thevpc.naru.api.scheduler;
 
 import net.thevpc.naru.api.util.NaruLongHashSet;
-import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.*;
 
 import java.time.Instant;
 import java.util.Collections;
@@ -9,7 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
-public class NaruEvent {
+public class NaruEvent implements NToElement {
 
     public static final String TASK_TERMINATED = "task-terminated";
     /**
@@ -48,7 +48,7 @@ public class NaruEvent {
     public static final String SESSION_RENAMED = "session-renamed";
     private final long seq;
     private final String name;
-    private final Map<String, Object> payload;
+    private final Map<String, NElement> payload;
     private final long sourceTid;
     private final long sourcePid;
     private final Instant firedAt;
@@ -59,15 +59,19 @@ public class NaruEvent {
     private final NaruLongHashSet visitedTids = new NaruLongHashSet(4);
     private final NaruLongHashSet consumedTids = new NaruLongHashSet(4);
 
+    @NCreator
     public NaruEvent(
-            long seq,
-            String name,
-            Map<String, Object> payload,
-            long sourceTid,
-            long sourcePid,
-            Instant firedAt,
-            NaruEventTarget target,
-            NaruRetentionPolicy retentionPolicy) {
+            @NProperty("seq") long seq,
+            @NProperty("name") String name,
+            @NProperty("payload") Map<String, NElement> payload,
+            @NProperty("sourceTid") long sourceTid,
+            @NProperty("sourcePid") long sourcePid,
+            @NProperty("firedAt") Instant firedAt,
+            @NProperty("target") NaruEventTarget target,
+            @NProperty("retentionPolicy") NaruRetentionPolicy retentionPolicy,
+            @NProperty("visitedTids") long[] visitedTids,
+            @NProperty("consumedTids") long[] consumedTids
+    ) {
         this.seq = seq;
         this.name = name;
         this.payload = Collections.unmodifiableMap(new LinkedHashMap<>(payload));
@@ -76,11 +80,22 @@ public class NaruEvent {
         this.firedAt = firedAt;
         this.target = target;
         this.retentionPolicy = retentionPolicy;
+        for (long v : visitedTids) {
+            this.visitedTids.add(v);
+        }
+        for (long v : consumedTids) {
+            this.consumedTids.add(v);
+        }
+    }
+
+    @Override
+    public NElement toElement() {
+        return NElement.defaultToNamedElement(this);
     }
 
     public NaruEvent(
             String name,
-            Map<String, Object> payload,
+            Map<String, NElement> payload,
             long sourceTid,
             long sourcePid,
             Instant firedAt,
@@ -97,7 +112,7 @@ public class NaruEvent {
     }
 
     public NaruEvent withSeq(long newSeq) {
-        return new NaruEvent(newSeq, name, payload, sourceTid, sourcePid, firedAt, target, retentionPolicy);
+        return new NaruEvent(newSeq, name, payload, sourceTid, sourcePid, firedAt, target, retentionPolicy, visitedTids(), consumedTids());
     }
 
     // identity
@@ -111,17 +126,17 @@ public class NaruEvent {
 
     /**
      * Whether the name is the spawn event, under either spelling (the current
-     * {@value #TASK_SPAWNED}, or the historical {@value #TASK_SPAWNED_LEGACY}).
+     * {@value #TASK_SPAWNED}.
      */
     public static boolean isTaskSpawned(String name) {
         return TASK_SPAWNED.equals(name);
     }
 
-    public Map<String, Object> payload() {
+    public Map<String, NElement> payload() {
         return payload;
     }
 
-    public Object payload(String key) {
+    public NElement payload(String key) {
         return payload.get(key);
     }
 

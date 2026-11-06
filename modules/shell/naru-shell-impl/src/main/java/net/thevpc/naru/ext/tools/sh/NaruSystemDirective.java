@@ -88,11 +88,11 @@ public class NaruSystemDirective extends NaruDirectiveBase {
                             // trimmed output so a script can compare it without a pipe
                             String trimmedOut = result == null ? "" : result.trim();
                             if (saveName != null && !saveName.isEmpty()) {
-                                task.setTaskEnv(saveName, trimmedOut);
+                                task.setTaskEnv(saveName, NElement.of(trimmedOut));
                             }
                             // the returned (value, exitCode) pair is published centrally
                             // by invokeDirective into lastResult (alias _) and lastExitCode
-                            context.task().setTaskEnv("lastExitCode", exitCode);
+                            context.task().setTaskEnv("lastExitCode", NElement.of(exitCode));
                             context.outln(NMsg.ofC(
                                     "call   : system %s\nexit code %s\nresult : \n%s",
                                     runCmd, exitCode, result));

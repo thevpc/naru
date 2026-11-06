@@ -11,6 +11,7 @@ import net.thevpc.naru.api.registry.*;
 import net.thevpc.naru.impl.config.NaruCoreConfigKeyProvider;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.ia.mode.NaruModeRegistry;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NPairElement;
 import net.thevpc.nuts.ext.NServiceLoader;
@@ -450,7 +451,7 @@ public class NaruRegistryImpl implements NaruRegistry {
      * @throws IllegalArgumentException if the tool name is unknown
      */
     @Override
-    public String dispatch(String name, Map<String, Object> arguments, NaruTask task) {
+    public String dispatch(String name, Map<String, NElement> arguments, NaruTask task) {
 
         NaruTool tool = findTool(name).orNull();
         if (tool == null) {

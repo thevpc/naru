@@ -116,7 +116,7 @@ public class NaruModelRegistration implements NToElement {
      * allocates a Nuts element per parameter — which also needs a live workspace. Absence stays
      * absence: a field that is unset is not in this map at all.
      */
-    private final Map<String, Object> valueSnapshot;
+    private final Map<String, NElement> valueSnapshot;
 
     private NaruModelRegistration(Builder b) {
         this.id = requireId(b.id);
@@ -160,12 +160,12 @@ public class NaruModelRegistration implements NToElement {
         this.valueSnapshot = Collections.unmodifiableMap(buildValueSnapshot());
     }
 
-    private Map<String, Object> buildValueSnapshot() {
-        Map<String, Object> out = new LinkedHashMap<>();
+    private Map<String, NElement> buildValueSnapshot() {
+        Map<String, NElement> out = new LinkedHashMap<>();
         for (NaruRegistrationFields.Field<?> f : NaruRegistrationFields.fields()) {
             Object v = f.get(this);
             if (v != null) {
-                out.put(f.key(), v);
+                out.put(f.key(), NElement.of(v));
             }
         }
         return out;
@@ -739,7 +739,7 @@ public class NaruModelRegistration implements NToElement {
             return null;
         }
         if (session != null) {
-            NOptional<Object> s = session.getSessionEnv(name);
+            NOptional<NElement> s = session.getSessionEnv(name);
             String sv = envString(s == null ? null : s.orNull());
             if (sv != null && !sv.isBlank()) {
                 return NStringUtils.strip(sv);

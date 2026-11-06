@@ -104,7 +104,7 @@ public class NaruSetAutocompleteTest {
     @Test
     public void aDeclaredKeyShadowsTheSameNamedEnvVariable() {
         // trace is declared by the core provider; a task can still carry its own value
-        session.setSessionEnv("trace", true);
+        session.setSessionEnv("trace", NElement.of(true));
         List<String> c = values("/set", "trace");
         Assertions.assertTrue(c.contains("trace"), () -> "got: " + c);
         Assertions.assertTrue(display(complete("/set", "trace"), "trace").contains("trace logging"),

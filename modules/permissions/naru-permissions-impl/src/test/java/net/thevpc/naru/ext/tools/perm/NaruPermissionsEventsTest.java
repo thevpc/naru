@@ -5,6 +5,7 @@ import net.thevpc.naru.api.access.NaruPermissionRule;
 import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -38,8 +39,11 @@ public class NaruPermissionsEventsTest {
         NaruSessionImpl s = sessionWithExtension();
 
         s.fireEvent(NaruPermissionsEvents.GRANT, Map.of(
-                "id", "evt-allow", "type", "tool", "pattern", "echo_tool",
-                "actions", "call", "effect", "allow"));
+                "id", NElement.of("evt-allow"),
+                "type", NElement.of("tool"),
+                "pattern", NElement.of("echo_tool"),
+                "actions", NElement.of("call"),
+                "effect", NElement.of("allow")));
 
         NaruPermissionRule r = s.accessPolicy().rule("evt-allow").orNull();
         assertNotNull(r, "the event installed a rule");
@@ -53,10 +57,13 @@ public class NaruPermissionsEventsTest {
     public void revokeEventRemovesARule() {
         NaruSessionImpl s = sessionWithExtension();
         s.fireEvent(NaruPermissionsEvents.GRANT,
-                Map.of("id", "r1", "type", "tool", "pattern", "t", "effect", "deny"));
+                Map.of("id", NElement.of("r1"),
+                        "type", NElement.of("tool"),
+                        "pattern", NElement.of("t"),
+                        "effect", NElement.of("deny")));
         assertTrue(s.accessPolicy().rule("r1").isPresent());
 
-        s.fireEvent(NaruPermissionsEvents.REVOKE, Map.of("id", "r1"));
+        s.fireEvent(NaruPermissionsEvents.REVOKE, Map.of("id", NElement.of("r1")));
 
         assertTrue(s.accessPolicy().rule("r1").isEmpty());
     }
@@ -66,7 +73,7 @@ public class NaruPermissionsEventsTest {
         NaruSessionImpl s = sessionWithExtension();
         assertEquals(NaruAccessEffect.ALLOW, s.accessPolicy().defaultEffect());
 
-        s.fireEvent(NaruPermissionsEvents.DEFAULT, Map.of("effect", "deny"));
+        s.fireEvent(NaruPermissionsEvents.DEFAULT, Map.of("effect", NElement.of("deny")));
 
         assertEquals(NaruAccessEffect.DENY, s.accessPolicy().defaultEffect());
     }
@@ -74,9 +81,15 @@ public class NaruPermissionsEventsTest {
     @Test
     public void grantHonoursAnExplicitIndexAndSource() {
         NaruSessionImpl s = sessionWithExtension();
-        s.fireEvent(NaruPermissionsEvents.GRANT, Map.of("id", "a", "type", "tool", "pattern", "a"));
+        s.fireEvent(NaruPermissionsEvents.GRANT, Map.of("id", NElement.of("a"),
+                "type", NElement.of("tool"),
+                "pattern", NElement.of("a")));
         s.fireEvent(NaruPermissionsEvents.GRANT,
-                Map.of("id", "b", "type", "tool", "pattern", "b", "source", "hook:ci", "index", "0"));
+                Map.of("id", NElement.of("b"),
+                        "type", NElement.of("tool"),
+                        "pattern", NElement.of("b"),
+                        "source", NElement.of("hook:ci"),
+                        "index", NElement.of("0")));
 
         NaruPermissionRule b = s.accessPolicy().rule("b").orNull();
         assertNotNull(b);

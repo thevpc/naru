@@ -9,6 +9,7 @@ import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -105,8 +106,11 @@ public class NaruPermissionsExtensionTest {
         NaruSession session = newSession("events");
 
         session.fireEvent(NaruPermissionsEvents.GRANT, Map.of(
-                "id", "evt-allow", "type", "tool", "pattern", "echo_tool",
-                "actions", "call", "effect", "allow"));
+                "id", NElement.of("evt-allow"),
+                "type", NElement.of("tool"),
+                "pattern", NElement.of("echo_tool"),
+                "actions", NElement.of("call"),
+                "effect", NElement.of("allow")));
 
         assertNotNull(session.accessPolicy().rule("evt-allow").orNull(),
                 "the extension subscribed itself as a session listener in open()");

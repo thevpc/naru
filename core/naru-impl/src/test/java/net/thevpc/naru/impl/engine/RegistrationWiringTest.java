@@ -23,7 +23,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -201,11 +200,11 @@ public class RegistrationWiringTest {
 
         // $NAME references resolve through the layered env: a value that exists only
         // in the session env is found without any export
-        session.setSessionEnv("ONLY_IN_SESSION", "from-session-var");
+        session.setSessionEnv("ONLY_IN_SESSION", NElement.of("from-session-var"));
         Assertions.assertEquals("from-session-var", rotated.apiKey(session).orElse(null));
 
         // <id>.apiKey: session env first, agent (project) env second
-        session.setSessionEnv("team.apiKey", "from-session");
+        session.setSessionEnv("team.apiKey", NElement.of("from-session"));
         session.setProjectEnv("team.apiKey", NElement.ofString("from-agent"), NaruVisibility.PRIVATE);
         Assertions.assertEquals("from-session", team.apiKey(session).orElse(null));
         session.unsetSessionEnv("team.apiKey");
@@ -213,7 +212,7 @@ public class RegistrationWiringTest {
 
         // the type's default env keys read the same layers, system env last:
         // PATH is always exported, and a session value for the same name wins
-        session.setSessionEnv("PATH", "from-session-path");
+        session.setSessionEnv("PATH", NElement.of("from-session-path"));
         Assertions.assertEquals("from-session-path", sysTeam.apiKey(session).orElse(null));
         session.unsetSessionEnv("PATH");
         Assertions.assertEquals(System.getenv("PATH"), sysTeam.apiKey(session).orElse(null));

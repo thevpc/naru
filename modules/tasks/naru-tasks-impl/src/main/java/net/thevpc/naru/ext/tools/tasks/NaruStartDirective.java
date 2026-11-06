@@ -106,7 +106,7 @@ public class NaruStartDirective extends NaruDirectiveBase {
                         .when("--explain").asFlag(a -> explain[0] = a.booleanValue())
                         .whenNonOption().asArg(a -> {
                             if (a.value() != null) {
-                                spec.param(a.key(), a.stringValue());
+                                spec.param(a.key(), NElement.of(a.stringValue()));
                                 return;
                             }
                             String s = a.image();

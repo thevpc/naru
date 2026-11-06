@@ -3,6 +3,7 @@ package net.thevpc.naru.desktop.model;
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
 import net.thevpc.naru.desktop.util.EDT;
+import net.thevpc.nuts.elem.NElement;
 
 import java.time.Instant;
 import java.util.ArrayDeque;
@@ -45,7 +46,7 @@ public final class ToolCallModel {
     }
 
     /** Everything the panel and its detail pane need about one call. */
-    public record Row(long taskId, String callId, String toolName, Map<String, Object> arguments,
+    public record Row(long taskId, String callId, String toolName, Map<String, NElement> arguments,
                       Status status, String result, long durationMillis, Instant startedAt,
                       Instant settledAt) {
 

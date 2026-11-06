@@ -6,7 +6,10 @@ import net.thevpc.naru.api.agent.NaruOutput;
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.SwingUtilities;
@@ -30,6 +33,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * a question cancelled rather than parked.
  */
 class InteractionHostTest {
+
+    @BeforeEach
+    void session() {
+        Nuts.require();
+    }
 
     /** A question that records what happened to it. */
     private static final class FakeRequest implements NaruInputRequest {
@@ -284,7 +292,7 @@ class InteractionHostTest {
     // ── E1: the typed tool-call lifecycle ─────────────────────────────────────
 
     private static NaruToolCall call(String id, String name) {
-        return new NaruToolCall(id, name, Map.of("path", "notes.txt"));
+        return new NaruToolCall(id, name, Map.of("path", NElement.of("notes.txt")));
     }
 
     @Test

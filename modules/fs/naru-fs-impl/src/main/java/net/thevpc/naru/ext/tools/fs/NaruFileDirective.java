@@ -283,7 +283,7 @@ public class NaruFileDirective extends NaruDirectiveBase {
                     String first = FileToolHelper.folderFindFirst(task,
                             filePath.toString(), includeGlob.get(), recursive.get());
                     if (saveVar.isSet()) {
-                        task.setTaskEnv(saveVar.get(), first == null ? "" : first);
+                        task.setTaskEnv(saveVar.get(), first == null ? NElement.of("") : NElement.of(first));
                     }
                     if (dirVar.isSet()) {
                         String dir = ".";
@@ -293,7 +293,7 @@ public class NaruFileDirective extends NaruDirectiveBase {
                                 dir = first.substring(0, idx);
                             }
                         }
-                        task.setTaskEnv(dirVar.get(), dir);
+                        task.setTaskEnv(dirVar.get(), NElement.of(dir));
                     }
                 }
                 return NaruStmtResult.of(NElement.of(result == null ? "" : result.trim()), msg, exitCode);
@@ -313,7 +313,7 @@ public class NaruFileDirective extends NaruDirectiveBase {
     private static NaruStmtResult fileResult(NaruTask task, String saveVar, String result, int exitCode, NMsg msg) {
         String trimmed = result == null ? "" : result.trim();
         if (saveVar != null && !saveVar.isEmpty()) {
-            task.setTaskEnv(saveVar, trimmed);
+            task.setTaskEnv(saveVar, NElement.of(trimmed));
         }
         return NaruStmtResult.of(NElement.of(trimmed), msg, exitCode);
     }

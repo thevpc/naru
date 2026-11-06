@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
+import net.thevpc.nuts.elem.NElement;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -26,10 +27,10 @@ class TurnActivityTest {
         activity.accept(List.of(
                 new TranscriptEvent.Chunk("t1", NaruLogMode.MODEL_THINKING, "let me look", false),
                 new TranscriptEvent.ToolCall(NaruToolCallEvent.started(1,
-                        new NaruToolCall("c1", "read_file", Map.of("path", "/p/A.java")))),
+                        new NaruToolCall("c1", "read_file", Map.of("path", NElement.of("/p/A.java"))))),
                 new TranscriptEvent.ToolCall(NaruToolCallEvent.failed(1,
                         new NaruToolCall("c2", "write_file",
-                                Map.of("path", "/p/B.java", "files", List.of("/p/C.java"))),
+                                Map.of("path", NElement.of("/p/B.java"), "files", NElement.of(List.of("/p/C.java")))),
                         "denied", 4))));
 
         TurnActivity.Snapshot snapshot = activity.snapshot();
@@ -46,7 +47,7 @@ class TurnActivityTest {
     void theSameCallIsNotCountedTwiceWhenItSettles() {
         TurnActivity activity = new TurnActivity();
         activity.beginTurn();
-        NaruToolCall call = new NaruToolCall("same", "bash", Map.of("path", "/p/A.sh"));
+        NaruToolCall call = new NaruToolCall("same", "bash", Map.of("path", NElement.of("/p/A.sh")));
         activity.accept(List.of(
                 new TranscriptEvent.ToolCall(NaruToolCallEvent.started(1, call)),
                 new TranscriptEvent.ToolCall(NaruToolCallEvent.result(1, call, "ok", 12))));
@@ -59,7 +60,7 @@ class TurnActivityTest {
         TurnActivity activity = new TurnActivity();
         activity.beginTurn();
         activity.accept(List.of(new TranscriptEvent.ToolCall(NaruToolCallEvent.started(1,
-                new NaruToolCall("c1", "read_file", Map.of("path", "/p/A.java"))))));
+                new NaruToolCall("c1", "read_file", Map.of("path", NElement.of("/p/A.java")))))));
         assertEquals(1, activity.snapshot().toolCalls());
 
         activity.beginTurn();

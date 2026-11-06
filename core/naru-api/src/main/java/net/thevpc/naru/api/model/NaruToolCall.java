@@ -14,7 +14,7 @@ public class NaruToolCall implements NToElement, NCopiable, Cloneable {
 
     private String id;
     private String name;
-    private Map<String, Object> arguments;
+    private Map<String, NElement> arguments;
 
     public NaruToolCall() {
     }
@@ -30,47 +30,47 @@ public class NaruToolCall implements NToElement, NCopiable, Cloneable {
                 if (child.isNamedPair()) {
                     NPairElement p = child.asPair().get();
                     String k = p.key().asStringValue().orNull();
-                    arguments.put(k, readArgumentValue(p.value()));
+                    arguments.put(k, p.value());
                 }
             }
         }
     }
 
-    /**
-     * Reads one argument value back to the {@link Object} it was written from.
-     *
-     * <p>{@link NElement#simpleOf} is not usable here: on a string value it hands back the
-     * node's rendered form, so {@code {path:"A.java"}} reads as {@code "\"A.java\""} and a
-     * tool is dispatched with quotes glued to its path. Numbers and booleans come back as
-     * nodes too, which leaves {@code getString}/{@code getInt} parsing text they should
-     * not have to. Each type is therefore read through its own accessor, and anything
-     * richer than a scalar is kept as the element it is -- an argument may legitimately be
-     * a nested object, and flattening it would change what the model asked for.
-     */
-    private static Object readArgumentValue(NElement value) {
-        if (value == null) {
-            return null;
-        }
-        if (value.isString()) {
-            return value.asStringValue().orNull();
-        }
-        if (value.isBoolean()) {
-            return value.asBooleanValue().orNull();
-        }
-        if (value.isNumber()) {
-            // integral values come back as Integer: model-written line numbers and indices
-            // are compared against int-typed APIs far more often than anything uses a Long
-            Double d = value.asDoubleValue().orNull();
-            if (d != null && d == Math.rint(d) && !d.isInfinite()
-                    && d >= Integer.MIN_VALUE && d <= Integer.MAX_VALUE) {
-                return (int) (double) d;
-            }
-            return d;
-        }
-        return value;
-    }
+//    /**
+//     * Reads one argument value back to the {@link NElement} it was written from.
+//     *
+//     * <p>{@link NElement#simpleOf} is not usable here: on a string value it hands back the
+//     * node's rendered form, so {@code {path:"A.java"}} reads as {@code "\"A.java\""} and a
+//     * tool is dispatched with quotes glued to its path. Numbers and booleans come back as
+//     * nodes too, which leaves {@code getString}/{@code getInt} parsing text they should
+//     * not have to. Each type is therefore read through its own accessor, and anything
+//     * richer than a scalar is kept as the element it is -- an argument may legitimately be
+//     * a nested object, and flattening it would change what the model asked for.
+//     */
+//    private static NElement readArgumentValue(NElement value) {
+//        if (value == null) {
+//            return null;
+//        }
+//        if (value.isString()) {
+//            return value.asStringValue().orNull();
+//        }
+//        if (value.isBoolean()) {
+//            return value.asBooleanValue().orNull();
+//        }
+//        if (value.isNumber()) {
+//            // integral values come back as Integer: model-written line numbers and indices
+//            // are compared against int-typed APIs far more often than anything uses a Long
+//            Double d = value.asDoubleValue().orNull();
+//            if (d != null && d == Math.rint(d) && !d.isInfinite()
+//                    && d >= Integer.MIN_VALUE && d <= Integer.MAX_VALUE) {
+//                return (int) (double) d;
+//            }
+//            return d;
+//        }
+//        return value;
+//    }
 
-    public NaruToolCall(String id, String name, Map<String, Object> arguments) {
+    public NaruToolCall(String id, String name, Map<String, NElement> arguments) {
         this.id = id;
         this.name = name;
         this.arguments = arguments != null ? arguments : new LinkedHashMap<>();
@@ -121,11 +121,11 @@ public class NaruToolCall implements NToElement, NCopiable, Cloneable {
         this.name = name;
     }
 
-    public Map<String, Object> getArguments() {
+    public Map<String, NElement> getArguments() {
         return arguments;
     }
 
-    public void setArguments(Map<String, Object> arguments) {
+    public void setArguments(Map<String, NElement> arguments) {
         this.arguments = arguments;
     }
 
@@ -133,22 +133,23 @@ public class NaruToolCall implements NToElement, NCopiable, Cloneable {
      * Convenience: get a string argument value
      */
     public String getString(String key) {
-        Object v = arguments == null ? null : arguments.get(key);
-        return v == null ? null : v.toString();
+        NElement v = arguments == null ? null : arguments.get(key);
+        return v == null ? null : v.asStringValue().orNull();
     }
 
     /**
      * Convenience: get an integer argument value
      */
     public int getInt(String key, int defaultValue) {
-        Object v = arguments == null ? null : arguments.get(key);
+        NElement v = arguments == null ? null : arguments.get(key);
         if (v == null) return defaultValue;
-        if (v instanceof Number) return ((Number) v).intValue();
-        try {
-            return Integer.parseInt(v.toString());
-        } catch (Exception e) {
-            return defaultValue;
-        }
+        return v.asIntValue().orElse(defaultValue);
+//        if (v instanceof Number) return ((Number) v).intValue();
+//        try {
+//            return Integer.parseInt(v.toString());
+//        } catch (Exception e) {
+//            return defaultValue;
+//        }
     }
 
     @Override

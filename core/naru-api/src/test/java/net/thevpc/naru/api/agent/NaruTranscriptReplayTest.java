@@ -4,6 +4,7 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruThinkingSegment;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -41,7 +42,7 @@ class NaruTranscriptReplayTest {
     }
 
     private static NaruToolCall call(String id, String name) {
-        return new NaruToolCall(id, name, Map.of("thought", "plan the fix"));
+        return new NaruToolCall(id, name, Map.of("thought", NElement.of("plan the fix")));
     }
 
     private static List<NaruReplayItem> replay(NaruMessage... messages) {

@@ -82,7 +82,7 @@ public class NaruSetDirective extends NaruDirectiveBase {
                     long delta = inc.group(2).equals("++") ? 1L : -1L;
                     long current = NLiteral.of(readVar(task, v, name)).asLong().orElse(0L);
                     long value = current + delta;
-                    writeVar(task, v, name, value);
+                    writeVar(task, v, name, NElement.of(value));
                     return NaruStmtResult.of(NElement.of(value), null, setExitCode(value));
                 }
                 // 2) compound assignment: name op= <expr>
@@ -103,7 +103,7 @@ public class NaruSetDirective extends NaruDirectiveBase {
                         context.errln("invalid compound assignment");
                         return NaruStmtResult.ofError(); // applyCompound already reported the error
                     }
-                    writeVar(task, v, name, value);
+                    writeVar(task, v, name, NElement.of(value));
                     return NaruStmtResult.of(NElement.of(value),setExitCode(value));
                 }
                 // 3) plain assignment: name = <expr>
@@ -113,7 +113,7 @@ public class NaruSetDirective extends NaruDirectiveBase {
                     if (a instanceof NExprOpNode && a.name().equals("=") && a.children().size() == 2) {
                         String varName = a.children().get(0).name();
                         Object exprValue = a.children().get(1).eval(b).orNull();
-                        writeVar(task, v, varName, exprValue);
+                        writeVar(task, v, varName, NElement.of(exprValue));
                         return NaruStmtResult.of(NElement.of(exprValue), setExitCode(exprValue));
                     } else {
                         NMsg msg = NMsg.ofC("expected var = <expr>");
@@ -146,7 +146,7 @@ public class NaruSetDirective extends NaruDirectiveBase {
         }
     }
 
-    private static void writeVar(NaruTask task, VarType v, String name, Object value) {
+    private static void writeVar(NaruTask task, VarType v, String name, NElement value) {
         switch (v) {
             case SESSION:
                 task.session().setSessionEnv(name, value);
@@ -221,16 +221,16 @@ public class NaruSetDirective extends NaruDirectiveBase {
     }
 
     private static NaruStmtResult listVars(NaruTask task, VarType v,SubCommandContext context) {
-        Map<String, Object> varMap;
+        Map<String, NElement> varMap;
         switch (v) {
             case SESSION:
                 varMap = task.session().sessionEnv();
                 break;
             case AGENT: {
-                Map<String, Object> agentVars = new java.util.LinkedHashMap<>();
+                Map<String, NElement> agentVars = new java.util.LinkedHashMap<>();
                 NaruEnv agentEnv = task.session().agent() == null ? null : task.session().agent().agentEnv();
                 if (agentEnv != null) {
-                    agentEnv.entries().forEach((k, val) -> agentVars.put(k, NaruTaskConfig.toText(val)));
+                    agentVars.putAll(agentEnv.entries());
                 }
                 varMap = agentVars;
                 break;

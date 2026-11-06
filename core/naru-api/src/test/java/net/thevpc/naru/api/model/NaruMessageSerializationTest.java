@@ -40,12 +40,12 @@ public class NaruMessageSerializationTest {
      * alone cannot catch that field being dropped, so this one deliberately does not.
      */
     private static NaruMessage fullyPopulated() {
-        java.util.Map<String, Object> a1 = new java.util.LinkedHashMap<>();
-        a1.put("path", "A.java");
-        a1.put("line", 12);
-        a1.put("wholeFile", true);
-        java.util.Map<String, Object> a2 = new java.util.LinkedHashMap<>();
-        a2.put("q", "foo");
+        java.util.Map<String, NElement> a1 = new java.util.LinkedHashMap<>();
+        a1.put("path", NElement.of("A.java"));
+        a1.put("line", NElement.of(12));
+        a1.put("wholeFile", NElement.of(true));
+        java.util.Map<String, NElement> a2 = new java.util.LinkedHashMap<>();
+        a2.put("q", NElement.of("foo"));
         NaruMessage m = NaruMessage.assistantWithToolCalls("here is the answer",
                 List.of(
                         new NaruToolCall("call-1", "read_file", a1),
@@ -220,24 +220,24 @@ public class NaruMessageSerializationTest {
      */
     @Test
     public void toolCallArgumentsComeBackAsTheValuesThatWereWritten() {
-        java.util.Map<String, Object> args = new java.util.LinkedHashMap<>();
-        args.put("plain", "A.java");
-        args.put("number", 42);
-        args.put("flag", Boolean.TRUE);
-        args.put("withQuotes", "he said \"stop\"");
-        args.put("jsonish", "{\"path\":\"x\"}");
-        args.put("empty", "");
+        java.util.Map<String, NElement> args = new java.util.LinkedHashMap<>();
+        args.put("plain", NElement.of("A.java"));
+        args.put("number", NElement.of(42));
+        args.put("flag", NElement.of(Boolean.TRUE));
+        args.put("withQuotes", NElement.of("he said \"stop\""));
+        args.put("jsonish", NElement.of("{\"path\":\"x\"}"));
+        args.put("empty", NElement.of(""));
 
         NaruMessage reloaded = NaruMessage.of(
                 NaruMessage.assistantWithToolCalls("x", List.of(new NaruToolCall("c1", "t", args))).toElement());
 
-        java.util.Map<String, Object> back = reloaded.getToolCalls().get(0).getArguments();
-        Assertions.assertEquals("A.java", back.get("plain"));
-        Assertions.assertEquals(42L, ((Number) back.get("number")).longValue());
-        Assertions.assertEquals(Boolean.TRUE, back.get("flag"));
-        Assertions.assertEquals("he said \"stop\"", back.get("withQuotes"));
-        Assertions.assertEquals("{\"path\":\"x\"}", back.get("jsonish"));
-        Assertions.assertEquals("", back.get("empty"));
+        java.util.Map<String, NElement> back = reloaded.getToolCalls().get(0).getArguments();
+        Assertions.assertEquals(NElement.of("A.java"), back.get("plain"));
+        Assertions.assertEquals(NElement.of(42), back.get("number"));
+        Assertions.assertEquals(NElement.of(Boolean.TRUE), back.get("flag"));
+        Assertions.assertEquals(NElement.of("he said \"stop\""), back.get("withQuotes"));
+        Assertions.assertEquals(NElement.of("{\"path\":\"x\"}"), back.get("jsonish"));
+        Assertions.assertEquals(NElement.of(""), back.get("empty"));
 
         // and re-serializing must not drift
         Assertions.assertEquals(compact(reloaded.toElement()), compact(reloaded.toElement()));

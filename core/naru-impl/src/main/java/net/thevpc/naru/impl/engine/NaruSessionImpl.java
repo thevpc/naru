@@ -91,7 +91,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private long storeVersion;
     // Add to NaruSessionImpl fields:
     //use NOptional because ConcurrentHashMap cannot support null
-    private final Map<String, NOptional<Object>> env = new ConcurrentHashMap<>();
+    private final Map<String, NOptional<NElement>> env = new ConcurrentHashMap<>();
     private final AtomicLong maxTaskId = new AtomicLong(0);
     private long foregroundTaskId;
     private final Map<Long, NaruTask> tasks = new ConcurrentHashMap<>();
@@ -489,10 +489,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         // seeded before the task can run anything, and before the system prompt is built,
         // so a prompt that interpolates an input variable can see it
-        for (Map.Entry<String, Object> entry : taskBuilder.vars().entrySet()) {
+        for (Map.Entry<String, NElement> entry : taskBuilder.vars().entrySet()) {
             natuTask.setTaskEnv(entry.getKey(), entry.getValue());
         }
-        for (Map.Entry<String, Object> entry : taskBuilder.params().entrySet()) {
+        for (Map.Entry<String, NElement> entry : taskBuilder.params().entrySet()) {
             natuTask.setTaskEnv(entry.getKey(), entry.getValue());
         }
         // the resolved spawn seeds, snapshotted here: a child keeps what it was granted at
@@ -503,7 +503,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         for (NaruSpawnSeed<String> exclusion : plan.resolution.exclusions()) {
             natuTask.addToolExclusion(exclusion.value());
         }
-        for (Map.Entry<String, NaruSpawnSeed<Object>> envEntry : plan.resolution.env().entrySet()) {
+        for (Map.Entry<String, NaruSpawnSeed<NElement>> envEntry : plan.resolution.env().entrySet()) {
             natuTask.setTaskEnv(envEntry.getKey(), envEntry.getValue().value());
         }
         for (Map.Entry<String, NaruSpawnSeed<String>> labelEntry : plan.resolution.labels().entrySet()) {
@@ -586,9 +586,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * statements. Every callback is isolated: a broken feature may not cost the session.
      */
     private void notifySessionStart() {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("sessionDir", sessionDir == null ? null : sessionDir.toString());
-        payload.put("workingDir", workingDir == null ? null : workingDir.toString());
+        Map<String, NElement> payload = new LinkedHashMap<>();
+        payload.put("sessionDir", sessionDir == null ? null : NElement.of(sessionDir.toString()));
+        payload.put("workingDir", workingDir == null ? null : NElement.of(workingDir.toString()));
         for (NaruSessionExtension extension : registry.sessionExtensions()) {
             try {
                 extension.onSessionStart(this);
@@ -610,14 +610,14 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      */
     private void fireSpawnedEvent(NaruTask child, NaruTask parent, NaruSpawnContextImpl spawnContext) {
         NaruSpawnResolution resolution = spawnContext.resolution();
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("child", child.id());
-        payload.put("parent", parent == null ? -1L : parent.id());
-        payload.put("kind", spawnContext.spawnKind());
+        Map<String, NElement> payload = new LinkedHashMap<>();
+        payload.put("child", NElement.of(child.id()));
+        payload.put("parent", NElement.of(parent == null ? -1L : parent.id()));
+        payload.put("kind", NElement.of(spawnContext.spawnKind()));
         for (String line : resolution.provenanceText()) {
             int i = line.indexOf('=');
             if (i > 0) {
-                payload.put(line.substring(0, i), line.substring(i + 1));
+                payload.put(line.substring(0, i), NElement.of(line.substring(i + 1)));
             }
         }
         eventLog.append(new NaruEvent(
@@ -748,7 +748,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return NOptional.ofNamed(tasks.get(tid), "task " + tid);
     }
 
-    public NaruSession setSessionEnv(String key, Object value) {
+    public NaruSession setSessionEnv(String key, NElement value) {
         ensureNotStopped();
         if (env.containsKey(key) && Objects.equals(env.get(key).orNull(), value)) {
             return this;
@@ -759,17 +759,17 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         return this;
     }
 
-    public NOptional<Object> getSessionEnv(String key) {
+    public NOptional<NElement> getSessionEnv(String key) {
         if (env.containsKey(key)) {
-            Object u = env.get(key).get();
+            NElement u = env.get(key).get();
             return NOptional.ofNullable(u);
         }
         return NOptional.ofNamedEmpty(key);
     }
 
     @Override
-    public NOptional<Object> getSessionEnv(String key, boolean inherited) {
-        NOptional<Object> sessionValue = getSessionEnv(key);
+    public NOptional<NElement> getSessionEnv(String key, boolean inherited) {
+        NOptional<NElement> sessionValue = getSessionEnv(key);
         if (sessionValue.isPresent()) {
             return sessionValue;
         }
@@ -885,11 +885,11 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     private void fireSessionRenamed(String oldName, String newName, NaruSessionNameSource source) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("uuid", uuid());
-        payload.put("oldName", oldName);
-        payload.put("newName", newName);
-        payload.put("source", source.name());
+        Map<String, NElement> payload = new LinkedHashMap<>();
+        payload.put("uuid", NElement.of(uuid()));
+        payload.put("oldName", NElement.of(oldName));
+        payload.put("newName", NElement.of(newName));
+        payload.put("source", NElement.of(source.name()));
         fireEvent(NaruEvent.SESSION_RENAMED, payload);
         if (sessionListener != null) {
             sessionListener.onSessionRenamed(this, oldName, newName, source);
@@ -1270,7 +1270,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         this.projectId = data.projectId();
         this.userName = data.user();
         env.clear();
-        for (Map.Entry<String, Object> e : data.env().entrySet()) {
+        for (Map.Entry<String, NElement> e : data.env().entrySet()) {
             env.put(e.getKey(), NOptional.ofNullable(e.getValue()));
         }
 
@@ -1628,8 +1628,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * This session's metadata as the store's own value type.
      */
     private NaruSessionData sessionData() {
-        Map<String, Object> values = new LinkedHashMap<>();
-        for (Map.Entry<String, NOptional<Object>> e : env.entrySet()) {
+        Map<String, NElement> values = new LinkedHashMap<>();
+        for (Map.Entry<String, NOptional<NElement>> e : env.entrySet()) {
             values.put(e.getKey(), e.getValue().orNull());
         }
         return new NaruSessionData()
@@ -1788,7 +1788,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             o.set("user", NElement.ofString(userName));
         }
         NObjectElementBuilder _props = NObjectElementBuilder.of();
-        for (Map.Entry<String, NOptional<Object>> e : env.entrySet()) {
+        for (Map.Entry<String, NOptional<NElement>> e : env.entrySet()) {
             _props.add(e.getKey(), NElement.of(e.getValue().orNull()));
         }
         o.set("env", _props.build());
@@ -1893,7 +1893,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 // itself, and error() is the only place left that can say why it failed. Without
                 // this a FAILED task reports no reason at all, because the cancellation is the
                 // engine's doing and no statement ever wrote it.
-                task.setTaskEnv("lastError", reason);
+                task.setTaskEnv("lastError", NElement.of(reason));
                 ((NaruTaskSchedulerView) task).status(NaruTaskStatus.FAILED);
             } catch (Exception ignored) {
                 // a task that refuses to change state is already terminal
@@ -2298,9 +2298,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                             extension.name(), e).asError());
                 }
             }
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("oldSessionDir", old == null ? null : old.toString());
-            payload.put("newSessionDir", nf.toString());
+            Map<String, NElement> payload = new LinkedHashMap<>();
+            payload.put("oldSessionDir", NElement.ofString(old == null ? null : old.toString()));
+            payload.put("newSessionDir", NElement.ofString(nf.toString()));
             fireEvent(NaruEvent.SESSION_DIR_CHANGE, payload);
             fireChanged();
         }
@@ -2313,7 +2313,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * notifications about the session itself rather than about a task.
      */
     @Override
-    public NaruSession fireEvent(String eventName, Map<String, Object> payload) {
+    public NaruSession fireEvent(String eventName, Map<String, NElement> payload) {
         eventLog.append(new NaruEvent(
                 eventName,
                 payload == null ? new LinkedHashMap<>() : payload,
@@ -2411,9 +2411,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         String raw = sys;
         if (raw == null || raw.trim().isEmpty()) {
             for (String key : keys) {
-                Object v = getSessionEnv(key).orNull();
+                NElement v = getSessionEnv(key).orNull();
                 if (v != null) {
-                    raw = String.valueOf(v);
+                    raw = NaruTaskConfig.toText(v);
                     break;
                 }
             }
@@ -2422,10 +2422,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             for (String key : keys) {
                 NElement v = getProjectEnv(key).orNull();
                 if (v != null) {
-                    raw = v.asStringValue().orNull();
-                    if (raw == null) {
-                        raw = String.valueOf(v);
-                    }
+                    raw = NaruTaskConfig.toText(v);
                     break;
                 }
             }
@@ -2868,9 +2865,9 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 tasks.remove(tid);
                 notifyTaskDeregistered(tid);
             }
-            Map<String, Object> payload = NMaps.of(
-                    "status", i.status().name(),
-                    "name", i.name()
+            Map<String, NElement> payload = NMaps.of(
+                    "status", NElement.of(i.status().name()),
+                    "name", NElement.of(i.name())
             );
             ((NaruSchedulerImpl) scheduler).onTerminated(tid);
             eventLog.append(new NaruEvent(
@@ -3062,7 +3059,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
 
     @Override
-    public Map<String, Object> sessionEnv() {
+    public Map<String, NElement> sessionEnv() {
         return env.entrySet().stream().collect(Collectors.toMap(x -> x.getKey(), x -> x.getValue().orNull()));
     }
 

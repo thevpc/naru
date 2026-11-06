@@ -2,6 +2,7 @@ package net.thevpc.naru.ext.tools.llm;
 
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruEnv;
+import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.model.AbstractNaruModelProvider;
@@ -145,8 +146,17 @@ public class NaruModelDirectiveRegistrationTest {
         };
     }
 
-    private NaruDirectiveBase.SubCommandContext buildSubContext() {
-        return buildSubContext(context);
+    /**
+     * Print what a hand-made sub-command context accumulated. On the real path
+     * {@code NaruDirectiveBase.execute} logs it once the sub-command returns; a test
+     * that calls a sub-method directly must take the same step or the output goes
+     * nowhere and the task sees nothing to log.
+     */
+    public static void flush(NaruDirectiveBase.SubCommandContext sctx) {
+        NMsg msg = NMsg.ofC("%s", sctx.out().build());
+        if (!msg.isBlank()) {
+            sctx.task().log(NaruLogMode.DIRECTIVE, msg);
+        }
     }
 
     private NaruDirectiveCallContext buildContext() {
@@ -370,18 +380,30 @@ public class NaruModelDirectiveRegistrationTest {
         return pins.isEmpty() ? null : pins;
     }
 
+    /**
+     * Run a sub-command the way the REPL runs it: through {@code execute}, which is
+     * where the text a sub-command accumulated gets logged. Calling the sub-method
+     * with a hand-made context returns the result but never emits anything.
+     */
+    private NaruStmtResult run(String args) {
+        argument[0] = args;
+        return directive.execute(context);
+    }
+
     private NaruStmtResult add(String args) {
-        return directive.executeRegistration(buildSubContext(), NCmdLine.of(args), "add");
+        return run("add " + args);
     }
 
     private NaruStmtResult update(String args) {
-        return directive.executeRegistration(buildSubContext(), NCmdLine.of(args), "update");
+        return run("update " + args);
     }
 
     private String logged() {
         StringBuilder sb = new StringBuilder();
         for (NMsg m : logs) {
-            sb.append(m.toString()).append('\n');
+            // the plain rendering, the way the terminal shows it: toString() keeps the
+            // ##{p1:…}## style markers, and an id inside one is not a substring of the text
+            sb.append(m.toString(true)).append('\n');
         }
         return sb.toString();
     }
@@ -734,13 +756,13 @@ public class NaruModelDirectiveRegistrationTest {
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, add("tmp --provider=stub").type());
         Assertions.assertTrue(instances.containsKey("tmp"));
 
-        NaruStmtResult res = directive.executeRemoveRegistration(buildSubContext(), NCmdLine.of("tmp"));
+        NaruStmtResult res = run("remove tmp");
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         Assertions.assertTrue(registrations.isEmpty());
         Assertions.assertFalse(instances.containsKey("tmp"));
         Assertions.assertTrue(logged().contains("registration 'tmp' removed"), () -> logged());
 
-        NaruStmtResult again = directive.executeRemoveRegistration(buildSubContext(), NCmdLine.of("tmp"));
+        NaruStmtResult again = run("remove tmp");
         Assertions.assertEquals(NaruStmtResultType.ERROR, again.type());
         Assertions.assertTrue(logged().contains("no registration 'tmp'"), () -> logged());
     }
@@ -756,7 +778,7 @@ public class NaruModelDirectiveRegistrationTest {
         Assertions.assertEquals("sk-secret1234",
                 registrations.get("secret").apiKey().get());
 
-        NaruStmtResult res = directive.executeRegisteredList(buildSubContext(), NCmdLine.of(""));
+        NaruStmtResult res = run("registered");
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         String out = logged();
         Assertions.assertTrue(out.contains("sk-***1234"), () -> "expected the masked key, got: " + out);
@@ -770,7 +792,7 @@ public class NaruModelDirectiveRegistrationTest {
                 add("ex --protocol=openai --url=http://x --models=a,b").type());
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, add("personal --provider=gemini").type());
 
-        NaruStmtResult res = directive.executeRegisteredList(buildSubContext(), NCmdLine.of(""));
+        NaruStmtResult res = run("registered");
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
         String out = logged();
         Assertions.assertTrue(java.util.regex.Pattern.compile("ex[ ]+openai").matcher(out).find(),
@@ -818,7 +840,7 @@ public class NaruModelDirectiveRegistrationTest {
         catalog.add(info("gemini", "gem-2"));
         catalog.add(info("ollama", "qwen"));
 
-        NaruStmtResult res = directive.executeList(buildSubContext(), NCmdLine.of("--provider=gemini"));
+        NaruStmtResult res = run("list --provider=gemini");
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
 
         // rows render with NText style markers (##{p9:personal}##…), so match on the
@@ -982,7 +1004,7 @@ public class NaruModelDirectiveRegistrationTest {
     @Test
     public void bareIndexCompletesAfterAListing() {
         catalog.add(info("gemini", "gem-2"));
-        NaruStmtResult res = directive.executeList(buildSubContext(), NCmdLine.of(""));
+        NaruStmtResult res = run("list");
         Assertions.assertEquals(NaruStmtResultType.SUCCESS, res.type(), () -> String.valueOf(res));
 
         Assertions.assertTrue(complete("/model", "").contains("1"),

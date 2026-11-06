@@ -5,6 +5,7 @@ import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.desktop.host.TranscriptEvent;
 import net.thevpc.naru.desktop.util.EDT;
+import net.thevpc.nuts.elem.NElement;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,7 +51,7 @@ class ToolCallModelTest {
     }
 
     private static NaruToolCall call(String id, String name) {
-        return new NaruToolCall(id, name, Map.of("cmd", "ls"));
+        return new NaruToolCall(id, name, Map.of("cmd", NElement.of("ls")));
     }
 
     private static TranscriptEvent started(long task, String id, String name) {
@@ -81,7 +82,7 @@ class ToolCallModelTest {
             assertEquals(40, r.durationMillis());
             assertEquals("40 ms", r.measuredDuration());
             assertEquals(6, r.taskId());
-            assertEquals(Map.of("cmd", "ls"), r.arguments());
+            assertEquals(Map.of("cmd", NElement.of("ls")), r.arguments());
         });
     }
 

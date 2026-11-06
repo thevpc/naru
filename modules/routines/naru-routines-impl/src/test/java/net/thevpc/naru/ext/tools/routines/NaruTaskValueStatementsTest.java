@@ -5,6 +5,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -76,13 +77,13 @@ public class NaruTaskValueStatementsTest {
                 .interaction(new NaruStreamInteraction(o -> {
                 }))
                 .task(NaruTaskSpec.of().statements("/return topic + \"-done\"")
-                        .vars(Map.of("topic", "caching"))
+                        .vars(Map.of("topic", NElement.of("caching")))
                         .resolveName())
                 .build()
                 .run();
         result.await();
 
-        Assertions.assertEquals("caching-done", result.value().orNull());
+        Assertions.assertEquals(NElement.of("caching-done"), result.value().orNull());
     }
 
     /**

@@ -591,7 +591,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
                 if (waitMatch != null) {
                     task.addAwaitReceived(waitMatch);
                     task.awaitFilter(null);
-                    task.frame().setLocalVar("event", waitMatch);
+                    task.frame().setLocalVar("event", waitMatch.toElement());
                     ((NaruTaskSchedulerView) task).status(NaruTaskStatus.READY);
                     toConsume.add(waitMatch.seq());
                 }
@@ -608,7 +608,7 @@ public class NaruSchedulerImpl implements NaruScheduler {
     private void injectRoutine(NaruTask task, NaruEvent event,
                                NaruEventSubscription sub) {
         NaruTaskFrame f = task.pushFrame( null, false);
-        f.setLocalVar("event", event);
+        f.setLocalVar("event", event.toElement());
         task.addStatements(
                 session
                         .routine(sub.routineName(), task, true).get()

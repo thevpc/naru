@@ -82,8 +82,8 @@ public class NaruRequestTailValidationTest {
     }
 
     private static NaruMessage assistantCalls(String callId, String name) {
-        Map<String, Object> args = new LinkedHashMap<>();
-        args.put("path", "A.java");
+        Map<String, NElement> args = new LinkedHashMap<>();
+        args.put("path", NElement.of("A.java"));
         return NaruMessage.assistantWithToolCalls("", List.of(new NaruToolCall(callId, name, args)));
     }
 

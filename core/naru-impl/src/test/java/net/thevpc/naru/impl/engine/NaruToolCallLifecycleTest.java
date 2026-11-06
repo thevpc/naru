@@ -173,7 +173,7 @@ public class NaruToolCallLifecycleTest {
     public void aToolCallReportsItsArgumentsAndItsWholeResult() {
         String longResult = "L".repeat(4000);
         Recorder r = new Recorder();
-        NaruToolCall call = new NaruToolCall("call-77", "slow_tool", Map.of("path", "a.txt", "n", 3));
+        NaruToolCall call = new NaruToolCall("call-77", "slow_tool", Map.of("path", NElement.of("a.txt"), "n", NElement.of(3)));
         NaruSession s = scriptedSession(r, call, new EchoTool("slow_tool", longResult, 40));
 
         NaruTask task = run(s, "read a.txt");
@@ -186,7 +186,7 @@ public class NaruToolCallLifecycleTest {
         assertEquals("call-77", done.get(0).callId());
         assertEquals("slow_tool", done.get(0).toolName());
         assertEquals(task.id(), done.get(0).taskId(), "the host must not guess the task");
-        assertEquals(Map.of("path", "a.txt", "n", 3), done.get(0).arguments());
+        assertEquals(Map.of("path", NElement.of("a.txt"), "n", NElement.of(3)), done.get(0).arguments());
         assertTrue(done.get(0).durationMillis() >= 40,
                 "a 40 ms tool must not report a shorter duration: " + done.get(0).durationMillis());
         assertTrue(done.get(0).isFinal());
@@ -329,7 +329,7 @@ public class NaruToolCallLifecycleTest {
     @Timeout(60)
     public void anInteractiveCallParksAndLaterSettles() throws Exception {
         Recorder r = new Recorder();
-        NaruToolCall call = new NaruToolCall("call-6", "ask_tool", Map.of("question", "which colour?"));
+        NaruToolCall call = new NaruToolCall("call-6", "ask_tool", Map.of("question", NElement.of("which colour?")));
         NaruSession s = scriptedSession(r, call, new AskTool());
         // the answer comes from the host, the way it does in the desktop: another thread, later
         Thread answered = new Thread(() -> {

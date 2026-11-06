@@ -54,8 +54,8 @@ public class NaruFileSessionStoreTest {
     // ---------------------------------------------------------------- fixtures
 
     private static NaruSessionData data(String uuid, String name) {
-        Map<String, Object> env = new LinkedHashMap<>();
-        env.put("mode", "test");
+        Map<String, NElement> env = new LinkedHashMap<>();
+        env.put("mode", NElement.of("test"));
         return new NaruSessionData()
                 .uuid(uuid)
                 .name(name)
@@ -119,7 +119,7 @@ public class NaruFileSessionStoreTest {
         NaruSessionData back = store.loadData("s1", NaruSessionScope.PRIVATE).orNull();
         Assertions.assertNotNull(back);
         Assertions.assertEquals("renamed", back.name());
-        Assertions.assertEquals("test", back.env().get("mode"));
+        Assertions.assertEquals(NElement.of("test"), back.env().get("mode"));
         Assertions.assertEquals(Instant.parse("2024-01-01T00:00:00Z"), back.creationInstant());
         NObjectElement saved = NElementReader.ofTson().read(
                 projectDir.resolve(".naru/local/sessions/s1/session.tson")).asObject().get();

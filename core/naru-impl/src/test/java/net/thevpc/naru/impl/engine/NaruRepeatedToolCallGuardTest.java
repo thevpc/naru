@@ -114,8 +114,8 @@ public class NaruRepeatedToolCallGuardTest {
         @Override
         public NaruResponse chat(NaruModelRequest request, NaruTask task) {
             int n = calls.incrementAndGet();
-            Map<String, Object> arguments = new LinkedHashMap<>();
-            arguments.put("thought", varyArguments ? "attempt " + n : "The capital of Tunisia is Tunis.");
+            Map<String, NElement> arguments = new LinkedHashMap<>();
+            arguments.put("thought", NElement.of(varyArguments ? "attempt " + n : "The capital of Tunisia is Tunis."));
             NaruResponse r = new NaruResponse();
             r.setMessage(NaruMessage.assistantWithToolCalls("",
                     List.of(new NaruToolCall("call_think", "think", arguments))));

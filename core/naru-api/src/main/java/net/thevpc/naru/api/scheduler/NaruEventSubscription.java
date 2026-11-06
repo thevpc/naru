@@ -1,15 +1,17 @@
 package net.thevpc.naru.api.scheduler;
 
+import net.thevpc.nuts.elem.NElement;
+
 import java.util.Map;
 
 public class NaruEventSubscription {
     private final String routineName;
     private final NaruEventFilter filter;
     private final boolean once;
-    private final Map<String,Object> args;
+    private final Map<String, NElement> args;
 
     public NaruEventSubscription(String routineName,
-                                 Map<String,Object> args,
+                                 Map<String, NElement> args,
                                  NaruEventFilter filter,
                                  boolean once) {
         this.routineName = routineName;
@@ -18,7 +20,7 @@ public class NaruEventSubscription {
         this.once = once;
     }
 
-    public Map<String, Object> args() {
+    public Map<String, NElement> args() {
         return args;
     }
 

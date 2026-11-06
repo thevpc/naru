@@ -87,7 +87,7 @@ public class NaruAnthropicResponseParser implements NElementDeserializer<NaruRes
                     } else if ("tool_use".equals(type)) {
                         String id = block.getStringValue("id").orElseGet(() -> UUID.randomUUID().toString());
                         String name = block.getStringValue("name").orElse("unknown");
-                        Map<String, Object> input = parseInput(block.get("input").orNull());
+                        Map<String, NElement> input = parseInput(block.get("input").orNull());
                         calls.add(new NaruToolCall(id, name, input));
                     }
                 }
@@ -102,8 +102,8 @@ public class NaruAnthropicResponseParser implements NElementDeserializer<NaruRes
         return response;
     }
 
-    public static Map<String, Object> parseInput(NElement inputEl) {
-        Map<String, Object> args = new LinkedHashMap<>();
+    public static Map<String, NElement> parseInput(NElement inputEl) {
+        Map<String, NElement> args = new LinkedHashMap<>();
         if (inputEl == null || inputEl.isNull() || inputEl.isEmpty()) {
             return args;
         }
@@ -113,11 +113,7 @@ public class NaruAnthropicResponseParser implements NElementDeserializer<NaruRes
                 if (!NBlankable.isBlank(k)) {
                     NElement val = entry.value();
                     if (val != null) {
-                        if (val.isPrimitive()) {
-                            args.put(k, val.asPrimitive().get().value());
-                        } else {
-                            args.put(k, NElement.simpleOf(val));
-                        }
+                        args.put(k, val);
                     }
                 }
             }

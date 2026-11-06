@@ -4,6 +4,7 @@ import net.thevpc.naru.api.task.NaruTaskStackFrame;
 import net.thevpc.naru.api.task.NaruTaskStackItem;
 import net.thevpc.naru.desktop.model.NaruSessionModel.TaskDetail;
 import net.thevpc.naru.desktop.model.NaruSessionModel.TaskRow;
+import net.thevpc.nuts.elem.NElement;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -192,13 +193,13 @@ public final class TaskText {
         return sb.toString();
     }
 
-    private static void appendVars(StringBuilder sb, String title, Map<String, Object> vars) {
-        List<Map.Entry<String, Object>> entries = vars == null ? new ArrayList<>()
+    private static void appendVars(StringBuilder sb, String title, Map<String, NElement> vars) {
+        List<Map.Entry<String, NElement>> entries = vars == null ? new ArrayList<>()
                 : vars.entrySet().stream()
                 .sorted(Comparator.comparing(x -> String.valueOf(x.getKey())))
                 .toList();
         sb.append("      ").append(title).append(" : ").append(entries.size()).append('\n');
-        for (Map.Entry<String, Object> e : entries) {
+        for (Map.Entry<String, NElement> e : entries) {
             sb.append("        ").append(e.getKey()).append(" = ").append(e.getValue()).append('\n');
         }
     }

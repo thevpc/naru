@@ -6,6 +6,7 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.nuts.cmdline.NArg;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
 
@@ -42,7 +43,7 @@ public class NaruFireDirective extends NaruDirectiveBase {
                 NaruEventTarget target = null;
                 NaruRetentionPolicy policy = null;
                 String event = null;
-                Map<String, Object> payload = new HashMap<>();
+                Map<String, NElement> payload = new HashMap<>();
                 while (!cmdLine.isEmpty()) {
                     if (event == null) {
                         event = cmdLine.next().get().image();
@@ -73,7 +74,7 @@ public class NaruFireDirective extends NaruDirectiveBase {
                             }
                             default: {
                                 if (!a.isOption()) {
-                                    payload.put(a.key(), a.value());
+                                    payload.put(a.key(), NElement.of(a.value()));
                                 }
                             }
                         }

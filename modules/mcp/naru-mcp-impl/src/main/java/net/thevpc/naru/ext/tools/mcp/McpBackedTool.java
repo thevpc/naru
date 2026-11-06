@@ -5,6 +5,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import net.thevpc.naru.api.access.NaruAccessDecision;
 import net.thevpc.naru.api.access.NaruAccessGuard;
 import net.thevpc.naru.api.access.NaruAction;
+import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.naru.api.access.NaruResource;
 import net.thevpc.naru.api.access.NaruResourceType;
 import net.thevpc.naru.api.model.NaruToolDefinition;
@@ -14,6 +15,8 @@ import net.thevpc.naru.api.task.NaruTask;
 
 import java.util.*;
 import java.util.stream.Collectors;
+
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NText;
 
 public class McpBackedTool extends DefaultNaruTool {
@@ -181,7 +184,13 @@ public class McpBackedTool extends DefaultNaruTool {
         if (denied != null) {
             return denied;
         }
-        return client.callTool(new McpSchema.CallToolRequest(mcpTool.name(), context.arguments()))
+        Map<String, NElement> arguments0 = context.arguments();
+        Map<String, Object> arguments1 = new HashMap<>();
+        for (Map.Entry<String, NElement> e : arguments0.entrySet()) {
+            NElement v = e.getValue();
+            arguments1.put(e.getKey(), NaruUtils.plainValue(v));
+        }
+        return client.callTool(new McpSchema.CallToolRequest(mcpTool.name(), arguments1))
                 .content().stream()
                 .filter(c -> c instanceof McpSchema.TextContent)
                 .map(c -> ((McpSchema.TextContent) c).text())

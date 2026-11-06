@@ -3,7 +3,6 @@ package net.thevpc.naru.ext.models.openai;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruToolCall;
-import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
@@ -121,7 +120,7 @@ public class NaruOpenAiResponseParser implements NElementDeserializer<NaruRespon
                         NObjectElement fn = tcObj.getObject("function").orElse(tcObj);
                         String name = fn.getStringValue("name").orElse("unknown");
 
-                        Map<String, Object> args = new LinkedHashMap<>();
+                        Map<String, NElement> args = new LinkedHashMap<>();
                         if (fn.get("arguments").isPresent()) {
                             args = parseArguments(fn.get("arguments").get());
                         }
@@ -162,8 +161,8 @@ public class NaruOpenAiResponseParser implements NElementDeserializer<NaruRespon
         return response;
     }
 
-    public static Map<String, Object> parseArguments(NElement argsEl) {
-        Map<String, Object> args = new LinkedHashMap<>();
+    public static Map<String, NElement> parseArguments(NElement argsEl) {
+        Map<String, NElement> args = new LinkedHashMap<>();
         if (argsEl == null || argsEl.isNull() || argsEl.isEmpty()) {
             return args;
         }
@@ -173,11 +172,7 @@ public class NaruOpenAiResponseParser implements NElementDeserializer<NaruRespon
                 if (!NBlankable.isBlank(k)) {
                     NElement val = entry.value();
                     if (val != null) {
-                        if (val.isPrimitive()) {
-                            args.put(k, val.asPrimitive().get().value());
-                        } else {
-                            args.put(k, NElement.simpleOf(val));
-                        }
+                        args.put(k, val);
                     }
                 }
             }
@@ -200,7 +195,7 @@ public class NaruOpenAiResponseParser implements NElementDeserializer<NaruRespon
                 Map<?, ?> readMap = NElementReader.ofJson().read(argsStr, Map.class);
                 if (readMap != null) {
                     for (Map.Entry<?, ?> entry : readMap.entrySet()) {
-                        args.put(String.valueOf(entry.getKey()), entry.getValue());
+                        args.put(String.valueOf(entry.getKey()), NElement.of(entry.getValue()));
                     }
                 }
             } catch (Exception e1) {
@@ -213,19 +208,15 @@ public class NaruOpenAiResponseParser implements NElementDeserializer<NaruRespon
                             if (!NBlankable.isBlank(k)) {
                                 NElement val = entry.value();
                                 if (val != null) {
-                                    if (val.isPrimitive()) {
-                                        args.put(k, val.asPrimitive().get().value());
-                                    } else {
-                                        args.put(k, NElement.simpleOf(val));
-                                    }
+                                    args.put(k, val);
                                 }
                             }
                         }
                     } else {
-                        args.put("raw", argsStr);
+                        args.put("raw", NElement.of(argsStr));
                     }
                 } catch (Exception e2) {
-                    args.put("raw", argsStr);
+                    args.put("raw", NElement.of(argsStr));
                 }
             }
         }
@@ -247,10 +238,10 @@ public class NaruOpenAiResponseParser implements NElementDeserializer<NaruRespon
             while (funcMatcher.find()) {
                 String funcName = funcMatcher.group(1).trim();
                 String body = funcMatcher.group(2);
-                Map<String, Object> arguments = new LinkedHashMap<>();
+                Map<String, NElement> arguments = new LinkedHashMap<>();
                 java.util.regex.Matcher paramMatcher = java.util.regex.Pattern.compile("<parameter=([^>]+)>(.*?)</parameter>", java.util.regex.Pattern.DOTALL).matcher(body);
                 while (paramMatcher.find()) {
-                    arguments.put(paramMatcher.group(1).trim(), paramMatcher.group(2).trim());
+                    arguments.put(paramMatcher.group(1).trim(), NElement.of(paramMatcher.group(2).trim()));
                 }
                 calls.add(new NaruToolCall(UUID.randomUUID().toString(), funcName, arguments));
             }
@@ -274,7 +265,7 @@ public class NaruOpenAiResponseParser implements NElementDeserializer<NaruRespon
                         NObjectElement obj = el.asObject().get();
                         String name = obj.getStringValue("name").orElse(obj.getStringValue("tool").orElse("unknown"));
                         NElement argsEl = obj.get("arguments").orElse(obj.get("args").orNull());
-                        Map<String, Object> args = parseArguments(argsEl);
+                        Map<String, NElement> args = parseArguments(argsEl);
                         calls.add(new NaruToolCall("call_" + UUID.randomUUID().toString().substring(0, 8), name, args));
                     }
                 } catch (Exception ignored) {

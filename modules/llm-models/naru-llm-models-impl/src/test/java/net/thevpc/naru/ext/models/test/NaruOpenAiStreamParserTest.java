@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.model.NaruChunkKind;
 import net.thevpc.naru.api.model.NaruMessage;
@@ -202,8 +203,8 @@ public class NaruOpenAiStreamParserTest {
         NaruToolCall call = r.getMessage().getToolCalls().get(0);
         Assertions.assertEquals("call_1", call.getId());
         Assertions.assertEquals("read", call.getName());
-        Map<String, Object> args = call.getArguments();
-        Assertions.assertEquals("src", args.get("path"));
+        Map<String, NElement> args = call.getArguments();
+        Assertions.assertEquals(NElement.of("src"), args.get("path"));
     }
 
     @Test
@@ -223,8 +224,8 @@ public class NaruOpenAiStreamParserTest {
         NaruToolCall second = r.getMessage().getToolCalls().get(1);
         Assertions.assertEquals("one", first.getName());
         Assertions.assertEquals("two", second.getName());
-        Assertions.assertEquals(1, first.getArguments().get("x"));
-        Assertions.assertEquals(2, second.getArguments().get("y"));
+        Assertions.assertEquals(1, first.getArguments().get("x").asNumberValue().get().intValue());
+        Assertions.assertEquals(2, second.getArguments().get("y").asNumberValue().get().intValue());
     }
 
     @Test
@@ -241,7 +242,7 @@ public class NaruOpenAiStreamParserTest {
                 "the XML function call in streamed content must surface as a tool call");
         NaruToolCall call = r.getMessage().getToolCalls().get(0);
         Assertions.assertEquals("file_read", call.getName());
-        Assertions.assertEquals("src/Main.java", call.getArguments().get("path"));
+        Assertions.assertEquals(NElement.of("src/Main.java"), call.getArguments().get("path"));
     }
 
     @Test
@@ -256,7 +257,7 @@ public class NaruOpenAiStreamParserTest {
         Assertions.assertTrue(r.hasToolCalls());
         NaruToolCall call = r.getMessage().getToolCalls().get(0);
         Assertions.assertEquals("calculator", call.getName());
-        Assertions.assertEquals("2+2", call.getArguments().get("expression"));
+        Assertions.assertEquals(NElement.of("2+2"), call.getArguments().get("expression"));
     }
 
     @Test

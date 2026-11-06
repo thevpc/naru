@@ -578,7 +578,7 @@ public class NaruSkillsExtension implements NaruSessionExtension {
             return false;
         }
         task.fireEvent(EVENT_SKILL_LOADED,
-                Map.of("name", canonical),
+                Map.of("name", NElement.of(canonical)),
                 NaruEventTargets.children(task.id()),
                 NaruRetentionPolicies.ofForever());
         return true;
@@ -594,7 +594,8 @@ public class NaruSkillsExtension implements NaruSessionExtension {
         if (event == null || !EVENT_SKILL_LOADED.equals(event.name()) || manager == null) {
             return;
         }
-        Object name = event.payload("name");
+        NElement ename = event.payload("name");
+        String name = ename==null?null:ename.asStringValue().orNull();
         if (!(name instanceof String skillName) || NBlankable.isBlank(skillName)) {
             return;
         }

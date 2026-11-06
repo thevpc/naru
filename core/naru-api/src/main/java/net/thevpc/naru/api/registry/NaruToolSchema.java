@@ -46,12 +46,12 @@ public class NaruToolSchema {
             schema.set("description", p.getDescription());
         }
         if (p.getDefaultValue() != null) {
-            schema.set("default", NElement.of(p.getDefaultValue()));
+            schema.set("default", p.getDefaultValue());
         }
         if (p.getEnumValues() != null && !p.getEnumValues().isEmpty()) {
             NArrayElementBuilder enumArr = NElement.ofArrayBuilder();
-            for (Object val : p.getEnumValues()) {
-                enumArr.add(NElement.of(val));
+            for (NElement val : p.getEnumValues()) {
+                enumArr.add(val);
             }
             schema.set("enum", enumArr.build());
         }

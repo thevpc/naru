@@ -5,6 +5,7 @@ import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.spawn.NaruSpawnContract;
 import net.thevpc.naru.api.spawn.NaruSpawnInherit;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
@@ -25,8 +26,8 @@ public class NaruTaskSpec {
     private List<String> statements = new ArrayList<>();
     private NaruPromptMode promptMode;
     private final Set<String> toolTags = new LinkedHashSet<>();
-    private final Map<String, Object> vars = new LinkedHashMap<>();
-    private final Map<String, Object> params = new LinkedHashMap<>();
+    private final Map<String, NElement> vars = new LinkedHashMap<>();
+    private final Map<String, NElement> params = new LinkedHashMap<>();
     // ── spawn inputs (WP3: strategy, seeds with provenance, named policy, contract) ──
     private NaruSpawnStrategy strategy;
     private int windowTurns;
@@ -41,7 +42,7 @@ public class NaruTaskSpec {
     private String spawnKind;
     private NaruSpawnContract contract;
     private String model;
-    private final Map<String, Object> ext = new LinkedHashMap<>();
+    private final Map<String, NElement> ext = new LinkedHashMap<>();
 
     /**
      * The actor that authors this task's statements. Null means the task
@@ -172,10 +173,10 @@ public class NaruTaskSpec {
      *
      * @param vars the variables, may be null to clear; null keys are ignored
      */
-    public NaruTaskSpec vars(Map<String, Object> vars) {
+    public NaruTaskSpec vars(Map<String, NElement> vars) {
         this.vars.clear();
         if (vars != null) {
-            for (Map.Entry<String, Object> entry : vars.entrySet()) {
+            for (Map.Entry<String, NElement> entry : vars.entrySet()) {
                 if (entry.getKey() != null) {
                     this.vars.put(entry.getKey(), entry.getValue());
                 }
@@ -187,7 +188,7 @@ public class NaruTaskSpec {
     /**
      * Add or replace a single initial task variable, keeping the others.
      */
-    public NaruTaskSpec var(String name, Object value) {
+    public NaruTaskSpec var(String name, NElement value) {
         if (name != null) {
             vars.put(name, value);
         }
@@ -197,7 +198,7 @@ public class NaruTaskSpec {
     /**
      * The initial task variables, unmodifiable. Empty rather than null when none were set.
      */
-    public Map<String, Object> vars() {
+    public Map<String, NElement> vars() {
         return Collections.unmodifiableMap(vars);
     }
 
@@ -207,10 +208,10 @@ public class NaruTaskSpec {
      * supplied through {@link #vars(Map)}. Positional parameters are intentionally not
      * supported so callers can add or reorder inputs without breaking existing calls.
      */
-    public NaruTaskSpec params(Map<String, Object> params) {
+    public NaruTaskSpec params(Map<String, NElement> params) {
         this.params.clear();
         if (params != null) {
-            for (Map.Entry<String, Object> entry : params.entrySet()) {
+            for (Map.Entry<String, NElement> entry : params.entrySet()) {
                 if (entry.getKey() != null) this.params.put(entry.getKey(), entry.getValue());
             }
         }
@@ -218,13 +219,13 @@ public class NaruTaskSpec {
     }
 
     /** Add or replace one named task input parameter. */
-    public NaruTaskSpec param(String name, Object value) {
+    public NaruTaskSpec param(String name, NElement value) {
         if (name != null) params.put(name, value);
         return this;
     }
 
     /** Named input parameters, unmodifiable. */
-    public Map<String, Object> params() {
+    public Map<String, NElement> params() {
         return Collections.unmodifiableMap(params);
     }
 
@@ -476,19 +477,16 @@ public class NaruTaskSpec {
      * without the core knowing what they mean. Round-tripped by callers that own the keys;
      * the core ignores it during resolution.
      * <p>
-     * Values are deliberately {@code Object} rather than a structural {@code NElement}: the
-     * core never inspects them, so forcing callers through an element tree would lose no
-     * safety and cost every contributor a (de)serialization round-trip.
      */
-    public Map<String, Object> ext() {
+    public Map<String, NElement> ext() {
         return Collections.unmodifiableMap(ext);
     }
 
-    public Object ext(String key) {
+    public NElement ext(String key) {
         return ext.get(key);
     }
 
-    public NaruTaskSpec ext(String key, Object value) {
+    public NaruTaskSpec ext(String key, NElement value) {
         if (key == null || key.trim().isEmpty()) {
             throw new IllegalArgumentException("ext key must not be blank");
         }
