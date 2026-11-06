@@ -198,7 +198,9 @@ public final class NaruDesktop {
             // Keep the platform themes intact, but give their common controls one shared, softer
             // shape language. Content panels use spacing and surface tone for grouping; these arcs
             // apply to the controls FlatLaf knows how to paint (buttons, fields, scrollbars, etc.).
-            UIManager.put("Button.arc", 16);
+            // A smaller button radius keeps compact glyph-button hovers rounded rather than
+            // clamped into a disc, without depending on per-component FlatLaf style properties.
+            UIManager.put("Button.arc", 6);
             UIManager.put("Component.arc", 14);
             UIManager.put("TextComponent.arc", 12);
             UIManager.put("ScrollBar.trackArc", 999);

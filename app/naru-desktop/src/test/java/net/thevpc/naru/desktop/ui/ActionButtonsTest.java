@@ -15,16 +15,17 @@ import java.awt.Graphics2D;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * What a glyph button's hover is allowed to look like.
  *
- * <p>The interface rounds buttons with a 16px pill radius. On a text button that is a pill; on a
- * 25x23 icon square FlatLaf clamps the radius to half the height, so the hover becomes a disc — a
- * lit circle stamped over the glyph, which a reader takes for a spinner on the control they are
- * pointing at. The test paints the real rollover and measures how wide the decoration is one pixel
- * below its top edge: a rounded rect is nearly at full width there, a disc is not.
+ * <p>The interface keeps a small shared button radius so a compact icon square does not clamp its
+ * hover into a disc — a lit circle stamped over the glyph, which a reader takes for a spinner on
+ * the control they are pointing at. The test paints the real rollover and measures how wide the
+ * decoration is one pixel below its top edge: a rounded rect is nearly at full width there, a disc
+ * is not.
  */
 class ActionButtonsTest {
 
@@ -41,7 +42,7 @@ class ActionButtonsTest {
         previousFocusWidth = UIManager.get("Component.focusWidth");
         UIManager.setLookAndFeel(new FlatDarkLaf());
         // the overrides NaruDesktop installs, so the radius under test is the one that ships
-        UIManager.put("Button.arc", 16);
+        UIManager.put("Button.arc", 6);
         UIManager.put("Component.arc", 14);
         UIManager.put("Component.focusWidth", 1);
     }
@@ -69,6 +70,8 @@ class ActionButtonsTest {
             frame.setVisible(true);
             b.setSize(25, 23);
         });
+        assertNull(b.getClientProperty("FlatLaf.style"),
+                "glyph buttons must not rely on version-specific per-component styles");
         Thread.sleep(400);
         hover(b);
         Thread.sleep(400);
