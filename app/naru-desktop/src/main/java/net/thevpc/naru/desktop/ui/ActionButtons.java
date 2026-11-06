@@ -28,7 +28,7 @@ public final class ActionButtons {
             // squares are tall: FlatLaf clamps it to half the height and paints the hover as a
             // disc, so the pointer turns a glyph into what reads as a spinner. The radius here
             // belongs to the button's own box.
-            b.putClientProperty("FlatLaf.style", "arc: 6");
+//            b.putClientProperty("FlatLaf.style", "arc: 6");
             b.addPropertyChangeListener("font", e -> fit((AbstractButton) e.getSource()));
             fit(b);
         }
