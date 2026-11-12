@@ -264,7 +264,16 @@ public class FileToolHelper {
 
             // Atomic write
             p.writeString(finalContent, StandardCharsets.UTF_8);
-            return String.format("SUCCESS: Applied %s %s in %s.", action, where, p.name());
+            // Line numbers after the edit differ from the ones the caller used; show them so the
+            // next edit does not rely on stale numbers.
+            int ctxFrom = Math.max(0, start - 2);
+            int ctxTo = Math.min(result.size(), start + newLines.size() + 2);
+            StringBuilder region = new StringBuilder();
+            for (int i = ctxFrom; i < ctxTo; i++) {
+                region.append(i + 1).append(": ").append(result.get(i)).append('\n');
+            }
+            return String.format("SUCCESS: Applied %s %s in %s. The file now has %d lines; around the edit:\n%s",
+                    action, where, p.name(), result.size(), region);
 
         } catch (Exception e) {
             return "ERROR editing file: " + e.getMessage();

@@ -60,6 +60,18 @@ public class FileEditLinesNumberingTest {
     }
 
     @Test
+    public void theResultShowsTheEditedRegionWithItsNewLineNumbers() {
+        NaruTask t = task();
+        t.resolve("f.txt").writeString("l1\nl2\nl3\nl4\nl5\n");
+        String r = FileToolHelper.fileEdit(t, "f.txt", 2L, 3L, "X", null);
+        assertTrue(r.contains("now has 4 lines"), r);
+        assertTrue(r.contains("1: l1"), r);
+        assertTrue(r.contains("2: X"), r);
+        assertTrue(r.contains("3: l4"), r);
+        assertTrue(r.contains("4: l5"), r);
+    }
+
+    @Test
     public void replacingOneLineUsesTheSameNumberForFromAndTo() {
         assertEquals("l1\nl2\nX\nl4\nl5\n", edit(task(), 3L, 3L, "X"));
     }
