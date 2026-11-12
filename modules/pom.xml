@@ -24,6 +24,7 @@
         <module>llm</module>
         <module>skills</module>
         <module>budget</module>
+        <module>assess</module>
         <module>compact</module>
         <module>sessions</module>
         <module>routines</module>
