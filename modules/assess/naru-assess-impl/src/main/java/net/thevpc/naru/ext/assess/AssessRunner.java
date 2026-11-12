@@ -65,6 +65,9 @@ public final class AssessRunner {
             progress.accept("▶ " + task.id() + " [" + task.tier().label() + ", cap "
                     + AssessReports.duration(options.timeoutMillis(task.tier())) + "] " + task.title());
             AssessTaskResult r = runTask(asset, task, model, options, progress);
+            // a model stays in memory for minutes after its last call; free it before the next
+            // task (or the next model of a sweep) so large models are never resident together
+            unloadOllamaModel(model, defaultOllamaUrl());
             run.results.add(r);
             run.endedAt = Instant.now();
             store.save(run);
@@ -73,6 +76,41 @@ public final class AssessRunner {
         run.endedAt = Instant.now();
         store.save(run);
         return run;
+    }
+
+    static String defaultOllamaUrl() {
+        String host = System.getenv("OLLAMA_HOST");
+        if (host == null || host.isBlank()) {
+            return "http://localhost:11434";
+        }
+        return host.startsWith("http") ? host : "http://" + host;
+    }
+
+    /**
+     * Asks Ollama to drop {@code model} from memory now ({@code keep_alive: 0}). Best effort: only
+     * {@code ollama/...} models are concerned, and an unreachable server is not an error.
+     *
+     * @return true when the server accepted the request
+     */
+    static boolean unloadOllamaModel(String model, String baseUrl) {
+        if (model == null || !model.startsWith("ollama/")) {
+            return false;
+        }
+        String name = model.substring("ollama/".length());
+        try {
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(baseUrl + "/api/generate"))
+                    .timeout(java.time.Duration.ofSeconds(30))
+                    .header("Content-Type", "application/json")
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"model\":\"" + name + "\",\"keep_alive\":0}"))
+                    .build();
+            return java.net.http.HttpClient.newHttpClient()
+                    .send(request, java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode() / 100 == 2;
+        } catch (java.io.IOException | IllegalArgumentException e) {
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     static String describe(AssessOptions o) {
