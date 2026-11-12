@@ -291,7 +291,7 @@ public class NaruRepeatedToolCallGuardTest {
         }
     }
 
-    private static NaruSession sessionOf(Recorder recorder, RepeatingProtocol protocol,
+    private static NaruSession sessionOf(Recorder recorder, NaruModelProtocol protocol,
                                          NaruTool tool) {
         NaruWorkspace agent = NaruWorkspace.of();
         NPath dir = NPath.ofTempFolder("naru-guard-" + System.nanoTime());
@@ -380,5 +380,76 @@ public class NaruRepeatedToolCallGuardTest {
 
         assertTrue(protocol.calls.get() > 2,
                 "distinct arguments are progress, not a stall: " + protocol.calls.get() + " requests");
+    }
+
+    /** Replies with no text and no tool call for the first {@code emptyReplies} requests, then answers. */
+    private static final class EmptyThenAnswerProtocol implements NaruModelProtocol {
+        final AtomicInteger calls = new AtomicInteger();
+        final List<NaruModelRequest> requests = new ArrayList<>();
+        private final int emptyReplies;
+
+        EmptyThenAnswerProtocol(int emptyReplies) {
+            this.emptyReplies = emptyReplies;
+        }
+
+        @Override
+        public String providerName() {
+            return "fake";
+        }
+
+        @Override
+        public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+            int n = calls.incrementAndGet();
+            requests.add(request);
+            NaruResponse r = new NaruResponse();
+            r.setMessage(n <= emptyReplies ? NaruMessage.assistant("") : NaruMessage.assistant("The capital of Tunisia is Tunis."));
+            return r;
+        }
+
+        @Override
+        public NaruModelCapabilities getCapabilities() {
+            return new RepeatingProtocol(false).getCapabilities();
+        }
+    }
+
+    /**
+     * A model that answers with nothing -- or whose tool call could not be parsed, which leaves
+     * nothing either -- must be told and given another go. Ending the turn there made a
+     * qwen2.5-coder run stop after two model calls without having touched a file.
+     */
+    @Test
+    @Timeout(60)
+    public void anEmptyReplyIsRetriedInsteadOfEndingTheTurn() {
+        Recorder recorder = new Recorder();
+        EmptyThenAnswerProtocol protocol = new EmptyThenAnswerProtocol(1);
+        NaruSession s = sessionOf(recorder, protocol, new OkTool());
+
+        NaruTask task = s.newTask(NaruTaskSpec.of().statements("what is the capital of tunisia"));
+        task.setModel(new NaruModelConfig("fake", "fake-model"));
+        s.start();
+        task.unhold();
+        assertTrue(task.await(PATIENCE), "the turn did not finish: " + recorder.text());
+
+        assertTrue(protocol.calls.get() == 2,
+                "the empty reply should have been followed by one retry, got " + protocol.calls.get() + " requests\n" + recorder.text());
+        assertTrue(recorder.text().contains("Tunis"), "the retried answer must reach the user: " + recorder.text());
+    }
+
+    /** The retry is bounded: a model that never says anything must not keep the session busy forever. */
+    @Test
+    @Timeout(60)
+    public void emptyRepliesAreRetriedAtMostTwice() {
+        Recorder recorder = new Recorder();
+        EmptyThenAnswerProtocol protocol = new EmptyThenAnswerProtocol(1000);
+        NaruSession s = sessionOf(recorder, protocol, new OkTool());
+
+        NaruTask task = s.newTask(NaruTaskSpec.of().statements("what is the capital of tunisia"));
+        task.setModel(new NaruModelConfig("fake", "fake-model"));
+        s.start();
+        task.unhold();
+        assertTrue(task.await(PATIENCE), "the turn did not finish: " + recorder.text());
+
+        assertTrue(protocol.calls.get() == 3,
+                "one request plus two retries, then give up: " + protocol.calls.get() + "\n" + recorder.text());
     }
 }

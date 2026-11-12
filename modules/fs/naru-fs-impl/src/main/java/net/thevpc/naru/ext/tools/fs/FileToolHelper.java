@@ -218,8 +218,10 @@ public class FileToolHelper {
             List<String> lines = p.lines().toList();
             int total = lines.size();
 
-            int start = resolveIndex(from, total);
-            int end = (to == null) ? start : resolveIndex(to, total);
+            // Line numbers are the ones file_read prints: 1-based, and 'to' is the last line
+            // affected. Omitting 'to' inserts before line 'from' (total+1 appends).
+            int start = firstLineIndex(from, total);
+            int end = (to == null) ? start : lastLineEnd(to, total);
 
             // Auto-swap if reversed (LLM-friendly)
             if (end < start) {
@@ -244,23 +246,25 @@ public class FileToolHelper {
 
             // Reconstruct content (preserve trailing newline if original had one)
             String finalContent = String.join("\n", result);
-            if (!lines.isEmpty() && lines.get(lines.size() - 1).isEmpty()) {
+            // lines() drops the final line break, so look at the raw text to keep it
+            if (p.readString().endsWith("\n")) {
                 finalContent += "\n";
             }
 
             String action = newLines.isEmpty() ? "delete" : (start == end ? "insert" : "replace");
 
+            String where = start == end ? "before line " + (start + 1) : "lines " + (start + 1) + "-" + end;
             if (Boolean.TRUE.equals(dry)) {
                 String preview = finalContent.length() > previewChars(task)
                         ? finalContent.substring(0, previewChars(task)) + "\n... [preview truncated]"
                         : finalContent;
-                return String.format("DRY RUN SUCCESS: Would %s lines %d-%d in %s. Preview:\n```\n%s\n```",
-                        action, start, end, p.name(), preview);
+                return String.format("DRY RUN SUCCESS: Would %s %s in %s. Preview:\n```\n%s\n```",
+                        action, where, p.name(), preview);
             }
 
             // Atomic write
             p.writeString(finalContent, StandardCharsets.UTF_8);
-            return String.format("SUCCESS: Applied %s at lines %d-%d in %s.", action, start, end, p.name());
+            return String.format("SUCCESS: Applied %s %s in %s.", action, where, p.name());
 
         } catch (Exception e) {
             return "ERROR editing file: " + e.getMessage();
@@ -371,6 +375,20 @@ public class FileToolHelper {
         } catch (Exception e) {
             return "ERROR creating file: " + e.getMessage();
         }
+    }
+
+    /** 0-based index of the 1-based line {@code n}; negatives count from the end (-1 = last line). */
+    private static int firstLineIndex(Long n, long total) {
+        if (n == null || n == 0) return 0;
+        if (n < 0) return (int) Math.max(0, total + n);
+        return (int) Math.min(n - 1, total);
+    }
+
+    /** Exclusive 0-based end for 'through line n' (1-based, inclusive); negatives count from the end. */
+    private static int lastLineEnd(Long n, long total) {
+        if (n == null) return 0;
+        if (n < 0) return (int) Math.max(0, total + n + 1);
+        return (int) Math.min(n, total);
     }
 
     private static int resolveIndex(Long idx, long total) {

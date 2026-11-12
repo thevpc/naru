@@ -90,6 +90,19 @@ public class NoToolWrapHelperTest {
     }
 
     @Test
+    public void unwrapToleratesAMessageWithoutContent() {
+        // a model can answer with no text at all (empty turn, or only reasoning): the
+        // recovery pass is applied to every tool-less answer and must not crash the turn
+        NaruResponse response = new NaruResponse();
+        response.setMessage(new NaruMessage());
+
+        NaruResponse unwrapped = NoToolWrapHelper.unwrapResponse(response, NoToolWrapHelper.TOOL_CALL_SEP, null);
+
+        Assertions.assertSame(response, unwrapped);
+        Assertions.assertFalse(unwrapped.hasToolCalls());
+    }
+
+    @Test
     public void unwrapLeavesPlainTextAlone() {
         NaruResponse response = new NaruResponse();
         response.setMessage(NaruMessage.assistant("just an answer"));

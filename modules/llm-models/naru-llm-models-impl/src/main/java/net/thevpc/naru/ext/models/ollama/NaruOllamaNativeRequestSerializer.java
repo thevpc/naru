@@ -10,6 +10,9 @@ import net.thevpc.nuts.elem.*;
 import java.util.*;
 
 public class NaruOllamaNativeRequestSerializer implements NaruModelRequestSerializer {
+    /** Window requested when the model config sets none; {@code -Dnaru.ollama.defaultNumCtx} overrides it. */
+    static final long DEFAULT_NUM_CTX = Long.getLong("naru.ollama.defaultNumCtx", 32768L);
+
 
     @Override
     public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session) {
@@ -90,7 +93,10 @@ public class NaruOllamaNativeRequestSerializer implements NaruModelRequestSerial
 
     private NElement buildNativeOptions(NaruModelConfig model) {
         NObjectElementBuilder options = NElement.ofObjectBuilder();
-        if (model.contextLength() != null) options.set("num_ctx", model.contextLength());
+        // Ollama truncates the prompt to its own default window (4096 tokens) when num_ctx is
+        // absent, and it drops the START of the prompt: the system prompt and the task. An
+        // agent prompt alone is about that size, so always ask for a usable window.
+        options.set("num_ctx", model.contextLength() != null ? model.contextLength() : DEFAULT_NUM_CTX);
         if (model.temperature() != null) options.set("temperature", model.temperature());
         if (model.nucleusThreshold() != null) options.set("top_p", model.nucleusThreshold());
         if (model.candidateCount() != null) options.set("top_k", model.candidateCount());

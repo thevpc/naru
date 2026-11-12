@@ -184,6 +184,10 @@ public class NoToolWrapHelper {
 
     public static NaruResponse unwrapResponse(NaruResponse naruResponse, Separators openClose, NaruTask task) {
         NaruMessage msg = naruResponse.getMessage();
+        // an empty turn (no text at all) has nothing to recover a call from
+        if (msg == null || msg.getContent() == null) {
+            return naruResponse;
+        }
         ParsedEmulatedResponse parsed = parseEmulatedToolCalls(msg.getContent().toString(), openClose, task);
         if (!parsed.calls.isEmpty()) {
             // withContent keeps the provenance and, importantly, the reasoning

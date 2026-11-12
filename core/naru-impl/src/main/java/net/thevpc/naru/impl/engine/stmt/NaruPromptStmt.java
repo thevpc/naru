@@ -30,6 +30,15 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
     private static final String TOOL_CALL_ROUNDS_KEY = "naru.prompt.toolCallRounds";
 
     /**
+     * Consecutive replies of the current turn that held neither text nor a tool call. Reset
+     * as soon as the model says or does something.
+     */
+    private static final String EMPTY_REPLIES_KEY = "naru.prompt.emptyReplies";
+
+    /** How many times an empty reply is answered with a retry before the turn is allowed to end. */
+    private static final int MAX_EMPTY_RETRIES = 2;
+
+    /**
      * Default maximum number of tool-call rounds before the agent loop is
      * forcibly ended, matching {@link net.thevpc.naru.api.agent.NaruAgentConfig#maxSteps}.
      * Overridable per session with the session env entry {@code maxSteps}.
@@ -181,6 +190,7 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                 task.defaultAdvance(this);
                 return;
             }
+            task.setTaskEnv(EMPTY_REPLIES_KEY, NElement.of(0));
             List<NaruToolCall> toolCalls = assistantMsg.getToolCalls();
             task.pushFrame(null,false);
             for (NaruToolCall c : toolCalls) {
@@ -191,6 +201,27 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             task.defaultAdvance(this);
             return;
         }
+        // ── Case 2: the model said nothing at all ────────────────────────
+        // No text and no tool call is not an answer: it is what remains when a tool call
+        // could not be parsed (the parse error is already in history) or when a reasoning
+        // model spent its turn thinking. Ending the turn here left the user, or an
+        // assessment run, with a task that stopped without touching anything. Tell the
+        // model and give it another go, a bounded number of times.
+        int emptyReplies = task.getTaskEnv(EMPTY_REPLIES_KEY, false)
+                .map(x -> NLiteral.ofInt(x).orElse(0))
+                .orElse(0);
+        if (NBlankable.isBlank(assistantMsg.getFilteredContent()) && emptyReplies < MAX_EMPTY_RETRIES) {
+            task.setTaskEnv(EMPTY_REPLIES_KEY, NElement.of(emptyReplies + 1));
+            task.addHistory(NaruMessage.engine(NMsg.ofC(
+                    "Your last reply was empty, or its tool call could not be read. "
+                            + "Reply with a valid tool call or with your final answer.").asWarning()));
+            task.pushFrame(null, false);
+            task.addStatement(NaruStatementHelper.ofModelCall(null));
+            task.addStatement(new NaruReturnStmt((String) null));
+            task.defaultAdvance(this);
+            return;
+        }
+        task.setTaskEnv(EMPTY_REPLIES_KEY, NElement.of(0));
         task.setLastResult(assistantMsg);
         task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
         task.defaultAdvance(this);
