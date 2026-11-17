@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>net.thevpc.naru</groupId>
     <artifactId>naru-desktop</artifactId>
-    <version>1.1.0.0</version>
+    <version>1.2.0.0</version>
     <packaging>jar</packaging>
     <name>naru-desktop</name>
     <url>https://github.com/thevpc/naru</url>
@@ -21,12 +21,12 @@
 
     <dependencies>
 
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-api</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-projects-api</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-titler-api</artifactId><version>1.1.0.0</version></dependency>
-        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-plan-api</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-api</artifactId><version>1.2.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-projects-api</artifactId><version>1.2.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-titler-api</artifactId><version>1.2.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-plan-api</artifactId><version>1.2.0.0</version></dependency>
 
-        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.2.0.0</version></dependency>
 
         <!--
             No extension here on purpose. The console launcher does not declare them either:
@@ -38,7 +38,7 @@
         -->
 <!--        <dependency><groupId>net.thevpc.common</groupId><artifactId>thevpc-common-swing</artifactId><version>2.5.0</version></dependency>-->
 <!--        <dependency><groupId>net.thevpc.common</groupId><artifactId>thevpc-common-plaf</artifactId><version>1.2.0</version></dependency>-->
-        <dependency><groupId>net.thevpc.nuts</groupId><artifactId>nuts-swing</artifactId><version>1.1.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.nuts</groupId><artifactId>nuts-swing</artifactId><version>1.2.0.0</version></dependency>
         <dependency><groupId>com.formdev</groupId><artifactId>flatlaf</artifactId><version>3.7.1</version></dependency>
         <!--
             The typefaces are bundled, not looked up on the host: the cockpit has to read the same

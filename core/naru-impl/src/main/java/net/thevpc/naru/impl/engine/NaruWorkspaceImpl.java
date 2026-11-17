@@ -50,7 +50,7 @@ import java.util.function.Predicate;
  */
 public class NaruWorkspaceImpl implements NaruWorkspace {
     private static final NVersion API_VERSION = NVersion.of("1.1");
-    private static final NVersion IMPL_VERSION = NVersion.of("1.1.0");
+    private static final NVersion IMPL_VERSION = NVersion.of("1.2.0");
     /**
      * The profile a workspace installs when the caller named none.
      *
