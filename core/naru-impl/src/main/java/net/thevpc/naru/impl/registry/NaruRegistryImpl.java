@@ -170,10 +170,25 @@ public class NaruRegistryImpl implements NaruRegistry {
     public NaruRegistry registerToolset(NaruToolset toolset) {
         activeToolsets.add(toolset);
         if (session.isRunning()) {
-            toolset.open(session);
-            openedToolsets.add(toolset);
+            openToolset(toolset);
         }
         return this;
+    }
+
+    private void openToolset(NaruToolset toolset) {
+        if (openedToolsets.add(toolset)) {
+            try {
+                toolset.open(session);
+            } catch (RuntimeException | Error ex) {
+                openedToolsets.remove(toolset);
+                try {
+                    toolset.close();
+                } catch (Exception closeError) {
+                    ex.addSuppressed(closeError);
+                }
+                throw ex;
+            }
+        }
     }
 
     public NOptional<NaruTool> findTool(String name) {
@@ -206,22 +221,38 @@ public class NaruRegistryImpl implements NaruRegistry {
         return List.copyOf(activeToolsets);
     }
 
+    /**
+     * Opens every toolset not opened yet. A toolset that fails to open is closed again, and so
+     * is everything opened before it, so a session that cannot start holds no live resources.
+     */
     @Override
     public void openToolsets() {
-        for (NaruToolset toolset : activeToolsets) {
-            if (openedToolsets.add(toolset)) toolset.open(session);
+        try {
+            for (NaruToolset toolset : activeToolsets) {
+                openToolset(toolset);
+            }
+        } catch (RuntimeException | Error ex) {
+            closeToolsets();
+            throw ex;
         }
     }
 
+    /**
+     * Closes the toolsets this registry opened, and only those: a toolset that was never opened
+     * has nothing to release. A failing close is reported rather than swallowed.
+     */
     @Override
     public void closeToolsets() {
         for (NaruToolset toolset : activeToolsets) {
-            try {
-                toolset.close();
-            } catch (Exception ignored) {
+            if (openedToolsets.remove(toolset)) {
+                try {
+                    toolset.close();
+                } catch (Exception ex) {
+                    session.log(NaruLogMode.SCRIPT, NMsg.ofC(
+                            "toolset '%s' failed to close: %s", toolset.id(), ex.getMessage()).asError());
+                }
             }
         }
-        openedToolsets.clear();
     }
 
     public Map<String, NaruDirective> directives() {
