@@ -9,10 +9,12 @@
 | Guide                                            | Status   |
 |--------------------------------------------------|----------|
 | [Sessions and tasks](content/sessions.md)                | ✅ |
+| [Projects (grouping concept)](content/projects.md)       | ✅ |
 | [Projects, navigation and hooks](content/projects-and-hooks.md) | ✅ |
 | [Model registrations](content/model-registrations.md)    | ✅ |
 | [Planning](content/planning.md)                           | ✅ |
 | [Context compaction](content/compaction.md)             | ✅ |
+| [Session settings and the env chain](content/session-settings.md) | ✅ |
 | More guides (routines, tools, ...)                | 🚧 coming |
 
 ---
@@ -30,7 +32,9 @@
 - [Run a script from Java and read the result](content/sessions.md)
 - [Waiting: block, time out, compose, or react](content/sessions.md#5-waiting-for-a-task)
 - [Running NARU without a terminal](content/sessions.md#9-running-without-a-terminal)
-- [`/cd` vs `/project`, and the init hooks they trigger](content/projects-and-hooks.md)
+- [Projects: grouping sessions, seeding defaults](content/projects.md)
+- [Rendering the desktop Project → Session tree](content/projects.md#7-desktop-tree-contract)
+- [`/cd` vs `/sessiondir`, and the init hooks they trigger](content/projects-and-hooks.md)
 - [Session-wide defaults and the deprecated init-on-cd flag](content/projects-and-hooks.md#5-the-deprecated-init-on-cd-behaviour)
 - [Register the same provider with several API keys](content/model-registrations.md#2-quick-start-two-keys-for-one-provider)
 - [Available vs registered models](content/model-registrations.md#1-available-vs-registered)
@@ -42,3 +46,4 @@
 - [Planning tools the model can call](content/planning.md#5-tools)
 - [Summarize an old conversation without losing it](content/compaction.md)
 - [`/compact` directive reference](content/compaction.md#7-directives)
+- [Override a file-tool cap per task, session or project](content/session-settings.md#3-narufs-the-file-tool-limits)

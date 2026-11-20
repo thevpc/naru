@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.registry.builtindirectives;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.registry.NaruDirectiveBase;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
@@ -13,9 +14,11 @@ import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
 import net.thevpc.nuts.cmdline.NArgCompletePosition;
 import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.text.NTextBuilder;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NStringBuilder;
 
@@ -86,9 +89,8 @@ public class NaruHelpDirective extends NaruDirectiveBase {
                     .requireAll();
         }
         class HelpWriter {
-            NStringBuilder slog=NStringBuilder.of();
+            NTextBuilder slog=NTextBuilder.of();
             void log(NMsg s) {
-                task.log(NaruLogMode.AGENT_RESPONSE, s);
                 slog.println(s);
             }
 
@@ -143,7 +145,8 @@ public class NaruHelpDirective extends NaruDirectiveBase {
                 HelpExample e = EXAMPLES_REGISTRY_BY_NAME.get(s);
                 w.log(NMsg.ofC(" %s %s : %s", NMsg.ofStyledNumber(e.number), NMsg.ofStyledPrimary5(s), e.description));
             }
-            return NaruStmtResult.ofSuccess(w.slog.toString());
+            task.addHistory(NaruMessage.directive(w.slog.build()));
+            return NaruStmtResult.ofSuccess(NElement.of(w.slog.build().filteredText()));
         }
         if (o.targetedExample != null) {
             HelpExample ex = EXAMPLES_REGISTRY_BY_NAME.get(o.targetedExample.toLowerCase().trim());
@@ -165,12 +168,13 @@ public class NaruHelpDirective extends NaruDirectiveBase {
                 w.log(NMsg.ofC(""));
                 // Log the syntax-highlighted block directly
                 w.log(NMsg.ofC("%s",ex.getHighlightedCode()));
-                return NaruStmtResult.ofSuccess(w.slog.toString());
+                return NaruStmtResult.ofSuccess(NElement.of(w.slog.toString()));
             } else {
                 w.log(NMsg.ofC("Unknown help example name target identifier: %s", NMsg.ofStyledError(o.targetedExample)));
                 w.log(NMsg.ofC("Type %s to browse available documentation examples.", NMsg.ofStyledString("/help --examples")));
             }
-            return NaruStmtResult.ofSuccess(w.slog.toString());
+            task.addHistory(NaruMessage.directive(w.slog.build()));
+            return NaruStmtResult.ofSuccess(NElement.of(w.slog.build().filteredText()));
         }
 
         // Scenario 1: Specific subcommands target evaluation (e.g. /help model set)
@@ -180,15 +184,18 @@ public class NaruHelpDirective extends NaruDirectiveBase {
             // Intercept Internal Engine Control Flow Syntax Bundles
             if (Arrays.asList("if", "elseif", "else", "end").contains(primaryQuery)) {
                 w.printControlFlowHelp("conditional");
-                return NaruStmtResult.ofSuccess(w.slog.toString());
+                task.addHistory(NaruMessage.directive(w.slog.build()));
+                return NaruStmtResult.ofSuccess(NElement.of(w.slog.build().filteredText()));
             }
             if (Objects.equals("while", primaryQuery)) {
                 w.printControlFlowHelp("while");
-                return NaruStmtResult.ofSuccess(w.slog.toString());
+                task.addHistory(NaruMessage.directive(w.slog.build()));
+                return NaruStmtResult.ofSuccess(NElement.of(w.slog.build().filteredText()));
             }
             if (Objects.equals("for", primaryQuery)) {
                 w.printControlFlowHelp("for");
-                return NaruStmtResult.ofSuccess(w.slog.toString());
+                task.addHistory(NaruMessage.directive(w.slog.build()));
+                return NaruStmtResult.ofSuccess(NElement.of(w.slog.build().filteredText()));
             }
 
             // Route execution query to target plugin infrastructure
@@ -205,17 +212,20 @@ public class NaruHelpDirective extends NaruDirectiveBase {
                         task
                 ));
                 w.slog.append(help.successValue());
-                return NaruStmtResult.ofSuccess(w.slog.toString());
+                task.addHistory(NaruMessage.directive(w.slog.build()));
+                return NaruStmtResult.ofSuccess(NElement.of(w.slog.build().filteredText()));
             }
 
             w.log(NMsg.ofC("Unknown engine component or registered directive: %s", NMsg.ofStyledError(primaryQuery)));
-            return NaruStmtResult.ofSuccess(w.slog.toString());
+            task.addHistory(NaruMessage.directive(w.slog.build()));
+            return NaruStmtResult.ofSuccess(NElement.of(w.slog.build().filteredText()));
         }
 
         // Scenario 2: Isolated Syntax Request Flag
         if (o.syntax) {
             w.printGlobalSyntax();
-            return NaruStmtResult.ofSuccess(w.slog.toString());
+            task.addHistory(NaruMessage.directive(w.slog.build()));
+            return NaruStmtResult.ofSuccess(NElement.of(w.slog.build().filteredText()));
         }
 
         // Scenario 3: Standard Dashboard Index Overview or Exhaustive Manual (--full)
@@ -261,7 +271,8 @@ public class NaruHelpDirective extends NaruDirectiveBase {
         w.log(NMsg.ofC("For source examples, type: %s %s", ImplNaruUtils.formatDirective("help") , NMsg.ofStyledOption("--examples") ));
         w.log(NMsg.ofC("For source indexed example, type: %s %s %s", ImplNaruUtils.formatDirective("help"), NMsg.ofStyledOption("-e") , NMsg.ofStyledNumber("<number>") ));
         w.log(NMsg.ofC("To safely close out active environment processing stream session: %s", formatDirective("exit")));
-        return NaruStmtResult.ofSuccess(w.slog.toString());
+        task.addHistory(NaruMessage.directive(w.slog.build()));
+        return NaruStmtResult.ofSuccess(NElement.of(w.slog.build().filteredText()));
     }
 
     @Override

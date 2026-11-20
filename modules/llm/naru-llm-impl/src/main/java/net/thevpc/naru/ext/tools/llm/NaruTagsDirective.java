@@ -1,0 +1,212 @@
+package net.thevpc.naru.ext.tools.llm;
+
+import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.routine.NaruStmtResult;
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
+import net.thevpc.nuts.cmdline.NArgCompletePosition;
+import net.thevpc.nuts.cmdline.NArgCompleteResult;
+import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.expr.NGlob;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.util.NStringBuilder;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+/**
+ * Manages which tool capabilities a task may use: {@code enable} opts the task into a
+ * tool TAG (making the tools wearing that tag visible to the model) and {@code disable}
+ * revokes one. Both operate on <b>tags</b>, never on tool names -- banning a single tool
+ * by name is {@code /tools exclude}, the other gate entirely:
+ *
+ * <pre>
+ * /tags enable fs            grant the fs tag (tools wearing fs become visible)
+ * /tags disable fs           revoke the fs tag (its tools disappear again)
+ * /tags list                 enabled tags + excluded tools
+ * /tags available            every tag known to the registry
+ * </pre>
+ *
+ * <p>A tool becomes visible when <b>any</b> of its tags is granted (OR-matching),
+ * so {@code disable} only hides a tool when it revokes the <i>last</i> granted tag
+ * that tool wears. To hide one specific tool regardless of its tags, ban it by name
+ * with {@code /tools exclude} -- a different gate.
+ */
+public class NaruTagsDirective extends NaruDirectiveBase {
+
+    public NaruTagsDirective() {
+        super("tags", "ai", "enable/disable tool tags", "tag");
+        this.noCommand("list");
+
+        register(new AbstractSubCommand("enable", NText.ofPlain("enable tools tagged with the given tags"),
+                new SubCommandHelp("<tag-name>... [<tag-name>...]", "add the given tags to the task's enabled tag set. "
+                        + "Use 'all' (or a glob such as 'fs*') to grant several tags at once")
+        ) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                if (cmdLine.isEmpty()) {
+                    NMsg msg = NMsg.ofC("missing tag");
+                    context.errln( msg);
+                    return NaruStmtResult.ofError();
+                }
+                int count = 0;
+                Set<String> toAdd=new HashSet<>();
+                while (!cmdLine.isEmpty()) {
+                    String tag = cmdLine.next().get().image();
+                    if(tag.equals("*") || "all".equalsIgnoreCase(tag.trim())) {
+                        Map<String, NaruToolTag> tags = task.session().registry().availableTags();
+                        toAdd.addAll(tags.keySet());
+                    }else if(tag.contains("*")){
+                        Pattern p = NGlob.of().toPattern(tag);
+                        Map<String, NaruToolTag> tags = task.session().registry().availableTags();
+                        for (String s : tags.keySet()) {
+                            if(p.matcher(s).matches()) {
+                                toAdd.add(s);
+                            }
+                        }
+                    }else{
+                        toAdd.add(tag);
+                    }
+                }
+                for (String tag : toAdd) {
+                    task.addToolTag(tag);
+                    context.outln( NMsg.ofC("tag %s enabled", NMsg.ofStyledPrimary1(tag)));
+                    count++;
+                }
+                return NaruStmtResult.ofSuccess(NElement.of(count));
+            }
+
+            @Override
+            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+                return tagCandidates(cmdLine, pos, session);
+            }
+        });
+
+        register(new AbstractSubCommand("disable", NText.ofPlain("disable tools tagged with the given tags"),
+                new SubCommandHelp("<tag-name>... [<tag-name>...]", "remove the given tags from the task's enabled tag set. "
+                        + "A tool is visible while ANY of its tags is granted, so disabling one tag does not hide a "
+                        + "tool that still wears another granted tag; ban a single tool by name with /tools exclude")
+        ) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                if (cmdLine.isEmpty()) {
+                    NMsg msg = NMsg.ofC("missing tag");
+                    context.errln( msg);
+                    return NaruStmtResult.ofError();
+                }
+                int count = 0;
+                Set<String> toRemove=new HashSet<>();
+                while (!cmdLine.isEmpty()) {
+                    String tag = cmdLine.next().get().image();
+                    if(tag.equals("*") || "all".equalsIgnoreCase(tag.trim())) {
+                        Map<String, NaruToolTag> tags = task.session().registry().availableTags();
+                        toRemove.addAll(tags.keySet());
+                    }else if(tag.contains("*")){
+                        Pattern p = NGlob.of().toPattern(tag);
+                        Map<String, NaruToolTag> tags = task.session().registry().availableTags();
+                        for (String s : tags.keySet()) {
+                            if(p.matcher(s).matches()) {
+                                toRemove.add(s);
+                            }
+                        }
+                    }else{
+                        toRemove.add(tag);
+                    }
+                }
+                for (String tag : toRemove) {
+                    task.removeToolTag(tag);
+                    context.outln( NMsg.ofC("tag %s disabled", NMsg.ofStyledPrimary1(tag)));
+                    count++;
+                }
+                return NaruStmtResult.ofSuccess(NElement.of(count));
+            }
+
+            @Override
+            public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+                return tagCandidates(cmdLine, pos, session);
+            }
+        });
+        register(new AbstractSubCommand("list", NText.ofPlain("list enabled tags and excluded tools")) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                List<NaruToolTag> tags = task.findToolTags();
+                NMsg msg = NMsg.ofC("%s enabled tags:", tags.size());
+                context.outln( msg);
+                context.outln(msg);
+                for (NaruToolTag t : tags.stream().sorted((a, b) -> a.name().compareTo(b.name())).collect(Collectors.toList())) {
+                    NMsg row = NMsg.ofC("  %s - %s",
+                            NMsg.ofStyledPrimary1(t.name()), t.description());
+                    context.outln( row);
+                    context.outln(row);
+                }
+                List<String> excluded = task.findToolExclusions().stream().sorted().collect(Collectors.toList());
+                NMsg msg2 = NMsg.ofC("%s excluded tools:", excluded.size());
+                context.outln( msg2);
+                context.outln(msg2);
+                for (String e : excluded) {
+                    NMsg row = NMsg.ofC("  %s", NMsg.ofStyledPrimary1(e));
+                    context.outln( row);
+                    context.outln(row);
+                }
+                return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
+            }
+        });
+        register(new AbstractSubCommand("available", NText.ofPlain("list all available tags")) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                Map<String, NaruToolTag> tags = task.session().registry().availableTags();
+                NMsg msg = NMsg.ofC("%s available tags:", tags.size());
+                context.outln( msg);
+                context.outln(msg.toString());
+                for (Map.Entry<String, NaruToolTag> e : tags.entrySet().stream().sorted(Map.Entry.comparingByKey()).collect(Collectors.toList())) {
+                    NMsg row = NMsg.ofC("  %s - %s",
+                            NMsg.ofStyledPrimary1(e.getKey()), e.getValue().description());
+                    context.outln( row);
+                    context.outln(row.toString());
+                }
+                return NaruStmtResult.ofSuccess(NElement.of(context.out().filteredText()));
+            }
+        });
+    }
+
+    /**
+     * Completion shared by {@code enable} and {@code disable}: the {@code all}
+     * keyword both accept — it expands to every tag known to the registry, the
+     * same way {@code *} and globs do — followed by the tag names themselves,
+     * each shown with its description. Word 0 is the directive itself and word 1
+     * the sub-command, so tag words start at index 2.
+     */
+    private static NArgCompleteResult tagCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+        int wordIndex = pos.wordIndex();
+        if (wordIndex < 2) {
+            return NArgCompleteResult.ofBlank();
+        }
+        String[] words = cmdLine.toStringArray();
+        String currentArg = wordIndex < words.length ? words[wordIndex] : "";
+        List<NArgCompleteCandidate> candidates = new ArrayList<>();
+        if ("all".startsWith(currentArg.toLowerCase())) {
+            candidates.add(NArgCompleteCandidate.of("all", "all — every tag known to the registry"));
+        }
+        for (Map.Entry<String, NaruToolTag> e : session.registry().availableTags().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey()).collect(Collectors.toList())) {
+            if (e.getKey().startsWith(currentArg)) {
+                candidates.add(NArgCompleteCandidate.of(e.getKey(), e.getKey() + " - " + e.getValue().description()));
+            }
+        }
+        return NArgCompleteResult.ofCandidates(candidates);
+    }
+}

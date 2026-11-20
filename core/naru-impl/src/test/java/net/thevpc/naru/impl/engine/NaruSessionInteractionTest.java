@@ -4,18 +4,19 @@ import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -29,21 +30,7 @@ public class NaruSessionInteractionTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     /** Captures what the session asks, so the test can answer as a host would. */
     private static class CapturingInteraction implements NaruInteraction {
@@ -75,10 +62,17 @@ public class NaruSessionInteractionTest {
     }
 
     private static NaruSessionImpl newSession(NaruInteraction interaction, String name) {
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-interaction-" + name));
-        return new NaruSessionImpl(agent, agent.projectDirectory(), interaction, false,
-                null, null, null, null);
+        return (NaruSessionImpl) agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(interaction)
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     private static NaruTask blockedTask(NaruSessionImpl session) {
@@ -185,16 +179,27 @@ public class NaruSessionInteractionTest {
     }
 
     /**
-     * The warning a session emits while resolving its model used to be written straight to
-     * the process stdout, where with several sessions running nobody could tell which one
-     * was complaining.
+     * The warning a session emits when it cannot run used to be written straight to the process
+     * stdout, where with several sessions running nobody could tell which one was complaining.
      */
     @Test
     public void modelResolutionProblemsAreReportedThroughTheInteraction() {
         CapturingInteraction interaction = new CapturingInteraction();
-        newSession(interaction, "warn");
-
-        Assertions.assertFalse(interaction.output.isEmpty(),
-                "a session that cannot find a usable model must say so on its own channel");
+        NaruSessionImpl session = newSession(interaction, "warn");
+        // Resolution is lazy, and since 3720c87 it is explicit: nothing is guessed, so asking a task
+        // for its model reports nothing at all — the honest answer is "none selected yet". The
+        // complaint belongs to the turn that cannot run, and that is where it has to reach the
+        // interaction rather than the process console.
+        NaruTask task = session.newTask(NaruTaskSpec.of().statements("hello"));
+        Assertions.assertNull(task.model(), "no model has been chosen, so nothing resolves");
+        session.start();
+        task.unhold();
+        Assertions.assertTrue(task.await(Duration.ofSeconds(30)),
+                "the turn did not settle without a model");
+        Assertions.assertTrue(
+                interaction.output.stream().anyMatch(m -> String.valueOf(m)
+                        .contains("No model is selected")),
+                "a session that cannot find a usable model must say so on its own channel: "
+                        + interaction.output);
     }
 }

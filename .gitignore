@@ -33,7 +33,7 @@ documentation/.naru
 /extensions/naru-mcp-cli/target
 /FleetViewManager20260704.bak
 /extensions/naru-tools-coder-java/target/
-/extensions/naru-ai-models/target/
+/extensions/naru-llm-models/target/
 /extensions/naru-tools-fs/target/
 /extensions/naru-tools-llm/target/
 /extensions/naru-tools-mcp/target/
@@ -55,3 +55,13 @@ documentation/.naru
 /extensions/naru-skills/target/
 /extensions/naru-budget/target/
 /extensions/naru-tools-compact/target/
+/extensions/naru-llama-cpp/target/
+/extensions/naru-compact/target/
+
+/app/naru-desktop/target/
+/.naru/stores/skills/trust/project/.lock
+/.naru/cache/compact.tson
+/profiles/target/
+/target/
+/test/target/
+/.naru/stores/skills/trust/sessiondir/.lock

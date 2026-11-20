@@ -3,6 +3,7 @@ package net.thevpc.naru.api.spawn;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.nuts.elem.NElement;
 
 import java.util.List;
 import java.util.Map;
@@ -23,6 +24,13 @@ import java.util.Map;
  * called with this same context carrying the {@link #resolution()}: the resolved sets
  * with the source of every item, so an extension (such as skills) can react to what
  * the child actually received.
+ * <p>
+ * There is deliberately <b>no</b> {@code child()} accessor here: before resolution no
+ * child exists to hand out, and after resolution the child is the explicit second
+ * argument of {@code onSpawned}. Spawn kind is intentionally a {@code String} (see
+ * {@link #spawnKind()}) rather than an enum — extension defaults are keyed by kind,
+ * and kinds are an open set contributed by extensions, so a closed enum would force
+ * the core to know every kind.
  */
 public interface NaruSpawnContext {
 
@@ -72,7 +80,13 @@ public interface NaruSpawnContext {
     NaruSpawnContext seedSkill(String skill, NaruSpawnSource source);
 
     /** Seeds one environment variable for the spawned task, with provenance. */
-    NaruSpawnContext seedEnv(String key, Object value, NaruSpawnSource source);
+    NaruSpawnContext seedEnv(String key, NElement value, NaruSpawnSource source);
+
+    /** Seeds one user-defined budget label for the spawned task, with provenance. */
+    NaruSpawnContext seedLabel(String key, String value, NaruSpawnSource source);
+
+    /** Asks to revoke a user-defined budget label, recorded with the given provenance. */
+    NaruSpawnContext seedRevokeLabel(String key, NaruSpawnSource source);
 
     /** Marks a kind of parent state to inherit as a spawn-time snapshot, with provenance. */
     NaruSpawnContext seedInherit(NaruSpawnInherit kind, NaruSpawnSource source);

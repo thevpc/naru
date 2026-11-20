@@ -88,9 +88,9 @@ public final class NaruSpawnTargets {
             dirs.add(task.workingDir().resolve(".naru").resolve("agent"));
             dirs.add(task.workingDir().resolve(".naru").resolve("local").resolve("agent"));
         }
-        if (task.projectDir() != null && !task.projectDir().equals(task.workingDir())) {
-            dirs.add(task.projectDir().resolve(".naru").resolve("agent"));
-            dirs.add(task.projectDir().resolve(".naru").resolve("local").resolve("agent"));
+        if (task.sessionDir() != null && !task.sessionDir().equals(task.workingDir())) {
+            dirs.add(task.sessionDir().resolve(".naru").resolve("agent"));
+            dirs.add(task.sessionDir().resolve(".naru").resolve("local").resolve("agent"));
         }
         dirs.add(NPath.ofUserHome().resolve(".naru").resolve("agent"));
         for (NPath dir : dirs) {

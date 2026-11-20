@@ -1,0 +1,2 @@
+net.thevpc.naru.ext.store.jdbc.NaruJdbcDataStoreProvider
+net.thevpc.naru.ext.store.jdbc.NaruJdbcSessionStoreFactory

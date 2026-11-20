@@ -1,0 +1,508 @@
+{
+  "_source": "Ground-truth tool outputs from opencode 1.18.35 (opencode run --auto), scripted tool calls against a fixture repo (/tmp/lab/proj2). Paths are absolute under /tmp/lab/proj2. Results >900 chars are stored as len+head+tail.",
+  "probes": [
+    {
+      "id": "P01",
+      "tool": "read",
+      "args": {
+        "filePath": "/tmp/lab/proj2/a.txt"
+      },
+      "result": {
+        "len": 148,
+        "text": "<path>/tmp/lab/proj2/a.txt</path>\n<type>file</type>\n<content>\n1: line1\n2: line2\n3: line3\n4: line4\n5: line5\n\n(End of file - total 5 lines)\n</content>"
+      }
+    },
+    {
+      "id": "P02",
+      "tool": "read",
+      "args": {
+        "filePath": "/tmp/lab/proj2/a.txt",
+        "offset": 2,
+        "limit": 2
+      },
+      "result": {
+        "len": 143,
+        "text": "<path>/tmp/lab/proj2/a.txt</path>\n<type>file</type>\n<content>\n2: line2\n3: line3\n\n(Showing lines 2-3 of 5. Use offset=4 to continue.)\n</content>"
+      }
+    },
+    {
+      "id": "P03",
+      "tool": "read",
+      "args": {
+        "filePath": "/tmp/lab/proj2/big.txt"
+      },
+      "result": {
+        "len": 21922,
+        "head": "<path>/tmp/lab/proj2/big.txt</path>\n<type>file</type>\n<content>\n1: L1\n2: L2\n3: L3\n4: L4\n5: L5\n6: L6\n7: L7\n8: L8\n9: L9\n10: L10\n11: L11\n12: L12\n13: L13\n14: L14\n15: L15\n16: L16\n17: L17\n18: L18\n19: L19\n20: L20\n21: L21\n22: L22\n23: L23\n24: L24\n25: L25\n26: L26\n27: L27\n28: L28\n29: L29\n30: L30\n31: L31\n32: L32\n33: L33\n34: L34\n35: L35\n36: L36\n37: L37\n38: L38\n",
+        "tail": "7\n1978: L1978\n1979: L1979\n1980: L1980\n1981: L1981\n1982: L1982\n1983: L1983\n1984: L1984\n1985: L1985\n1986: L1986\n1987: L1987\n1988: L1988\n1989: L1989\n1990: L1990\n1991: L1991\n1992: L1992\n1993: L1993\n1994: L1994\n1995: L1995\n1996: L1996\n1997: L1997\n1998: L1998\n1999: L1999\n2000: L2000\n\n(Showing lines 1-2000 of 3000. Use offset=2001 to continue.)\n</content>"
+      }
+    },
+    {
+      "id": "P04",
+      "tool": "read",
+      "args": {
+        "filePath": "/tmp/lab/proj2/big.txt",
+        "offset": 2998,
+        "limit": 10
+      },
+      "result": {
+        "len": 144,
+        "text": "<path>/tmp/lab/proj2/big.txt</path>\n<type>file</type>\n<content>\n2998: L2998\n2999: L2999\n3000: L3000\n\n(End of file - total 3000 lines)\n</content>"
+      }
+    },
+    {
+      "id": "P05",
+      "tool": "read",
+      "args": {
+        "filePath": "/tmp/lab/proj2/long.txt"
+      },
+      "result": {
+        "len": 2144,
+        "head": "<path>/tmp/lab/proj2/long.txt</path>\n<type>file</type>\n<content>\n1: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "tail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx... (line truncated to 2000 chars)\n\n(End of file - total 1 lines)\n</content>"
+      }
+    },
+    {
+      "id": "P06",
+      "tool": "read",
+      "args": {
+        "filePath": "/tmp/lab/proj2/sub"
+      },
+      "result": {
+        "len": 101,
+        "text": "<path>/tmp/lab/proj2/sub</path>\n<type>directory</type>\n<entries>\ndeep/\nx.java\n\n(2 entries)\n</entries>"
+      }
+    },
+    {
+      "id": "P07",
+      "tool": "read",
+      "args": {
+        "filePath": "/tmp/lab/proj2/nope.txt"
+      },
+      "result": {
+        "len": 39,
+        "text": "File not found: /tmp/lab/proj2/nope.txt"
+      }
+    },
+    {
+      "id": "P08",
+      "tool": "read",
+      "args": {
+        "filePath": "/tmp/lab/proj2/bin.dat"
+      },
+      "result": {
+        "len": 47,
+        "text": "Cannot read binary file: /tmp/lab/proj2/bin.dat"
+      }
+    },
+    {
+      "id": "P09",
+      "tool": "edit",
+      "args": {
+        "filePath": "/tmp/lab/proj2/dup.txt",
+        "oldString": "foo",
+        "newString": "baz"
+      },
+      "result": {
+        "len": 96,
+        "text": "Found multiple matches for oldString. Provide more surrounding context to make the match unique."
+      }
+    },
+    {
+      "id": "P10",
+      "tool": "read",
+      "args": {
+        "filePath": "/tmp/lab/proj2/dup.txt"
+      },
+      "result": {
+        "len": 126,
+        "text": "<path>/tmp/lab/proj2/dup.txt</path>\n<type>file</type>\n<content>\n1: foo\n2: bar\n3: foo\n\n(End of file - total 3 lines)\n</content>"
+      }
+    },
+    {
+      "id": "P11",
+      "tool": "edit",
+      "args": {
+        "filePath": "/tmp/lab/proj2/dup.txt",
+        "oldString": "foo",
+        "newString": "baz"
+      },
+      "result": {
+        "len": 96,
+        "text": "Found multiple matches for oldString. Provide more surrounding context to make the match unique."
+      }
+    },
+    {
+      "id": "P12",
+      "tool": "edit",
+      "args": {
+        "filePath": "/tmp/lab/proj2/dup.txt",
+        "oldString": "foo",
+        "newString": "foo"
+      },
+      "result": {
+        "len": 59,
+        "text": "No changes to apply: oldString and newString are identical."
+      }
+    },
+    {
+      "id": "P13",
+      "tool": "edit",
+      "args": {
+        "filePath": "/tmp/lab/proj2/dup.txt",
+        "oldString": "zzz",
+        "newString": "y"
+      },
+      "result": {
+        "len": 113,
+        "text": "Could not find oldString in the file. It must match exactly, including whitespace, indentation, and line endings."
+      }
+    },
+    {
+      "id": "P14",
+      "tool": "edit",
+      "args": {
+        "filePath": "/tmp/lab/proj2/dup.txt",
+        "oldString": "bar",
+        "newString": "BAR"
+      },
+      "result": {
+        "len": 26,
+        "text": "Edit applied successfully."
+      }
+    },
+    {
+      "id": "P15",
+      "tool": "edit",
+      "args": {
+        "filePath": "/tmp/lab/proj2/dup.txt",
+        "oldString": "foo",
+        "newString": "baz",
+        "replaceAll": true
+      },
+      "result": {
+        "len": 26,
+        "text": "Edit applied successfully."
+      }
+    },
+    {
+      "id": "P16",
+      "tool": "read",
+      "args": {
+        "filePath": "/tmp/lab/proj2/dup.txt"
+      },
+      "result": {
+        "len": 126,
+        "text": "<path>/tmp/lab/proj2/dup.txt</path>\n<type>file</type>\n<content>\n1: baz\n2: BAR\n3: baz\n\n(End of file - total 3 lines)\n</content>"
+      }
+    },
+    {
+      "id": "P17",
+      "tool": "write",
+      "args": {
+        "filePath": "/tmp/lab/proj2/exist.txt",
+        "content": "new\n"
+      },
+      "result": {
+        "len": 24,
+        "text": "Wrote file successfully."
+      }
+    },
+    {
+      "id": "P18",
+      "tool": "write",
+      "args": {
+        "filePath": "/tmp/lab/proj2/newdir/sub2/n.txt",
+        "content": "n\n"
+      },
+      "result": {
+        "len": 24,
+        "text": "Wrote file successfully."
+      }
+    },
+    {
+      "id": "P19",
+      "tool": "write",
+      "args": {
+        "filePath": "/tmp/lab/proj2/a.txt",
+        "content": "overwritten\n"
+      },
+      "result": {
+        "len": 24,
+        "text": "Wrote file successfully."
+      }
+    },
+    {
+      "id": "P20",
+      "tool": "glob",
+      "args": {
+        "pattern": "**/*.java"
+      },
+      "result": {
+        "len": 56,
+        "text": "/tmp/lab/proj2/sub/x.java\n/tmp/lab/proj2/sub/deep/y.java"
+      }
+    },
+    {
+      "id": "P21",
+      "tool": "glob",
+      "args": {
+        "pattern": "*.md"
+      },
+      "result": {
+        "len": 19,
+        "text": "/tmp/lab/proj2/z.md"
+      }
+    },
+    {
+      "id": "P22",
+      "tool": "glob",
+      "args": {
+        "pattern": "sub/**/*.java"
+      },
+      "result": {
+        "len": 56,
+        "text": "/tmp/lab/proj2/sub/x.java\n/tmp/lab/proj2/sub/deep/y.java"
+      }
+    },
+    {
+      "id": "P23",
+      "tool": "glob",
+      "args": {
+        "pattern": "**/e*.txt"
+      },
+      "result": {
+        "len": 90,
+        "text": "/tmp/lab/proj2/e3.txt\n/tmp/lab/proj2/e2.txt\n/tmp/lab/proj2/e1.txt\n/tmp/lab/proj2/exist.txt"
+      }
+    },
+    {
+      "id": "P24",
+      "tool": "glob",
+      "args": {
+        "pattern": "**/*.java",
+        "path": "/tmp/lab/proj2/sub"
+      },
+      "result": {
+        "len": 56,
+        "text": "/tmp/lab/proj2/sub/x.java\n/tmp/lab/proj2/sub/deep/y.java"
+      }
+    },
+    {
+      "id": "P25",
+      "tool": "glob",
+      "args": {
+        "pattern": "nomatch*.zzz"
+      },
+      "result": {
+        "len": 14,
+        "text": "No files found"
+      }
+    },
+    {
+      "id": "P26",
+      "tool": "grep",
+      "args": {
+        "pattern": "TODO"
+      },
+      "result": {
+        "len": 182,
+        "text": "Found 3 matches\n/tmp/lab/proj2/z.md:\n  Line 2: TODO in md\n\n\n/tmp/lab/proj2/sub/x.java:\n  Line 1: // TODO fix\n\n\n/tmp/lab/proj2/sub/deep/y.java:\n  Line 1: class Y { /* TODO later */ }\n"
+      }
+    },
+    {
+      "id": "P27",
+      "tool": "grep",
+      "args": {
+        "pattern": "TODO",
+        "include": "*.java"
+      },
+      "result": {
+        "len": 138,
+        "text": "Found 2 matches\n/tmp/lab/proj2/sub/x.java:\n  Line 1: // TODO fix\n\n\n/tmp/lab/proj2/sub/deep/y.java:\n  Line 1: class Y { /* TODO later */ }\n"
+      }
+    },
+    {
+      "id": "P28",
+      "tool": "grep",
+      "args": {
+        "pattern": "fo+",
+        "include": "e*.txt"
+      },
+      "result": {
+        "len": 131,
+        "text": "Found 3 matches\n/tmp/lab/proj2/e3.txt:\n  Line 1: foo\n\n\n/tmp/lab/proj2/e2.txt:\n  Line 1: foo\n\n\n/tmp/lab/proj2/e1.txt:\n  Line 1: foo\n"
+      }
+    },
+    {
+      "id": "P29",
+      "tool": "grep",
+      "args": {
+        "pattern": "TODO",
+        "path": "/tmp/lab/proj2/sub/x.java"
+      },
+      "result": {
+        "len": 138,
+        "text": "Found 2 matches\n/tmp/lab/proj2/sub/x.java:\n  Line 1: // TODO fix\n\n\n/tmp/lab/proj2/sub/deep/y.java:\n  Line 1: class Y { /* TODO later */ }\n"
+      }
+    },
+    {
+      "id": "P30",
+      "tool": "grep",
+      "args": {
+        "pattern": "nomatchzzz"
+      },
+      "result": {
+        "len": 14,
+        "text": "No files found"
+      }
+    },
+    {
+      "id": "P31",
+      "tool": "grep",
+      "args": {
+        "pattern": "("
+      },
+      "result": {
+        "len": 60,
+        "text": "rg: regex parse error:\n    (?:()\n    ^\nerror: unclosed group"
+      }
+    },
+    {
+      "id": "P32",
+      "tool": "bash",
+      "args": {
+        "command": "seq 1 5000",
+        "description": "seq"
+      },
+      "result": {
+        "len": 10115,
+        "head": "...output truncated...\n\nFull output saved to: /tmp/lab/home/.data/opencode/tool-output/tool_126df2ade0015lbcru5PrtXn3R\n\n3002\n3003\n3004\n3005\n3006\n3007\n3008\n3009\n3010\n3011\n3012\n3013\n3014\n3015\n3016\n3017\n3018\n3019\n3020\n3021\n3022\n3023\n3024\n3025\n3026\n3027\n3028\n3029\n3030\n3031\n3032\n3033\n3034\n3035\n3036\n3037\n3038\n3039\n3040\n3041\n3042\n3043\n3044\n3045\n3046\n3047\n",
+        "tail": "4931\n4932\n4933\n4934\n4935\n4936\n4937\n4938\n4939\n4940\n4941\n4942\n4943\n4944\n4945\n4946\n4947\n4948\n4949\n4950\n4951\n4952\n4953\n4954\n4955\n4956\n4957\n4958\n4959\n4960\n4961\n4962\n4963\n4964\n4965\n4966\n4967\n4968\n4969\n4970\n4971\n4972\n4973\n4974\n4975\n4976\n4977\n4978\n4979\n4980\n4981\n4982\n4983\n4984\n4985\n4986\n4987\n4988\n4989\n4990\n4991\n4992\n4993\n4994\n4995\n4996\n4997\n4998\n4999\n5000\n"
+      }
+    },
+    {
+      "id": "P33",
+      "tool": "bash",
+      "args": {
+        "command": "echo out; echo err >&2; exit 42",
+        "description": "exit"
+      },
+      "result": {
+        "len": 8,
+        "text": "out\nerr\n"
+      }
+    },
+    {
+      "id": "P34",
+      "tool": "bash",
+      "args": {
+        "command": "sleep 3; echo finished",
+        "timeout": 1000,
+        "description": "timeout"
+      },
+      "result": {
+        "len": 246,
+        "text": "(no output)\n\n<shell_metadata>\nshell tool terminated command after exceeding timeout 1000 ms. If this command is expected to take longer and is not waiting for interactive input, retry with a larger timeout value in milliseconds.\n</shell_metadata>"
+      }
+    },
+    {
+      "id": "P35",
+      "tool": "bash",
+      "args": {
+        "command": "pwd",
+        "workdir": "/tmp/lab/proj2/sub",
+        "description": "workdir"
+      },
+      "result": {
+        "len": 19,
+        "text": "/tmp/lab/proj2/sub\n"
+      }
+    },
+    {
+      "id": "P36",
+      "tool": "bash",
+      "args": {
+        "command": "head -c 100000 /dev/zero | tr '\\0' 'a'",
+        "description": "bigline"
+      },
+      "result": {
+        "len": 51320,
+        "head": "...output truncated...\n\nFull output saved to: /tmp/lab/home/.data/opencode/tool-output/tool_126df32d1002UiLRzgyel0zUHW\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tail": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "id": "P37",
+      "tool": "webfetch",
+      "args": {
+        "url": "http://127.0.0.1:8099/spec.html",
+        "format": "markdown"
+      },
+      "result": {
+        "len": 69,
+        "text": "Spec\n\n# Spec Title\n\nHello [link](/other)\n\n-   one\n-   two\n\ncode block"
+      }
+    },
+    {
+      "id": "P38",
+      "tool": "webfetch",
+      "args": {
+        "url": "http://127.0.0.1:8099/spec.html",
+        "format": "text"
+      },
+      "result": {
+        "len": 40,
+        "text": "SpecSpec TitleHello linkonetwocode block"
+      }
+    },
+    {
+      "id": "P39",
+      "tool": "webfetch",
+      "args": {
+        "url": "http://127.0.0.1:8099/spec.html",
+        "format": "html"
+      },
+      "result": {
+        "len": 194,
+        "text": "<html><head><title>Spec</title><script>var x=1;</script></head><body><h1>Spec Title</h1><p>Hello <a href=\"/other\">link</a></p><ul><li>one</li><li>two</li></ul><pre>code block</pre></body></html>"
+      }
+    },
+    {
+      "id": "P40",
+      "tool": "webfetch",
+      "args": {
+        "url": "http://127.0.0.1:8099/missing.html",
+        "format": "text"
+      },
+      "result": {
+        "len": 76,
+        "text": "StatusCode: non 2xx status code (404 GET http://127.0.0.1:8099/missing.html)"
+      }
+    },
+    {
+      "id": "P41",
+      "tool": "grep",
+      "args": {
+        "pattern": "TODO",
+        "path": "/tmp/lab/proj2/sub/x.java"
+      },
+      "result": {
+        "len": 59,
+        "text": "Found 1 matches\n/tmp/lab/proj2/sub/x.java:\n  Line 1: // TODO fix\n"
+      }
+    },
+    {
+      "id": "P42",
+      "tool": "grep",
+      "args": {
+        "pattern": "TODO",
+        "path": "/tmp/lab/proj2/sub"
+      },
+      "result": {
+        "len": 138,
+        "text": "Found 2 matches\n/tmp/lab/proj2/sub/x.java:\n  Line 1: // TODO fix\n\n\n/tmp/lab/proj2/sub/deep/y.java:\n  Line 1: class Y { /* TODO later */ }\n"
+      }
+    }
+  ]
+}

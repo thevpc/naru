@@ -78,6 +78,26 @@ if (!excludedTools.contains(tool.name())) {
 }
 ```
 
+**The effect-tag AND rule (O3), opt-in.** The OR match above reads wrong for a
+tool that reaches outside the process. `run_shell` wears `{network, exec, write}`,
+and "any one" means a task granted only `write` — a right meant for editing a
+file — is also handed a shell. The rule that fixes that is behind
+`naru.tags.effectAnd`, resolved once per session (system property, then session
+env, then project config), with three values:
+
+| Value | Behaviour |
+|---|---|
+| `off` (default) | exactly the OR match above |
+| `warn` | OR is kept, and the first `findTools()` that has a mismatch reports the tools the AND rule would withdraw |
+| `on` | `write`, `exec` and `network` must **all** be granted; the remaining domain tags keep the OR rule |
+
+Under `on`, a tool is visible when every effect tag it declares is held **and**,
+if it also declares domain tags, at least one domain tag is held. `git_commit`
+(`{dev, git, write}`) therefore needs `write` plus `git` or `dev`; `run_shell`
+needs all three effects; a domain-only tool such as `git_status` (`{dev, git}`)
+is unchanged. The flag exists so the change can be measured before it becomes
+the rule.
+
 **Why fail-closed.** "No tags" used to read as "no permission needed", so a tool
 that simply forgot to declare its tags was offered to every task, including ones
 holding none — the exact inverse of what the rest of the gate promises. A tag is
@@ -111,10 +131,10 @@ tagged, which the registry lint (`NaruTagRegistryLintTest`) enforces.
 | Tag | Declared by | Description (as registered) | Example tools |
 |---|---|---|---|
 | `routine` | `naru-impl` (builtin) | routine operations including add, edit, search routines | `routine_add_line`, `routine_list_lines` |
-| `ai` | `naru-impl` (builtin) | AI operations including calling other LLMs/models | `delegate_to_model`, `context_compact`, `ollama_*` |
-| `network` | `naru-impl` (builtin) | networking operations including search web | `search_web`, `run_shell` |
+| `ai` | `naru-impl` (builtin) | AI operations including calling other LLMs/models | `delegate_to_model`, `model_list`, `context_compact`, `ollama_*` |
+| `network` | `naru-impl` (builtin) | networking operations including search web | `web_search`, `run_shell` |
 | `write` | `naru-impl` (builtin) | persistent modifications in files, folders, databases | `file_write`, `file_edit_search_replace`, `git_commit`, `routine_add_line` |
-| `exec` | `naru-impl` (builtin) | spawning new processes or tasks | `run_shell`, `maven_compile/test/package`, `ollama_start/stop/status/ps`, `routine_run` |
+| `exec` | `naru-impl` (builtin) | spawning new processes or tasks | `run_shell`, `maven_compile/test/package`, `ollama_status/ps`, `routine_run` |
 | `fs` | `naru-tools-fs` | file system operations including add, edit, search files | `file_read`, `file_grep`, `folder_find`, `cd`, `pwd`, `diff` |
 | `dev` | `naru-tools-coder-java` | development operations including compile and test | `maven_compile/test/package`, `git_*`, `code_symbols`, `project_map`, `semantic_*` |
 | `java` | `naru-tools-coder-java` | java development operations | `maven_compile`, `maven_test`, `maven_package` |
@@ -122,7 +142,7 @@ tagged, which the registry lint (`NaruTagRegistryLintTest`) enforces.
 | `git` | `naru-tools-git` | Git version control tools | `git_status`, `git_diff`, `git_log`, `git_commit` |
 | `mcp` | `naru-tools-mcp` | MCP tools | every `McpBackedTool` (only once an MCP server is configured) |
 | `index` | `naru-tools-index` | codebase indexing and symbol search | `code_symbols`, `find_symbol`, `project_map`, `project_summary` |
-| `tags` | `naru-tools-tags` | grant and revoke tool tags at runtime | `tag_add`, `tag_remove` |
+| `tags` | `naru-tools-tags` | grant and revoke tool tags at runtime | `tag_add`, `tag_remove`, `tag_list` |
 | `plan` | `naru-tools-plan` | planning tools | `plan_create`, `plan_update`, `plan_get` |
 | `skills` | `naru-skills` | load a skill's instructions on demand | `skill` |
 
@@ -144,7 +164,9 @@ Notes on the vocabulary:
 - Every provider normalizes its names to lower-kebab, so `"FILESYSTEM"` and
   `"fs"` are the same tag.
 - A tool may wear several tags; the gate matches with **or** semantics — `git_commit`
-  is `{dev, git, write}`, so granting any one of the three reveals it.
+  is `{dev, git, write}`, so granting any one of the three reveals it. The
+  opt-in effect-tag AND rule (§2) tightens only the effect tags (`write`, `exec`,
+  `network`); the domain tags above keep their OR behaviour.
 - The `tags` tag gates the two tools that change tags (§4): it is the
   self-referential key that must be granted before the model may manage grants
   itself.
@@ -276,18 +298,23 @@ session start — and the scalar configs they pin (`model`, `working-dir`,
 
 A spawn target (an agent `.md` front-matter, or a script/routine header) may declare
 a **contract**: `requires` (a tag expression using `&`, `|`, `!`, names and
-parentheses) and `skills`. The contract is
+parentheses), an optional `tools` list, and `skills`. The contract is
 validated **after** resolution against the resolved tag set; an unsatisfied contract
 fails the spawn with a message naming the fixing flag (`--add-tags=<tag>` /
-`--revoke-tags=<tag>`). A contract **constrains and grants skills only** — it may not
-add, revoke or inherit tags (such keys are rejected at parse time), because it must
+`--revoke-tags=<tag>`). `tools` names the tools the target needs by name: a tool the
+resolution reaches via `--exclude-tools` (or a policy) fails the spawn with a message
+naming the exclusion to drop. Naming a tool is a constraint, not a grant — the
+contract cannot add tools any more than it can add tags; a tool missing from the
+registry is not a violation. A contract **constrains and grants skills only** — it may
+not add, revoke or inherit tags (such keys are rejected at parse time), because it must
 never expand permission. The model-initiated path (`delegate_to_model`) is narrower
 still: it takes a target name plus optional `revoke_tags` / `inherit` **narrowing
 only**, and exposes no parameter that could add a tag.
 
-### Provenance and the `TaskSpawned` event
+### Provenance and the `task-spawn` event
 
-Every spawn appends a `TaskSpawned` event whose payload is the resolved sets and the
+Every spawn appends a `task-spawn` event (the pre-kebab historical name
+`TaskSpawned` is still matched) whose payload is the resolved sets and the
 source of each item — the same lines `/start --explain` prints without spawning:
 
 ```text
@@ -309,11 +336,13 @@ an already-spawned child is never re-granted by a later parent change.
 |---|---|---|
 | Grant | `task.addToolTag(name)` (throws on unknown tag) | `/tags enable fs`, `tag_add` (model-callable) |
 | Revoke | `task.removeToolTag(name)` (silent no-op on unknown) | `/tags disable fs`, `tag_remove` |
-| Query | `task.findToolTags()` → `List<NaruToolTag>` | `/tags list`, `/tags available` |
+| Query | `task.findToolTags()` → `List<NaruToolTag>` | `/tags list`, `/tags available`, `tag_list` |
 | Ban a tool name | `task.addToolExclusion(name)` | `/tools exclude cd` |
 
 `/tags enable` understands `*`, `all` and glob patterns (`fs*`); `tag_add`
 accepts a comma/space/`;`-separated list of names in a `tags` parameter.
+`tag_add`/`tag_remove` deliberately do **not** inline the tag catalog — ask
+`tag_list` (filters: `enabled`, `disabled`, `all`, `query`) to discover tags.
 
 ### Persistence
 
@@ -417,7 +446,8 @@ still be made explicit — e.g. an init script that `load`s the skill and
   task's tags. This is why a fully ungranted task can still run `/tags enable`
   to bootstrap itself. The tag gate applies to **model-callable tools** only.
 - **The model can manage grants, once admitted.** `tag_add`/`tag_remove`
-  (`{tags}`) let the model flip tags at runtime — but they are themselves tagged,
+  (`{tags}`) let the model flip tags at runtime, and `tag_list` (`{tags}`) lets it
+  see what exists and what is granted — but they are themselves tagged,
   so a task must first be granted `tags` from outside (directive or spawn spec).
   The self-referentiality is deliberate: "the right to change rights" is never
   granted by default. `NaruTagGateTest` pins both halves of this.
@@ -436,7 +466,7 @@ A scripted task that must write files and run commands:
 # naru script (init or session statements)
 /mode implement                     # remove nothing (implement vetoes nothing)
 /tags enable fs                     # open the file tools
-/tags enable network                # open run_shell / search_web
+/tags enable network                # open run_shell / web_search
 /tools exclude cd pwd               # ...but ban the working-dir wanderers
 /tags list                          # floor now: fs, network
 ```
@@ -532,8 +562,41 @@ behaviour are referenced so the delta is easy to audit.
 - **A contract could have expanded permission.** A contract may validate
   `requires` and grant skills, but tag-add/revoke/inherit keys are rejected at
   parse time; the model path exposes no add parameter at all.
-- **The resolution was invisible.** `TaskSpawned` and `/start --explain` now carry
+- **The resolution was invisible.** `task-spawn` and `/start --explain` now carry
   per-item provenance; the payload has no grant channel.
+
+### Added with the desktop tag strip
+
+- **A grant moved the floor without telling anyone.** Nothing fired on an
+  `addToolTag`/`removeToolTag` or an exclusion edge, so every mirror of the grant
+  (the composer's strip, the Workspace tool list) went stale within one mutation.
+  `NaruSessionListener` now has `onToolTagsChanged(task)` and
+  `onToolExclusionsChanged(task)`, fired by `NaruTaskImpl` only when the set
+  actually changes (a no-op revoke stays silent), dispatched by `NaruSessionImpl`
+  through the same guarded path as a status transition. `NaruSessionListenerDelegate`
+  forwards them — and, having silently dropped `onTaskStatusChanged`/`onMessageComplete`
+  before that, forwards those too.
+- **The floor was only visible behind a tab.** `TagStrip` (above the composer) shows
+  the selected task's tags as switches at all times: the catalog and the grant are
+  re-read on every model event, and a chip whose tag the current prompt mode vetoes
+  says so in its tooltip — granted is not the same as visible. The chip marks its
+  grant with colour alone: an ungranted chip keeps the button's own face, a granted
+  one the accent walked into that face with ink picked to read on it. Nothing is
+  added to the label — no glyph, no bold, no reserved icon — because any marker
+  that changes the text resizes the chip and reflowed the row under the cursor. It
+  is a `JButton` with the grant held as its own flag rather than a `JToggleButton`:
+  FlatLaf paints a selected button in the accent itself and ignores the background
+  installed here, which turned a granted chip into accent-on-accent text. The `⊞`
+  glyph jumps to the tool list, which now listens to the same model events.
+- **The consequence of the floor was not visible at all.** `TagsPane` (the
+  Workspace "Tools & tags" tab) is the effective tool list: every registered tool
+  and the first gate that stopped it — mode veto, relevance veto, per-task
+  exclusion, an ungranted tag — with the visible set read straight from
+  `findTools()` so the panel cannot disagree with the engine. Each row is also the
+  `/tools exclude` switch; toggling it fires the exclusion event, which re-reads
+  the list and relights the strip's count. The strip owns the tag vocabulary: the
+  rows carry no chips and no `{tags}` braces, only the gate reason (which names the
+  tag when the tag is the answer), and a tool's own tag set is in the row tooltip.
 
 ## 11. Where the code lives
 
@@ -546,12 +609,13 @@ behaviour are referenced so the delta is easy to audit.
 | The gate itself (`findTools`) | `core/naru-impl/.../impl/engine/scheduler/NaruTaskImpl.java` |
 | Per-task tag set + grant/revoke/exclusion API | `NaruTaskImpl` (state + methods), `NaruTaskSpec` (spawn seeding) |
 | Spawn API (`NaruSpawnContext/Resolution/Policy/Seed/Source/Strategy/Inherit/Contract/Targets`, `NaruToolTagExpression`) | `core/naru-api/.../api/spawn/` |
-| Spawn resolution (`NaruSpawnPlanner`), `resolveSpawn`, policy registry, `onSpawn`/`onSpawned`, `TaskSpawned` | `core/naru-impl/.../impl/engine/`, `core/naru-impl/.../impl/engine/spawn/NaruSpawnPlanner.java` |
+| Spawn resolution (`NaruSpawnPlanner`), `resolveSpawn`, policy registry, `onSpawn`/`onSpawned`, `task-spawn` | `core/naru-impl/.../impl/engine/`, `core/naru-impl/.../impl/engine/spawn/NaruSpawnPlanner.java` |
 | Mode veto | `NaruTaskImpl.findTools()`, `NaruPromptMode.acceptToolTags` |
 | `/tags` directive | `extensions/naru-tools-llm/.../NaruTagsDirective.java` |
 | `/tools` directive | `extensions/naru-tools-llm/.../NaruToolsDirective.java` |
 | `/start` spawn flags + `--explain`, `/spawn-policy` | `extensions/naru-tools-tasks/.../NaruStartDirective.java`, `extensions/naru-tools-tasks/.../NaruSpawnPolicyDirective.java` |
 | Model-path spawn (narrowing only) | `extensions/naru-tools-llm/.../ModelDelegateTool.java` |
 | `tag_add` / `tag_remove` tools + `tags` tag + toolset | `extensions/naru-tools-tags/` |
+| Desktop tag surfaces | `app/naru-desktop/.../ui/TagStrip.java` (composer strip, the only chip surface), `ui/TagsPane.java` (Workspace tool list + `/tools exclude` toggles), event hop in `model/NaruSessionModel.java` |
 | Per-extension tag providers | one `*ToolTagProvider` per feature extension (§3) |
 | Behavioural pin | `test/naru-agent-test/.../NaruTagGateTest.java`, `test/naru-agent-test/.../NaruTagRegistryLintTest.java`, `test/naru-agent-test/.../NaruPlanModeToolGateTest.java`, `test/naru-agent-test/.../NaruTaskStatePersistenceTest.java`, `test/naru-agent-test/.../NaruSpawnTest.java`, `test/naru-agent-test/.../NaruDelegateSpawnTest.java`, `extensions/naru-tools-tasks/src/test/.../NaruSpawnDirectiveTest.java`, `core/naru-impl/src/test/.../TaskSpawnConfigTest.java` |

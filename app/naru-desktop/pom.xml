@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>net.thevpc.naru</groupId>
+    <artifactId>naru-desktop</artifactId>
+    <version>1.2.0.0</version>
+    <packaging>jar</packaging>
+    <name>naru-desktop</name>
+    <url>https://github.com/thevpc/naru</url>
+    <description>NARU desktop cockpit (Swing front-end)</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <github.global.server>github</github.global.server>
+        <nuts.application>true</nuts.application>
+        <nuts.gui>true</nuts.gui>
+        <nuts.genericName>NARU Desktop - Nuts AI Reasoning Unit</nuts.genericName>
+        <nuts.categories>/AI/Development/IDE</nuts.categories>
+    </properties>
+
+    <dependencies>
+
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-api</artifactId><version>1.2.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-projects-api</artifactId><version>1.2.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-titler-api</artifactId><version>1.2.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-plan-api</artifactId><version>1.2.0.0</version></dependency>
+
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.2.0.0</version></dependency>
+
+        <!--
+            No extension here on purpose. The console launcher does not declare them either:
+            Nuts resolves the profile and its extensions at runtime, in its own classloaders.
+            Pinning naru-llm-models on the application classpath made the desktop load a
+            provider jar compiled against an older naru-api, and a model call died with
+            NoSuchMethodError: NaruSession.agent() — a failure the terminal never sees.
+            The long gate run needs a working ollama provider, which the profile supplies.
+        -->
+<!--        <dependency><groupId>net.thevpc.common</groupId><artifactId>thevpc-common-swing</artifactId><version>2.5.0</version></dependency>-->
+<!--        <dependency><groupId>net.thevpc.common</groupId><artifactId>thevpc-common-plaf</artifactId><version>1.2.0</version></dependency>-->
+        <dependency><groupId>net.thevpc.nuts</groupId><artifactId>nuts-swing</artifactId><version>1.2.0.0</version></dependency>
+        <dependency><groupId>com.formdev</groupId><artifactId>flatlaf</artifactId><version>3.7.1</version></dependency>
+        <!--
+            The typefaces are bundled, not looked up on the host: the cockpit has to read the same
+            on a machine with no fonts installed. Inter is the UI and prose face; JetBrains Mono
+            is the code, tool-output and data face. Both packs are Apache-2.0 wrappers around SIL
+            OFL 1.1 fonts and carry their licence inside the jar. FlatLaf registers them lazily and
+            resolves them through its composite-font path, so a glyph the bundled face lacks —
+            emoji, CJK, Arabic — still comes from the platform instead of a box. See Typefaces.
+        -->
+        <dependency><groupId>com.formdev</groupId><artifactId>flatlaf-fonts-inter</artifactId><version>4.1</version></dependency>
+        <dependency><groupId>com.formdev</groupId><artifactId>flatlaf-fonts-jetbrains-mono</artifactId><version>2.304</version></dependency>
+        <!--
+            The shared text widget: multiline editing with undo, and read-only detail areas that
+            wrap and scroll the same way. RSyntaxTextArea extends JTextArea, so it replaces the
+            composer's area without touching the caret/text API the panes already use. Autocomplete
+            deliberately is NOT here: the engine's NaruLineCompletion returns the span to replace,
+            and a word-boundary completion library would have to be argued out of disagreeing with
+            it. The popup is ours and uses that span directly.
+        -->
+        <dependency><groupId>com.fifesoft</groupId><artifactId>rsyntaxtextarea</artifactId><version>3.6.2</version></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.0</version><scope>test</scope></dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.16.0</version>
+                <configuration>
+                    <showDeprecation>true</showDeprecation>
+                    <debug>true</debug>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-toolchains-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>toolchain</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <toolchains>
+                        <jdk>
+                            <version>25</version>
+                            <vendor>openjdk</vendor>
+                        </jdk>
+                    </toolchains>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

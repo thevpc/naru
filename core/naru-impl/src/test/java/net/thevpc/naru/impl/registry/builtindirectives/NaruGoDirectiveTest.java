@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.registry.builtindirectives;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
@@ -9,16 +10,14 @@ import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruResponse;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
@@ -47,33 +46,27 @@ public class NaruGoDirectiveTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Throwable e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Throwable ignored) {
-            }
-        }
+        Nuts.require();
     }
 
     private RecordingProtocol protocol;
-    private NaruSessionImpl session;
+    private NaruSession session;
 
     @BeforeEach
     public void setUp() {
         protocol = new RecordingProtocol();
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-go-" + System.nanoTime()));
-        session = new NaruSessionImpl(agent, agent.projectDirectory(),
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        session = agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         session.registry().registerModelProvider(new FakeProvider(protocol));
     }
 
@@ -91,6 +84,10 @@ public class NaruGoDirectiveTest {
      */
     private NaruTask task(NaruMessage... history) {
         NaruTask task = session.newTask(NaruTaskSpec.of());
+        // the engine no longer guesses a model (3720c87): with none selected the directive has no
+        // protocol to ask, and the tail rules it is meant to enforce never run. Pick one, as /model
+        // use does.
+        task.setModel(new NaruModelConfig("fake", "fake-model"));
         task.setHistory(List.of(history));
         return task;
     }
@@ -123,7 +120,7 @@ public class NaruGoDirectiveTest {
         Assertions.assertEquals(1, protocol.chatCalls, "the kickoff has to reach the model");
         List<NaruMessage> sent = protocol.lastRequest.messages();
         NaruMessage last = sent.get(sent.size() - 1);
-        Assertions.assertEquals(NaruGoDirective.KICKOFF, last.getContent(),
+        Assertions.assertEquals(NMsg.ofP(NaruGoDirective.KICKOFF), last.getContent(),
                 "the model must be handed a turn, not an empty one");
     }
 

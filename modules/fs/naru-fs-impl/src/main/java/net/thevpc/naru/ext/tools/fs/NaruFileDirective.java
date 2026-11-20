@@ -1,0 +1,320 @@
+package net.thevpc.naru.ext.tools.fs;
+
+import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.routine.NaruStmtResult;
+import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.nuts.cmdline.NArg;
+import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
+import net.thevpc.nuts.util.NRef;
+
+public class NaruFileDirective extends NaruDirectiveBase {
+    public NaruFileDirective() {
+        super("file", "fs", "manipulate a single file");
+        register(new AbstractSubCommand("read", NText.ofPlain("read file content"),
+                new SubCommandHelp("<path> [--from=<from>] [--to=<to>] [--save=<var>]", "read file content; publishes lastExitCode (0=ok,1=empty,2=error) and stores the trimmed content in the task var given by --save")
+        ) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NArg filePath = cmdLine.next().orNull();
+                if (filePath == null || filePath.isOption()) {
+                    NMsg msg = NMsg.ofC("missing file path");
+                    context.errln(msg);
+                    task.throwError(msg);
+                    return NaruStmtResult.of(null, null, 2);
+                }
+                NRef<Long> from = NRef.of();
+                NRef<Long> to = NRef.of();
+                NRef<String> saveVar = NRef.of();
+                cmdLine.matcher()
+                        .when("--from", "from").asEntry(a -> from.set(a.longValue()))
+                        .when("--to", "to").asEntry(a -> to.set(a.longValue()))
+                        .when("--save").asEntry(a -> saveVar.set(a.stringValue()))
+                        .requireAll();
+                String result = FileToolHelper.fileRead(task, filePath.toString(),
+                        from.get(), to.get()
+                );
+                int code = result != null && result.startsWith("ERROR") ? 2
+                        : result != null && result.startsWith("File is empty") ? 1 : 0;
+                return fileResult(task, saveVar.get(), result,
+                        code, NMsg.ofC("file_read   path=%s  from=%s to=%s\n%s",
+                                filePath, from, to, result
+                        ));
+            }
+        });
+        register(new AbstractSubCommand("write", NText.ofPlain("write file content"),
+                new SubCommandHelp("<path> [--content=<content>] [--dry]", "write file content")
+        ) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NArg filePath = cmdLine.next().orNull();
+                if (filePath == null || filePath.isOption()) {
+                    NMsg msg = NMsg.ofC("missing file path");
+                    context.errln(msg);
+                    task.throwError(msg);
+                    return NaruStmtResult.of(null, null, 2);
+                }
+                NRef<String> content = NRef.of();
+                NRef<Boolean> dry = NRef.of();
+                cmdLine.matcher()
+                        .when("--content", "content").asEntry(a -> content.set(a.stringValue()))
+                        .when("--dry").asFlag(a -> dry.set(a.booleanValue()))
+                        .whenNonOption().asArg(a -> content.set(a.image()))
+                        .requireAll();
+                if (content.get() == null) {
+                    NMsg msg = NMsg.ofC("missing file content");
+                    context.errln(msg);
+                    task.throwError(msg);
+                    return NaruStmtResult.ofError( 2);
+                }
+                String result = FileToolHelper.fileWrite(task, filePath.toString(),
+                        content.get(), dry.get()
+                );
+                NMsg msg = NMsg.ofC("file_write   path=%s  content=%s\n%s",
+                        filePath, FileToolHelper.snippet(content.get()), result
+                );
+                context.outln(msg);
+                return result != null && result.startsWith("ERROR") ? NaruStmtResult.ofError(NElement.of(result), 2) : NaruStmtResult.ofSuccess(NElement.of(result));
+            }
+        });
+        register(new AbstractSubCommand("append", NText.ofPlain("append file content"),
+                new SubCommandHelp("<path> [--content=<content>] [--dry]", "append file content")
+        ) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NArg filePath = cmdLine.next().orNull();
+                if (filePath == null || filePath.isOption()) {
+                    NMsg msg = NMsg.ofC("missing file path");
+                    context.errln(msg);
+                    task.throwError(msg);
+                    return NaruStmtResult.of(null, null, 2);
+                }
+                NRef<Long> from = NRef.of();
+                NRef<Long> to = NRef.of();
+                NRef<String> content = NRef.of();
+                NRef<Boolean> dry = NRef.of();
+                cmdLine.matcher()
+                        .when("--from", "from").asEntry(a -> from.set(a.longValue()))
+                        .when("--to", "to").asEntry(a -> to.set(a.longValue()))
+                        .when("--content", "content").asEntry(a -> content.set(a.stringValue()))
+                        .when("--dry").asFlag(a -> dry.set(a.booleanValue()))
+                        .requireAll();
+                String result = FileToolHelper.fileEdit(task, filePath.toString(),
+                        from.get(),
+                        to.get(),
+                        content.get(),
+                        dry.get()
+                );
+                NMsg msg = NMsg.ofC("file_append   path=%s  content=...\n%s",
+                        filePath, FileToolHelper.snippet(content.get()), result
+                );
+                boolean err = result != null && result.startsWith("ERROR");
+                if(err) {
+                    context.errln(msg);
+                }else{
+                    context.outln(msg);
+                }
+                return err ? NaruStmtResult.ofError( 2) : NaruStmtResult.ofSuccess();
+            }
+        });
+        register(new AbstractSubCommand("edit", NText.ofPlain("edit file content"),
+                new SubCommandHelp("<path> [--from=<from>] [--to=<to>] --content=<content>", "edit file content to replace a portion of lines with anew content to remove or update that part")
+        ) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NArg filePath = cmdLine.next().orNull();
+                if (filePath == null || filePath.isOption()) {
+                    NMsg msg = NMsg.ofC("missing file path");
+                    context.errln(msg);
+                    task.throwError(msg);
+                    return NaruStmtResult.of(null, null, 2);
+                }
+                NRef<Long> from = NRef.of();
+                NRef<Long> to = NRef.of();
+                NRef<String> content = NRef.of();
+                NRef<Boolean> dry = NRef.of();
+                cmdLine.matcher()
+                        .when("--from", "from").asEntry(a -> from.set(a.longValue()))
+                        .when("--to", "to").asEntry(a -> to.set(a.longValue()))
+                        .when("--content", "content").asEntry(a -> content.set(a.stringValue()))
+                        .when("--dry").asFlag(a -> dry.set(a.booleanValue()))
+                        .requireAll();
+
+                String result = FileToolHelper.fileEdit(task,
+                        filePath.toString(),
+                        from.get(),
+                        to.get(),
+                        content.get(),
+                        dry.get()
+                );
+                NMsg msg = NMsg.ofC("file_edit   path=%s  from=%s  to=%s  dry=%s  content=%s\n%s",
+                        filePath, from.get(), to.get(), dry.get(),
+                        FileToolHelper.snippet(content.get()), result
+                );
+                return result != null && result.startsWith("ERROR") ? NaruStmtResult.of(NElement.of(result), msg, 2) : NaruStmtResult.ofSuccess(NElement.of(result), msg);
+            }
+        });
+        register(new AbstractSubCommand("grep", NText.ofPlain("search content within a file"),
+                new SubCommandHelp("<path> [--pattern=<pattern>] [--regex] [--context-lines=<n>] [--case-sensitive] [--max-matches=<n>] [--save=<var>]", "search content within a file to match pattern; publishes lastExitCode (0=found,1=no match,2=error) and stores the result text in the task var given by --save")
+        ) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NArg filePath = cmdLine.next().orNull();
+                if (filePath == null || filePath.isOption()) {
+                    NMsg msg = NMsg.ofC("missing file path");
+                    context.errln(msg);
+                    task.throwError(msg);
+                    return NaruStmtResult.of(null, null, 2);
+                }
+                NRef<Integer> contextLines = NRef.of();
+                NRef<Integer> maxMatches = NRef.of();
+                NRef<String> pattern = NRef.of();
+                NRef<Boolean> regex = NRef.of();
+                NRef<Boolean> caseSensitive = NRef.of();
+                NRef<String> saveVar = NRef.of();
+                cmdLine.matcher()
+                        .when("--context-lines", "context-lines").asEntry(a -> contextLines.set(a.intValue()))
+                        .when("--max-matches", "max").asEntry(a -> maxMatches.set(a.intValue()))
+                        .when("--pattern", "pattern").asEntry(a -> pattern.set(a.stringValue()))
+                        .when("--regex", "-e").asFlag(a -> regex.set(a.booleanValue()))
+                        .when("--case-sensitive").asFlag(a -> caseSensitive.set(a.booleanValue()))
+                        .when("--save").asEntry(a -> saveVar.set(a.stringValue()))
+                        .when("-i").asFlag(a -> caseSensitive.set(!a.booleanValue()))
+                        .requireAll();
+
+                String result = FileToolHelper.fileGrep(task,
+                        filePath.toString(),
+                        pattern.get(),
+                        regex.get(),
+                        caseSensitive.get(),
+                        contextLines.get(),
+                        maxMatches.get()
+                );
+                NMsg msg = NMsg.ofC("file_grep   path=%s  context-lines=%s  max-matches=%s  pattern=%s  regex=%s case-sensitive=%s\n%s",
+                        filePath, contextLines.get(), maxMatches.get(), pattern.get(), regex.get(),
+                        caseSensitive.get(), result
+                );
+                return fileResult(task, saveVar.get(), result,
+                        result != null && result.startsWith("ERROR") ? 2
+                                : result != null && result.startsWith("No files found") ? 1 : 0, msg);
+            }
+        });
+        register(new AbstractSubCommand("find", NText.ofPlain("search for files in a directory"),
+                new SubCommandHelp("<path> [--pattern=<pattern>] [--regex|-e] [--case-sensitive|-!i] [--context-lines=<n>] ", "search for files in a directory by content and show context-lines around matches"),
+                new SubCommandHelp("<path> [--include=<file_name_pattern>] [--exclude=<file_name_pattern>]", "search for files in a directory by file name glob"),
+                new SubCommandHelp("<path> [--max-matches=<n>] [--max-files=<n>] [--recursive|-r]", "search for files in a directory using limits and recursing behaviour"),
+                new SubCommandHelp("<path> [--save=<var>] [--dir=<var>]", "also publish lastExitCode (0=found,1=none,2=error), store the first match into the task var --save and its parent directory into --dir"),
+                new SubCommandHelp("<path> [--before=<d>] [--after=<d>]", "search for files in a directory using file modification date")
+        ) {
+            @Override
+            public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                NaruTask task = context.task();
+                NArg filePath = cmdLine.next().orNull();
+                if (filePath == null || filePath.isOption()) {
+                    NMsg msg = NMsg.ofC("missing file path");
+                    context.errln(msg);
+                    task.throwError(msg);
+                    return NaruStmtResult.of(null, null, 2);
+                }
+                NRef<Integer> contextLines = NRef.of();
+                NRef<Integer> maxMatches = NRef.of();
+                NRef<Integer> maxFiles = NRef.of();
+                NRef<String> pattern = NRef.of();
+                NRef<String> before = NRef.of();
+                NRef<String> after = NRef.of();
+                NRef<String> includeGlob = NRef.of();
+                NRef<String> excludeGlob = NRef.of();
+                NRef<String> saveVar = NRef.of();
+                NRef<String> dirVar = NRef.of();
+                NRef<Boolean> regex = NRef.of();
+                NRef<Boolean> recursive = NRef.of();
+                NRef<Boolean> caseSensitive = NRef.of();
+                cmdLine.matcher()
+                        .when("--context-lines", "context-lines").asEntry(a -> contextLines.set(a.intValue()))
+                        .when("--max-matches", "max").asEntry(a -> maxMatches.set(a.intValue()))
+                        .when("--max-files", "max").asEntry(a -> maxFiles.set(a.intValue()))
+                        .when("--pattern", "pattern").asEntry(a -> pattern.set(a.stringValue()))
+                        .when("--regex", "-e").asFlag(a -> regex.set(a.booleanValue()))
+                        .when("--case-sensitive").asFlag(a -> caseSensitive.set(a.booleanValue()))
+                        .when("--recursive", "-r").asFlag(a -> recursive.set(a.booleanValue()))
+                        .when("--include").asEntry(a -> includeGlob.set(a.stringValue()))
+                        .when("--exclude").asEntry(a -> excludeGlob.set(a.stringValue()))
+                        .when("--save").asEntry(a -> saveVar.set(a.stringValue()))
+                        .when("--dir").asEntry(a -> dirVar.set(a.stringValue()))
+                        .when("--before").asEntry(a -> includeGlob.set(a.stringValue()))
+                        .when("--after").asEntry(a -> excludeGlob.set(a.stringValue()))
+                        .when("-i").asFlag(a -> caseSensitive.set(!a.booleanValue()))
+                        .requireAll();
+
+                String result = FileToolHelper.folderFind(task,
+                        filePath.toString(),
+                        pattern.get(),
+                        regex.get(),
+                        caseSensitive.get(),
+                        contextLines.get(),
+                        maxMatches.get(),
+                        maxFiles.get(),
+                        recursive.get(),
+                        includeGlob.get(),
+                        excludeGlob.get(),
+                        before.get(),
+                        after.get()
+                );
+                NMsg msg = NMsg.ofC("file_find   path=%s  context-lines=%s  max-matches=%s  pattern=%s  regex=%s case-sensitive=%s\n" +
+                                "maxMatches=%s maxFiles=%s recursive=%s includeGlob=%s excludeGlob=%s before=%s after=%s\n",
+                        "%s",
+                        filePath, contextLines.get(), maxMatches.get(), pattern.get(), regex.get(), caseSensitive.get(),
+                        maxMatches.get(), maxFiles.get(), recursive.get(), includeGlob.get(), excludeGlob.get(), before.get(), after.get()
+                        , result
+                );
+                // scriptable outcome: lastExitCode (0=found,1=none,2=error);
+                // --save stores the first match, --dir stores its parent directory
+                // (relative to the searched root), both usable with {{var}} later.
+                int exitCode = result != null && result.startsWith("ERROR") ? 2
+                        : result != null && result.startsWith("No files found") ? 1 : 0;
+                if (exitCode == 0 && (saveVar.isSet() || dirVar.isSet())) {
+                    String first = FileToolHelper.folderFindFirst(task,
+                            filePath.toString(), includeGlob.get(), recursive.get());
+                    if (saveVar.isSet()) {
+                        task.setTaskEnv(saveVar.get(), first == null ? NElement.of("") : NElement.of(first));
+                    }
+                    if (dirVar.isSet()) {
+                        String dir = ".";
+                        if (first != null && !first.isEmpty()) {
+                            int idx = first.lastIndexOf('/');
+                            if (idx >= 0) {
+                                dir = first.substring(0, idx);
+                            }
+                        }
+                        task.setTaskEnv(dirVar.get(), NElement.of(dir));
+                    }
+                }
+                return NaruStmtResult.of(NElement.of(result == null ? "" : result.trim()), msg, exitCode);
+            }
+        });
+    }
+
+    /**
+     * Build the scriptable outcome of a {@code /file} subcommand: the returned
+     * {@link NaruStmtResult} carries the trimmed result text and the exit code
+     * (0 = ok / found / matched, 1 = empty / none, 2 = error) which the task's
+     * {@code invokeDirective} factorization publishes into {@code lastExitCode}
+     * and {@code lastResult}. The {@code --save=<var>} var is stored into the
+     * task env so a later step can interpolate it ({@code {{var}}}) or compare
+     * it ({@code /if x == "..."}).
+     */
+    private static NaruStmtResult fileResult(NaruTask task, String saveVar, String result, int exitCode, NMsg msg) {
+        String trimmed = result == null ? "" : result.trim();
+        if (saveVar != null && !saveVar.isEmpty()) {
+            task.setTaskEnv(saveVar, NElement.of(trimmed));
+        }
+        return NaruStmtResult.of(NElement.of(trimmed), msg, exitCode);
+    }
+}

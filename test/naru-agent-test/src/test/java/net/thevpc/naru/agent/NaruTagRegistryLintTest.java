@@ -1,15 +1,11 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.scheduler.NaruEvent;
-import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -63,28 +59,21 @@ public class NaruTagRegistryLintTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     @BeforeEach
     public void setUp() {
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-tag-lint"));
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), null, true,
-                NOOP_LISTENER, null, null, null);
+        session = agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(null)
+                .configureDefaults(true)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach
@@ -138,6 +127,25 @@ public class NaruTagRegistryLintTest {
                 "these tools wear no tag and did not declare themselves essential: "
                         + "the fail-closed gate hides them from every task, so they are "
                         + "dead weight until they are tagged: " + invisible);
+    }
+
+    /**
+     * The fail-closed gate's single escape hatch, pinned. {@code isEssential()} bypasses
+     * the tag match, which means it is a permission granted without ever being granted:
+     * it must stay the one tool the core deliberately keeps unconditional — the
+     * no-op scratchpad — and any second essential tool has to justify itself in the
+     * registry, not slip in unnoticed.
+     */
+    @Test
+    public void thinkIsTheOnlyEssentialTool() {
+        List<String> essentials = tools().values().stream()
+                .filter(NaruTool::isEssential)
+                .map(NaruTool::name)
+                .sorted()
+                .toList();
+        assertEquals(List.of("think"), essentials,
+                "the fail-closed gate has exactly one essential tool and it is 'think'. "
+                        + "Everything else must earn its way through a tag: " + essentials);
     }
 
     // ── every registered grant must open something ───────────────────────────

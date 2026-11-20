@@ -13,7 +13,7 @@ import net.thevpc.nuts.util.NOptional;
 import java.util.Set;
 
 public class NaruStatementHelper {
-    public static final Set<String> STATEMENT_KEYWORDS = Set.of("for", "while", "if", "else", "elseif", "end", "goto", "return");
+    public static final Set<String> STATEMENT_KEYWORDS = Set.of("for", "while", "if", "else", "elseif", "end", "goto", "return", "call");
     public static NOptional<NaruStatement> of(String cmd,String args) {
         if(cmd.startsWith(":") || cmd.endsWith(":")) {
             return NOptional.of(new NaruLabelStmt(cmd.replace(":"," ").trim()));
@@ -57,6 +57,22 @@ public class NaruStatementHelper {
     }
 
     public static NaruStatement of(NElement element) {
+        NaruStatement s = doOf(element);
+        if (s != null) {
+            // The creator actor is written by the base NaruStatement.toElement() and read
+            // back here, the one reconstructor every nested branch and every saved session
+            // goes through, so a reloaded statement keeps who authored it.
+            NElement actorElement = element.isAnyObject()
+                    ? element.asObject().get().get("actor").orNull()
+                    : null;
+            if (actorElement != null && !actorElement.isNull()) {
+                s.creatorActor(net.thevpc.naru.api.access.NaruActor.of(actorElement));
+            }
+        }
+        return s;
+    }
+
+    private static NaruStatement doOf(NElement element) {
         String name;
         if (element.isName()) {
             name = element.asName().get().stringValue();

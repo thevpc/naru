@@ -36,13 +36,34 @@ A request may carry a `NaruCacheableContext`: an ordered list of
 | Segment in `NaruTaskImpl` | Content | Changes when |
 |---|---|---|
 | `tool-defs` | tool definitions | the available tool set changes |
-| `system-context` | system prompt, extension contributions, agent classpath, skills | configuration or agent files change |
+| `context-N` | one stable contributor: system prompt, an extension contribution, agent classpath, skills | only that contributor's content changes |
 | `turn-N` | one completed user turn | never (a closed turn is immutable) |
 | `turn-N` (last) | the turn in flight | on every message, until the turn ends |
 
 The last turn is marked **volatile**, which forbids placing a cache breakpoint on
 it. Caching content that is about to change buys nothing and costs a breakpoint
 slot.
+
+Stable material is split per contributor rather than lumped into one block: a
+single segment that changes whenever any of its parts does would invalidate the
+whole prefix on every turn.
+
+### Markers are writes, validity is a read
+
+`NaruCachePlan` answers two unrelated questions and they use different inputs.
+
+`validPrefix()` / `isCacheHit(i)` read the persisted baseline and answer "is this
+still what the provider already stored?". A missing or mismatched baseline means
+the answer is 0 — nothing is trusted.
+
+`cacheBreakpoints(max)` answers "what should the provider store from now on?",
+and every cacheable segment is a candidate whether or not it matched the
+baseline. Bounding markers by the valid prefix would make the first turn of a
+session place no marker at all, so it would write no cache, so the second turn
+would miss as well — a conversation that never becomes cached and is billed at
+full input price on every turn. The same applies mid-history: when an edit makes
+the prefix diverge at segment 1 of 5, the remaining segments are a miss *and* the
+new prefix that must be written.
 
 Segment boundaries are recorded durably on the messages themselves
 (`NaruMessage.turnBoundary`), not inferred from positions. They survive a session
@@ -119,7 +140,7 @@ exactly that.
 
 ## State
 
-A `NaruModelCacheExtension` in `naru-ai-models` owns per-session state, stored at
+A `NaruModelCacheExtension` in `naru-llm-models` owns per-session state, stored at
 `<session>/ext/model-cache.tson`. Entries are keyed by **provider + model +
 mode**; a session that talks to several models would otherwise have one model's
 cache identity silently invalidate another's.
@@ -195,8 +216,14 @@ the path (`models/{model}:generateContent`), which is why
 - **No history-edit events.** Invalidation is computed by re-diffing the segment
   chain on every call, which is correct but does O(segments) of hashing per turn.
   An explicit event would let it skip untouched prefixes.
-- **No `/stats` surface for cache ratios.** The counters are tracked and exposed
-  on `NaruModelStats.getCacheHitRatio()`, but nothing displays them yet.
+- **Cache ratios now surface in `/budget`.** The counters are tracked
+  (`NaruModelBudgetStats.cacheHitRatio()` / `cacheRatioPartial()`) and the
+  `/budget` report prints a `cache-hit` figure per row: a percentage when the
+  providers in the group reported cache data, `n/a` when none did, and a
+  `partial` marker when only some did. The ratio is computed over only the calls
+  that reported cache tokens, so a provider that reports nothing does not dilute
+  it. (This replaces the earlier `/stats`-only gap and the retired `/stats`
+  command.)
 - **Metering had a pre-existing bug**, fixed in the same change:
   `NaruMeteringServiceImpl.accumulate` assigned instead of added, so a model that
   had served ten calls reported the token counts of the tenth alone. This is

@@ -1,6 +1,6 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.mode.NaruPromptMode;
@@ -9,17 +9,13 @@ import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,28 +50,21 @@ public class NaruPlanModeToolGateTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     @BeforeEach
     public void setUp() {
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-plan-mode-gate"));
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), null, true,
-                NOOP_LISTENER, null, null, null);
+        session = agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(null)
+                .configureDefaults(true)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         task = session.newTask(NaruTaskSpec.of());
     }
 
@@ -137,9 +126,9 @@ public class NaruPlanModeToolGateTest {
             // planning itself
             "plan_create", "plan_get", "plan_update",
             // read-only research / navigation
-            "delegate_to_model", "search_web", "routine_list_lines",
-            // tag revocation is a permission edit, not a repo write
-            "tag_remove"
+            "delegate_to_model", "model_list", "web_search", "web_fetch", "routine_list_lines",
+            // tag listing/revocation is a permission edit, not a repo write
+            "tag_list", "tag_remove"
     );
 
     @Test

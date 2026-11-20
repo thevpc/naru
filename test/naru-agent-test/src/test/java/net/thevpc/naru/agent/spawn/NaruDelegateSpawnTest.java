@@ -1,6 +1,6 @@
 package net.thevpc.naru.agent.spawn;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.model.NaruToolDefinition;
@@ -10,11 +10,10 @@ import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.spawn.NaruSpawnPolicy;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.naru.ext.tools.llm.ModelDelegateTool;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -58,33 +57,26 @@ public class NaruDelegateSpawnTest {
         }
     };
 
-    private NaruAgent agent;
-    private NaruSessionImpl session;
+    private NaruWorkspace agent;
+    private NaruSession session;
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     @BeforeEach
     public void setUp() {
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-delegate-spawn"));
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), null, true,
-                NOOP_LISTENER, null, null, null);
+        session = agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(null)
+                .configureDefaults(true)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach
@@ -145,7 +137,7 @@ public class NaruDelegateSpawnTest {
 
         assertTrue(reply.contains("42"), () -> "the child result must come back: " + reply);
         NaruEvent spawned = lastSpawned(fromSeq);
-        String tags = String.valueOf(spawned.payload().get("tags"));
+        String tags = String.valueOf(NaruUtils.plainValue(spawned.payload().get("tags")));
         assertTrue(tags.startsWith("[write]"),
                 () -> "the model path narrowed to exactly the parent tags minus exec: " + tags);
         // no tag appeared that the model did not get from the parent
@@ -160,16 +152,16 @@ public class NaruDelegateSpawnTest {
         session.defineSpawnPolicy(new NaruSpawnPolicy("review-safe")
                 .inherit(net.thevpc.naru.api.spawn.NaruSpawnInherit.TAGS)
                 .revokeTags("exec"));
-        parent.setTaskEnv(NaruSpawnPolicy.ENV_CONFIG_POLICY, "review-safe");
+        parent.setTaskEnv(NaruSpawnPolicy.ENV_CONFIG_POLICY, NElement.of("review-safe"));
         session.start();
         long fromSeq = session.eventLog().currentSeq() + 1;
 
         ModelDelegateTool.callModel(parent, null, "go", null, "probe.naru", null, null);
 
         NaruEvent spawned = lastSpawned(fromSeq);
-        assertEquals("review-safe", spawned.payload().get("policy"),
+        assertEquals("review-safe", NaruUtils.plainValue(spawned.payload().get("policy")),
                 "the configured session policy must be applied by the model path");
-        assertEquals("[write]", String.valueOf(spawned.payload().get("tags")).split(" ")[0],
+        assertEquals("[write]", String.valueOf(NaruUtils.plainValue(spawned.payload().get("tags"))).split(" ")[0],
                 () -> "the policy revoke must have removed exec: " + spawned.payload().get("tags"));
     }
 

@@ -13,18 +13,24 @@ public class NaruResponse {
     private int promptTokens = -1;
     private int evalTokens = -1;
     /**
-     * Tokens billed at the cache-write rate because they were not already
-     * cached. -1 if the provider does not report cache accounting.
+     * Input tokens billed at the cache-write rate (Anthropic's cache creation).
+     * -1 if the provider does not report cache accounting; 0 when the provider
+     * reports cache accounting but has no cache-write class (OpenAI, Gemini).
+     *
+     * <p>These are a breakdown <em>of</em> {@code promptTokens}, not an addition
+     * to it.
      */
     private int cacheWriteTokens = -1;
     /**
-     * Tokens billed at the discounted cache-read rate because they were served
-     * from a cache hit. -1 if the provider does not report cache accounting.
+     * Input tokens billed at the discounted cache-read rate because they were
+     * served from a cache hit. -1 if the provider does not report cache
+     * accounting.
      *
      * <p>These are a breakdown <em>of</em> {@code promptTokens}, not an
      * addition to it: a cache-read token was also an input token. Cost models
-     * must subtract them from the input total before pricing, or they will
-     * double-count the discount as if it were extra spend.
+     * must subtract them (and {@link #cacheWriteTokens}) from the input total
+     * before pricing, or they will double-count the discount as if it were extra
+     * spend.
      */
     private int cacheReadTokens = -1;
 

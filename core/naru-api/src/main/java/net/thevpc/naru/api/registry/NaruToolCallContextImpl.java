@@ -1,24 +1,25 @@
 package net.thevpc.naru.api.registry;
 
+import net.thevpc.naru.api.agent.NaruTaskConfig;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.elem.NPrimitiveElement;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.Map;
 
 public class NaruToolCallContextImpl implements NaruToolCallContext {
-    private final Map<String, Object> arguments;
+    private final Map<String, NElement> arguments;
     private final NaruTask task;
 
-    public NaruToolCallContextImpl(Map<String, Object> arguments, NaruTask task) {
+    public NaruToolCallContextImpl(Map<String, NElement> arguments, NaruTask task) {
         this.arguments = arguments;
         this.task = task;
     }
 
     @Override
-    public Map<String, Object> arguments() {
+    public Map<String, NElement> arguments() {
         return arguments;
     }
 
@@ -28,18 +29,18 @@ public class NaruToolCallContextImpl implements NaruToolCallContext {
     }
 
     @Override
-    public NOptional<Object> arg(String name) {
+    public NOptional<NElement> arg(String name) {
         return NOptional.ofNamed(arguments.get(name), name);
     }
 
     @Override
     public NOptional<String> stringArg(String name) {
-        return arg(name).map(NaruToolCallContextImpl::asRawString);
+        return arg(name).map(NaruTaskConfig::toText);
     }
 
     @Override
     public NOptional<Number> numberArg(String name) {
-        return arg(name).flatMap(x -> NLiteral.of(asRawLiteral(x)).asNumber());
+        return arg(name).flatMap(x -> NLiteral.of(NaruUtils.plainValue(x)).asNumber());
     }
 
     @Override
@@ -54,43 +55,6 @@ public class NaruToolCallContextImpl implements NaruToolCallContext {
 
     @Override
     public NOptional<Boolean> booleanArg(String name) {
-        return arg(name).flatMap(x -> NLiteral.of(asRawLiteral(x)).asBoolean());
-    }
-
-    /**
-     * Normalize a raw argument to a literal-compatible value.
-     *
-     * <p>Some response parsers may store arguments as {@link NElement}
-     * wrappers instead of plain Java values. The {@code toString()} of an
-     * {@code NElement} string is its <b>TSON representation</b> (delimiter
-     * quotes + doubled inner quotes: {@code "pom.xml"}, {@code ""1.0""}),
-     * which is not the actual value ({@code pom.xml}, {@code "1.0"}) and would
-     * corrupt file paths and contents if handed to a tool. Always unwrap the
-     * element first, then fall back to {@code toString()}.</p>
-     */
-    private static Object asRawLiteral(Object x) {
-        if (x instanceof NElement) {
-            String s = asRawString(x);
-            return s == null ? null : s;
-        }
-        return x;
-    }
-
-    private static String asRawString(Object x) {
-        if (x == null) {
-            return null;
-        }
-        if (x instanceof NElement) {
-            NElement e = (NElement) x;
-            NOptional<String> s = e.asStringValue();
-            if (s.isPresent()) {
-                return s.get();
-            }
-            NPrimitiveElement pv = e.asPrimitive().orNull();
-            if (pv != null && pv.value() != null) {
-                return String.valueOf(pv.value());
-            }
-        }
-        return x.toString();
+        return arg(name).flatMap(x -> NLiteral.of(NaruUtils.plainValue(x)).asBoolean());
     }
 }

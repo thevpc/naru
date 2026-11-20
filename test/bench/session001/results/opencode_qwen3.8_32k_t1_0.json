@@ -1,0 +1,30 @@
+{
+  "run_id": "opencode_qwen3.8_32k_t1_0",
+  "agent": "opencode",
+  "agent_version": "opencode v2.0.23",
+  "model": "qwen3.8:32k",
+  "task": "t1",
+  "run_index": 0,
+  "pass": false,
+  "accept_output": "FAIL: todo-report.txt does not exist",
+  "wall_s": 5347.585,
+  "exit_code": -9,
+  "hit_cap": true,
+  "cap_reason": "wall_clock_timeout_20m",
+  "requests_main": 5,
+  "requests_title": 1,
+  "requests_other": 0,
+  "prompt_tokens": 32100,
+  "completion_tokens": 2055,
+  "reasoning_tokens": 0,
+  "cached_prompt_tokens": 0,
+  "peak_prompt_tokens_single_request": 8106,
+  "tool_calls_by_name": {
+    "grep": 1,
+    "shell": 6,
+    "glob": 1
+  },
+  "request_bytes_total": 129784,
+  "files_changed": 2,
+  "final_text": "Let me look at the actual matches to verify what \"TODO comments\" means here (comment vs. any occurrence), and get per-file counts."
+}

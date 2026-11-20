@@ -11,5 +11,10 @@ public interface NaruToolset extends AutoCloseable {
 
     void open(NaruSession session);
 
+    default NaruHibernationPolicy hibernationPolicy() { return NaruHibernationPolicy.PINS; }
+    default boolean hasLiveResource(NaruSession session) { return false; }
+    default void onHibernate(NaruSession session) { }
+    default void onResume(NaruSession session) { }
+
     void close() throws Exception;
 }

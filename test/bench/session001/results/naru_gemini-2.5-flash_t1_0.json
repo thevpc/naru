@@ -1,0 +1,28 @@
+{
+  "run_id": "naru_gemini-2.5-flash_t1_0",
+  "agent": "naru",
+  "agent_version": "a47daf5",
+  "model": "gemini-2.5-flash",
+  "task": "t1",
+  "run_index": 0,
+  "pass": false,
+  "accept_output": "FAIL: todo-report.txt does not exist",
+  "wall_s": 6.063,
+  "exit_code": 0,
+  "hit_cap": false,
+  "requests_main": 5,
+  "requests_title": 0,
+  "requests_other": 0,
+  "prompt_tokens": 8849,
+  "completion_tokens": 114,
+  "reasoning_tokens": 0,
+  "cached_prompt_tokens": 0,
+  "peak_prompt_tokens_single_request": 2434,
+  "tool_calls_by_name": {
+    "folder_find": 2,
+    "file_grep": 1
+  },
+  "request_bytes_total": 76408,
+  "files_changed": 1,
+  "final_text": ""
+}

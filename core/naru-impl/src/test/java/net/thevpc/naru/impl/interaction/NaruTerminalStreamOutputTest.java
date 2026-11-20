@@ -2,6 +2,7 @@ package net.thevpc.naru.impl.interaction;
 
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NMemoryPrintStream;
 import net.thevpc.nuts.io.NTerminal;
 import net.thevpc.nuts.text.NMsg;
@@ -26,21 +27,7 @@ public class NaruTerminalStreamOutputTest {
 
     @org.junit.jupiter.api.BeforeAll
     public static void setUpWorkspace() {
-        try {
-            net.thevpc.nuts.core.NWorkspace ws =
-                    net.thevpc.nuts.Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                net.thevpc.nuts.core.NWorkspace ws = net.thevpc.nuts.Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
+        Nuts.require();
     }
 
     private String out() {

@@ -2,6 +2,8 @@ package net.thevpc.naru.api.store;
 
 import net.thevpc.nuts.io.NPath;
 
+import java.util.Map;
+
 /**
  * What a store needs to know before it can open itself.
  *
@@ -14,6 +16,7 @@ public class NaruStoreConfig {
     private final NPath projectDir;
     private final NPath storeDir;
     private final NaruSessionScope defaultScope;
+    private final Map<String, String> properties;
 
     /**
      * @param projectDir    the project this store belongs to; used only for messages and
@@ -24,9 +27,15 @@ public class NaruStoreConfig {
      * @param defaultScope  where a session lands when nothing says otherwise
      */
     public NaruStoreConfig(NPath projectDir, NPath storeDir, NaruSessionScope defaultScope) {
+        this(projectDir, storeDir, defaultScope, Map.of());
+    }
+
+    public NaruStoreConfig(NPath projectDir, NPath storeDir, NaruSessionScope defaultScope,
+                           Map<String, String> properties) {
         this.projectDir = projectDir;
         this.storeDir = storeDir;
         this.defaultScope = defaultScope == null ? NaruSessionScope.PRIVATE : defaultScope;
+        this.properties = Map.copyOf(properties == null ? Map.of() : properties);
     }
 
     public static NaruStoreConfig ofProject(NPath projectDir) {
@@ -44,6 +53,10 @@ public class NaruStoreConfig {
     public NaruSessionScope defaultScope() {
         return defaultScope;
     }
+
+    public Map<String, String> properties() { return properties; }
+
+    public String property(String name) { return properties.get(name); }
 
     @Override
     public String toString() {

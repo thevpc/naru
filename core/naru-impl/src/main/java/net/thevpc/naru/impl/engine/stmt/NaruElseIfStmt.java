@@ -18,10 +18,10 @@ public class NaruElseIfStmt extends NaruFlowStatement implements Cloneable{
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         a.set("condition", NElement.ofString(condition));
-        return a.build();
+        return a;
     }
 
     @Override

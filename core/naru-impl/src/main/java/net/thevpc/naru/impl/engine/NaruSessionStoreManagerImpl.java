@@ -1,10 +1,15 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.agent.NaruSessionNameSource;
+import net.thevpc.naru.api.agent.NaruSessionNames;
 import net.thevpc.naru.api.agent.NaruVisibility;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSessionStoreManager;
+import net.thevpc.naru.api.store.NaruSessionData;
+import net.thevpc.naru.api.store.NaruSessionScope;
 import net.thevpc.nuts.elem.NElementReader;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NStringUtils;
 
@@ -79,11 +84,17 @@ public class NaruSessionStoreManagerImpl implements NaruSessionStoreManager {
         return count;
     }
 
+    /**
+     * Session storage is rooted at the workspace's store anchor, not at the session's
+     * own directory: the catalog is workspace state, and {@code sessionDir} is the
+     * directory the session is anchored <em>to</em>, never a storage path ingredient.
+     */
     private NPath sessionDir(boolean publicSession) {
+        NPath storeDir = adapter.storeAnchor().resolve(".naru");
         if (publicSession) {
-            return adapter.projectDir().resolve(".naru/sessions/");
+            return storeDir.resolve("sessions/");
         }
-        return adapter.projectDir().resolve(".naru/local/sessions/");
+            return storeDir.resolve("local/sessions/");
     }
 
     public String findByUuidOrName(String uuidOrName) {
@@ -127,10 +138,71 @@ public class NaruSessionStoreManagerImpl implements NaruSessionStoreManager {
             b = true;
         }
         if (adapter.uuid().equals(uuid)) {
-            adapter.reset(false);
+            // A desktop may hibernate (stop) the session before deleting its saved catalog
+            // entry. The durable directory is already gone above; resetting a stopped adapter
+            // would call ensureNotStopped() and turn a successful delete into an exception.
+            if (adapter.isRunning()) {
+                adapter.reset(false);
+            }
             b = true;
         }
         return b;
+    }
+
+    @Override
+    public boolean rename(String uuid, String name) {
+        if (NBlankable.isBlank(uuid)) {
+            return false;
+        }
+        if (adapter.uuid().equals(uuid)) {
+            // the live session owns its own name; persist comes with it
+            adapter.rename(name, NaruSessionNameSource.USER);
+            return true;
+        }
+        NaruSessionScope scope = adapter.rawSessionStore().scopeOf(uuid).orNull();
+        if (scope == null) {
+            return false;
+        }
+        NaruSessionData data = adapter.rawSessionStore().loadData(uuid, scope).orNull();
+        if (data == null) {
+            return false;
+        }
+        // A catalog rename is a rename: the label is chosen by a person, so the source is
+        // USER and not left at whatever the record carried. Setting one without the other
+        // is how a manual name ends up eligible for automatic overwrite.
+        data.name(NaruSessionNames.normalize(name));
+        data.nameSource(NaruSessionNameSource.USER);
+        data.modificationInstant(Instant.now());
+        adapter.rawSessionStore().compareAndSetData(data, scope, data.version());
+        return true;
+    }
+
+    @Override
+    public boolean setVisibility(String uuid, NaruVisibility visibility) {
+        if (NBlankable.isBlank(uuid) || visibility == null) {
+            return false;
+        }
+        NaruSessionScope target = visibility == NaruVisibility.PUBLIC
+                ? NaruSessionScope.PUBLIC : NaruSessionScope.PRIVATE;
+        if (adapter.uuid().equals(uuid)) {
+            adapter.setVisibility(visibility);
+            adapter.save();
+            return true;
+        }
+        NaruSessionScope scope = adapter.rawSessionStore().scopeOf(uuid).orNull();
+        if (scope == null) {
+            return false;
+        }
+        if (scope != target) {
+            adapter.rawSessionStore().move(uuid, scope, target);
+        }
+        // bump the modification time so the catalog re-sorts around the change
+        NaruSessionData data = adapter.rawSessionStore().loadData(uuid, target).orNull();
+        if (data != null) {
+            data.modificationInstant(Instant.now());
+            adapter.rawSessionStore().saveData(data, target);
+        }
+        return true;
     }
 
     private NPath sessionFile(String uuid, boolean publicSession) {

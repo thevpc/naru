@@ -15,13 +15,13 @@ import java.util.Set;
 
 /**
  * The spawn contract of a spawn target (an agent {@code .md} front-matter, or a script /
- * routine front-matter, per the O6 layout): what the target requires and which skills it
- * needs.
+ * routine front-matter, per the O6 layout): what the target requires, which tools it
+ * needs, and which skills it needs.
  * <p>
  * TSON shape (the same keys already merge into the model context as front-matter env):
  *
  * <pre>
- * { requires: "fs &amp; !write &amp; !exec", skills: ["code-review"] }
+ * { requires: "fs &amp; !write &amp; !exec", tools: ["file_read", "git_status"], skills: ["code-review"] }
  * </pre>
  *
  * <ul>
@@ -29,6 +29,11 @@ import java.util.Set;
  *       tag set <em>after</em> defaults, policy and flags are applied. A contract that asks
  *       for tags the resolution did not grant fails the spawn with a message naming the
  *       flag that would fix it.</li>
+ *   <li>{@code tools} — optional tool names the target needs by name. A contract cannot
+ *       grant a tool (that is what tags do); it can only state that a name must survive the
+ *       resolution. A tool the resolution excludes fails the spawn with a message naming the
+ *       exclusion to drop. Names absent from the registry are not a contract violation — the
+ *       contract constrains the spawn, it does not police the catalog.</li>
  *   <li>{@code skills} — skill names granted to the spawned task (added at spawn time; this
  *       is the only grant a contract makes).</li>
  * </ul>
@@ -42,14 +47,20 @@ import java.util.Set;
 public final class NaruSpawnContract {
 
     private final NaruToolTagExpression requires;
+    private final List<String> tools;
     private final List<String> skills;
 
-    private NaruSpawnContract(NaruToolTagExpression requires, List<String> skills) {
+    private NaruSpawnContract(NaruToolTagExpression requires, List<String> tools, List<String> skills) {
         this.requires = requires;
+        this.tools = distinct(tools);
+        this.skills = distinct(skills);
+    }
+
+    private static List<String> distinct(List<String> values) {
         List<String> ordered = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
-        if (skills != null) {
-            for (String s : skills) {
+        if (values != null) {
+            for (String s : values) {
                 if (NBlankable.isBlank(s)) {
                     continue;
                 }
@@ -59,7 +70,7 @@ public final class NaruSpawnContract {
                 }
             }
         }
-        this.skills = Collections.unmodifiableList(ordered);
+        return Collections.unmodifiableList(ordered);
     }
 
     /**
@@ -112,6 +123,7 @@ public final class NaruSpawnContract {
             children = new ArrayList<>(children.get(0).asObject().get().children());
         }
         NaruToolTagExpression requires = null;
+        List<String> tools = new ArrayList<>();
         List<String> skills = new ArrayList<>();
         for (NElement child : children) {
             if (!child.isPair()) {
@@ -126,6 +138,23 @@ public final class NaruSpawnContract {
                         requires = null;
                     } else {
                         requires = NaruToolTagExpression.parse(expr);
+                    }
+                    break;
+                }
+                case "tools": {
+                    NArrayElement arr = value.asArray().orNull();
+                    if (arr != null) {
+                        for (NElement e : arr.children()) {
+                            String n = e.asStringValue().orNull();
+                            if (!NBlankable.isBlank(n)) {
+                                tools.add(n.trim());
+                            }
+                        }
+                    } else {
+                        String n = value.asStringValue().orNull();
+                        if (!NBlankable.isBlank(n)) {
+                            tools.add(n.trim());
+                        }
                     }
                     break;
                 }
@@ -152,7 +181,7 @@ public final class NaruSpawnContract {
                     break;
             }
         }
-        return new NaruSpawnContract(requires, skills);
+        return new NaruSpawnContract(requires, tools, skills);
     }
 
     /**
@@ -163,11 +192,12 @@ public final class NaruSpawnContract {
     }
 
     /**
-     * The required (positive) tag names of {@link #requires()}, empty when there is no
-     * constraint. Convenience for the spawn-time skill/tag consistency check.
+     * Tool names the contract expects to survive the resolution, in declared order. This is
+     * a constraint, not a grant: the contract cannot add a tool, only state that a name must
+     * not be excluded. Empty when the contract names none.
      */
-    public Set<String> requiredTags() {
-        return requires == null ? Collections.emptySet() : requires.positiveTagNames();
+    public List<String> tools() {
+        return tools;
     }
 
     /**
@@ -178,10 +208,10 @@ public final class NaruSpawnContract {
     }
 
     /**
-     * Whether this contract is a no-op (no requires, no skills).
+     * Whether this contract is a no-op (no requires, no tools, no skills).
      */
     public boolean isEmpty() {
-        return requires == null && skills.isEmpty();
+        return requires == null && tools.isEmpty() && skills.isEmpty();
     }
 
     /**
@@ -209,6 +239,13 @@ public final class NaruSpawnContract {
         boolean first = true;
         if (requires != null) {
             sb.append("requires: \"").append(requires).append('"');
+            first = false;
+        }
+        if (!tools.isEmpty()) {
+            if (!first) {
+                sb.append(", ");
+            }
+            sb.append("tools: [").append(String.join(", ", tools)).append(']');
             first = false;
         }
         if (!skills.isEmpty()) {

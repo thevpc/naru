@@ -23,14 +23,13 @@ public class NaruAppendRoutineLineStmt extends NaruStatement implements Cloneabl
         this.command = lc.getStringValue("command").orNull();
     }
 
-    @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         a.set("number", increment);
         if(command!=null){
             a.set("command", command);
         }
-        return a.build();
+        return a;
     }
 
     @Override

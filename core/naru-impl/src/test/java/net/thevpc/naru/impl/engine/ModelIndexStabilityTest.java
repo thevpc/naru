@@ -1,13 +1,12 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
@@ -45,29 +44,18 @@ public class ModelIndexStabilityTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     @BeforeEach
     public void setUp() {
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-model-index"));
         // configureDefaults=false: no SPI provider discovery, no network, no real models
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), null, false,
-                new NaruSessionListener() {
+        session = agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(null)
+                .configureDefaults(false)
+                .sessionListener(new NaruSessionListener() {
                     @Override
                     public void onEventAppended(NaruEvent newEvent) {
                     }
@@ -83,7 +71,11 @@ public class ModelIndexStabilityTest {
                     @Override
                     public void onSessionReloaded(NaruSession naruSession) {
                     }
-                }, null, null, null);
+                })
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach
@@ -117,6 +109,43 @@ public class ModelIndexStabilityTest {
         ), keys);
         // the displayed order and the index-resolution order must be the exact same list
         Assertions.assertEquals(keys, infos);
+    }
+
+    @Test
+    public void aProviderThatCannotDescribeAModelStillLeavesTheCatalogListed() {
+        // the desktop model picker reads modelsInfos, not modelsKeys, so a provider that throws
+        // while describing one model used to blank the whole listing and report it as "no models".
+        // The row degrades to no capabilities; every other row and every index survives.
+        session.registry().registerModelProvider(new FakeProvider("ollama",
+                Arrays.asList("qwen3:latest", "llama3:latest"), true) {
+            @Override
+            public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession s) {
+                throw new AbstractMethodError("stale runtime jar");
+            }
+        });
+        session.registry().registerModelProvider(new FakeProvider("openrouter",
+                Arrays.asList("a-paid", "b-paid"), true) {
+            @Override
+            public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession s) {
+                // an unresolvable protocol is not a catalog-wide failure either
+                return NOptional.ofEmpty();
+            }
+        });
+
+        List<String> keys = session.registry().modelsKeys(session).stream()
+                .map(NaruModelKey::toString).collect(Collectors.toList());
+        List<NaruModelInfo> infos = session.registry().modelsInfos(session);
+
+        Assertions.assertEquals(List.of(
+                "ollama/llama3:latest",
+                "ollama/qwen3:latest",
+                "openrouter/a-paid",
+                "openrouter/b-paid"
+        ), keys);
+        Assertions.assertEquals(keys, infos.stream()
+                .map(x -> x.key().toString()).collect(Collectors.toList()));
+        Assertions.assertNull(infos.get(0).capabilities());
+        Assertions.assertNotNull(infos.get(0).key());
     }
 
     @Test

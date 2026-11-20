@@ -1,6 +1,10 @@
 package net.thevpc.naru.api.spawn;
 
+import net.thevpc.naru.api.util.NaruExprs;
+import net.thevpc.nuts.expr.NExprNode;
+import net.thevpc.nuts.expr.NExprNodeType;
 import net.thevpc.nuts.util.NNameFormat;
+import net.thevpc.nuts.util.NOptional;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -24,6 +28,11 @@ import java.util.Set;
  * NAME    := [a-zA-Z0-9_.-]+        normalized to lower kebab-case
  * </pre>
  * <p>
+ * The syntax is not parsed here by hand: NARU routes it through the Nuts <b>NExpr</b>
+ * engine ({@link NaruExprs}), which supplies the parser and the operator/spacing rules.
+ * This class keeps only the tag-specific semantics on top of the resulting syntax tree
+ * (membership evaluation and the positive/negative name collection below).
+ * <p>
  * An expression evaluates against the set of tags the spawned task resolves to. It is also
  * how a caller discovers which names an expression mentions, which the consistency
  * checking uses to know which tags a contract needs.
@@ -40,16 +49,19 @@ public final class NaruToolTagExpression {
 
     /**
      * Parses an expression, throwing {@link IllegalArgumentException} with the offending
-     * position on syntax errors, or on a blank/empty input.
+     * input on syntax errors, or on a blank/empty input.
      */
     public static NaruToolTagExpression parse(String expression) {
         if (expression == null || expression.trim().isEmpty()) {
             throw new IllegalArgumentException("empty tag expression");
         }
-        Parser parser = new Parser(expression);
-        Node root = parser.parse();
-        parser.expectEnd();
-        return new NaruToolTagExpression(root);
+        NOptional<NExprNode> parsed = NaruExprs.tryParse(delimitNegation(expression));
+        if (parsed.isNotPresent()) {
+            var m = parsed.message();
+            String detail = m == null ? String.valueOf(parsed) : String.valueOf(m.get());
+            throw new IllegalArgumentException("invalid tag expression '" + expression + "': " + detail);
+        }
+        return new NaruToolTagExpression(toNode(parsed.get(), expression));
     }
 
     /**
@@ -293,111 +305,162 @@ public final class NaruToolTagExpression {
         }
     }
 
-    private static final class Parser {
-        private final String text;
-        private int pos;
+    // ── NExpr AST → tag AST ─────────────────────────────────────────────────
 
-        Parser(String text) {
-            this.text = text;
-        }
-
-        Node parse() {
-            return parseOr();
-        }
-
-        private Node parseOr() {
-            Node left = parseAnd();
-            List<Node> ors = null;
-            while (peek('|')) {
-                pos++;
-                if (ors == null) {
-                    ors = new ArrayList<>();
-                    ors.add(left);
-                }
-                ors.add(parseAnd());
-            }
-            return ors == null ? left : new OrNode(ors);
-        }
-
-        private Node parseAnd() {
-            Node left = parseUnary();
-            List<Node> ands = null;
-            while (peek('&')) {
-                pos++;
-                if (ands == null) {
-                    ands = new ArrayList<>();
-                    ands.add(left);
-                }
-                ands.add(parseUnary());
-            }
-            return ands == null ? left : new AndNode(ands);
-        }
-
-        private Node parseUnary() {
-            skipSpaces();
-            if (peek('!')) {
-                pos++;
-                return new NotNode(parseUnary());
-            }
-            return parsePrimary();
-        }
-
-        private Node parsePrimary() {
-            skipSpaces();
-            if (pos >= text.length()) {
-                throw error("expected a tag name or '('");
-            }
-            char c = text.charAt(pos);
-            if (c == '(') {
-                pos++;
-                Node inner = parseOr();
-                skipSpaces();
-                if (!peek(')')) {
-                    throw error("missing ')'");
-                }
-                pos++;
-                return inner;
-            }
-            if (isNameChar(c)) {
-                int start = pos;
-                while (pos < text.length() && isNameChar(text.charAt(pos))) {
-                    pos++;
-                }
-                String raw = text.substring(start, pos);
-                String name = NNameFormat.LOWER_KEBAB_CASE.format(raw.trim());
+    private static Node toNode(NExprNode n, String expression) {
+        switch (n.nodeType()) {
+            case WORD: {
+                String name = NNameFormat.LOWER_KEBAB_CASE.format(n.name() == null ? "" : n.name().trim());
                 if (name.isEmpty()) {
-                    throw error("invalid tag name '" + raw + "'");
+                    throw unsupported(expression, n);
                 }
                 return new NameNode(name);
             }
-            throw error("unexpected character '" + c + "'");
-        }
-
-        void expectEnd() {
-            skipSpaces();
-            if (pos < text.length()) {
-                throw error("unexpected trailing '" + text.charAt(pos) + "'");
+            case OPERATOR: {
+                String op = n.name() == null ? "" : n.name().toLowerCase();
+                switch (op) {
+                    case "(": {
+                        // NExpr models a parenthesised group as an operator with one child
+                        List<NExprNode> ch = n.children();
+                        if (ch.size() != 1) {
+                            throw unsupported(expression, n);
+                        }
+                        return toNode(ch.get(0), expression);
+                    }
+                    case "!": {
+                        List<NExprNode> ch = n.children();
+                        if (ch.size() != 1) {
+                            throw unsupported(expression, n);
+                        }
+                        return new NotNode(toNode(ch.get(0), expression));
+                    }
+                    case "&":
+                    case "&&":
+                    case "and": {
+                        return new AndNode(toNodes(n, expression, true));
+                    }
+                    case "|":
+                    case "||":
+                    case "or": {
+                        return new OrNode(toNodes(n, expression, false));
+                    }
+                    default: {
+                        throw unsupported(expression, n);
+                    }
+                }
+            }
+            default: {
+                throw unsupported(expression, n);
             }
         }
+    }
 
-        private boolean peek(char c) {
-            skipSpaces();
-            return pos < text.length() && text.charAt(pos) == c;
+    private static List<Node> toNodes(NExprNode n, String expression, boolean and) {
+        List<NExprNode> children = n.children();
+        if (children == null || children.isEmpty()) {
+            throw unsupported(expression, n);
         }
-
-        private void skipSpaces() {
-            while (pos < text.length() && Character.isWhitespace(text.charAt(pos))) {
-                pos++;
+        List<Node> out = new ArrayList<>(children.size());
+        for (NExprNode c : children) {
+            Node node = toNode(c, expression);
+            // NExpr builds same-operator chains right-nested (a & (b & c)); the tag grammar
+            // is a flat n-ary fold, so flatten direct same-operator children back out. A
+            // group the user spelled out is kept as written.
+            boolean directSameOp = c.nodeType() == NExprNodeType.OPERATOR
+                    && !"(".equals(c.name())
+                    && (and ? isAndOp(c.name()) : isOrOp(c.name()));
+            if (directSameOp && and && node instanceof AndNode a) {
+                out.addAll(a.children());
+            } else if (directSameOp && !and && node instanceof OrNode o) {
+                out.addAll(o.children());
+            } else {
+                out.add(node);
             }
         }
+        return out;
+    }
 
-        private static boolean isNameChar(char c) {
-            return Character.isLetterOrDigit(c) || c == '_' || c == '-' || c == '.';
-        }
+    private static boolean isAndOp(String op) {
+        return "&".equals(op) || "&&".equals(op) || "and".equalsIgnoreCase(op);
+    }
 
-        private IllegalArgumentException error(String msg) {
-            return new IllegalArgumentException(
-                    "invalid tag expression '" + text + "' at position " + pos + ": " + msg);
+    private static boolean isOrOp(String op) {
+        return "|".equals(op) || "||".equals(op) || "or".equalsIgnoreCase(op);
+    }
+
+    /**
+     * The Nuts NExpr parser binds a prefix {@code !} loosely -- it consumes the whole rest
+     * of the expression (so {@code !a & b} would parse as {@code !(a & b)}). The tag
+     * grammar instead treats {@code !} as the tightest-binding unary. This rewrites each
+     * unary negation whose operand is a bare name or a parenthesised group into an explicit
+     * {@code (!operand)} term; NExpr then parses the text normally and the pre-existing
+     * group term delimits the negation.
+     */
+    private static String delimitNegation(String expression) {
+        StringBuilder out = new StringBuilder(expression.length() + 8);
+        int i = 0;
+        while (i < expression.length()) {
+            char c = expression.charAt(i);
+            if (c != '!') {
+                out.append(c);
+                i++;
+                continue;
+            }
+            int j = i + 1;
+            while (j < expression.length() && Character.isWhitespace(expression.charAt(j))) {
+                j++;
+            }
+            if (j < expression.length() && isNameStart(expression.charAt(j))) {
+                int k = j;
+                while (k < expression.length() && isNameChar(expression.charAt(k))) {
+                    k++;
+                }
+                out.append("(!").append(expression, j, k).append(')');
+                i = k;
+            } else if (j < expression.length() && expression.charAt(j) == '(') {
+                int close = matchingParen(expression, j);
+                if (close > 0) {
+                    out.append("(!").append(expression, j, close + 1).append(')');
+                    i = close + 1;
+                } else {
+                    out.append(c);
+                    i++;
+                }
+            } else {
+                out.append(c);
+                i++;
+            }
         }
+        return out.toString();
+    }
+
+    private static int matchingParen(String text, int open) {
+        int depth = 0;
+        for (int p = open; p < text.length(); p++) {
+            char ch = text.charAt(p);
+            if (ch == '(') {
+                depth++;
+            } else if (ch == ')') {
+                depth--;
+                if (depth == 0) {
+                    return p;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isNameStart(char c) {
+        return Character.isLetter(c) || c == '_';
+    }
+
+    private static boolean isNameChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_' || c == '-';
+    }
+
+    private static IllegalArgumentException unsupported(String expression, NExprNode n) {
+        String token = n.name() == null ? String.valueOf(n.nodeType()) : n.name();
+        return new IllegalArgumentException(
+                "invalid tag expression '" + expression + "': unsupported token '" + token + "'");
     }
 }

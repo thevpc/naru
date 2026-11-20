@@ -2,8 +2,11 @@ package net.thevpc.naru.api.store;
 
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NOptional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -38,6 +41,115 @@ import java.util.List;
  */
 public interface NaruSessionStore extends AutoCloseable {
 
+    /**
+     * Query one task's durable message records. Stores with separate message records should
+     * override this method to read only the requested page; the fallback keeps older store
+     * implementations source compatible.
+     */
+    default NaruMessagePage queryMessages(String uuid, NaruSessionScope scope, long taskId,
+                                           NaruMessageQuery query) {
+        NaruTaskState state = loadTask(uuid, scope, taskId).orNull();
+        if (state == null) return new NaruMessagePage(List.of(), null, null, false);
+        List<NaruStoredMessage> all = new java.util.ArrayList<>();
+        for (int i = 0; i < state.historyIds().size() && i < state.history().size(); i++) {
+            NaruMessage message = state.history().get(i);
+            if (!query.roles().isEmpty() && !query.roles().contains(message.getRole())) continue;
+            String id = state.historyIds().get(i);
+            all.add(new NaruStoredMessage(id, sequence(id), message));
+        }
+        all.sort(java.util.Comparator.comparingLong(NaruStoredMessage::creationSequence));
+        if (query.direction() == NaruMessageQueryDirection.BACKWARD) java.util.Collections.reverse(all);
+        long cursor = query.cursor() == null ? Long.MIN_VALUE : sequence(query.cursor());
+        List<NaruStoredMessage> selected = new java.util.ArrayList<>();
+        for (NaruStoredMessage item : all) {
+            if (query.cursor() != null && (query.direction() == NaruMessageQueryDirection.FORWARD
+                    ? item.creationSequence() <= cursor : item.creationSequence() >= cursor)) continue;
+            selected.add(item);
+            if (selected.size() > query.limit()) break;
+        }
+        boolean more = selected.size() > query.limit();
+        if (more) selected.remove(selected.size() - 1);
+        String next = selected.isEmpty() ? null : selected.get(selected.size() - 1).id();
+        String previous = selected.isEmpty() ? null : selected.get(0).id();
+        return new NaruMessagePage(selected, next, previous, more);
+    }
+
+    /** Hierarchical view of this session's task records. Existing flat APIs remain supported. */
+    default NaruTaskStore tasks(String uuid, NaruSessionScope scope) {
+        NaruSessionStore owner = this;
+        return new NaruTaskStore() {
+            private final java.util.Map<Long, NaruMessageStore> messageStores = new java.util.HashMap<>();
+            public List<Long> list() { return owner.taskIds(uuid, scope); }
+            public NOptional<NaruTaskState> load(long id) { return owner.loadTask(uuid, scope, id); }
+            public NOptional<NaruTaskState> loadSkeleton(long id) { return owner.loadTaskSkeleton(uuid, scope, id); }
+            public void save(NaruTaskState task) { owner.saveTask(uuid, scope, task); }
+            public void delete(long id) { owner.deleteTask(uuid, scope, id); }
+            public synchronized NaruMessageStore messages(long taskId) {
+                return messageStores.computeIfAbsent(taskId, id -> new NaruMessageStore() {
+                    private NaruTaskState state() {
+                        return owner.loadTask(uuid, scope, id).orNull();
+                    }
+                    private NaruStoredMessage wrap(String messageId, net.thevpc.naru.api.model.NaruMessage message) {
+                        return new NaruStoredMessage(messageId, sequence(messageId), message);
+                    }
+                    public synchronized NaruStoredMessage append(net.thevpc.naru.api.model.NaruMessage message, String key) {
+                        NaruTaskState s = state();
+                        java.util.List<net.thevpc.naru.api.model.NaruMessage> history = s == null
+                                ? new java.util.ArrayList<>() : new java.util.ArrayList<>(s.history());
+                        history.add(message);
+                        NaruHistorySave saved = owner.saveHistory(uuid, scope, id, history);
+                        return wrap(saved.ids().get(saved.ids().size() - 1), message);
+                    }
+                    public synchronized NaruStoredMessage insertAfter(String messageId,
+                            net.thevpc.naru.api.model.NaruMessage message, String key) {
+                        NaruTaskState s = state();
+                        if (s == null) throw new IllegalArgumentException("unknown task " + id);
+                        java.util.List<net.thevpc.naru.api.model.NaruMessage> history = new java.util.ArrayList<>(s.history());
+                        int index = s.historyIds().indexOf(messageId);
+                        if (index < 0) throw new IllegalArgumentException("unknown message " + messageId);
+                        history.add(index + 1, message);
+                        NaruHistorySave saved = owner.saveHistory(uuid, scope, id, history);
+                        return wrap(saved.ids().get(index + 1), message);
+                    }
+                    public synchronized void delete(java.util.List<String> ids) {
+                        NaruTaskState s = state();
+                        if (s == null) return;
+                        java.util.List<net.thevpc.naru.api.model.NaruMessage> history = new java.util.ArrayList<>();
+                        for (int i = 0; i < s.historyIds().size(); i++) {
+                            if (!ids.contains(s.historyIds().get(i))) history.add(s.history().get(i));
+                        }
+                        owner.saveHistory(uuid, scope, id, history);
+                    }
+                    public synchronized java.util.List<NaruStoredMessage> get(java.util.List<String> ids) {
+                        NaruTaskState s = state();
+                        java.util.List<NaruStoredMessage> out = new java.util.ArrayList<>();
+                        if (s != null) for (int i = 0; i < s.historyIds().size(); i++) {
+                            if (ids.contains(s.historyIds().get(i))) out.add(wrap(s.historyIds().get(i), s.history().get(i)));
+                        }
+                        return out;
+                    }
+                    public synchronized NaruMessagePage query(NaruMessageQuery query) {
+                        return owner.queryMessages(uuid, scope, id, query);
+                    }
+                });
+            }
+        };
+    }
+
+    /** Loads only the task skeleton when supported. */
+    default NOptional<NaruTaskState> loadTaskSkeleton(String uuid, NaruSessionScope scope, long taskId) {
+        return loadTask(uuid, scope, taskId);
+    }
+
+    private static long sequence(String id) {
+        try { return Long.parseLong(id); } catch (RuntimeException ignored) { return id.hashCode() & 0x7fffffffL; }
+    }
+
+    private static long parseCursor(String cursor) {
+        if (cursor == null) return -1;
+        return sequence(cursor);
+    }
+
     // ---------------------------------------------------------------- catalog
 
     /** Sessions in one scope, newest modification first. */
@@ -62,9 +174,160 @@ public interface NaruSessionStore extends AutoCloseable {
 
     void create(NaruSessionData data, NaruSessionScope scope);
 
+    /**
+     * The number for the next placeholder name ({@code Session N}), allocated once and never
+     * handed out again.
+     *
+     * <p>Global to the store rather than per project or per scope, because a session moves
+     * between projects and a per-project counter would put two sessions in one listing under
+     * the same label. It is also never reused after a deletion: a placeholder is the name a
+     * user sees before they have a better one, and a {@code Session 7} that turns out to be
+     * a different conversation than the {@code Session 7} they remembered is worse than a
+     * gap in the numbering.
+     *
+     * <h2>What an implementation owes this</h2>
+     * A single atomic increment. Two callers asking at once -- two sessions created in one
+     * process, or two processes over one shared directory -- must never receive the same
+     * number, and a number must never come back after the process that took it died before
+     * writing it down. A file store does it under its own metadata lock; a database should
+     * do it with {@code INSERT ... RETURNING}, a sequence, or an
+     * {@code UPDATE ... SET n = n + 1} in a single statement, and the contract asks for
+     * nothing more than that. It is a method rather than a field on a session so that a
+     * backend can keep the counter wherever it belongs to it.
+     *
+     * <p>Seeding is part of the guarantee: when the counter does not exist yet, the first
+     * number must be above every {@code Session N} already in the store, so an installation
+     * that has sessions but no counter does not immediately collide with them.
+     */
+    long nextSessionNumber();
+
+    /** Atomically creates a session only when no record with this id exists. */
+    default boolean createIfAbsent(NaruSessionData data, NaruSessionScope scope) {
+        if (exists(data.uuid(), scope)) return false;
+        create(data, scope);
+        return true;
+    }
+
     NOptional<NaruSessionData> loadData(String uuid, NaruSessionScope scope);
 
     void saveData(NaruSessionData data, NaruSessionScope scope);
+
+    /** CAS metadata checkpoint. A successful call increments and returns the version. */
+    default long compareAndSetData(NaruSessionData data, NaruSessionScope scope, long expectedVersion) {
+        NaruSessionData current = loadData(data.uuid(), scope).orNull();
+        long actual = current == null ? -1 : current.version();
+        if (actual != expectedVersion) throw new NaruSessionConflictException(data.uuid(), expectedVersion, actual);
+        data.version(expectedVersion + 1);
+        saveData(data, scope);
+        return data.version();
+    }
+
+    // ---------------------------------------------------------------- project-aware queries
+
+    /**
+     * One keyset page of session headers. The default implementation scans the catalog and
+     * loads headers row by row — correct on every backend, lazy on none; file stores
+     * should override with a single header pass.
+     *
+     * <p>Pagination is keyset over {@code (modificationInstant, uuid)}, stable under
+     * concurrent inserts: no duplicates, and no row that existed for the whole traversal
+     * is skipped. The cursor belongs to the sort that minted it.
+     */
+    default NaruPage<NaruSessionSummary> findByQuery(NaruSessionQuery query) {
+        final NaruSessionQuery q = query == null ? NaruSessionQuery.first() : query;
+        if (q.sort() != NaruSessionSort.UPDATED_DESC) {
+            throw new NIllegalArgumentException(NMsg.ofC("unsupported session sort: %s", q.sort()));
+        }
+        List<NaruSessionSummary> rows = new ArrayList<>();
+        for (NaruSessionRef ref : list()) {
+            NaruSessionData data = loadData(ref.uuid(), ref.scope()).orNull();
+            if (data == null) continue;
+            NaruSessionSummary s = NaruSessionSummary.of(data, ref.scope());
+            if (!q.projectFilter().matches(s.projectId())) continue;
+            if (!q.user().matches(s.user())) continue;
+            rows.add(s);
+        }
+        rows.sort(java.util.Comparator.comparing(
+                (NaruSessionSummary s) -> NaruPageCursor.instantKey(s.modificationInstant())).reversed()
+                .thenComparing(NaruSessionSummary::uuid));
+        String[] cursor = NaruPageCursor.decode(q.cursor(), NaruSessionSort.UPDATED_DESC.name());
+        if (cursor != null) {
+            rows.removeIf(s -> !NaruPageCursor.isAfter(NaruPageCursor.instantKey(s.modificationInstant()),
+                    s.uuid(), cursor, true));
+        }
+        List<NaruSessionSummary> items = rows.size() <= q.limit()
+                ? new ArrayList<>(rows) : new ArrayList<>(rows.subList(0, q.limit()));
+        String next = rows.size() > q.limit() && !items.isEmpty()
+                ? NaruPageCursor.encode(NaruSessionSort.UPDATED_DESC.name(),
+                NaruPageCursor.instantKey(items.get(items.size() - 1).modificationInstant()),
+                items.get(items.size() - 1).uuid())
+                : null;
+        return new NaruPage<>(items, next);
+    }
+
+    /**
+     * How many sessions name each project, plus the standalone count. The default pages
+     * through {@link #findByQuery}; stores are expected to answer this with one pass over
+     * their session headers, because the tree calls it for every listing.
+     */
+    default NaruProjectSessionCounts countByProject() {
+        java.util.Map<String, Long> counts = new java.util.HashMap<>();
+        long none = 0;
+        String cursor = null;
+        while (true) {
+            NaruPage<NaruSessionSummary> page = findByQuery(
+                    new NaruSessionQuery(cursor, NaruSessionSort.UPDATED_DESC,
+                            NaruProjectFilter.any(), NaruUserFilter.any(), NaruSessionQuery.MAX_LIMIT));
+            for (NaruSessionSummary s : page.items()) {
+                if (s.projectId() == null) none++;
+                else counts.merge(s.projectId(), 1L, Long::sum);
+            }
+            if (page.nextCursor() == null) break;
+            cursor = page.nextCursor();
+        }
+        return new NaruProjectSessionCounts(counts, none);
+    }
+
+    /**
+     * Re-points one session at a project — a metadata change only: never the directory,
+     * never the location, never any task, message, or environment content. The header is
+     * rewritten under the store's own version check and the version token is bumped.
+     *
+     * @return the stored row after the move
+     */
+    default NaruSessionData reassignProject(String uuid, NaruSessionScope scope,
+                                            long expectedVersion, String projectIdOrNull) {
+        NaruSessionData current = loadData(uuid, scope).orElseThrow(
+                () -> new NIllegalArgumentException(NMsg.ofC("no session %s in scope %s", uuid, scope)));
+        current.projectId(projectIdOrNull);
+        compareAndSetData(current, scope, expectedVersion);
+        return current;
+    }
+
+    /** Same, resolving the scope from the location. */
+    default NaruSessionData reassignProject(String uuid, long expectedVersion, String projectIdOrNull) {
+        NaruSessionScope scope = scopeOf(uuid).orNull();
+        if (scope == null) {
+            throw new NIllegalArgumentException(NMsg.ofC("no session %s", uuid));
+        }
+        return reassignProject(uuid, scope, expectedVersion, projectIdOrNull);
+    }
+
+    /** The ids of the sessions of one project (null for the standalone ones). */
+    default List<String> findSessionIdsByProject(String projectIdOrNull) {
+        List<String> out = new ArrayList<>();
+        String cursor = null;
+        while (true) {
+            NaruPage<NaruSessionSummary> page = findByQuery(
+                    new NaruSessionQuery(cursor, NaruSessionSort.UPDATED_DESC,
+                            projectIdOrNull == null ? NaruProjectFilter.none() : NaruProjectFilter.ofId(projectIdOrNull),
+                            NaruUserFilter.any(), NaruSessionQuery.MAX_LIMIT));
+            for (NaruSessionSummary s : page.items()) out.add(s.uuid());
+            if (page.nextCursor() == null) break;
+            cursor = page.nextCursor();
+        }
+        return out;
+    }
 
     // ---------------------------------------------------------------- tasks
 
@@ -77,9 +340,32 @@ public interface NaruSessionStore extends AutoCloseable {
      */
     void saveTask(String uuid, NaruSessionScope scope, NaruTaskState task);
 
+    /** Updates task metadata while preserving the already committed history bodies. */
+    default void saveTaskSkeleton(String uuid, NaruSessionScope scope, NaruTaskState task) {
+        saveTask(uuid, scope, task);
+    }
+
+    /** Saves a task and returns its committed position-ordered message ids. */
+    default List<String> saveTaskAndGetHistoryIds(String uuid, NaruSessionScope scope, NaruTaskState task) {
+        saveTask(uuid, scope, task);
+        NaruTaskState saved = loadTask(uuid, scope, task.id()).orNull();
+        return saved == null ? List.of() : saved.historyIds();
+    }
+
     NOptional<NaruTaskState> loadTask(String uuid, NaruSessionScope scope, long taskId);
 
     List<Long> taskIds(String uuid, NaruSessionScope scope);
+
+    /** Task ids whose persisted skeleton marks them as conversations, including terminal tasks. */
+    default List<Long> conversationTaskIds(String uuid, NaruSessionScope scope) {
+        List<Long> out = new java.util.ArrayList<>();
+        for (long id : taskIds(uuid, scope)) {
+            NaruTaskState state = loadTaskSkeleton(uuid, scope, id).orNull();
+            if (state != null && state.skeleton().asObject().get()
+                    .getBooleanValue("conversation").orElse(false)) out.add(id);
+        }
+        return java.util.Collections.unmodifiableList(out);
+    }
 
     void deleteTask(String uuid, NaruSessionScope scope, long taskId);
 

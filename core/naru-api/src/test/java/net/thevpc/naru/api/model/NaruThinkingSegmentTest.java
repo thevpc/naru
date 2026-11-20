@@ -3,6 +3,7 @@ package net.thevpc.naru.api.model;
 import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.elem.NObjectElement;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -31,21 +32,7 @@ public class NaruThinkingSegmentTest {
      */
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     private static NaruThinkingSegment seg(int i, String text, boolean complete) {
         return new NaruThinkingSegment(i, text, NaruThinkingExtraction.TAG_DELIMITED, "gpt", 12, complete);
@@ -104,7 +91,7 @@ public class NaruThinkingSegmentTest {
                 .addThinkingSegment(seg(0, "first thought", true))
                 .addThinkingSegment(seg(1, "second thought", false));
         NaruMessage back = roundTrip(m);
-        assertEquals("the answer", back.getContent());
+        assertEquals(NMsg.ofP("the answer"), back.getContent());
         List<NaruThinkingSegment> segments = back.getThinkingSegments();
         assertEquals(2, segments.size());
         assertEquals("first thought", segments.get(0).getText());

@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.engine.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
@@ -53,8 +54,8 @@ public class NaruIfStmt extends NaruIncrementalStmt implements Cloneable {
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         a.set("condition", NElement.ofString(condition));
         a.set("trueBranch", NElement.ofArray(trueBranch == null ? new NElement[0] : trueBranch.stream().map(x -> x.toElement()).toArray(NElement[]::new)));
         a.set("elseIfBranch", NElement.ofArray(elseIfBranch == null ? new NElement[0] : elseIfBranch.stream().map(x -> x.toElement()).toArray(NElement[]::new)));
@@ -67,7 +68,7 @@ public class NaruIfStmt extends NaruIncrementalStmt implements Cloneable {
             a.set("runtimeSelectedBranchType", runtimeSelectedBranchType.name());
             a.set("runtimeSelectedBranchSubIndex", runtimeSelectedBranchSubIndex);
         }
-        return a.build();
+        return a;
     }
 
     @Override
@@ -230,11 +231,11 @@ public class NaruIfStmt extends NaruIncrementalStmt implements Cloneable {
                     return ((NaruIncrementalStmt) last).acceptStatement(any, task);
                 }
                 if (any instanceof NaruElseStmt) {
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("error statement : unexpected 'else'"));
+                    task.addHistory(NaruMessage.engine(NMsg.ofC("error statement : unexpected 'else'")));
                     task.throwError(NMsg.ofC("error statement : unexpected 'else'"));
                     return false;
                 } else if (any instanceof NaruElseIfStmt) {
-                    task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("error statement : unexpected 'else'"));
+                    task.addHistory(NaruMessage.engine(NMsg.ofC("error statement : unexpected 'else'")));
                     task.throwError(NMsg.ofC("error statement : unexpected 'elseif'"));
                     return false;
                 } else if (any instanceof NaruEndStmt) {

@@ -44,5 +44,28 @@ public interface NaruModelCapabilities extends NToElement {
         return NaruCachingMode.NONE;
     }
 
+    /**
+     * Whether this model is free to use (no per-token charge): a model served
+     * by a local engine, an OpenRouter {@code :free} variant, or one whose
+     * pricing is zero. Reported here so a catalog entry carries the answer
+     * instead of every caller re-deriving it from the provider name or id.
+     *
+     * <p>Defaults to {@code false}: a provider that does not say otherwise is
+     * assumed to be paid, which is the safe default for billing.
+     */
+    default boolean isFree() {
+        return false;
+    }
+
+    /**
+     * Whether this model runs on a local endpoint. Mirrors
+     * {@link NaruModelProvider#isLocal(NaruSession)} at the model level so a
+     * catalog entry can be filtered without re-asking the provider. Defaults to
+     * {@code false}.
+     */
+    default boolean isLocal() {
+        return false;
+    }
+
     Set<String> keys();
 }

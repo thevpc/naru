@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.engine.stmt;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
+import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSource;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
@@ -11,9 +12,9 @@ import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NListContainerElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
-import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NLiteral;
 
 import java.util.List;
@@ -27,6 +28,15 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
      * (e.g. one re-triggered by a /while loop) starts with a full budget.
      */
     private static final String TOOL_CALL_ROUNDS_KEY = "naru.prompt.toolCallRounds";
+
+    /**
+     * Consecutive replies of the current turn that held neither text nor a tool call. Reset
+     * as soon as the model says or does something.
+     */
+    private static final String EMPTY_REPLIES_KEY = "naru.prompt.emptyReplies";
+
+    /** How many times an empty reply is answered with a retry before the turn is allowed to end. */
+    private static final int MAX_EMPTY_RETRIES = 2;
 
     /**
      * Default maximum number of tool-call rounds before the agent loop is
@@ -60,25 +70,27 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         if (!NBlankable.isBlank(prompt)) {
             a.set("prompt", NElement.ofString(prompt));
         }
-        return a.build();
+        return a;
     }
 
     @Override
     public void exec(NaruTask task) {
         if (task.model() == null) {
-            throw new NIllegalArgumentException(NMsg.ofC("no model selected. use '%s' to select one."
-                    , NMsg.ofCode("bash", "/model")
-            ));
+            NMsg message = NMsg.ofC("No model is selected. Choose one yourself with /model list and /model use <key>, then submit your request again.").asError();
+            task.addHistory(NaruMessage.engine(message));
+            task.frame().lastResult(NaruStmtResult.ofError(message));
+            task.defaultAdvance(this);
+            return;
         }
-        task.log(NaruLogMode.PROGRESS, NMsg.ofC("%s Model: %s…",
+        task.addHistory(NaruMessage.engine(NMsg.ofC("%s Model: %s…",
                 NMsg.ofStyledPrimary8("\uD83E\uDDE0"),
                 task.model().toText()
-        ));
+        ).asFine().withIntent(NMsgIntent.SETTINGS)));
         if (!NBlankable.isBlank(prompt)) {
             task.addHistory(NaruMessage.user(prompt));
         }
@@ -88,27 +100,70 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             response = task.chat(task.model(),
                     task.context(NaruSource.values())
             );
-            task.frame().lastResult(NaruStmtResult.ofSuccess(response.getMessage()==null?"":response.getMessage().getContent()));
+            task.frame().lastResult(NaruStmtResult.ofSuccess(
+                    NElement.of(response.getMessage()==null?"":response.getMessage().getFilteredContent())
+
+            ));
         } catch (Exception e) {
             String err = "ERROR calling model: " + e.getMessage();
-            task.log(NaruLogMode.PROGRESS, NMsg.ofC("%s", err).asError());
+            // Reported, not swallowed. This branch ends the turn as if the model had
+            // answered nothing, and the exception never leaves this method, so a
+            // provider failure used to look exactly like a session that ignored the
+            // user. History is the record; the task's own log call is what makes a
+            // host see it while the turn is still running.
+            task.addHistory(NaruMessage.engine(NMsg.ofP(err).asError()));
             task.defaultAdvance(this);
-            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
-            NaruStmtResult.ofError(err);
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
             return;
         }
 
         NaruMessage assistantMsg = response.getMessage();
         if (assistantMsg == null) {
-            task.log(NaruLogMode.DEBUG, NMsg.ofC("Model returned empty response."));
+            task.addHistory(NaruMessage.engine(NMsg.ofC("Model returned empty response.")));
             task.defaultAdvance(this);
-            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
-            NaruStmtResult.ofSuccess("");
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
+            return;
+        }
+        // Interrupted (Ctrl+C) while this call was running: the stream stopped at
+        // its next event, so this is the answer cut where the user cut it. The
+        // turn ends here rather than starting a tool round from a call the user
+        // stopped -- and ending the turn normally, not by killing the task, is
+        // what brings the prompt back with the task still alive.
+        if (task.isInterruptRequested()) {
+            if (assistantMsg.hasToolCalls()) {
+                // A tool_calls entry with no results after it cannot be sent to
+                // the provider on the next request: the history would be rejected
+                // for every later turn of this task. The half-started round is
+                // dropped for the same reason a partial answer is kept -- neither
+                // is a thing the model ever finished saying.
+                task.addHistory(NaruMessage.engine(NMsg.ofC(
+                        "%s Interrupted before the tool call completed; discarding it.",
+                        NMsg.ofStyledPrimary8("⏹")).asError()));
+            } else {
+                task.addHistory(assistantMsg);
+                task.addHistory(NaruMessage.engine(NMsg.ofC(
+                        "%s Interrupted.", NMsg.ofStyledPrimary8("⏹")).asError()));
+                task.setLastResult(assistantMsg);
+            }
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
+            task.defaultAdvance(this);
             return;
         }
         task.addHistory(assistantMsg);
         // ── Case 1: model wants to call tools ─────────────────────────────
         if (assistantMsg.hasToolCalls()) {
+            // A stalled loop costs a provider request and a transcript card per round. Bounding it
+            // by round count alone lets a model spend the whole budget re-asking for the same call.
+            if (repeatsLastToolRound(task)) {
+                task.addHistory(NaruMessage.engine(NMsg.ofC(
+                        "%s The model repeated its previous tool call unchanged; ending this turn.",
+                        NMsg.ofStyledPrimary8("⏹")).asWarning()));
+                reportSilentTurn(task, assistantMsg);
+                task.setLastResult(assistantMsg);
+                task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
+                task.defaultAdvance(this);
+                return;
+            }
             // Guarantee termination: the agent loop must stop after maxSteps
             // tool-call rounds regardless of the model behaviour, otherwise a model
             // that keeps returning tool_calls would loop forever and the session
@@ -125,16 +180,17 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             int rounds = task.getTaskEnv(TOOL_CALL_ROUNDS_KEY, false)
                     .map(x -> NLiteral.ofInt(x).orElse(0))
                     .orElse(0) + 1;
-            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, rounds);
+            task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(rounds));
             if (rounds >= maxSteps) {
-                task.log(NaruLogMode.PROGRESS, NMsg.ofC(
-                        "Reached max tool-call rounds (%s); ending agent loop.", maxSteps));
-                reportAnswer(task, assistantMsg);
+                task.addHistory(NaruMessage.engine(NMsg.ofC(
+                        "Reached max tool-call rounds (%s); ending agent loop.", maxSteps).asWarning()));
+                reportSilentTurn(task, assistantMsg);
                 task.setLastResult(assistantMsg);
-                task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
+                task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
                 task.defaultAdvance(this);
                 return;
             }
+            task.setTaskEnv(EMPTY_REPLIES_KEY, NElement.of(0));
             List<NaruToolCall> toolCalls = assistantMsg.getToolCalls();
             task.pushFrame(null,false);
             for (NaruToolCall c : toolCalls) {
@@ -142,13 +198,32 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             }
             task.addStatement(NaruStatementHelper.ofModelCall(null));
             task.addStatement(new NaruReturnStmt((String)null));
-            reportAnswer(task, assistantMsg);
             task.defaultAdvance(this);
             return;
         }
-        reportAnswer(task, assistantMsg);
+        // ── Case 2: the model said nothing at all ────────────────────────
+        // No text and no tool call is not an answer: it is what remains when a tool call
+        // could not be parsed (the parse error is already in history) or when a reasoning
+        // model spent its turn thinking. Ending the turn here left the user, or an
+        // assessment run, with a task that stopped without touching anything. Tell the
+        // model and give it another go, a bounded number of times.
+        int emptyReplies = task.getTaskEnv(EMPTY_REPLIES_KEY, false)
+                .map(x -> NLiteral.ofInt(x).orElse(0))
+                .orElse(0);
+        if (NBlankable.isBlank(assistantMsg.getFilteredContent()) && emptyReplies < MAX_EMPTY_RETRIES) {
+            task.setTaskEnv(EMPTY_REPLIES_KEY, NElement.of(emptyReplies + 1));
+            task.addHistory(NaruMessage.engine(NMsg.ofC(
+                    "Your last reply was empty, or its tool call could not be read. "
+                            + "Reply with a valid tool call or with your final answer.").asWarning()));
+            task.pushFrame(null, false);
+            task.addStatement(NaruStatementHelper.ofModelCall(null));
+            task.addStatement(new NaruReturnStmt((String) null));
+            task.defaultAdvance(this);
+            return;
+        }
+        task.setTaskEnv(EMPTY_REPLIES_KEY, NElement.of(0));
         task.setLastResult(assistantMsg);
-        task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, 0);
+        task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
         task.defaultAdvance(this);
     }
 
@@ -181,24 +256,68 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             try {
                 extension.beforeModelRequest(task);
             } catch (Exception e) {
-                task.log(NaruLogMode.DEBUG, NMsg.ofC(
+                task.addHistory(NaruMessage.engine(NMsg.ofC(
                         "session extension '%s' failed before the model request: %s",
-                        extension.name(), e.getMessage()).asError());
+                        extension.name(), e.getMessage()).asError()));
             }
         }
     }
 
     /**
-     * Shows the model's answer, unless {@link NaruTask#chat} already drew it live as it
-     * arrived. Printing it again after a stream would show the user the same words
-     * twice: once token by token, then once whole.
+     * Say so when a turn ends with the model having asked for tools instead of answering.
+     *
+     * <p>Without this the user's last visible line is whatever the transcript held before they
+     * typed, which reads as though the message was never delivered — the usual complaint against
+     * a small local model that only emits {@code tool_calls} and no text at all.
      */
-    private static void reportAnswer(NaruTask task, NaruMessage assistantMsg) {
-        if (task.isResponseStreamed()) {
+    private static void reportSilentTurn(NaruTask task, NaruMessage assistantMsg) {
+        if (!NBlankable.isBlank(assistantMsg.getContent()) || task.isResponseStreamed()) {
             return;
         }
-        if (!NBlankable.isBlank(assistantMsg.getContent())) {
-            task.log(NaruLogMode.MODEL_RESPONSE, NMsg.ofC("%s", assistantMsg.getContent()));
+        task.addHistory(NaruMessage.engine(NMsg.ofC(
+                "%s This turn ended in tool calls without an answer. Ask again, or turn off the"
+                        + " tools the model keeps calling (/tools, /tag).",
+                NMsg.ofStyledPrimary8("⚠")).asWarning()));
+    }
+
+    /**
+     * True when the round about to run repeats the previous assistant tool round exactly.
+     *
+     * <p>A small local model can call {@code think}, read the {@code ok} that comes back and ask
+     * for the same call again, unchanged, until the round budget runs out — every round costing a
+     * provider request. Nothing in a tool result persuades it to stop, so the loop is bounded by
+     * noticing the repetition instead. Text is part of the comparison: a model that repeats a call
+     * while saying something new is still working, not stalled.
+     */
+    private static boolean repeatsLastToolRound(NaruTask task) {
+        List<NaruMessage> h = task.history();
+        String previous = null;
+        for (int i = h.size() - 1; i >= 0 && i >= h.size() - 24; i--) {
+            NaruMessage m = h.get(i);
+            if (m.getRole() == NaruRole.user) {
+                // the prompt that started this turn: earlier rounds belong to another turn, where
+                // the same call with the same arguments is not a stall but a repeat request.
+                return false;
+            }
+            if (m.getRole() != NaruRole.assistant || !m.hasToolCalls()) {
+                continue;
+            }
+            String s = roundSignature(m);
+            if (previous == null) {
+                previous = s;
+                continue;
+            }
+            return previous.equals(s);
         }
+        return false;
+    }
+
+    /** Call ids are provider-generated and not stable between rounds, so they are left out. */
+    private static String roundSignature(NaruMessage m) {
+        StringBuilder sb = new StringBuilder(String.valueOf(m.getContent()));
+        for (NaruToolCall c : m.getToolCalls()) {
+            sb.append('|').append(c.getName()).append('=').append(c.getArguments());
+        }
+        return sb.toString();
     }
 }

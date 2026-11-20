@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.scheduler;
 
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.util.NaruExprs;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.expr.*;
 import net.thevpc.nuts.text.NMsg;
@@ -93,11 +94,7 @@ public class NaruEventFilters {
         if (NBlankable.isBlank(tasks)) {
             return NOptional.of(ALWAYS);
         }
-        NExprNode n = NExprContextBuilder
-                .of()
-                .declareBuiltins()
-                .build()
-                .parse(tasks).get();
+        NExprNode n = NaruExprs.parse(tasks);
         if(NBlankable.isBlank(implicitEventName)){
             return parseNode(n,task,NRef.of());
         }else{

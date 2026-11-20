@@ -2,15 +2,20 @@ package net.thevpc.naru.impl.registry;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.access.*;
 import net.thevpc.naru.api.context.NaruContextCompactor;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.*;
+import net.thevpc.naru.impl.config.NaruCoreConfigKeyProvider;
+import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.ia.mode.NaruModeRegistry;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NPairElement;
-import net.thevpc.nuts.ext.NExtensions;
+import net.thevpc.nuts.ext.NServiceLoader;
+import net.thevpc.nuts.reflect.NClassLoader;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.*;
 
@@ -38,21 +43,41 @@ public class NaruRegistryImpl implements NaruRegistry {
     private final Map<String, NaruModelProvider> modelProviders = new HashMap<>();
     private final List<NaruSessionExtension> sessionExtensions = new ArrayList<>();
     private final List<NaruContextCompactor> compactors = new ArrayList<>();
+    private final Map<String, NaruConfigKeyProvider> configKeyProviders = new LinkedHashMap<>();
     private final NaruModeRegistry modeRegistry = new NaruModeRegistry();
     private final NaruSession session;
     private final Predicate<NaruDirective> directiveFilter;
     private final Predicate<NaruTool> toolFilter;
     private final Predicate<NaruToolTag> tagFilter;
+    private final NaruModelFilter modelFilter;
+    private final NClassLoader classLoader;
+
+//    public NaruRegistryImpl(NaruSession session
+//            , Predicate<NaruDirective> directiveFilter
+//            , Predicate<NaruTool> toolFilter
+//            , Predicate<NaruToolTag> tagFilter
+//    ) {
+//        this(session, directiveFilter, toolFilter, tagFilter, null);
+//    }
 
     public NaruRegistryImpl(NaruSession session
-            ,Predicate<NaruDirective> directiveFilter
-            ,Predicate<NaruTool> toolFilter
-            ,Predicate<NaruToolTag> tagFilter
+            , Predicate<NaruDirective> directiveFilter
+            , Predicate<NaruTool> toolFilter
+            , Predicate<NaruToolTag> tagFilter
+            , NaruModelFilter modelFilter,
+                            NClassLoader classLoader
     ) {
         this.session = session;
         this.directiveFilter = directiveFilter;
         this.toolFilter = toolFilter;
         this.tagFilter = tagFilter;
+        this.modelFilter = modelFilter;
+        this.classLoader = classLoader;
+    }
+
+    @Override
+    public NaruModelFilter modelFilter() {
+        return modelFilter;
     }
 
     @Override
@@ -150,17 +175,6 @@ public class NaruRegistryImpl implements NaruRegistry {
         return this;
     }
 
-    public void openToolsets() {
-        try {
-            for (NaruToolset toolset : activeToolsets) {
-                openToolset(toolset);
-            }
-        } catch (RuntimeException | Error ex) {
-            closeToolsets();
-            throw ex;
-        }
-    }
-
     private void openToolset(NaruToolset toolset) {
         if (openedToolsets.add(toolset)) {
             try {
@@ -180,8 +194,10 @@ public class NaruRegistryImpl implements NaruRegistry {
     public NOptional<NaruTool> findTool(String name) {
         for (NaruToolset a : activeToolsets) {
             for (NaruTool tool : a.tools()) {
-                if (tool.name().equals(name)) {
-                    return NOptional.of(tool);
+                if (toolFilter == null || toolFilter.test(tool)) {
+                    if (tool.name().equals(name)) {
+                        return NOptional.of(tool);
+                    }
                 }
             }
         }
@@ -192,10 +208,51 @@ public class NaruRegistryImpl implements NaruRegistry {
         Map<String, NaruTool> all = new LinkedHashMap<>();
         for (NaruToolset a : activeToolsets) {
             for (NaruTool tool : a.tools()) {
-                all.put(tool.name(), tool);
+                if (toolFilter == null || toolFilter.test(tool)) {
+                    all.put(tool.name(), tool);
+                }
             }
         }
         return all;
+    }
+
+    @Override
+    public List<NaruToolset> toolsets() {
+        return List.copyOf(activeToolsets);
+    }
+
+    /**
+     * Opens every toolset not opened yet. A toolset that fails to open is closed again, and so
+     * is everything opened before it, so a session that cannot start holds no live resources.
+     */
+    @Override
+    public void openToolsets() {
+        try {
+            for (NaruToolset toolset : activeToolsets) {
+                openToolset(toolset);
+            }
+        } catch (RuntimeException | Error ex) {
+            closeToolsets();
+            throw ex;
+        }
+    }
+
+    /**
+     * Closes the toolsets this registry opened, and only those: a toolset that was never opened
+     * has nothing to release. A failing close is reported rather than swallowed.
+     */
+    @Override
+    public void closeToolsets() {
+        for (NaruToolset toolset : activeToolsets) {
+            if (openedToolsets.remove(toolset)) {
+                try {
+                    toolset.close();
+                } catch (Exception ex) {
+                    session.log(NaruLogMode.SCRIPT, NMsg.ofC(
+                            "toolset '%s' failed to close: %s", toolset.id(), ex.getMessage()).asError());
+                }
+            }
+        }
     }
 
     public Map<String, NaruDirective> directives() {
@@ -204,11 +261,11 @@ public class NaruRegistryImpl implements NaruRegistry {
 
 
     private NaruRegistry registerDirective(NaruDirective directive) {
-        if(directive==null){
+        if (directive == null) {
             return this;
         }
         if (directiveFilter != null) {
-            if(!directiveFilter.test(directive)) {
+            if (!directiveFilter.test(directive)) {
                 return this;
             }
         }
@@ -225,7 +282,7 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     private NaruRegistry registerToolTag(NaruToolTag tool) {
         if (tagFilter != null) {
-            if(!tagFilter.test(tool)) {
+            if (!tagFilter.test(tool)) {
                 return this;
             }
         }
@@ -244,6 +301,46 @@ public class NaruRegistryImpl implements NaruRegistry {
         return this;
     }
 
+    @Override
+    public NaruRegistry registerConfigKeyProvider(NaruConfigKeyProvider configKeyProvider) {
+        String n = configKeyProvider.name();
+        if (configKeyProviders.containsKey(n)) {
+            throw new IllegalArgumentException("config key provider " + n + " already registered");
+        }
+        configKeyProviders.put(n, configKeyProvider);
+        return this;
+    }
+
+    /**
+     * Every key the registered providers declare for this session, sorted by key.
+     *
+     * <p>Aggregated on demand because the surface is per-session (dynamic keys
+     * such as {@code model.qwen.readTimeout} follow what the session knows).
+     * Duplicate keys keep the first declaration, which is the one the {@code /settings}
+     * listing shows; a provider that throws is skipped so a broken extension may not
+     * break completion.
+     */
+    @Override
+    public List<NaruConfigKey> configKeys() {
+        TreeMap<String, NaruConfigKey> byKey = new TreeMap<>();
+        for (NaruConfigKeyProvider provider : configKeyProviders.values()) {
+            try {
+                List<NaruConfigKey> keys = provider.configKeys(session);
+                if (keys != null) {
+                    for (NaruConfigKey key : keys) {
+                        if (key != null && !byKey.containsKey(key.key())) {
+                            byKey.put(key.key(), key);
+                        }
+                    }
+                }
+            } catch (RuntimeException e) {
+                session.log(NaruLogMode.DEBUG, NMsg.ofC(
+                        "config-key provider '%s' failed: %s", provider.name(), e.getMessage()));
+            }
+        }
+        return new ArrayList<>(byKey.values());
+    }
+
     public Map<String, NaruModelProvider> modelProviders() {
         return modelProviders;
     }
@@ -259,13 +356,30 @@ public class NaruRegistryImpl implements NaruRegistry {
             if (p == null) {
                 continue;
             }
-            NaruModelCapabilities c = p.getProtocol(new NaruModelConfig(
-                    p.name(),
-                    k.model()
-            ), session).get().getCapabilities();
-            a.add(new NaruModelInfo(p.name(), k.model(), c));
+            a.add(describe(p, k, session));
         }
         return a;
+    }
+
+    /**
+     * The catalog row for one key, or a capability-less row when the provider cannot
+     * describe it.
+     *
+     * <p>Capabilities are listing metadata, so losing them costs one row; letting the throw
+     * escape costs the whole catalog and desynchronises the displayed order from the
+     * positional indexes the host just printed. It is not necessarily a provider fault
+     * either: a host that mixes live {@code nuts-api} classes with a cached {@code nuts-runtime}
+     * jar reaches this through an {@link AbstractMethodError}, which is an {@code Error} and
+     * so walks straight past a {@code catch (RuntimeException)}.
+     */
+    private NaruModelInfo describe(NaruModelProvider p, NaruModelKey k, NaruSession session) {
+        try {
+            NaruModelProtocol protocol = p.getProtocol(new NaruModelConfig(p.name(), k.model()), session).orNull();
+            return p.getModelInfo(k.model(), protocol == null ? null : protocol.getCapabilities(), session);
+        } catch (Throwable t) {
+            session.log(NaruLogMode.DEBUG, NMsg.ofC("could not describe %s : %s", k, t));
+            return new NaruModelInfo(k.provider(), k.model(), null);
+        }
     }
 
     @Override
@@ -299,7 +413,13 @@ public class NaruRegistryImpl implements NaruRegistry {
             }
             for (String m : ids) {
                 if (!NBlankable.isBlank(m)) {
-                    set.add(new NaruModelKey(p.name(), m));
+                    NaruModelKey k = new NaruModelKey(p.name(), m);
+                    // the catalog is enumerated outside any task, so the filter sees a
+                    // null task here: a denied model never reaches a listing, a
+                    // positional index, a '/model use' resolution or best-fit selection
+                    if (isModelAllowed(k, null)) {
+                        set.add(k);
+                    }
                 }
             }
         }
@@ -362,11 +482,23 @@ public class NaruRegistryImpl implements NaruRegistry {
      * @throws IllegalArgumentException if the tool name is unknown
      */
     @Override
-    public String dispatch(String name, Map<String, Object> arguments, NaruTask task) {
+    public String dispatch(String name, Map<String, NElement> arguments, NaruTask task) {
 
         NaruTool tool = findTool(name).orNull();
         if (tool == null) {
             return "ERROR: Unknown tool '" + name + "'. Available tools: " + tools().keySet().stream().sorted().collect(Collectors.joining(", "));
+        }
+        // Central tool gate: the same check every domain makes, resolved against the
+        // actor in effect for the statement that requested this call. An empty policy
+        // (the default) allows, so this adds a choke point without changing behaviour.
+        NaruResource resource = NaruResource.tool(tool.name(), tool.tags());
+        NaruAccessDecision access = NaruAccessGuard.check(task, resource, NaruAction.CALL);
+        if (!access.allowed()) {
+            String deny = NaruAccessGuard.denyMessage(task, resource, NaruAction.CALL, access);
+            if (task != null) {
+                task.addHistory(NaruMessage.engine(NMsg.ofC(deny).asError()));
+            }
+            return deny;
         }
         try {
             return tool.execute(new NaruToolCallContextImpl(arguments, task));
@@ -393,10 +525,10 @@ public class NaruRegistryImpl implements NaruRegistry {
     public void dispatchSlash(String name, String argument, NaruTask task) {
         NaruDirective dir = findDirective(name).orNull();
         if (dir == null) {
-            task.log(NaruLogMode.TRACE, NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + availableDirectives.keySet()).asError());
+            task.addHistory(NaruMessage.engine(NMsg.ofC("ERROR: Unknown tool '" + name + "'. Available tools: " + availableDirectives.keySet()).asError()));
             return;
         }
-        task.invokeDirective(dir,new NaruDirectiveCallContextImpl(name, argument, task));
+        task.invokeDirective(dir, new NaruDirectiveCallContextImpl(name, argument, task));
     }
 
     /**
@@ -436,7 +568,7 @@ public class NaruRegistryImpl implements NaruRegistry {
 
     @Override
     public NOptional<NaruToolTag> findAvailableTag(String name) {
-                return NOptional.ofNamed(availableToolTags.get(NNameFormat.LOWER_KEBAB_CASE.format(name)), name);
+        return NOptional.ofNamed(availableToolTags.get(NNameFormat.LOWER_KEBAB_CASE.format(name)), name);
     }
 
     @Override
@@ -476,42 +608,58 @@ public class NaruRegistryImpl implements NaruRegistry {
         }
     }
 
-    public void closeToolsets() {
-        for (NaruToolset toolset : activeToolsets) {
-            if (openedToolsets.remove(toolset)) {
-                try {
-                    toolset.close();
-                } catch (Exception ex) {
-                    session.log(NaruLogMode.SCRIPT, NMsg.ofC(
-                            "toolset '%s' failed to close: %s", toolset.id(), ex.getMessage()).asError());
-                }
+    /**
+     * {@inheritDoc}
+     *
+     * <p>The instance is kept like a discovered one and is brought up immediately, so an
+     * extension with durable state sees what it saved under this session rather than
+     * starting from nothing.
+     */
+    @Override
+    public NaruRegistry registerSessionExtension(NaruSessionExtension extension) {
+        if (extension == null) {
+            return this;
+        }
+        for (NaruSessionExtension e : sessionExtensions) {
+            if (e.name().equals(extension.name())) {
+                return this;
             }
         }
+        sessionExtensions.add(extension);
+        sessionExtensions.sort(Comparator.comparingInt(NaruSessionExtension::order));
+        if (session instanceof NaruSessionImpl) {
+            ((NaruSessionImpl) session).openSessionExtension(extension);
+        }
+        return this;
     }
 
     public NaruRegistry registerDefaults() {
         this.registerToolsetProvider(new NaruBuiltinToolsetProvider());
         this.registerDirectiveProvider(new NaruBuiltinDirectiveProvider());
         this.registerToolTagProvider(new NaruBuiltinToolTagProvider());
-        for (NaruToolTagProvider provider : NExtensions.of().createAllSupported(NaruToolTagProvider.class, null)) {
+        this.registerConfigKeyProvider(new NaruCoreConfigKeyProvider());
+        for (NaruToolTagProvider provider : loadServices(NaruToolTagProvider.class)) {
             this.registerToolTagProvider(provider);
         }
-        for (NaruToolsetProvider provider : NExtensions.of().createAllSupported(NaruToolsetProvider.class, null)) {
+        for (NaruToolsetProvider provider : loadServices(NaruToolsetProvider.class)) {
             this.registerToolsetProvider(provider);
         }
-        for (NaruDirectiveProvider provider : NExtensions.of().createAllSupported(NaruDirectiveProvider.class, null)) {
+        for (NaruDirectiveProvider provider : loadServices(NaruDirectiveProvider.class)) {
             this.registerDirectiveProvider(provider);
         }
-        for (NaruModelProvider provider : NExtensions.of().createAllSupported(NaruModelProvider.class, null)) {
+        for (NaruModelProvider provider : loadServices(NaruModelProvider.class)) {
             this.registerModelProvider(provider);
         }
-        for (NaruPromptMode mode : NExtensions.of().createAllSupported(NaruPromptMode.class, null)) {
+        for (NaruConfigKeyProvider provider : loadServices(NaruConfigKeyProvider.class)) {
+            this.registerConfigKeyProvider(provider);
+        }
+        for (NaruPromptMode mode : loadServices(NaruPromptMode.class)) {
             this.declareMode(mode);
         }
         // Unlike the loops above, these instances are retained: a session extension owns
         // mutable per-session state, so the very same object has to answer the prompt,
         // load and save hooks. Creating them per-lookup would silently split the state.
-        for (NaruSessionExtension extension : NExtensions.of().createAllSupported(NaruSessionExtension.class, null)) {
+        for (NaruSessionExtension extension : loadServices(NaruSessionExtension.class)) {
             if (sessionExtensions.stream().anyMatch(x -> x.name().equals(extension.name()))) {
                 continue;
             }
@@ -522,7 +670,7 @@ public class NaruRegistryImpl implements NaruRegistry {
         // extensions they are resolved per lookup rather than retained. That keeps a
         // compactor free of session state it would otherwise be tempted to cache, which is
         // what lets one instance serve sibling tasks concurrently.
-        for (NaruContextCompactor compactor : NExtensions.of().createAllSupported(NaruContextCompactor.class, null)) {
+        for (NaruContextCompactor compactor : loadServices(NaruContextCompactor.class)) {
             if (!compactors.isEmpty()) {
                 // first discovered wins, matching the registration order of every other SPI
                 // here: a second compactor on the classpath would otherwise silently
@@ -532,6 +680,10 @@ public class NaruRegistryImpl implements NaruRegistry {
             compactors.add(compactor);
         }
         return this;
+    }
+
+    private <T> List<T> loadServices(Class<T> zz) {
+        return NServiceLoader.of(zz, null, classLoader.asClassLoader()).loadAll(null);
     }
 
     @Override

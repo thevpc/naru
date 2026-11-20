@@ -1,0 +1,282 @@
+package net.thevpc.naru.desktop;
+
+import net.thevpc.nuts.Nuts;
+import net.thevpc.naru.api.agent.NaruWorkspace;
+import net.thevpc.naru.api.agent.NaruWorkspaceBuilder;
+import net.thevpc.naru.desktop.ui.Typefaces;
+import net.thevpc.nuts.app.NApp;
+import net.thevpc.nuts.app.NAppRun;
+import net.thevpc.nuts.app.NApplication;
+import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.platform.NEnv;
+import net.thevpc.nuts.swing.NSwingUtils;
+import com.formdev.flatlaf.FlatLaf;
+
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import java.awt.Insets;
+import java.util.Map;
+import java.util.prefs.Preferences;
+
+/**
+ * Launches the desktop cockpit.
+ * <p>
+ * Two rules from the plan govern this entry point. {@code prepareUI(args)} comes first, before any
+ * frame exists, because HiDPI and font scaling cannot be retrofitted onto a built component tree.
+ * The desktop owns one shared workspace for its lifetime. Each session still selects its own
+ * project directory when it is created, while sharing the one extension registry and runtime.
+ * <p>
+ * Full packaging — {@code @NAppInstall} launchers, {@code -c/--console} escape, splash,
+ * single-instance guard — is Phase 5. This is the smallest thing that runs the v1 UI.
+ */
+@NApp
+public final class NaruDesktop {
+    private static final String DEFAULT_THEME = "com.formdev.flatlaf.FlatLightLaf";
+    private static final String THEME_KEY = "lookAndFeelClass";
+    private static final String FONT_SCALE_KEY = "desktop.fontScale";
+    private static final String LAST_PROJECT_KEY = "desktop.lastProjectDirectory";
+    private static java.awt.Font themeBaseFont;
+    private static volatile NaruWorkspace workspace;
+
+    public NaruDesktop() {
+    }
+
+    /**
+     * Return the single engine workspace owned by this desktop process.
+     */
+    public static NaruWorkspace workspace(NPath initialProjectDirectory) {
+        NaruWorkspace current = workspace;
+        if (current != null) return current;
+        synchronized (NaruDesktop.class) {
+            current = workspace;
+            if (current == null) {
+                workspace = current = NaruWorkspaceBuilder.of()
+                        .projectDirectory(initialProjectDirectory)
+                        .build();
+            }
+        }
+        return current;
+    }
+
+    public static void main(String[] args) {
+        NSwingUtils.prepareUI(args);
+        NApplication.builder(args).run();
+    }
+
+    @NAppRun
+    public void run() {
+        NSwingUtils.setSharedWorkspaceInstance();
+        for (Map.Entry<String, String> e : System.getenv().entrySet()) {
+            if (e.getKey().toLowerCase().contains("api_key")) {
+                System.out.println(e.getKey() + "=" + e.getValue());
+            }
+        }
+        for (Map.Entry<String, String> e : NEnv.of().env().entrySet()) {
+            if (e.getKey().toLowerCase().contains("api_key")) {
+                System.out.println(e.getKey() + "=" + e.getValue());
+            }
+        }
+        NApplication app = NApplication.of();
+        // the workspace must exist before prepareUI resolves anything through Nuts
+        applyTheme(preferences().get(THEME_KEY, DEFAULT_THEME), false);
+        NPath project = parseProject(app.cmdLine().toStringArray());
+        String openSession = parseSession(app.cmdLine().toStringArray());
+        SwingUtilities.invokeLater(() -> {
+            MainWindow w = new MainWindow();
+            w.setSize(1280, 800);
+            w.setLocationRelativeTo(null);
+            w.setVisible(true);
+            initializeFontScale(w);
+            String rememberedProject = preferences().get(LAST_PROJECT_KEY, null);
+            NPath startupProject = project != null ? project
+                    : rememberedProject == null || rememberedProject.isBlank()
+                    ? NPath.of(System.getProperty("user.dir", ".")).toAbsolute()
+                    : NPath.of(rememberedProject).toAbsolute();
+            // set before the catalog is listed: the reopen is a request about the listing that
+            // has not finished yet, not an action the window can take afterwards
+            w.openSessionWhenCatalogLoads(openSession);
+            w.loadProjectCatalog(startupProject);
+        });
+    }
+
+    /**
+     * The session to reopen at startup, from {@code --session <uuid>} / {@code -s <uuid>}, or null.
+     * The same flag the cmdline REPL takes, so one saved conversation can be picked up in either host.
+     */
+    private static String parseSession(String[] args) {
+        for (int i = 0; i < args.length; i++) {
+            if (("--session".equals(args[i]) || "-s".equals(args[i])) && i + 1 < args.length) {
+                return args[i + 1];
+            }
+        }
+        return null;
+    }
+
+    public static void rememberProject(NPath project) {
+        if (project != null) preferences().put(LAST_PROJECT_KEY, project.toAbsolute().toString());
+    }
+
+    private static Preferences preferences() {
+        return Preferences.userNodeForPackage(NaruDesktop.class);
+    }
+
+    public static String selectedTheme() {
+        return preferences().get(THEME_KEY, DEFAULT_THEME);
+    }
+
+    /**
+     * Smallest / largest interface size the shortcut and the settings slider both allow.
+     */
+    public static final int MIN_FONT_SCALE = 50;
+    public static final int MAX_FONT_SCALE = 300;
+
+    public static int fontScale() {
+        return clampFontScale(preferences().getInt(FONT_SCALE_KEY, 100));
+    }
+
+    public static int clampFontScale(int percent) {
+        return Math.max(MIN_FONT_SCALE, Math.min(MAX_FONT_SCALE, percent));
+    }
+
+    /**
+     * Ask for a new interface size. The pass that applies one is the most expensive thing this app
+     * does — every HTML body in the conversation is measured again — so presses and slider drags are
+     * collected and run as one pass once the input goes quiet. The preference is written straight
+     * away, which is what lets the shortcut keep stepping up and down while a pass is pending.
+     */
+    public static void setFontScale(int percent) {
+        int value = clampFontScale(percent);
+        if (value == fontScale()) return;
+        preferences().putInt(FONT_SCALE_KEY, value);
+        if (fontScaleBatch == null) {
+            fontScaleBatch = new javax.swing.Timer(200, e -> applyFontScale());
+            fontScaleBatch.setRepeats(false);
+        }
+        fontScaleBatch.restart();
+    }
+
+    /**
+     * The size the windows on screen were last laid out for, or -1 before the first pass.
+     */
+    private static int appliedFontScale = -1;
+    private static javax.swing.Timer fontScaleBatch;
+
+    private static void applyFontScale() {
+        int value = fontScale();
+        if (value == appliedFontScale) return;
+        appliedFontScale = value;
+        if (themeBaseFont == null) themeBaseFont = UIManager.getFont("defaultFont");
+        // One write to the defaults: every write makes the look-and-feel refresh the whole tree.
+        applyScaledFontDefaults(value);
+        for (java.awt.Window window : java.awt.Window.getWindows()) {
+            SwingUtilities.updateComponentTreeUI(window);
+            applyLadderFonts(window);
+            syncFontScaleControl(window, value);
+            if (window instanceof MainWindow main) main.refreshThemePalette();
+            // No validate() here: laying out now would measure the bodies at the widths this pass is
+            // halfway through. Invalidating lets the paint that follows do it once, at the final size.
+            window.invalidate();
+            window.repaint();
+        }
+    }
+
+    public static void applyTheme(String className) {
+        applyTheme(className, true);
+    }
+
+    private static void applyTheme(String className, boolean persist) {
+        try {
+            // The app owns its typefaces: both are bundled, and FlatLaf must know the families
+            // *before* the look-and-feel is installed, because that is the pass that resolves the
+            // default UI font. This also covers a theme switch at runtime, not just startup.
+            Typefaces.install();
+            FlatLaf.setPreferredFontFamily(Typefaces.UI);
+            FlatLaf.setPreferredMonospacedFontFamily(Typefaces.MONO);
+            UIManager.setLookAndFeel(className);
+            themeBaseFont = UIManager.getFont("defaultFont");
+            if (themeBaseFont == null) themeBaseFont = UIManager.getFont("Label.font");
+            // Keep the platform themes intact, but give their common controls one shared, softer
+            // shape language. Content panels use spacing and surface tone for grouping; these arcs
+            // apply to the controls FlatLaf knows how to paint (buttons, fields, scrollbars, etc.).
+            // A smaller button radius keeps compact glyph-button hovers rounded rather than
+            // clamped into a disc, without depending on per-component FlatLaf style properties.
+            UIManager.put("Button.arc", 6);
+            UIManager.put("Component.arc", 14);
+            UIManager.put("TextComponent.arc", 12);
+            UIManager.put("ScrollBar.trackArc", 999);
+            UIManager.put("ScrollBar.thumbArc", 999);
+            UIManager.put("Button.margin", new Insets(4, 9, 4, 9));
+            UIManager.put("Component.focusWidth", 1);
+            applyScaledFontDefaults(100);
+            if (persist) preferences().put(THEME_KEY, className);
+            if (persist) for (java.awt.Window window : java.awt.Window.getWindows()) {
+                SwingUtilities.updateComponentTreeUI(window);
+                applyLadderFonts(window);
+                if (window instanceof MainWindow main) main.refreshThemePalette();
+                window.invalidate();
+                window.validate();
+                window.repaint();
+            }
+            applyScaledFontDefaults(fontScale());
+            appliedFontScale = fontScale();
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Could not apply theme " + className + ": " + ex.getMessage(), ex);
+        }
+    }
+
+    private static void applyScaledFontDefaults(int percent) {
+        if (themeBaseFont != null) {
+            // Rebuild from the bundled UI face rather than deriving the font the previous scale
+            // pass left in UIManager: deriving would also carry a stale family if a theme ever
+            // hands us one we do not ship.
+            UIManager.put("defaultFont", Typefaces.ui(themeBaseFont.getStyle(),
+                    themeBaseFont.getSize2D() * percent / 100f));
+        }
+    }
+
+    /**
+     * The theme's own font, before any interface size is applied to it.
+     */
+    public static java.awt.Font themeBaseFont() {
+        return themeBaseFont;
+    }
+
+    public static void initializeFontScale(java.awt.Component c) {
+        appliedFontScale = fontScale();
+        applyLadderFonts(c);
+    }
+
+    /**
+     * Re-resolve every component on the font ladder in this subtree.
+     * <p>
+     * Only ladder components are touched. Everything else takes its font from
+     * {@code UIManager.defaultFont}, which {@link #applyScaledFontDefaults} has already rewritten,
+     * so scaling it here as well would multiply the interface size into it a second time — which is
+     * exactly how the conversation used to grow faster than the rest of the window on every press of
+     * Ctrl+-.
+     */
+    public static void applyLadderFonts(java.awt.Component c) {
+        if (c instanceof javax.swing.JComponent j
+                && net.thevpc.naru.desktop.ui.UiFonts.isManaged(j)) {
+            j.setFont(net.thevpc.naru.desktop.ui.UiFonts.resolved(j));
+        }
+        if (c instanceof java.awt.Container p)
+            for (java.awt.Component child : p.getComponents()) applyLadderFonts(child);
+    }
+
+    private static void syncFontScaleControl(java.awt.Component c, int percent) {
+        if (c instanceof javax.swing.JSlider s && "naru-font-scale".equals(s.getName()) && s.getValue() != percent)
+            s.setValue(percent);
+        if (c instanceof java.awt.Container p)
+            for (java.awt.Component child : p.getComponents()) syncFontScaleControl(child, percent);
+    }
+
+    private static NPath parseProject(String[] args) {
+        for (int i = 0; i < args.length; i++) {
+            if (("--project".equals(args[i]) || "-d".equals(args[i])) && i + 1 < args.length) {
+                return NPath.of(args[i + 1]).toAbsolute();
+            }
+        }
+        return null;
+    }
+}

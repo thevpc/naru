@@ -1,23 +1,22 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
+import net.thevpc.naru.api.agent.NaruWorkspaceBuilder;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -48,37 +47,40 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class NaruTagGateTest {
 
-    private NaruAgent agent;
+    private NaruWorkspace agent;
     private NaruSession session;
+    private final List<NaruSession> extraSessions = new ArrayList<>();
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     @BeforeEach
     public void setUp() {
-        agent = new NaruAgentImpl();
-        agent.projectDirectory(NPath.ofTempFolder("naru-tag-gate"));
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), null, true,
-                NOOP_LISTENER, null, null, null);
+        agent = NaruWorkspaceBuilder.of()
+                .projectDirectory(NPath.ofTempFolder("naru-tag-gate"))
+                .build()
+        ;
+        session = agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(null)
+                .configureDefaults(true)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach
     public void tearDown() {
+        for (NaruSession s : extraSessions) {
+            try {
+                s.stop();
+            } catch (Exception ignored) {
+            }
+        }
+        extraSessions.clear();
         if (session != null) {
             try {
                 session.stop();
@@ -169,6 +171,106 @@ public class NaruTagGateTest {
         assertTrue(names.contains("file_read"), () -> "the fs tag was granted but fs tools are absent: " + names);
         assertFalse(names.contains("git_status"),
                 () -> "an ungranted tag's tools leaked in alongside a granted one: " + names);
+    }
+
+    // ── the second gate: a per-task ban by name, which no tag can express ────
+
+    @Test
+    public void exclusionHidesAToolWhoseTagIsGranted() {
+        NaruTask task = newTask();
+        task.addToolTag("fs");
+        assertTrue(toolNames(task).contains("file_read"));
+        task.addToolExclusion("file_read");
+        List<String> names = toolNames(task);
+        assertFalse(names.contains("file_read"),
+                () -> "file_read stayed offered after being excluded by name: " + names);
+        assertTrue(names.contains("file_write"),
+                () -> "excluding one tool hid its whole tag: " + names);
+        assertTrue(task.findToolExclusions().contains("file_read"));
+    }
+
+    @Test
+    public void removingAnExclusionBringsTheToolBack() {
+        NaruTask task = newTask();
+        task.addToolTag("fs");
+        task.addToolExclusion("file_read");
+        task.removeToolExclusion("file_read");
+        assertTrue(toolNames(task).contains("file_read"),
+                "the exclusion survived its own removal");
+        assertFalse(task.findToolExclusions().contains("file_read"));
+    }
+
+    /**
+     * The desktop's strip and tool list redraw on these callbacks, so a mutation that never
+     * announces itself leaves the UI showing a stale grant — the bug the delegate then swallowed.
+     */
+    @Test
+    public void tagAndExclusionMutationsNotifyTheSessionListener() {
+        List<String> fired = new ArrayList<>();
+        NaruTask task = newTaskWith(new RecordingListener(fired));
+        task.addToolTag("fs");
+        task.addToolTag("fs");
+        assertEquals(List.of("tags"), fired, "a repeated grant announced itself twice");
+        task.removeToolTag("fs");
+        assertEquals(List.of("tags", "tags"), fired);
+        task.addToolExclusion("file_read");
+        task.addToolExclusion("file_read");
+        assertEquals(List.of("tags", "tags", "exclusions"), fired,
+                "a repeated exclusion announced itself twice");
+        task.removeToolExclusion("file_read");
+        assertEquals(List.of("tags", "tags", "exclusions", "exclusions"), fired);
+    }
+
+    private NaruTask newTaskWith(NaruSessionListener listener) {
+        NaruWorkspace ws = NaruWorkspaceBuilder.of()
+                .projectDirectory(NPath.ofTempFolder("naru-tag-events"))
+                .build();
+        NaruSession s = ws.newSession()
+                .sessionDir(ws.projectDirectory())
+                .interaction(null)
+                .configureDefaults(true)
+                .sessionListener(listener)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
+        extraSessions.add(s);
+        return s.newTask(NaruTaskSpec.of());
+    }
+
+    /** Overrides only the two callbacks under test; every other event is swallowed. */
+    private static final class RecordingListener implements NaruSessionListener {
+        private final List<String> fired;
+
+        RecordingListener(List<String> fired) {
+            this.fired = fired;
+        }
+
+        @Override
+        public void onToolTagsChanged(NaruTask task) {
+            fired.add("tags");
+        }
+
+        @Override
+        public void onToolExclusionsChanged(NaruTask task) {
+            fired.add("exclusions");
+        }
+
+        @Override
+        public void onEventAppended(NaruEvent newEvent) {
+        }
+
+        @Override
+        public void sessionStarted(NaruSession s) {
+        }
+
+        @Override
+        public void sessionStopped(NaruSession s) {
+        }
+
+        @Override
+        public void onSessionReloaded(NaruSession s) {
+        }
     }
 
     private static final NaruSessionListener NOOP_LISTENER = new NaruSessionListener() {

@@ -1,0 +1,28 @@
+{
+  "run_id": "naru_qwen3.8_32k_t1_0",
+  "agent": "naru",
+  "agent_version": "a47daf5",
+  "model": "qwen3.8:32k",
+  "task": "t1",
+  "run_index": 0,
+  "pass": true,
+  "accept_output": "PASS",
+  "wall_s": 457.989,
+  "exit_code": 0,
+  "hit_cap": false,
+  "requests_main": 3,
+  "requests_title": 0,
+  "requests_other": 0,
+  "prompt_tokens": 8058,
+  "completion_tokens": 360,
+  "reasoning_tokens": 0,
+  "cached_prompt_tokens": 0,
+  "peak_prompt_tokens_single_request": 2782,
+  "tool_calls_by_name": {
+    "run_shell": 1,
+    "file_write": 1
+  },
+  "request_bytes_total": 46214,
+  "files_changed": 2,
+  "final_text": "Done. Found 4 TODO comments in 3 files under src/:\n\n```\n4\nsrc/main.py        (2 TODOs)\nsrc/sub/worker.py  (1 TODO)\nsrc/utils.py       (1 TODO)\n```\n\nWritten to `todo-report.txt` with the count first and sorted relative file paths below."
+}

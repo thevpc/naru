@@ -7,6 +7,9 @@ import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * The on-disk configuration store: two files, one per visibility.
  *
@@ -71,5 +74,25 @@ public class NaruProjectEnv implements NaruEnv {
                 break;
             }
         }
+    }
+
+    @Override
+    public Map<String, NElement> entries() {
+        // public first, then private, so a key held in both shows the private value
+        Map<String, NElement> out = new LinkedHashMap<>(projectPublicEnv.toMap());
+        out.putAll(projectPrivateEnv.toMap());
+        return out;
+    }
+
+    @Override
+    public Map<String, NElement> entries(NaruVisibility visibility) {
+        if (visibility == null || visibility == NaruVisibility.MIXED) {
+            return entries();
+        }
+        // one file, un-merged: a listing that has to say which file a key lives in cannot
+        // be built from entries(), which silently drops the loser of a private/public pair
+        return new LinkedHashMap<>(visibility == NaruVisibility.PUBLIC
+                ? projectPublicEnv.toMap()
+                : projectPrivateEnv.toMap());
     }
 }

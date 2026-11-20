@@ -1,5 +1,8 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.naru.api.agent.NaruRole;
+import net.thevpc.nuts.text.NMsg;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -62,6 +65,10 @@ public final class NaruContextViews {
             if (m == null) {
                 continue;
             }
+            // Engine and directive messages are internal, never sent to the model.
+            if (m.getRole() == NaruRole.engine || m.getRole() == NaruRole.directive) {
+                continue;
+            }
             if (m.isSummary()) {
                 if (m.isActiveSummary()) {
                     out.add(m);
@@ -121,7 +128,8 @@ public final class NaruContextViews {
         List<NaruMessage> out = new ArrayList<>(view.size());
         for (NaruMessage m : view) {
             if (m.isSummary()) {
-                out.add(m.copy().withContent(renderSummary(m)));
+                String s = renderSummary(m);
+                out.add(m.copy().withContent(s==null?null: NMsg.ofP(s)));
             } else {
                 out.add(m);
             }

@@ -1,15 +1,21 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NaruAgent;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionBuilder;
+import net.thevpc.naru.api.agent.*;
+import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.model.NaruModelFilter;
+import net.thevpc.naru.api.store.NaruSessionScope;
+import net.thevpc.naru.api.store.NaruSessionStore;
 import net.thevpc.naru.api.scheduler.NaruTaskMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.access.NaruActor;
+import net.thevpc.naru.api.access.NaruPrincipal;
 import net.thevpc.naru.api.util.NaruTerminalFormatter;
 import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
 import net.thevpc.naru.impl.interaction.NaruTerminalInteraction;
@@ -22,6 +28,9 @@ import net.thevpc.nuts.text.NMsg;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Predicate;
 
 /**
@@ -29,22 +38,207 @@ import java.util.function.Predicate;
  */
 class NaruSessionBuilderImpl implements NaruSessionBuilder {
 
-    private final NaruAgentImpl agent;
-    private NPath directory;
+    private final NaruWorkspaceImpl agent;
+    private NPath sessionDir;
     private NaruInteraction interaction;
     private NaruTaskSpec task;
     private boolean interactive;
     private boolean banner;
     private NMsg bannerMessage;
     private boolean richTerm;
+    private String id;
+    private NaruSessionStore store;
+    private NaruSessionScope scope = NaruSessionScope.PRIVATE;
+    private NaruInputBlockPolicy inputBlockPolicy = NaruInputBlockPolicy.HIBERNATE;
+    private Duration hibernateAfter = Duration.ZERO;
+    private boolean streaming = true;
+    private NaruBusyPolicy busyPolicy = NaruBusyPolicy.REJECT;
+    private NaruTurnEventListener turnListener;
+    private int maxLiveSessions = Integer.MAX_VALUE;
+    private boolean checkpointEachMessage = true;
+    private Duration capacityTimeout = Duration.ofSeconds(30);
+    /**
+     * Owner of the session; null means "the OS user", resolved by the session.
+     */
+    private NaruPrincipal user;
+    /**
+     * Owner already bound as an actor; takes precedence over {@link #user}.
+     */
+    private NaruActor userActor;
+    /**
+     * Project reference (id or name) resolved at build time; supplies initial values only.
+     */
+    private String projectRef;
+    /**
+     * The opaque user string to persist with a newly created session.
+     */
+    private String userSeed;
 
-    NaruSessionBuilderImpl(NaruAgentImpl agent) {
+    /**
+     * A name the host chose at creation, or null to let the session carry a placeholder.
+     * Normalized now, because a host that passes an empty name is told at build time rather
+     * than after the session directory exists.
+     */
+    private String sessionName;
+
+
+
+    private NaruSessionListener sessionListener;
+
+    private boolean configureDefaults = true;
+
+    private Predicate<NaruDirective> directiveFilter;
+
+    private Predicate<NaruTool> toolFilter;
+
+    private Predicate<NaruToolTag> tagFilter;
+
+    private NaruModelFilter modelFilter;
+
+    NaruSessionBuilderImpl(NaruWorkspaceImpl agent) {
         this.agent = agent;
     }
 
     @Override
-    public NaruSessionBuilder directory(NPath directory) {
-        this.directory = directory;
+    public NaruSessionBuilder sessionListener(NaruSessionListener value) {
+        this.sessionListener = value;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder configureDefaults(boolean value) {
+        this.configureDefaults = value;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder directiveFilter(Predicate<NaruDirective> value) {
+        this.directiveFilter = value;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder toolFilter(Predicate<NaruTool> value) {
+        this.toolFilter = value;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder tagFilter(Predicate<NaruToolTag> value) {
+        this.tagFilter = value;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder modelFilter(NaruModelFilter value) {
+        this.modelFilter = value;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder name(String name) {
+        this.sessionName = NaruSessionNames.normalize(name);
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder sessionDir(NPath sessionDir) {
+        this.sessionDir = sessionDir;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder project(String idOrName) {
+        this.projectRef = idOrName;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder user(String user) {
+        this.userSeed = user;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder user(NaruPrincipal user) {
+        this.user = user;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder userActor(NaruActor actor) {
+        this.userActor = actor;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder id(String id) {
+        this.id = id;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder store(NaruSessionStore store) {
+        this.store = store;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder scope(NaruSessionScope scope) {
+        this.scope = scope;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder onInputBlock(NaruInputBlockPolicy policy) {
+        this.inputBlockPolicy = policy;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder hibernateAfter(Duration grace) {
+        if (grace == null || grace.isNegative())
+            throw new IllegalArgumentException("hibernate grace must be non-negative");
+        this.hibernateAfter = grace;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder streaming(boolean enabled) {
+        this.streaming = enabled;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder busy(NaruBusyPolicy policy) {
+        this.busyPolicy = policy;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder listener(NaruTurnEventListener listener) {
+        this.turnListener = listener;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder maxLiveSessions(int maximum) {
+        if (maximum < 1) throw new IllegalArgumentException("max live sessions must be positive");
+        this.maxLiveSessions = maximum;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder checkpointEachMessage(boolean enabled) {
+        this.checkpointEachMessage = enabled;
+        return this;
+    }
+
+    @Override
+    public NaruSessionBuilder capacityTimeout(Duration timeout) {
+        if (timeout == null || timeout.isNegative())
+            throw new IllegalArgumentException("capacity timeout must be non-negative");
+        this.capacityTimeout = timeout;
         return this;
     }
 
@@ -120,14 +314,67 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
         if (banner) {
             printBanner();
         }
-        NPath dir = directory != null ? directory : agent.defaultSessionDirectory();
+        agent.classLoader();
+        // the project reference resolves now: a caller that names a project that does not
+        // exist is told at build time, not silently dropped. The resolution is strict only
+        // at creation; a session that merely keeps a dangling projectId stays readable.
+        NaruSessionGroup project = resolveProjectRef();
+        // effective-value rule, creation time only: explicit value, else the project's,
+        // else the existing default. After build() the session owns its values outright.
+        NPath dir = sessionDir != null
+                ? sessionDir
+                : (project != null && project.folder() != null
+                ? project.folder()
+                : agent.defaultSessionDir());
         NaruInteraction useInteraction = interaction != null
                 ? interaction
                 : new NaruTerminalInteraction();
         NaruSessionImpl session = new NaruSessionImpl(
-                agent, dir.toAbsolute(), useInteraction, true,
-                agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter());
-        if (task != null) {
+                agent, dir.toAbsolute(), useInteraction, configureDefaults,
+                combineSessionListener(),
+                combineAnd(agent.directiveFilter(), directiveFilter),
+                combineAnd(agent.toolFilter(), toolFilter),
+                combineAnd(agent.tagFilter(), tagFilter),
+                combineModelFilters(agent.modelFilter(), modelFilter),
+                store
+        );
+        if (userActor != null) {
+            session.userActor(userActor);
+        } else if (user != null) {
+            session.user(user);
+        }
+        // A caller that names a session means it: the id is how a restored conversation is
+        // found again, and how a host addresses the same session across two processes. It
+        // used to be honoured only on the handle path, so a plain build() with an id minted
+        // a fresh random uuid and a restore then looked for a session that was never there.
+        boolean resumed = false;
+        if (id != null && !id.isBlank()) {
+            NaruSessionScope useScope = scope == null ? NaruSessionScope.PRIVATE : scope;
+            NaruSessionStore useStore = store == null ? session.rawSessionStore() : store;
+            if (useStore.exists(id, useScope)) {
+                session.loadStored(id, useScope);
+                resumed = true;
+            } else {
+                session.initializeHandleId(id, useScope);
+            }
+        }
+        if (!resumed) {
+            // seeding belongs to creation only: a resumed session keeps the projectId and
+            // user already stored, which describe the conversation that was saved
+            session._setProjectId(project == null ? null : project.id());
+            String effectiveUser = userSeed != null ? userSeed : (project == null ? null : project.user());
+            session._setUserName(effectiveUser);
+        }
+        if (sessionName != null && !resumed) {
+            // A host that named the session means that name, so the source is USER: an
+            // automatic title must not come back later and overwrite what the embedder chose.
+            session.rename(sessionName, NaruSessionNameSource.USER);
+        }
+        // The configured task belongs to a session being created. A session hydrated from the
+        // store already has its own task tree; seeding another here would put a fresh
+        // interactive task next to the restored one and make every reopen look like a new
+        // session, which is exactly the bug the desktop's restore path tripped over.
+        if (task != null && !resumed) {
             // the task is its own builder, so the mode is set on the handle rather than
             // on the spec
             NaruTask handle = session.newTask(task);
@@ -143,6 +390,45 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
         }
 
         return session;
+    }
+
+    private NaruSessionListenerDelegate combineSessionListener() {
+        List<NaruSessionListener> ad = new ArrayList<>();
+        ad.add(agent.sessionListener());
+        if (sessionListener != null) {
+            ad.add(sessionListener);
+        }
+        return new NaruSessionListenerDelegate(ad);
+    }
+
+    @Override
+    public NaruSessionHandle buildHandle() {
+        return new NaruSessionHandleImpl(agent,
+                // sessionDir may stay null here: the handle resolves the effective
+                // directory at activation, where the project's folder becomes the default
+                sessionDir,
+                interaction, task, id, store, scope, inputBlockPolicy, hibernateAfter,
+                streaming, busyPolicy, turnListener, maxLiveSessions,
+                checkpointEachMessage, capacityTimeout, agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter(),
+                combineModelFilters(agent.modelFilter(), modelFilter),
+                projectRef, userSeed, sessionName);
+    }
+
+    /**
+     * Resolves the {@code project(idOrName)} reference strictly, through the workspace's
+     * session-group seam: naming a group that nothing resolves is a build-time (or
+     * activation-time) error, not a silent standalone.
+     */
+    private NaruSessionGroup resolveProjectRef() {
+        if (projectRef == null || projectRef.isBlank()) {
+            return null;
+        }
+        NaruSessionGroup group = agent.sessionGroup(projectRef).orNull();
+        if (group == null) {
+            throw new net.thevpc.nuts.util.NIllegalArgumentException(
+                    NMsg.ofC("project not found: %s", projectRef));
+        }
+        return group;
     }
 
     /**
@@ -167,7 +453,18 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
                     // console: without it the REPL reads plain lines and tab does
                     // nothing, even though the resolver itself is still available
                     .commandAutoCompleteResolver(new NaruNArgCompleteResolver(session))
-                    .commandHighlighter(new NaruTerminalFormatter(session));
+                    .commandHighlighter(new NaruTerminalFormatter(session))
+                    // Ctrl+C while a response is streaming. The reader owns the key
+                    // only while it is reading a line (prompt Ctrl+C keeps its usual
+                    // meaning), so this reaches us exactly when something else is
+                    // running. Interrupting -- rather than killing -- the task stops
+                    // the stream and drops back to the prompt with the task alive.
+                    // Like the two setters above it is process-global: the last
+                    // interactive session in the JVM is the one it serves.
+                    .interruptHandler(() -> {
+                        session.findTask(session.foregroundTaskId())
+                                .ifPresent(NaruTask::interrupt);
+                    });
         }
     }
 
@@ -179,12 +476,40 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
                             "│╰┤├─┤├┬╯│ │ Nuts AI Reasoning Unit\n" +
                             "╵ ╵╵ ╵╵╰╴╰─╯ v%s\n" +
                             "Type %s%s (or %s%s) for help and %s%s to exit.\n"
-                    , NVersion.of("1.1.0.0")
+                    , NVersion.of("1.2.0.0")
                     , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("help")
                     , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("?")
                     , NMsg.ofStyledSeparator("/"), NMsg.ofStyledPrimary1("exit")
             );
         }
         agent.log(NaruLogMode.RAW, b);
+    }
+
+    private <T> Predicate<T> combineAnd(Predicate<T> a, Predicate<T> b) {
+        if (a == null && b == null) {
+            return x -> true;
+        }
+        if (a == null) {
+            return b;
+        }
+        if (b == null) {
+            return a;
+        }
+        return a.and(b);
+    }
+
+    /**
+     * Unlike {@link #combineAnd}, "both null" stays null rather than becoming an
+     * allow-everything filter: null is the registry's own "no filter" sentinel, and the
+     * common case (no filter anywhere) must keep behaving exactly as before.
+     */
+    private NaruModelFilter combineModelFilters(NaruModelFilter a, NaruModelFilter b) {
+        if (a == null) {
+            return b;
+        }
+        if (b == null) {
+            return a;
+        }
+        return a.and(b);
     }
 }

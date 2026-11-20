@@ -56,11 +56,20 @@ public class NaruNArgCompleteResolver implements NArgCompleteResolver {
         } else if (wordIndex > 0 && stringArray[0].startsWith("/")) {
             // Argument completion for specific commands
             String commandName = stringArray[0].substring(1); // Remove the leading "/"
-            NaruDirective directive = session.registry().directives().get(commandName);
+            NaruDirective directive = session.registry().findDirective(commandName).orElse(null);
             if (directive != null) {
                 NArgCompleteResult a = directive.resolveCandidates(cmdLine, pos, session);
                 candidates.addAll(a.candidates());
                 flags.addAll(a.flags());
+            } else if ("call".equals(commandName) && wordIndex == 1) {
+                // /call is a statement keyword rather than a registered directive.
+                // Complete its first argument from the routines available in this session.
+                String prefix = wordIndex < stringArray.length ? stringArray[wordIndex] : "";
+                session.routines().stream()
+                        .map(r -> r.getName())
+                        .filter(name -> name != null && name.startsWith(prefix))
+                        .sorted()
+                        .forEach(name -> candidates.add(NArgCompleteCandidate.of(name)));
             }
         }
 

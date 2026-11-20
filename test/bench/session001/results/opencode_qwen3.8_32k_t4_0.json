@@ -1,0 +1,28 @@
+{
+  "run_id": "opencode_qwen3.8_32k_t4_0",
+  "agent": "opencode",
+  "agent_version": "opencode v2.0.23",
+  "model": "qwen3.8:32k",
+  "task": "t4",
+  "run_index": 0,
+  "pass": false,
+  "accept_output": "FAIL: Old name 'calculate_hash' still present:\n./.local/share/opencode/log/opencode.log:1:timestamp=2026-10-11T10:14:17.866Z level=INFO run=eb907104 message=\"cli starting\" version=2.0.23 channel=latest local=false args=\"[\\\"run\\\",\\\"--standalone\\\",\\\"--auto\\\",\\\"--format\\\",\\\"json\\\",\\\"-m\\\",\\\"bench/qwen3.8:32k\\\",\\\"Rename the public function calculate_hash to compute_digest across all files, tests, and documentation. Preserve existing behavior and ensure all tests pass.\\\"]\" role=cli\n./.local/share/opencode/log/opencode.log:70:timestamp=2026-10-11T10:23:13.832Z level=INFO run=08bcac43 message=\"spawning process\" command=/usr/bin/rg args=\"[\\\"--no-config\\\",\\\"--json\\\",\\\"--hidden\\\",\\\"--no-messages\\\",\\\"--glob=!**/.git/**\\\",\\\"--\\\",\\\"calculate_hash\\\",\\\".\\\"]\" cwd=/home/vpc/xprojects/nuts-world/nuts-productivity/naru role=server\n./tests/test_hash.py:2:from crypto.hash import calculate_hash\n./tests/test_hash.py:8:        self.assertEqual(calculate_hash(\"hello\"), expected)\n./api/handler.py:1:from crypto.hash import calculate_hash\n./api/handler.py:4:    h = calculate_hash(body)\n./README.md:3:Use `calculate_hash(data)` to compute SHA256 checksums of strings.\n./docs/api.md:3:The `calculate_hash` function returns a 64-character hexadecimal SHA256 string.\n./crypto/signer.py:1:from .hash import calculate_hash\n./crypto/signer.py:4:    return calculate_hash(payload + \":\" + secret)\n./crypto/__init__.py:1:from .hash import calculate_hash\n./crypto/__init__.py:2:__all__ = [\"calculate_hash\"]\n./crypto/hash.py:3:def calculate_hash(data: str) -> str:\n./storage/blob.py:1:from crypto.hash import calculate_hash\n./storage/blob.py:6:        self.digest = calculate_hash(content)\ngrep: ./.local/share/opencode/opencode.db-wal: binary file matches\ngrep: ./.local/share/opencode/opencode.db: binary file matches",
+  "wall_s": 1200.103,
+  "exit_code": -1,
+  "hit_cap": true,
+  "requests_main": 1,
+  "requests_title": 1,
+  "requests_other": 0,
+  "prompt_tokens": 5624,
+  "completion_tokens": 275,
+  "reasoning_tokens": 0,
+  "cached_prompt_tokens": 0,
+  "peak_prompt_tokens_single_request": 5058,
+  "tool_calls_by_name": {
+    "grep": 1,
+    "glob": 1
+  },
+  "request_bytes_total": 23820,
+  "files_changed": 2,
+  "final_text": "Renaming calculate_hash to compute_digest"
+}

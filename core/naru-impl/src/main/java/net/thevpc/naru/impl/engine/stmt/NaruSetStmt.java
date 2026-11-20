@@ -25,17 +25,17 @@ public class NaruSetStmt extends NaruStatement implements Cloneable {
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         a.set("varName", NElement.ofString(varName));
         a.set("expression", NElement.ofString(expression));
-        return a.build();
+        return a;
     }
 
     @Override
     public void exec(NaruTask task) {
         NaruTaskFrame f = task.peekFrame();
-        Object last = task.evalExpression(expression);
+        NElement last = task.evalExpression(expression);
         f.setParam(varName, last);
         task.defaultAdvance(this);
     }

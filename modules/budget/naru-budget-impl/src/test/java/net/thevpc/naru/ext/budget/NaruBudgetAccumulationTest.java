@@ -1,0 +1,396 @@
+package net.thevpc.naru.ext.budget;
+
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelConfig;
+import net.thevpc.naru.api.model.NaruModelKey;
+import net.thevpc.naru.ext.budget.store.DefaultNaruBudgetStoreQuery;
+import net.thevpc.nuts.time.NDuration;
+import net.thevpc.nuts.util.NOptional;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Proxy;
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * Guards the arithmetic in {@link NaruBudgetServiceImpl#accumulate}, now that the
+ * feature lives in the naru-budget extension rather than the core.
+ *
+ * <p>This path used to assign rather than add, so a model that had served ten
+ * calls reported the token counts of the tenth alone. Nothing about that was
+ * visible in a single-call test, which is why it survived; the assertions here
+ * all use two or more calls for that reason.
+ */
+public class NaruBudgetAccumulationTest {
+
+    private static final NaruModelConfig CONFIG = new NaruModelConfig("openrouter", "some-model");
+    private static final NaruModelKey MODEL = CONFIG.key();
+
+    /**
+     * Minimal session. Only {@code registry().protocol(...)} is ever consulted,
+     * and only to discover a context size; answering "no such protocol" skips
+     * that defaulting without needing a real agent.
+     */
+    private static NaruSession stubSession() {
+        return stubSession(0);
+    }
+
+    /**
+     * @param contextLength what the stubbed protocol reports as the model's context
+     *                     length; 0 means "no protocol", so nothing is defaulted
+     */
+    private static NaruSession stubSession(long contextLength) {
+        Object protocol = contextLength > 0 ? stubProtocol(contextLength) : null;
+        return (NaruSession) Proxy.newProxyInstance(
+                NaruSession.class.getClassLoader(),
+                new Class<?>[]{NaruSession.class},
+                (proxy, method, args) -> {
+                    if ("registry".equals(method.getName())) {
+                        return Proxy.newProxyInstance(
+                                NaruSession.class.getClassLoader(),
+                                new Class<?>[]{net.thevpc.naru.api.registry.NaruRegistry.class},
+                                (p2, m2, a2) -> "protocol".equals(m2.getName())
+                                        ? (protocol == null ? NOptional.ofEmpty() : NOptional.of(protocol))
+                                        : null);
+                    }
+                    if ("findModel".equals(method.getName())) {
+                        // the report reads the context length off the resolved model, so the
+                        // stub answers with the same length its protocol reports
+                        return NOptional.of(new NaruModelConfig("some-model", "openrouter",
+                                "some-model", contextLength, null, null, null, null, null));
+                    }
+                    if ("toString".equals(method.getName())) {
+                        return "stub-session";
+                    }
+                    if ("hashCode".equals(method.getName())) {
+                        return 0;
+                    }
+                    if ("equals".equals(method.getName())) {
+                        return proxy == args[0];
+                    }
+                    return null;
+                });
+    }
+
+    /**
+     * A protocol whose only answer that matters is the context length, which is what
+     * {@code fillDefaults} asks the registry for.
+     */
+    private static Object stubProtocol(long contextLength) {
+        Object capabilities = Proxy.newProxyInstance(
+                NaruSession.class.getClassLoader(),
+                new Class<?>[]{net.thevpc.naru.api.model.NaruModelCapabilities.class},
+                (p, m, a) -> {
+                    switch (m.getName()) {
+                        case "contextLength":
+                            return contextLength;
+                        case "keys":
+                            return java.util.Set.of();
+                        case "toString":
+                            return "stub-capabilities";
+                        case "hashCode":
+                            return 0;
+                        case "equals":
+                            return p == a[0];
+                        case "toElement":
+                            return null;
+                        default:
+                            // isTools/isVision/... default to false, which is a valid answer
+                            return m.getReturnType() == boolean.class ? Boolean.FALSE : null;
+                    }
+                });
+        return Proxy.newProxyInstance(
+                NaruSession.class.getClassLoader(),
+                new Class<?>[]{net.thevpc.naru.api.model.NaruModelProtocol.class},
+                (p, m, a) -> {
+                    switch (m.getName()) {
+                        case "getCapabilities":
+                            return capabilities;
+                        case "providerName":
+                            return "stub";
+                        case "toString":
+                            return "stub-protocol";
+                        case "hashCode":
+                            return 0;
+                        case "equals":
+                            return p == a[0];
+                        default:
+                            return null;
+                    }
+                });
+    }
+
+    private static NaruTokenTransaction tx(long prompt, long completion) {
+        return new NaruTokenTransaction("s1", null, CONFIG, prompt, completion,
+                Instant.now(), NDuration.ofMillis(10));
+    }
+
+    private static NaruTokenTransaction tx(long prompt, long completion, long millis) {
+        return new NaruTokenTransaction("s1", null, CONFIG, prompt, completion,
+                Instant.now(), NDuration.ofMillis(millis));
+    }
+
+    private static NaruTokenTransaction userTx(String userId, long prompt, long completion) {
+        return new NaruTokenTransaction("s1", userId, CONFIG, prompt, completion,
+                Instant.now(), NDuration.ofMillis(10));
+    }
+
+    private static NaruTokenTransaction cacheTx(long prompt, long completion, long write, long read) {
+        return new NaruTokenTransaction("s1", null, CONFIG, prompt, completion,
+                write, read, Instant.now(), NDuration.ofMillis(10));
+    }
+
+    @Test
+    public void promptAndCompletionTokensAccumulateAcrossCalls() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+
+        svc.trackTransaction(tx(100, 10));
+        svc.trackTransaction(tx(200, 20));
+        svc.trackTransaction(tx(300, 30));
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
+        Assertions.assertEquals(600, stats.promptTokens(),
+                "prompt tokens must be the sum across calls, not the last call");
+        Assertions.assertEquals(60, stats.completionTokens());
+        Assertions.assertEquals(3, stats.calls());
+    }
+
+    /**
+     * The exact numbers a three-call run must produce.
+     *
+     * <p>{@code contextUsage} used to be computed as cumulative-completion plus this call's
+     * prompt, so each call added the running total back into the request size. A 9-call
+     * session reported 81974 tokens against 75029 actually spent. Both fields are now
+     * per-call values: {@code contextUsage} is the last call's size, {@code peakContextUsage}
+     * the largest one seen, and only {@code totalTokens} accumulates.
+     */
+    @Test
+    public void contextUsageIsPerCallWhileTotalTokensAccumulates() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+
+        svc.trackTransaction(tx(100, 10));
+        svc.trackTransaction(tx(200, 20));
+        svc.trackTransaction(tx(300, 30));
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
+        Assertions.assertEquals(600, stats.promptTokens());
+        Assertions.assertEquals(60, stats.completionTokens());
+        Assertions.assertEquals(660, stats.totalTokens(),
+                "total is the running sum of prompt plus completion");
+        Assertions.assertEquals(330, stats.contextUsage(),
+                "context usage is the size of the last call, not a total that absorbs history");
+        Assertions.assertEquals(330, stats.peakContextUsage());
+        Assertions.assertEquals(3, stats.calls());
+    }
+
+    /**
+     * A later, smaller call must not pull the peak down: 400 then 150.
+     */
+    @Test
+    public void peakContextUsageKeepsTheLargestCall() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+
+        svc.trackTransaction(tx(300, 100));
+        svc.trackTransaction(tx(100, 50));
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
+        Assertions.assertEquals(400, stats.peakContextUsage(),
+                "the peak is the largest single call and must not shrink");
+        Assertions.assertEquals(150, stats.contextUsage(),
+                "context usage follows the most recent call, larger or smaller");
+        Assertions.assertEquals(550, stats.totalTokens());
+    }
+
+    /**
+     * A per-user row is created before the model-wide row is touched, and the only
+     * thing it can borrow at creation is the model-wide context size -- which does
+     * not exist yet. So the row used to be stuck at {@code contextSize == 0} for the
+     * whole session and every context percentage for that user read as a
+     * division by zero.
+     */
+    @Test
+    public void perUserRowInheritsTheContextSizeOfItsModel() {
+        NaruSession session = stubSession(8192);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+
+        svc.trackTransaction(userTx("alice", 100, 10));
+
+        NaruModelBudgetStats perUser = svc.findModelBudgetStats(
+                new DefaultNaruBudgetStoreQuery().whereModel(MODEL).whereUser("alice")
+                );
+        NaruModelConfig model = session.findModel(CONFIG.name()).get();
+        Assertions.assertEquals(8192, model.contextLength(),
+                "a per-user row must be able to report how full the context is");
+        Assertions.assertEquals("alice", perUser.userKey());
+        Assertions.assertEquals(110, perUser.totalTokens());
+        Assertions.assertEquals(1, perUser.calls());
+
+        // the same call is counted once for the model as a whole, not twice
+        NaruModelBudgetStats overall = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
+        Assertions.assertEquals(110, overall.totalTokens());
+        Assertions.assertEquals(1, overall.calls());
+        Assertions.assertEquals(8192, model.contextLength());
+    }
+
+    /**
+     * A blank id must not produce a row that the model-wide listing skips: the key
+     * was null but {@code userId} was stored raw, so {@code findModelBudgetStats()}
+     * filtered the row out and the call vanished from {@code /budget} while still
+     * counting towards the model.
+     */
+    @Test
+    public void blankUserIdIsStoredStrippedSoTheModelRowOwnsTheCall() {
+        NaruSession session = stubSession(4096);
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+        NaruModelConfig model = session.findModel(CONFIG.name()).get();
+
+        svc.trackTransaction(userTx("  ", 200, 20));
+
+        NaruModelBudgetStats modelRow = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
+        Assertions.assertNull(modelRow.userKey());
+        Assertions.assertEquals(220, modelRow.totalTokens(),
+                "a blank user id belongs to the model-wide row");
+        Assertions.assertEquals(4096, model.contextLength());
+
+        List<NaruModelBudgetStats> all = svc.findByModelBudgetStats(null);
+        Assertions.assertEquals(1, all.size(),
+                "the call must appear exactly once in the listing, not be dropped by the userId filter");
+    }
+
+    /**
+     * {@code statsByAndUser} is a {@link java.util.concurrent.ConcurrentHashMap}, but the
+     * accumulator it holds is a mutable bag of longs: {@code get} then {@code set} is not
+     * atomic, so parallel increments overwrite each other. Several actors (or a
+     * {@code delegate_to_model} call alongside the main task) really do fold transactions
+     * in from different threads.
+     */
+    @Test
+    public void parallelTransactionsDoNotLoseUpdates() throws Exception {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+
+        int threads = 8;
+        int perThread = 1000;
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(threads);
+        for (int t = 0; t < threads; t++) {
+            Thread th = new Thread(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < perThread; i++) {
+                        svc.trackTransaction(tx(1, 1));
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    done.countDown();
+                }
+            });
+            th.setDaemon(true);
+            th.start();
+        }
+        start.countDown();
+        Assertions.assertTrue(done.await(60, java.util.concurrent.TimeUnit.SECONDS),
+                "the workers did not finish in time");
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
+        Assertions.assertEquals((long) threads * perThread, stats.calls(),
+                "a lost update shows up as a call count below the number of calls made");
+        Assertions.assertEquals(2L * threads * perThread, stats.totalTokens());
+        Assertions.assertEquals((long) threads * perThread, stats.promptTokens());
+        Assertions.assertEquals((long) threads * perThread, stats.completionTokens());
+    }
+
+    /**
+     * A call that really took 0 ms is a valid minimum, not the absence of one. Reading
+     * {@code minDuration == 0} as "unset" made every later 0 ms call overwrite the
+     * minimum, so a session with one slow call and several instant ones reported a
+     * minimum of zero.
+     */
+    @Test
+    public void aZeroMillisecondCallIsARealMinimum() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+
+        svc.trackTransaction(tx(10, 1, 0));
+        svc.trackTransaction(tx(10, 1, 250));
+        svc.trackTransaction(tx(10, 1, 40));
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
+        // compared in millis rather than by equality: normalize() may render a
+        // zero-length duration differently from the NDuration.ZERO constant while
+        // describing the same instant
+        Assertions.assertEquals(0, stats.minDuration(),
+                "0 ms was genuinely observed and must be reported as the minimum");
+        Assertions.assertEquals(250, stats.maxDuration());
+    }
+
+    /**
+     * With no calls at all there is no minimum to report, and that stays a plain zero
+     * rather than a fabricated value.
+     */
+    @Test
+    public void noCallsMeansNoDurationsAtAll() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
+        Assertions.assertEquals(0, stats.calls());
+        Assertions.assertEquals(0, stats.minDuration());
+        Assertions.assertEquals(0, stats.accumulatedDuration());
+        Assertions.assertEquals(0, stats.maxDuration());
+    }
+
+    @Test
+    public void totalTokensGrowsWithEveryCall() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+
+        svc.trackTransaction(tx(100, 10));
+        long afterFirst = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL)).totalTokens();
+        svc.trackTransaction(tx(100, 10));
+        long afterSecond = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL)).totalTokens();
+
+        Assertions.assertTrue(afterSecond > afterFirst,
+                "a second identical call must add spend, not replace it");
+    }
+
+    @Test
+    public void cacheTokensAccumulateAndDoNotGoBackwards() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+
+        // a cold turn: everything is a cache write
+        svc.trackTransaction(cacheTx(1000, 20, 1000, 0));
+        // a warm turn: most of the prefix is a cache read
+        svc.trackTransaction(cacheTx(1000, 20, 100, 900));
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
+        Assertions.assertEquals(1100, stats.cacheWriteTokens());
+        Assertions.assertEquals(900, stats.cacheReadTokens());
+        Assertions.assertTrue(stats.cacheHitRatio() > 0 && stats.cacheHitRatio() < 1,
+                "a mixed workload should report a partial hit ratio, got " + stats.cacheHitRatio());
+    }
+
+    /**
+     * Providers that do not report cache accounting send -1. That must not
+     * subtract from a running total established by providers that do.
+     */
+    @Test
+    public void unreportedCacheTokensAreTreatedAsZero() {
+        NaruSession session = stubSession();
+        NaruBudgetServiceImpl svc = new NaruBudgetServiceImpl(session, null);
+
+        svc.trackTransaction(cacheTx(1000, 20, 1000, 0));
+        svc.trackTransaction(tx(50, 5));
+
+        NaruModelBudgetStats stats = svc.findModelBudgetStats(new DefaultNaruBudgetStoreQuery().whereModel(MODEL));
+        Assertions.assertEquals(1000, stats.cacheWriteTokens(),
+                "a -1 from a non-reporting provider must not wipe the running total");
+        Assertions.assertEquals(0, stats.cacheReadTokens());
+    }
+}

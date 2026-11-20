@@ -8,6 +8,8 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.text.NMsg;
 
 import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,6 +36,12 @@ public class NaruStreamInteraction implements NaruInteraction {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicLong sequence = new AtomicLong();
     private final NaruBufferedStreamWriter bufferedStream = new NaruBufferedStreamWriter();
+
+    /**
+     * Which task is producing the open stream for each mode, so the joined message can be
+     * stamped when it finally exists. Keys are only present while a stream is open.
+     */
+    private final Map<NaruLogMode, Long> streamTasks = new ConcurrentHashMap<>();
 
     /**
      * The one request currently waiting for an answer, so that {@link #close()} can fail
@@ -108,10 +116,23 @@ public class NaruStreamInteraction implements NaruInteraction {
 
     @Override
     public void write(NaruLogMode mode, NMsg message) {
+        report(mode, message, NaruOutput.NO_TASK);
+    }
+
+    /**
+     * Same output, but stamped with the task that produced it, so a host with per-task
+     * surfaces does not have to guess the attribution from the text.
+     */
+    @Override
+    public void write(NaruLogMode mode, NMsg message, long taskId) {
+        report(mode, message, taskId);
+    }
+
+    private void report(NaruLogMode mode, NMsg message, long taskId) {
         if (closed.get() || listener == null) {
             return;
         }
-        NaruOutput output = new NaruOutput(sequence.incrementAndGet(), Instant.now(), mode, message);
+        NaruOutput output = new NaruOutput(sequence.incrementAndGet(), Instant.now(), mode, message, taskId);
         try {
             listener.onOutput(output);
         } catch (Exception ignored) {
@@ -129,10 +150,30 @@ public class NaruStreamInteraction implements NaruInteraction {
      */
     @Override
     public void writeStream(NaruLogMode mode, NMsg fragment, boolean end) {
+        writeStream(mode, fragment, end, NaruOutput.NO_TASK);
+    }
+
+    /**
+     * The joined message keeps the task that was producing it, because fragments arrive one
+     * at a time and the message the host actually sees only exists at {@code end}. The id is
+     * remembered per mode, so a turn that interleaves reasoning and answer still stamps each
+     * of them with whoever is writing.
+     */
+    @Override
+    public void writeStream(NaruLogMode mode, NMsg fragment, boolean end, long taskId) {
         if (closed.get() || listener == null) {
             return;
         }
-        bufferedStream.write(this, mode, fragment, end);
+        if (taskId != NaruOutput.NO_TASK) {
+            streamTasks.put(mode, taskId);
+        }
+        NMsg finished = bufferedStream.append(mode, fragment, end);
+        if (end) {
+            Long owner = streamTasks.remove(mode);
+            if (finished != null) {
+                report(mode, finished, owner == null ? NaruOutput.NO_TASK : owner);
+            }
+        }
     }
 
     /**

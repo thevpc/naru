@@ -4,7 +4,12 @@ import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
 
+import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -50,12 +55,143 @@ public class StoredStringMap<T> {
         return this;
     }
 
+    /**
+     * Rewrite the file in place, keeping what the reader put on the tree.
+     *
+     * <p>TSON is round-trip aware: a parse keeps comments, blank lines and spacing as affixes on
+     * the elements they belong to, and writing the parsed tree back with the VERBATIM formatter
+     * reproduces the file. So an edit is applied to that tree rather than to a map that gets
+     * re-emitted from scratch, and a hand-written {@code env.tson} — with the comment that says why
+     * a cap is 40000 — survives the settings panel changing one value in it.
+     *
+     * <p>Three limits, all measured against a parsed file rather than assumed:
+     * <ul>
+     *   <li>a key that is new goes at the END of the object, never between two existing pairs:
+     *       inserting mid-object steals the last word of the comment above it;
+     *   <li>an end-of-line comment on the pair the edit lands on is lost with that pair's own
+     *       formatting, because the replacement value carries no affixes;
+     *   <li>a file that opens with a comment writes back with the opening brace on the comment's own
+     *       line: that newline is an affix inside the comment, and re-adding it at the object's START
+     *       anchor lands between the comment's words rather than after them;
+     *   <li>a file that does not parse as an object is rewritten from the map, the same way this
+     *       store always has. Corrupt input gets a readable file, not a crash.
+     * </ul>
+     */
     public synchronized void save() {
-        NObjectElementBuilder m2 = NObjectElementBuilder.of();
-        for (Map.Entry<String, T> e : map.entrySet()) {
-            m2.set(e.getKey(), serializeValue(e.getValue()));
+        NElement root = readTreeForRewrite();
+        if (root == null) {
+            NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY).write(map, file);
+            return;
         }
-        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY).write(map, file);
+        NObjectElement object = objectOf(root);
+        if (object == null) {
+            NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY).write(map, file);
+            return;
+        }
+        NObjectElementBuilder b = object.builder();
+        List<NPairElement> pairs = object.namedPairs();
+        Map<String, NPairElement> onDisk = new LinkedHashMap<>();
+        List<NPairElement> dropped = new ArrayList<>();
+        for (NPairElement p : pairs) {
+            String k = p.key().asStringValue().orNull();
+            if (k == null) {
+                continue;
+            }
+            if (map.containsKey(k)) {
+                onDisk.putIfAbsent(k, p);
+            } else {
+                dropped.add(p);
+            }
+        }
+        List<String> sorted = new ArrayList<>(map.keySet());
+        sorted.sort(Comparator.naturalOrder());
+        for (String k : sorted) {
+            NElement wanted = serializeValue(map.get(k));
+            NPairElement had = onDisk.get(k);
+            if (had == null) {
+                NElement pair = NElement.ofPair(k, spaced(wanted));
+                // the newline is what separates the appended pair from the one before it: TSON
+                // tolerates a missing comma but not two pairs glued into one token
+                pair = pair.builder().addAffix(NElementNewLine.of(), NAffixAnchor.START)
+                        .addAffix(NElementSpace.of(2), NAffixAnchor.START).build();
+                b.add(pair);
+            } else if (!had.value().toString().equals(wanted.toString())) {
+                // rebuilt from the pair that is already on the tree, and committed as that pair:
+                // the builder matches it by its own key element, so a file that spells the key as
+                // the string "shared" is edited where it stands instead of gaining a second
+                // pair under a bare shared. Addressing pairs by their index in namedPairs() is
+                // not the same thing — the object's children include the comment lines between
+                // them, so that index lands on a comment and overwrites it.
+                b.set(had.builder().value(spaced(wanted)).build());
+            }
+        }
+        for (NPairElement p : dropped) {
+            b.removePair(p.key());
+        }
+        NElement out = root instanceof NFragmentElement fragment
+                ? fragment.builder().setAt(indexOfObject(fragment), b.build()).build()
+                : b.build();
+        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.VERBATIM).write(out, file);
+    }
+
+    /**
+     * Give a freshly built value the separators TSON needs between its own parts.
+     *
+     * <p>An element off a builder carries no affixes, and affixes are what a file is made of:
+     * written verbatim, {@code {url:"u"temperature:0.3model:"s"}} re-parses as three pairs with one
+     * value swallowing the next key's name — the map still holds all four fields, and every reader
+     * after the save sees a registration with no {@code model} at all. Pretty-printing the value and
+     * reading it back attaches them, and only the edited value is reformatted, so the file's own
+     * comments and layout elsewhere survive as they did before.
+     */
+    private static NElement spaced(NElement value) {
+        if (value == null || !value.isListContainer()) {
+            // a literal has no parts to separate
+            return value;
+        }
+        StringWriter sw = new StringWriter();
+        NElementWriter.ofTson().ntf(false).formatter(NElementFormatterStyle.PRETTY).write(value, sw);
+        try {
+            return NElementReader.ofTson().ntf(false).read(sw.toString());
+        } catch (RuntimeException e) {
+            // a value that will not re-parse is still worth writing: the store's own map is the
+            // truth, and a corrupt-looking file is recoverable by hand
+            return value;
+        }
+    }
+
+    /** The parsed file, or null when there is nothing to edit in place. */
+    private NElement readTreeForRewrite() {        if (!file.isRegularFile()) {
+            return null;
+        }
+        try {
+            return NElementReader.ofTson().ntf(false).read(file);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static NObjectElement objectOf(NElement root) {
+        if (root instanceof NFragmentElement fragment) {
+            for (NElement c : fragment) {
+                if (c.asObject().isPresent()) {
+                    return c.asObject().get();
+                }
+            }
+            return null;
+        }
+        return root.asObject().orNull();
+    }
+
+    private static int indexOfObject(NFragmentElement fragment) {
+        int i = 0;
+        for (NElement c : fragment) {
+            if (c.asObject().isPresent()) {
+                return i;
+            }
+            i++;
+        }
+        return -1;
     }
 
     private T deserializeValue(NElement value) {
@@ -84,9 +220,12 @@ public class StoredStringMap<T> {
     public synchronized StoredStringMap<T> load() {
         map.clear();
         if (file.isRegularFile()) {
+            // a file that opens with a comment parses as a FRAGMENT wrapping the object, not as an
+            // object: reading only the bare case silently drops every key a team documented
             NElement a = NElementReader.ofTson().read(file);
-            if (a instanceof NObjectElement) {
-                for (NPairElement p : ((NObjectElement) a).namedPairs()) {
+            NObjectElement object = objectOf(a);
+            if (object != null) {
+                for (NPairElement p : object.namedPairs()) {
                     String k = p.key().asStringValue().orNull();
                     NElement v = p.value();
                     if (k != null && v != null) {

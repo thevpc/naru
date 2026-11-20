@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.task;
 
 import net.thevpc.naru.api.agent.*;
+import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruDirectiveCallContext;
@@ -8,6 +9,7 @@ import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.routine.NaruRoutine;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.api.scheduler.*;
+import net.thevpc.naru.api.store.NaruMessageStore;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.routine.NaruTaskFrame;
 import net.thevpc.naru.api.stmt.NaruStatement;
@@ -30,6 +32,14 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 public interface NaruTask extends NToElement {
+    /** Durable user messages waiting for the next input prompt on this task. */
+    default List<String> queuedMessages() { return List.of(); }
+    default NaruTask queueMessage(String message) { throw new UnsupportedOperationException("message queue is unavailable"); }
+    default NaruTask editQueuedMessage(int index, String message) { throw new UnsupportedOperationException("message queue is unavailable"); }
+    default NaruTask deleteQueuedMessage(int index) { throw new UnsupportedOperationException("message queue is unavailable"); }
+    default NaruTask mergeQueuedMessages(int first, int last) { throw new UnsupportedOperationException("message queue is unavailable"); }
+    /** Removes and returns the next queued message, or null when the queue is empty. */
+    default String pollQueuedMessage() { return null; }
     /**
      * Exit code reported when a task was killed rather than allowed to finish. Deliberately
      * the conventional 130: a host reading exit codes should not have to know this enum.
@@ -53,7 +63,7 @@ public interface NaruTask extends NToElement {
      * {@link #duration()}, {@link #value()}, {@link #exitCode()} and
      * {@link #vars()}. It is frozen because a task outlives its own registration, so it may be
      * the only remaining record of what happened, and a record that a later write can edit is
-     * not a record. The descriptive setters ({@link #setProjectDir}, {@link #taskMode} and the
+     * not a record. The descriptive setters ({@link #setSessionDir}, {@link #taskMode} and the
      * rest) stay live, because those describe the task rather than its run -- this type is not a
      * value type, so do not cache one expecting immutability. Ask it again when you need to know.
      * <p>
@@ -106,7 +116,7 @@ public interface NaruTask extends NToElement {
      * Prefers an explicit {@code /return}, and falls back to the task's last result so that a
      * script which simply ends still reports what it last computed.
      */
-    NOptional<Object> value();
+    NOptional<NElement> value();
 
     /**
      * The task's own verdict, from the exit code its last statement published. A killed task
@@ -122,7 +132,7 @@ public interface NaruTask extends NToElement {
      * make every task's output a dump of the session it happened to run in. Frozen at
      * termination, and unmodifiable.
      */
-    Map<String, Object> vars();
+    Map<String, NElement> vars();
 
     /**
      * One of this task's variables.
@@ -132,8 +142,8 @@ public interface NaruTask extends NToElement {
      * variable that exists and holds nothing is present with a null value. Collapsing the two
      * would make a script's explicit emptiness indistinguishable from never having set it.
      */
-    default NOptional<Object> var(String key) {
-        Map<String, Object> vars = vars();
+    default NOptional<NElement> var(String key) {
+        Map<String, NElement> vars = vars();
         if (!vars.containsKey(key)) {
             return NOptional.ofNamedEmpty(NMsg.ofC("no variable named %s", key));
         }
@@ -143,7 +153,7 @@ public interface NaruTask extends NToElement {
     /**
      * One of this task's variables, or {@code fallback} if it has no such variable.
      */
-    default Object varOrDefault(String key, Object fallback) {
+    default NElement varOrDefault(String key, NElement fallback) {
         return vars().getOrDefault(key, fallback);
     }
 
@@ -220,15 +230,22 @@ public interface NaruTask extends NToElement {
 
     NPath workingDir();
 
-    NaruTask setProjectDir(NPath projectDir);
+    /**
+     * Sets the session directory this task is anchored to — the directory used to load
+     * skills and configuration, and the base that relative permission patterns resolve
+     * against. It is seeded from the owning session's {@code sessionDir()} and follows it
+     * when the session's directory changes. Not the working directory: shell and file
+     * tools operate in {@link #workingDir()}.
+     */
+    NaruTask setSessionDir(NPath sessionDir);
 
     /**
      * Prepends the {@code init.naru} hooks selected by {@code trigger} to this task's
      * statements (WP7). The trigger names the explicit hook event:
      * {@link net.thevpc.naru.api.scheduler.NaruEvent#SESSION_START},
      * {@link net.thevpc.naru.api.scheduler.NaruEvent#TASK_SPAWNED} or
-     * {@link net.thevpc.naru.api.scheduler.NaruEvent#PROJECT_CHANGE}. {@code /cd} never
-     * calls this; {@code /project} calls it once.
+     * {@link net.thevpc.naru.api.scheduler.NaruEvent#SESSION_DIR_CHANGE}. {@code /cd} never
+     * calls this; {@code /sessiondir} calls it once.
      */
     NaruTask runInitHooks(String trigger);
 
@@ -244,13 +261,32 @@ public interface NaruTask extends NToElement {
 
     NaruTask taskMode(NaruTaskMode newMode);
 
-    NPath projectDir();
+    /** Whether this task has ever entered INTERACTIVE mode. This flag is monotonic. */
+    boolean isConversation();
+
+    /** Stored task-record version token, used for optimistic lifecycle operations. */
+    long version();
+
+    /** The session directory this task is anchored to; see {@link #setSessionDir}. */
+    NPath sessionDir();
 
     String getExtraContext();
 
     NaruTask setExtraContext(String extraContext);
 
+    @Deprecated
     void log(NaruLogMode mode, NMsg s);
+
+    /**
+     * Reports a tool-call lifecycle event produced while this task was running, so the host
+     * learns which task made the call without having to guess.
+     *
+     * <p>Statements call this instead of reaching for the session, the same way they call
+     * {@link #log}. A task whose session does not carry the events simply loses them.
+     */
+    default void reportToolCall(net.thevpc.naru.api.agent.NaruToolCallEvent event) {
+        session().reportToolCall(event);
+    }
 
     NaruTask addToolExclusion(String toolName);
 
@@ -288,6 +324,11 @@ public interface NaruTask extends NToElement {
      * @return an unmodifiable snapshot; mutate the task through its history methods
      */
     List<NaruMessage> history();
+
+    /** Durable, cursor-queryable messages for this task. */
+    default NaruMessageStore messages() {
+        throw new UnsupportedOperationException("durable message store is unavailable");
+    }
 
     /**
      * The context view: history minus the items an active summary stands in for, with each
@@ -350,7 +391,67 @@ public interface NaruTask extends NToElement {
      */
     boolean isKillRequested();
 
+    /**
+     * Soft counterpart of {@link #kill()}: end what the task is running right now
+     * -- a streaming model call in particular -- and let the task carry on with
+     * its next statement, which for an interactive task is the prompt again.
+     * <p>
+     * Unlike {@link #kill()} nothing here is terminal: no status change, no
+     * scheduler removal, only a flag that the running statement polls, so the
+     * task is never left half-dead. Safe to call from any thread, including a
+     * terminal signal handler.
+     *
+     * @return {@code this} instance
+     */
+    default NaruTask interrupt() {
+        return this;
+    }
+
+    /**
+     * Whether {@link #interrupt()} has been requested. The model call consumes
+     * it: it is cleared when the next one starts, so a press that lands between
+     * two calls cannot cancel a call that has not begun yet.
+     *
+     * @return true when an interrupt was requested
+     */
+    default boolean isInterruptRequested() {
+        return false;
+    }
+
     boolean hasMoreStatements();
+
+    /**
+     * The actor in effect for this task. Never null for a real task: it inherits
+     * its parent's actor, or the session's user otherwise.
+     *
+     * <p>It is the identity every access check on this task is evaluated against
+     * when the statement being executed did not carry one of its own.
+     */
+    default NaruActor currentActor() {
+        return null;
+    }
+
+    default NaruTask currentActor(NaruActor actor) {
+        return this;
+    }
+
+    /**
+     * The actor accountable for one statement: the statement's creator when it
+     * has one, else the task's {@link #currentActor()}.
+     */
+    default NaruActor effectiveActor(NaruStatement stmt) {
+        return (stmt != null && stmt.creatorActor() != null) ? stmt.creatorActor() : currentActor();
+    }
+
+    /** The actor accountable for the work in flight: {@link #currentActor()}. */
+    default NaruActor effectiveActor() {
+        return currentActor();
+    }
+
+    /** Adds a statement stamped with the actor that authored it. */
+    default NaruTask addStatement(NaruStatement stmt, NaruActor actor) {
+        return addStatement(stmt.creatorActor(actor));
+    }
 
     NaruTask addStatement(NaruStatement any);
 
@@ -378,9 +479,9 @@ public interface NaruTask extends NToElement {
 
     void setLastResult(NaruMessage lastResult);
 
-    void setReturnResult(Object returnResult);
+    void setReturnResult(NElement returnResult);
 
-    Object getReturnResult();
+    NElement getReturnResult();
 
     NaruMessage getLastResult();
 
@@ -412,11 +513,11 @@ public interface NaruTask extends NToElement {
 
     NaruTask unsetTaskEnv(String key);
 
-    NaruTask setTaskEnv(String key, Object value);
+    NaruTask setTaskEnv(String key, NElement value);
 
-    NOptional<Object> getTaskEnv(String key, boolean inherited);
+    NOptional<NElement> getTaskEnv(String key, boolean inherited);
 
-    Object resolveVariable(String key);
+    NOptional<NElement> resolveVariable(String key);
 
     NaruTask pushStatementModelCall(String prompt);
 
@@ -424,7 +525,7 @@ public interface NaruTask extends NToElement {
 
     NExprContextBuilder expressionBuilder();
 
-    Object evalExpression(String condition);
+    NElement evalExpression(String condition);
 
     String expandString(String condition);
 
@@ -484,6 +585,29 @@ public interface NaruTask extends NToElement {
 
     NaruTask name(String newName);
 
+    /**
+     * The task's user-defined labels: free-form key/value dimensions stamped on every
+     * model call this task makes. The built-in labels ({@code provider}, {@code model},
+     * {@code session}, {@code user}, {@code task-id}, {@code task-name}, {@code task-path})
+     * are <em>not</em> in this map — they are derived at report time, and a user label
+     * never overrides one.
+     *
+     * @return an unmodifiable snapshot; mutate through {@link #setLabel}/{@link #removeLabel}
+     */
+    Map<String, String> labels();
+
+    /** Replaces the whole label set. Null clears it. */
+    NaruTask labels(Map<String, String> labels);
+
+    /** Adds or replaces one label. A blank key is ignored. */
+    NaruTask setLabel(String key, String value);
+
+    /** Removes one label; a key that is not present is ignored. */
+    NaruTask removeLabel(String key);
+
+    /** Removes every user-defined label. */
+    NaruTask clearLabels();
+
     NOptional<NaruTask> parent();
 
     NaruTask defaultAdvance(NaruStatement stmt);
@@ -494,7 +618,7 @@ public interface NaruTask extends NToElement {
     // NaruTask — consumes delivered input
     String consumeInput();
 
-    NaruTask fireEvent(String eventType, Map<String, Object> args, NaruEventTarget target, NaruRetentionPolicy retention);
+    NaruTask fireEvent(String eventType, Map<String, NElement> args, NaruEventTarget target, NaruRetentionPolicy retention);
 
     NaruTask sleep(NDuration duration);
 
@@ -510,7 +634,7 @@ public interface NaruTask extends NToElement {
 
     void appendRoutineLine(int increment, String name);
 
-    Map<String, Object> getTaskEnv();
+    Map<String, NElement> getTaskEnv();
 
     void call(String cmdline);
 

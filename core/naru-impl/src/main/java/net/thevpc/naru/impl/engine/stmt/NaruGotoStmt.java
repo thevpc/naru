@@ -20,10 +20,10 @@ public class NaruGotoStmt extends NaruStatement implements Cloneable {
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         a.set("name", NElement.ofString(name));
-        return a.build();
+        return a;
     }
 
 

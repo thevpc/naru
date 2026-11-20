@@ -1,17 +1,18 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruTaskConfig;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.tools.ollama.OllamaProcessManager;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.impl.engine.stmt.NaruNopStmt;
 import net.thevpc.naru.impl.engine.stmt.NaruPromptStmt;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NOut;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
@@ -54,17 +55,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>the model produced a final assistant message (printed for visibility).</li>
  * </ul>
  * It deliberately does not assert on the model's factual wording: the answer of a
- * small local model like {@code deepseek-coder-v2:16b} (which has no tool
- * capability) is stochastic, and asserting on it would make the test flaky.
+ * small local model like {@code qwen3.8:32k} is stochastic, and asserting on it
+ * would make the test flaky.
  *
- * <p>The model can be overridden with {@code -Dnaru.test.model=ollama/qwen3:8b}.</p>
+ * <p>The model can be overridden with {@code -Dnaru.test.model=ollama/qwen3.8:32k}.</p>
  *
  * <p>{@link #testAgentModelToolCall()} additionally forces the model to <b>use a
  * real tool</b>: it must call {@code file_write} to create a file containing a
  * unique marker that exists nowhere else, and the test asserts the file appears on
  * disk (in the project directory) with the exact marker. That is unambiguous proof
  * the tool call round-trip through the agent loop worked. It uses a model with
- * <b>native</b> tool support (default {@code ollama/qwen3:8b}, override with
+ * <b>native</b> tool support (default {@code ollama/qwen2.5-coder:7b}, override with
  * {@code -Dnaru.test.tool.model}), and opts the file tools in via
  * {@code /mode implement} + {@code /tags enable fs} (tagged tools are hidden
  * from the model unless the task opts into their tag).</p>
@@ -85,7 +86,7 @@ public class AgentModelIntegrationTest {
 
     private static final Duration TEST_TIMEOUT = Duration.ofMinutes(10);
 
-    private NaruAgent agent;
+    private NaruWorkspace agent;
     private NPath folder;
     private NaruSession session;
 
@@ -94,8 +95,9 @@ public class AgentModelIntegrationTest {
         NWorkspace ws = Nuts.require();
         // Initialize Naru system
         folder = NPath.ofTempFolder("naru");
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(folder);
+        agent.modelFilter(NaruTestModels.defaultFilter());
         NOut.println(NMsg.ofC("create agent at %s", agent));
     }
 
@@ -262,6 +264,15 @@ public class AgentModelIntegrationTest {
                     + "/system --save out cat data.txt\n"
                     + "/if out == \"hi\"\n"
                     + "/system touch save-ok\n"
+                    + "/end\n"
+                    + "// {{var}} interpolation INSIDE a directive argument (here a /system\n"
+                    + "// command) - not just bare vars in /if conditions. This is the path\n"
+                    + "// the codegen green check relies on, e.g. \"mvn -f {{pom}} test\".\n"
+                    + "/system --save roundtrip echo {{answer}}\n"
+                    + "/if roundtrip == \"42\"\n"
+                    + "/system touch interp-arg-ok\n"
+                    + "/else\n"
+                    + "/system touch interp-arg-bad\n"
                     + "/end\n";
             session = agent.newSession().script(new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8))).build().start();
             NaruTask task = captureForegroundTask(session);
@@ -286,25 +297,26 @@ public class AgentModelIntegrationTest {
                             + "bleed into each other: " + task.findToolExclusions());
 
             // /file find --save / --dir published usable values
+            // (toText, not toString: an env value is an element, and its TSON has the quotes)
             assertEquals("proj/pom.xml",
-                    task.getTaskEnv("pom", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("pom", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /file find to save the first matching path relative to the search root");
             assertEquals("proj",
-                    task.getTaskEnv("pomDir", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("pomDir", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /file find to save the parent dir of the first match");
             assertEquals("data.txt",
-                    task.getTaskEnv("data", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("data", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /file find to save the top-level file path");
             assertEquals(".",
-                    task.getTaskEnv("dataDir", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("dataDir", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /file find to save '.' as parent dir of a top-level file");
 
             // /system --save captured the trimmed output
             assertEquals("42",
-                    task.getTaskEnv("answer", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("answer", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /system --save to store the trimmed command output");
             assertEquals("hi",
-                    task.getTaskEnv("out", true).map(Object::toString).orNull(),
+                    task.getTaskEnv("out", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /system --save to store the trimmed 'cat' output");
 
             // the /if conditions all evaluated true (markers prove grep-like exit
@@ -323,6 +335,10 @@ public class AgentModelIntegrationTest {
                     "expected /else NOT to run when the condition is true");
             assertTrue(folder.resolve("save-ok").isRegularFile(),
                     "/system --save out == \"hi\"");
+            assertTrue(folder.resolve("interp-arg-ok").isRegularFile()
+                            && !folder.resolve("interp-arg-bad").exists(),
+                    "expected {{answer}} to be substituted INSIDE a /system directive argument "
+                            + "({{var}} moustache interpolation into the argument, not just /if)");
         });
     }
 
@@ -486,7 +502,7 @@ public class AgentModelIntegrationTest {
                     "expected ff to stay 0 after a failed then a passing assert");
 
             // lastResult / _ reflect the last result-producing directive
-            assertEquals("hi", task.getTaskEnv("out", true).map(Object::toString).orNull(),
+            assertEquals("hi", task.getTaskEnv("out", true).map(NaruTaskConfig::toText).orNull(),
                     "expected /system --save to store the trimmed 'cat' output");
             assertTrue(folder.resolve("lr-ok").isRegularFile(),
                     "lastResult == \"hi\" && _ == \"hi\" after /system --save out cat data.txt");
@@ -530,7 +546,7 @@ public class AgentModelIntegrationTest {
             ).build().start();
             // Bound the agent loop: if the model keeps emitting (emulated) tool calls
             // instead of answering, the session must still terminate promptly.
-            session.setSessionEnv("maxSteps", 3);
+            session.setSessionEnv("maxSteps", NElement.of(3));
 
             // Capture the task *before* waitFor(): once the session stops, tasks()
             // and findTask() are no longer usable, but the task object itself keeps
@@ -546,14 +562,15 @@ public class AgentModelIntegrationTest {
                     () -> "expected the task to finish, but status was " + task.status());
             NaruMessage last = task.getLastResult();
             assertNotNull(last, "expected the model to produce a final assistant message");
-            String answer = last.getContent();
+            String answer = last.getFilteredContent();
             NOut.println(NMsg.ofC("model answer: %s", answer == null ? "<empty>" : answer.trim()));
         });
     }
 
     private static String configuredModel() {
-        String m = System.getProperty("naru.test.model", "ollama/deepseek-coder-v2:16b");
-        return m;
+        // Local-model default for this dev setup (matches test/bench/session001).
+        // Override with -Dnaru.test.model=ollama/my-model.
+        return System.getProperty("naru.test.model", "ollama/qwen3.8:32k");
     }
 
     /**
@@ -589,7 +606,7 @@ public class AgentModelIntegrationTest {
                     "/ollama stop"
             ).build().start();
             // Bound the agent loop: a couple of tool calls + a final answer is enough.
-            session.setSessionEnv("maxSteps", 6);
+            session.setSessionEnv("maxSteps", NElement.of(6));
 
             NaruTask task = captureForegroundTask(session);
 
@@ -627,7 +644,7 @@ public class AgentModelIntegrationTest {
 
             NaruMessage last = task.getLastResult();
             if (last != null) {
-                String answer = last.getContent();
+                String answer = last.getFilteredContent();
                 NOut.println(NMsg.ofC("model answer: %s", answer == null ? "<empty>" : answer.trim()));
             }
         });
@@ -636,9 +653,19 @@ public class AgentModelIntegrationTest {
     private static String configuredToolModel() {
         // The tool test needs a model with NATIVE tool support: deepseek-coder-v2:16b
         // has no tools capability (tools are only emulated for it, which is noisy and
-        // unreliable). qwen3:8b supports native tool calling and is installed with the
-        // test setup. Override with -Dnaru.test.tool.model=ollama/my-model.
-        return System.getProperty("naru.test.tool.model", "ollama/qwen3:8b");
+        // unreliable). qwen2.5-coder:7b supports native tool calling and is installed
+        // with the test setup. Override with -Dnaru.test.tool.model=ollama/my-model.
+        return System.getProperty("naru.test.tool.model", "ollama/qwen2.5-coder:7b");
+    }
+
+    private static String configuredCodegenModel() {
+        // The codegen showcase needs a model strong enough to drive the whole
+        // write->build->test->fix loop to completion (the repo's own benchmark
+        // targets qwen3.8:32k; see test/bench/session001/REPORT.md). The smaller
+        // qwen2.5-coder:7b used by testAgentModelToolCall is fast and reliable for a
+        // single tool call, but it tends to stall with clarifying questions on the
+        // open-ended build goal. Override with -Dnaru.test.codegen.model=ollama/my-model.
+        return System.getProperty("naru.test.codegen.model", "ollama/qwen3.8:32k");
     }
 
     /**
@@ -676,7 +703,7 @@ public class AgentModelIntegrationTest {
             // substituted with the model under test before the stream is handed to
             // the builder's script(InputStream).
             String script = loadScriptResource("/scripts/calc-build-loop.naru")
-                    .replace("@MODEL@", configuredToolModel());
+                    .replace("@MODEL@", configuredCodegenModel());
             session = agent.newSession().script(
                     new ByteArrayInputStream(script.getBytes(StandardCharsets.UTF_8))).build().start();
 
@@ -737,7 +764,7 @@ public class AgentModelIntegrationTest {
 
             NaruMessage last = task.getLastResult();
             if (last != null) {
-                String answer = last.getContent();
+                String answer = last.getFilteredContent();
                 NOut.println(NMsg.ofC("model answer: %s", answer == null ? "<empty>" : answer.trim()));
             }
         });
@@ -828,13 +855,21 @@ public class AgentModelIntegrationTest {
     /**
      * Recursively search a directory tree for the first regular file whose text
      * content contains {@code marker} (returns {@code null} when not found).
+     * Hidden directories ({@code .naru}, {@code .git}, ...) are skipped: the
+     * marker text of the prompt itself is persisted in NARU's own session
+     * history under {@code .naru/}, so a search that includes it would "find"
+     * the marker even when the model never wrote a file.
      */
     private static NPath findFileContaining(NPath root, String marker) {
         if (root == null || !root.isDirectory()) {
             return null;
         }
         for (NPath child : root.list()) {
+            String name = child.name();
             if (child.isDirectory()) {
+                if (name.startsWith(".")) {
+                    continue; // .naru session state, .git, ...
+                }
                 NPath found = findFileContaining(child, marker);
                 if (found != null) {
                     return found;

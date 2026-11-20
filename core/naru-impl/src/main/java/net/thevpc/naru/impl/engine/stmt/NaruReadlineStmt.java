@@ -4,6 +4,7 @@ import net.thevpc.naru.api.agent.NaruInputMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.text.NMsg;
 
 public class NaruReadlineStmt extends NaruStatement implements Cloneable{
@@ -25,15 +26,24 @@ public class NaruReadlineStmt extends NaruStatement implements Cloneable{
     public void exec(NaruTask task) {
 
         if (!runtimeWaiting) {
-            // Phase A — first time: block and wait for input
-            NaruReadlineStmt selfCopy = (NaruReadlineStmt) copy();
-            selfCopy.runtimeWaiting = true;
+            // A restored task comes back with the runtime flag lost, so this same statement
+            // can run for a second time while its parked answer is already in the buffer.
+            // Consuming it here is what keeps a message delivered around a restart from being
+            // swallowed by a freshly-armed prompt that waits for a line nobody will retype.
+            String restored = task.consumeInput();
+            if (restored == null) {
+                // Phase A — first time: block and wait for input
+                NaruReadlineStmt selfCopy = (NaruReadlineStmt) copy();
+                selfCopy.runtimeWaiting = true;
 
-            // prepend self copy — will process input when resumed
-            task.prependStatement(selfCopy);
-            task.requestInput(NMsg.ofC("%s%s ", NMsg.ofStyledPrimary1(DEFAULT_PROMPT),
-                task.inputMode()== NaruInputMode.LINE ? NMsg.ofStyledSeparator(DEFAULT_LINE_SEPARATOR): NMsg.ofStyledString(DEFAULT_BLOCK_SEPARATOR)
-            ));
+                // prepend self copy — will process input when resumed
+                task.prependStatement(selfCopy);
+                task.requestInput(NMsg.ofC("%s%s ", NMsg.ofStyledPrimary1(DEFAULT_PROMPT),
+                    task.inputMode()== NaruInputMode.LINE ? NMsg.ofStyledSeparator(DEFAULT_LINE_SEPARATOR): NMsg.ofStyledString(DEFAULT_BLOCK_SEPARATOR)
+                ));
+                return;
+            }
+            applyLine(task, restored);
             return;
         }
 
@@ -44,6 +54,17 @@ public class NaruReadlineStmt extends NaruStatement implements Cloneable{
             return;
         }
 
+        applyLine(task, line);
+    }
+
+    @Override
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
+        a.set("runtimeWaiting", runtimeWaiting);
+        return a;
+    }
+
+    private void applyLine(NaruTask task, String line) {
         switch (task.inputMode()) {
             case LINE: {
                 StringBuilder sb = new StringBuilder();

@@ -3,6 +3,8 @@ package net.thevpc.naru.api.registry;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.NaruToolDefinition;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.nuts.text.NText;
 
 import java.util.Set;
 
@@ -20,9 +22,13 @@ public interface NaruTool {
     String name();
 
     /**
-     * Human-readable description sent to the model.
+     * Rich, human-readable description. It may carry styling (terminal colors,
+     * emphasis) for the help output; the model never sees the styling, because
+     * {@link NaruToolDefinition#getDescription()} strips it to plain text
+     * ({@link NText#filteredText()}) before anything is serialized into a
+     * request. Use {@link NText#ofPlain(String)} for an unstyled description.
      */
-    String getDescription(NaruTask task);
+    NText getDescription(NaruTask task);
 
     Set<String> tags();
 
@@ -62,4 +68,16 @@ public interface NaruTool {
     default boolean acceptMode(NaruPromptMode mode) {
         return true;
     }
+
+    /** Policy applied when this tool reports a live resource. */
+    default NaruHibernationPolicy hibernationPolicy() { return NaruHibernationPolicy.PINS; }
+
+    /** True only while this tool owns a resource that cannot safely survive release. */
+    default boolean hasLiveResource(NaruSession session) { return false; }
+
+    /** Release restartable resources before a session activation is discarded. */
+    default void onHibernate(NaruSession session) { }
+
+    /** Reacquire restartable resources lazily when a stored activation resumes. */
+    default void onResume(NaruSession session) { }
 }

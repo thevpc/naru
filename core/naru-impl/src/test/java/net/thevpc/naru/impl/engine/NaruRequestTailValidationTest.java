@@ -1,6 +1,7 @@
 package net.thevpc.naru.impl.engine;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruInvalidHistoryException;
 import net.thevpc.naru.api.model.NaruMessage;
@@ -15,7 +16,6 @@ import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NOptional;
@@ -44,38 +44,37 @@ public class NaruRequestTailValidationTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Throwable e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Throwable ignored) {
-            }
-        }
+        Nuts.require();
     }
 
     private RecordingProtocol protocol;
-    private NaruSessionImpl session;
+    private NaruSession session;
 
     @BeforeEach
     public void setUp() {
         protocol = new RecordingProtocol();
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-tail-" + System.nanoTime()));
-        session = new NaruSessionImpl(agent, agent.projectDirectory(),
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        session = agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         session.registry().registerModelProvider(new FakeProvider(protocol));
     }
 
     private NaruTask task() {
-        return session.newTask(NaruTaskSpec.of());
+        NaruTask task = session.newTask(NaruTaskSpec.of());
+        // Since 3720c87 the engine resolves only a model the user picked: no best-fit guess, no
+        // tools-capable fallback. A test that wants the protocol reached therefore has to pick one,
+        // exactly the way /model use does.
+        task.setModel(new NaruModelConfig("fake", "fake-model"));
+        return task;
     }
 
     private static NaruModelRequest request(NaruMessage... messages) {
@@ -83,8 +82,8 @@ public class NaruRequestTailValidationTest {
     }
 
     private static NaruMessage assistantCalls(String callId, String name) {
-        Map<String, Object> args = new LinkedHashMap<>();
-        args.put("path", "A.java");
+        Map<String, NElement> args = new LinkedHashMap<>();
+        args.put("path", NElement.of("A.java"));
         return NaruMessage.assistantWithToolCalls("", List.of(new NaruToolCall(callId, name, args)));
     }
 
@@ -184,13 +183,21 @@ public class NaruRequestTailValidationTest {
     @Test
     public void aProtocolCanRefuseATailTheDefaultAccepts() {
         StrictProtocol strict = new StrictProtocol();
-        NaruAgentImpl agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-tail-strict-" + System.nanoTime()));
-        NaruSessionImpl strictSession = new NaruSessionImpl(agent, agent.projectDirectory(),
-                new NaruStreamInteraction(o -> {
-                }), false, null, null, null, null);
+        NaruSession strictSession = agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(new NaruStreamInteraction(o -> {
+                }))
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
         strictSession.registry().registerModelProvider(new FakeProvider(strict));
         NaruTask task = strictSession.newTask(NaruTaskSpec.of());
+        task.setModel(new NaruModelConfig("fake", "fake-model"));
 
         NaruInvalidHistoryException e = Assertions.assertThrows(NaruInvalidHistoryException.class,
                 () -> task.chat(task.model(), request(

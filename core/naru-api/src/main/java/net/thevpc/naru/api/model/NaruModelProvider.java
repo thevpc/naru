@@ -3,6 +3,7 @@ package net.thevpc.naru.api.model;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.spi.NComponent;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.time.NDuration;
 import net.thevpc.nuts.util.NIllegalArgumentException;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NOptional;
@@ -58,6 +59,11 @@ public interface NaruModelProvider extends NComponent {
      */
     List<String> findModelIds(NaruSession session);
 
+    /** Optional provider-supplied catalog metadata beyond capabilities. */
+    default NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruSession session) {
+        return new NaruModelInfo(name(), model, capabilities);
+    }
+
     /**
      * Whether this provider is currently reachable/usable.
      * Used to hide unavailable providers from model listings
@@ -68,6 +74,58 @@ public interface NaruModelProvider extends NComponent {
      */
     default boolean isAvailable(NaruSession session) {
         return true;
+    }
+
+    /**
+     * A short, user-facing explanation of why this provider currently lists no model —
+     * {@code "API key not set"}, {@code "endpoint unreachable"}, and so on — or {@code null}
+     * when there is nothing to explain.
+     *
+     * <p>The catalog omits a provider whose listing is empty, which is correct but silent: a host
+     * that shows the catalog (the desktop model picker, {@code /model list}) can call this to tell
+     * the user <em>why</em> a provider they expect is missing instead of leaving them guessing
+     * between "no key", "disabled" and "not registered at all".
+     */
+    default String statusMessage(NaruSession session) {
+        return null;
+    }
+
+    /**
+     * Whether this provider's endpoint runs on the local machine (a local Ollama,
+     * llama.cpp or endpoint, as opposed to a cloud API). Local endpoints get a much
+     * longer default read timeout, because prefill on constrained hardware is slow,
+     * not broken.
+     *
+     * <p>The decision is a property of the endpoint, not of the protocol: a
+     * registration with {@code --local=true} forces it, otherwise a provider that
+     * talks to a configured {@code --url} derives it from that url
+     * (localhost/127.0.0.1/[::1]). Defaults to {@code false} (remote).
+     */
+    default boolean isLocal(NaruSession session) {
+        return false;
+    }
+
+    /**
+     * Whether a dedicated GPU is available for a local endpoint, used to pick
+     * between the CPU and GPU default timeouts. Defaults to platform detection;
+     * overridable so a provider (or a test) can decide differently.
+     */
+    default boolean hasDedicatedGpu() {
+        return NaruModelTimeouts.hasDedicatedGpu();
+    }
+
+    /**
+     * The default read timeout this provider resolves for a model at construction
+     * time, before any explicit configuration is consulted.
+     *
+     * <p>The provider is the factory of the protocol, so it is the one place that
+     * knows both locality ({@link #isLocal(NaruSession)}) and hardware
+     * ({@link #hasDedicatedGpu()}). The protocol receives this value and never
+     * probes the host itself. An explicit {@code readTimeout}/{@code timeout} still
+     * wins over it.
+     */
+    default NDuration defaultReadTimeout(NaruSession session) {
+        return NaruModelTimeouts.defaultReadTimeout(isLocal(session), hasDedicatedGpu());
     }
 
     void setParam(String name, String value);

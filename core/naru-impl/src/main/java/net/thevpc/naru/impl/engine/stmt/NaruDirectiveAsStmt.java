@@ -19,12 +19,12 @@ public class NaruDirectiveAsStmt extends NaruStatement implements Cloneable {
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         if (call != null) {
             a.set("call", call);
         }
-        return a.build();
+        return a;
     }
 
     @Override

@@ -4,6 +4,8 @@ import net.thevpc.naru.api.store.NaruSessionStore;
 import net.thevpc.naru.api.store.NaruSessionStoreFactory;
 import net.thevpc.naru.api.store.NaruStoreConfig;
 import net.thevpc.nuts.ext.NExtensions;
+import net.thevpc.nuts.ext.NServiceLoader;
+import net.thevpc.nuts.reflect.NClassLoader;
 import net.thevpc.nuts.util.NOptional;
 
 import java.util.ArrayList;
@@ -32,8 +34,8 @@ public final class NaruStoreFactory {
     }
 
     /** Opens the store for a config, as named. Falls back to the default factory. */
-    public static NaruSessionStore open(NaruStoreConfig config, String configuredName) {
-        List<NaruSessionStoreFactory> factories = factories();
+    public static NaruSessionStore open(NaruStoreConfig config, String configuredName, NClassLoader classLoader) {
+        List<NaruSessionStoreFactory> factories = factories(classLoader);
         NaruSessionStoreFactory chosen = null;
         if (configuredName != null && !configuredName.isBlank()) {
             for (NaruSessionStoreFactory f : factories) {
@@ -78,8 +80,8 @@ public final class NaruStoreFactory {
      * file store tests one implementation, and a second backend would arrive already
      * broken.
      */
-    public static List<NaruSessionStoreFactory> factories() {
-        return NExtensions.of().createAllSupported(NaruSessionStoreFactory.class, null);
+    public static List<NaruSessionStoreFactory> factories(NClassLoader classLoader) {
+        return NServiceLoader.of(NaruSessionStoreFactory.class, null,classLoader.asClassLoader()).loadAll(null);
     }
 
     private static String names(List<NaruSessionStoreFactory> factories) {

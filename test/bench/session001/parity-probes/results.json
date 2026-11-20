@@ -1,0 +1,547 @@
+[
+  {
+    "id": "P01",
+    "opencodeTool": "read",
+    "naruTool": "file_read",
+    "args": {
+      "path": "/tmp/lab/proj2/a.txt"
+    },
+    "len": 148,
+    "text": "<path>/tmp/lab/proj2/a.txt</path>\n<type>file</type>\n<content>\n1: line1\n2: line2\n3: line3\n4: line4\n5: line5\n\n(End of file - total 5 lines)\n</content>",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P02",
+    "opencodeTool": "read",
+    "naruTool": "file_read",
+    "args": {
+      "path": "/tmp/lab/proj2/a.txt",
+      "line_start": 2,
+      "line_end": 3
+    },
+    "len": 143,
+    "text": "<path>/tmp/lab/proj2/a.txt</path>\n<type>file</type>\n<content>\n2: line2\n3: line3\n\n(Showing lines 2-3 of 5. Use offset=4 to continue.)\n</content>",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P03",
+    "opencodeTool": "read",
+    "naruTool": "file_read",
+    "args": {
+      "path": "/tmp/lab/proj2/big.txt"
+    },
+    "len": 21922,
+    "head": "<path>/tmp/lab/proj2/big.txt</path>\n<type>file</type>\n<content>\n1: L1\n2: L2\n3: L3\n4: L4\n5: L5\n6: L6\n7: L7\n8: L8\n9: L9\n10: L10\n11: L11\n12: L12\n13: L13\n14: L14\n15: L15\n16: L16\n17: L17\n18: L18\n19: L19\n20: L20\n21: L21\n22: L22\n23: L23\n24: L24\n25: L25\n26: ",
+    "tail": "86: L1986\n1987: L1987\n1988: L1988\n1989: L1989\n1990: L1990\n1991: L1991\n1992: L1992\n1993: L1993\n1994: L1994\n1995: L1995\n1996: L1996\n1997: L1997\n1998: L1998\n1999: L1999\n2000: L2000\n\n(Showing lines 1-2000 of 3000. Use offset=2001 to continue.)\n</content>",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P04",
+    "opencodeTool": "read",
+    "naruTool": "file_read",
+    "args": {
+      "path": "/tmp/lab/proj2/big.txt",
+      "line_start": 2998,
+      "line_end": 3007
+    },
+    "len": 144,
+    "text": "<path>/tmp/lab/proj2/big.txt</path>\n<type>file</type>\n<content>\n2998: L2998\n2999: L2999\n3000: L3000\n\n(End of file - total 3000 lines)\n</content>",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P05",
+    "opencodeTool": "read",
+    "naruTool": "file_read",
+    "args": {
+      "path": "/tmp/lab/proj2/long.txt"
+    },
+    "len": 2144,
+    "head": "<path>/tmp/lab/proj2/long.txt</path>\n<type>file</type>\n<content>\n1: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "tail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx... (line truncated to 2000 chars)\n\n(End of file - total 1 lines)\n</content>",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P06",
+    "opencodeTool": "read",
+    "naruTool": "file_read",
+    "args": {
+      "path": "/tmp/lab/proj2/sub"
+    },
+    "len": 101,
+    "text": "<path>/tmp/lab/proj2/sub</path>\n<type>directory</type>\n<entries>\ndeep/\nx.java\n\n(2 entries)\n</entries>",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P07",
+    "opencodeTool": "read",
+    "naruTool": "file_read",
+    "args": {
+      "path": "/tmp/lab/proj2/nope.txt"
+    },
+    "len": 39,
+    "text": "File not found: /tmp/lab/proj2/nope.txt",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P08",
+    "opencodeTool": "read",
+    "naruTool": "file_read",
+    "args": {
+      "path": "/tmp/lab/proj2/bin.dat"
+    },
+    "len": 47,
+    "text": "Cannot read binary file: /tmp/lab/proj2/bin.dat",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P09",
+    "opencodeTool": "edit",
+    "naruTool": "file_edit_search_replace",
+    "args": {
+      "path": "/tmp/lab/proj2/dup.txt",
+      "search": "foo",
+      "replace": "baz"
+    },
+    "len": 96,
+    "text": "Found multiple matches for oldString. Provide more surrounding context to make the match unique.",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P10",
+    "opencodeTool": "read",
+    "naruTool": "file_read",
+    "args": {
+      "path": "/tmp/lab/proj2/dup.txt"
+    },
+    "len": 126,
+    "text": "<path>/tmp/lab/proj2/dup.txt</path>\n<type>file</type>\n<content>\n1: foo\n2: bar\n3: foo\n\n(End of file - total 3 lines)\n</content>",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P11",
+    "opencodeTool": "edit",
+    "naruTool": "file_edit_search_replace",
+    "args": {
+      "path": "/tmp/lab/proj2/dup.txt",
+      "search": "foo",
+      "replace": "baz"
+    },
+    "len": 96,
+    "text": "Found multiple matches for oldString. Provide more surrounding context to make the match unique.",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P12",
+    "opencodeTool": "edit",
+    "naruTool": "file_edit_search_replace",
+    "args": {
+      "path": "/tmp/lab/proj2/dup.txt",
+      "search": "foo",
+      "replace": "foo"
+    },
+    "len": 59,
+    "text": "No changes to apply: oldString and newString are identical.",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P13",
+    "opencodeTool": "edit",
+    "naruTool": "file_edit_search_replace",
+    "args": {
+      "path": "/tmp/lab/proj2/dup.txt",
+      "search": "zzz",
+      "replace": "y"
+    },
+    "len": 113,
+    "text": "Could not find oldString in the file. It must match exactly, including whitespace, indentation, and line endings.",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P14",
+    "opencodeTool": "edit",
+    "naruTool": "file_edit_search_replace",
+    "args": {
+      "path": "/tmp/lab/proj2/dup.txt",
+      "search": "bar",
+      "replace": "BAR"
+    },
+    "len": 26,
+    "text": "Edit applied successfully.",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P15",
+    "opencodeTool": "edit",
+    "naruTool": "file_edit_search_replace",
+    "args": {
+      "path": "/tmp/lab/proj2/dup.txt",
+      "search": "foo",
+      "replace": "baz",
+      "replaceAll": true
+    },
+    "len": 26,
+    "text": "Edit applied successfully.",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P16",
+    "opencodeTool": "read",
+    "naruTool": "file_read",
+    "args": {
+      "path": "/tmp/lab/proj2/dup.txt"
+    },
+    "len": 126,
+    "text": "<path>/tmp/lab/proj2/dup.txt</path>\n<type>file</type>\n<content>\n1: baz\n2: BAR\n3: baz\n\n(End of file - total 3 lines)\n</content>",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P17",
+    "opencodeTool": "write",
+    "naruTool": "file_write",
+    "args": {
+      "path": "/tmp/lab/proj2/exist.txt",
+      "content": "new\n"
+    },
+    "len": 24,
+    "text": "Wrote file successfully.",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P18",
+    "opencodeTool": "write",
+    "naruTool": "file_write",
+    "args": {
+      "path": "/tmp/lab/proj2/newdir/sub2/n.txt",
+      "content": "n\n"
+    },
+    "len": 24,
+    "text": "Wrote file successfully.",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P19",
+    "opencodeTool": "write",
+    "naruTool": "file_write",
+    "args": {
+      "path": "/tmp/lab/proj2/a.txt",
+      "content": "overwritten\n"
+    },
+    "len": 24,
+    "text": "Wrote file successfully.",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P20",
+    "opencodeTool": "glob",
+    "naruTool": "folder_find",
+    "args": {
+      "pattern": "**/*.java"
+    },
+    "len": 56,
+    "text": "/tmp/lab/proj2/sub/x.java\n/tmp/lab/proj2/sub/deep/y.java",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P21",
+    "opencodeTool": "glob",
+    "naruTool": "folder_find",
+    "args": {
+      "pattern": "*.md"
+    },
+    "len": 19,
+    "text": "/tmp/lab/proj2/z.md",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P22",
+    "opencodeTool": "glob",
+    "naruTool": "folder_find",
+    "args": {
+      "pattern": "sub/**/*.java"
+    },
+    "len": 56,
+    "text": "/tmp/lab/proj2/sub/x.java\n/tmp/lab/proj2/sub/deep/y.java",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P23",
+    "opencodeTool": "glob",
+    "naruTool": "folder_find",
+    "args": {
+      "pattern": "**/e*.txt"
+    },
+    "len": 90,
+    "text": "/tmp/lab/proj2/e3.txt\n/tmp/lab/proj2/e2.txt\n/tmp/lab/proj2/e1.txt\n/tmp/lab/proj2/exist.txt",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P24",
+    "opencodeTool": "glob",
+    "naruTool": "folder_find",
+    "args": {
+      "path": "/tmp/lab/proj2/sub",
+      "pattern": "**/*.java"
+    },
+    "len": 56,
+    "text": "/tmp/lab/proj2/sub/x.java\n/tmp/lab/proj2/sub/deep/y.java",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P25",
+    "opencodeTool": "glob",
+    "naruTool": "folder_find",
+    "args": {
+      "pattern": "nomatch*.zzz"
+    },
+    "len": 14,
+    "text": "No files found",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P26",
+    "opencodeTool": "grep",
+    "naruTool": "file_grep",
+    "args": {
+      "pattern": "TODO"
+    },
+    "len": 182,
+    "text": "Found 3 matches\n/tmp/lab/proj2/z.md:\n  Line 2: TODO in md\n\n\n/tmp/lab/proj2/sub/deep/y.java:\n  Line 1: class Y { /* TODO later */ }\n\n\n/tmp/lab/proj2/sub/x.java:\n  Line 1: // TODO fix\n",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P27",
+    "opencodeTool": "grep",
+    "naruTool": "file_grep",
+    "args": {
+      "include": "*.java",
+      "pattern": "TODO"
+    },
+    "len": 138,
+    "text": "Found 2 matches\n/tmp/lab/proj2/sub/deep/y.java:\n  Line 1: class Y { /* TODO later */ }\n\n\n/tmp/lab/proj2/sub/x.java:\n  Line 1: // TODO fix\n",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P28",
+    "opencodeTool": "grep",
+    "naruTool": "file_grep",
+    "args": {
+      "include": "e*.txt",
+      "pattern": "fo+"
+    },
+    "len": 131,
+    "text": "Found 3 matches\n/tmp/lab/proj2/e2.txt:\n  Line 1: foo\n\n\n/tmp/lab/proj2/e3.txt:\n  Line 1: foo\n\n\n/tmp/lab/proj2/e1.txt:\n  Line 1: foo\n",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P29",
+    "opencodeTool": "grep",
+    "naruTool": "file_grep",
+    "args": {
+      "path": "/tmp/lab/proj2/sub/x.java",
+      "pattern": "TODO"
+    },
+    "len": 65,
+    "text": "Found 1 matches\n/tmp/lab/proj2/sub/x.java:\n  Line 1: // TODO fix\n",
+    "semanticMatch": false,
+    "note": "Mismatch: len 65 vs golden 138"
+  },
+  {
+    "id": "P30",
+    "opencodeTool": "grep",
+    "naruTool": "file_grep",
+    "args": {
+      "pattern": "nomatchzzz"
+    },
+    "len": 14,
+    "text": "No files found",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P31",
+    "opencodeTool": "grep",
+    "naruTool": "file_grep",
+    "args": {
+      "pattern": "("
+    },
+    "len": 60,
+    "text": "rg: regex parse error:\n    (?:()\n    ^\nerror: unclosed group",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P32",
+    "opencodeTool": "bash",
+    "naruTool": "run_shell",
+    "args": {
+      "description": "seq",
+      "command": "seq 1 5000"
+    },
+    "len": 10102,
+    "head": "...output truncated...\n\nFull output saved to: /tmp/naru-tool-output/tool_9acb937979244c31b39ffe215e471aac\n\n3002\n3003\n3004\n3005\n3006\n3007\n3008\n3009\n3010\n3011\n3012\n3013\n3014\n3015\n3016\n3017\n3018\n3019\n3020\n3021\n3022\n3023\n3024\n3025\n3026\n3027\n3028\n3029\n303",
+    "tail": "4951\n4952\n4953\n4954\n4955\n4956\n4957\n4958\n4959\n4960\n4961\n4962\n4963\n4964\n4965\n4966\n4967\n4968\n4969\n4970\n4971\n4972\n4973\n4974\n4975\n4976\n4977\n4978\n4979\n4980\n4981\n4982\n4983\n4984\n4985\n4986\n4987\n4988\n4989\n4990\n4991\n4992\n4993\n4994\n4995\n4996\n4997\n4998\n4999\n5000\n",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P33",
+    "opencodeTool": "bash",
+    "naruTool": "run_shell",
+    "args": {
+      "description": "exit",
+      "command": "echo out; echo err >&2; exit 42"
+    },
+    "len": 8,
+    "text": "out\nerr\n",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P34",
+    "opencodeTool": "bash",
+    "naruTool": "run_shell",
+    "args": {
+      "description": "timeout",
+      "timeout_seconds": 1,
+      "command": "sleep 3; echo finished"
+    },
+    "len": 246,
+    "text": "(no output)\n\n<shell_metadata>\nshell tool terminated command after exceeding timeout 1000 ms. If this command is expected to take longer and is not waiting for interactive input, retry with a larger timeout value in milliseconds.\n</shell_metadata>",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P35",
+    "opencodeTool": "bash",
+    "naruTool": "run_shell",
+    "args": {
+      "working_dir": "/tmp/lab/proj2/sub",
+      "description": "workdir",
+      "command": "pwd"
+    },
+    "len": 19,
+    "text": "/tmp/lab/proj2/sub\n",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P36",
+    "opencodeTool": "bash",
+    "naruTool": "run_shell",
+    "args": {
+      "description": "bigline",
+      "command": "head -c 100000 /dev/zero | tr '\\0' 'a'"
+    },
+    "len": 51307,
+    "head": "...output truncated...\n\nFull output saved to: /tmp/naru-tool-output/tool_ff5ecdfe7c4f457fa43a6db890b4d764\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tail": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P37",
+    "opencodeTool": "webfetch",
+    "naruTool": "web_fetch",
+    "args": {
+      "format": "markdown",
+      "url": "http://127.0.0.1:8099/spec.html"
+    },
+    "len": 69,
+    "text": "Spec\n\n# Spec Title\n\nHello [link](/other)\n\n-   one\n-   two\n\ncode block",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P38",
+    "opencodeTool": "webfetch",
+    "naruTool": "web_fetch",
+    "args": {
+      "format": "text",
+      "url": "http://127.0.0.1:8099/spec.html"
+    },
+    "len": 40,
+    "text": "SpecSpec TitleHello linkonetwocode block",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P39",
+    "opencodeTool": "webfetch",
+    "naruTool": "web_fetch",
+    "args": {
+      "format": "html",
+      "url": "http://127.0.0.1:8099/spec.html"
+    },
+    "len": 194,
+    "text": "<html><head><title>Spec</title><script>var x=1;</script></head><body><h1>Spec Title</h1><p>Hello <a href=\"/other\">link</a></p><ul><li>one</li><li>two</li></ul><pre>code block</pre></body></html>",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P40",
+    "opencodeTool": "webfetch",
+    "naruTool": "web_fetch",
+    "args": {
+      "format": "text",
+      "url": "http://127.0.0.1:8099/missing.html"
+    },
+    "len": 76,
+    "text": "StatusCode: non 2xx status code (404 GET http://127.0.0.1:8099/missing.html)",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P41",
+    "opencodeTool": "grep",
+    "naruTool": "file_grep",
+    "args": {
+      "path": "/tmp/lab/proj2/sub/x.java",
+      "pattern": "TODO"
+    },
+    "len": 65,
+    "text": "Found 1 matches\n/tmp/lab/proj2/sub/x.java:\n  Line 1: // TODO fix\n",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  },
+  {
+    "id": "P42",
+    "opencodeTool": "grep",
+    "naruTool": "file_grep",
+    "args": {
+      "path": "/tmp/lab/proj2/sub",
+      "pattern": "TODO"
+    },
+    "len": 138,
+    "text": "Found 2 matches\n/tmp/lab/proj2/sub/x.java:\n  Line 1: // TODO fix\n\n\n/tmp/lab/proj2/sub/deep/y.java:\n  Line 1: class Y { /* TODO later */ }\n",
+    "semanticMatch": true,
+    "note": "Exact/Semantic Match"
+  }
+]

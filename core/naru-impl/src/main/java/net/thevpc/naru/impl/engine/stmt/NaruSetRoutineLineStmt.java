@@ -24,13 +24,13 @@ public class NaruSetRoutineLineStmt extends NaruStatement implements Cloneable{
     }
 
     @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
+    public NObjectElementBuilder toElementBuilder() {
+        NObjectElementBuilder a = super.toElementBuilder();
         a.set("number", number);
         if(command!=null){
             a.set("command", command);
         }
-        return a.build();
+        return a;
     }
 
     @Override

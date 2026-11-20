@@ -13,19 +13,20 @@ loads one.
 
 ## 1. What a skill is
 
-A skill is a **named, plain-markdown block of instructions**. It is read either
-from a single file or from an open-standard folder:
+A skill is a **named, plain-markdown block of instructions**. It is read from an
+open-standard folder:
 
 | Layout | Path | Notes |
 |---|---|---|
-| flat | `<root>/<name>.md` | legacy shape, description falls back to the first paragraph |
 | folder | `<root>/<name>/SKILL.md` (or `skill.md`) | the open standard; `references/` and `scripts/` may live beside it |
 
-Within one root the **folder form beats the flat form** of the same name.
+The folder name is the skill name. A skill is always `<root>/<name>/SKILL.md`
+(or `skill.md`); a loose `<name>.md` file in a root is **not** a skill and is
+ignored.
 
 ### Front matter
 
-A folder skill normally opens with a `---`-delimited YAML header. NARU reads the
+A skill normally opens with a `---`-delimited YAML header. NARU reads the
 open-standard keys and preserves the rest:
 
 ```markdown
@@ -44,16 +45,20 @@ requires: "fs & !write"
 
 - `name` should match the file/folder name; a mismatch is a **warning**, not a
   rejection.
-- `description` is what the catalog advertises. A folder skill without one warns
-  and advertises `(no description)`; a flat skill falls back to its first
-  paragraph.
+- `description` is what the catalog advertises. A skill without one warns and
+  advertises `(no description)`.
 - `allowed-tools` is **parsed and reported, never acted on**. A skill cannot
   grant a tool; `/skill doctor` reports every entry that does not map to a tool
   the task can actually call. NARU never silently ignores it (see §7).
 - `requires` is NARU's own key: a tag expression using the spawn grammar
-  (`&`, `|`, `!`, names, parentheses — see `tags.md`). It is evaluated at
-  *request* time against the task's current tool tags (§5), not at spawn or load
-  time. A malformed expression is treated as absent, with a warning.
+  (`&`, `|`, `!`, names, parentheses — see `tags.md`). It is *enforced* at
+  *request* time against the task's current tool tags (§5), never at load time —
+  a skill loads regardless and its body is gated only when a request would inject
+  it. At *spawn* time a seeded skill (from `--add-skills`, a spawn policy or a
+  contract) whose `requires` the child's resolved tags already fail produces a
+  warning naming the fixing `--add-tags`/`--revoke-tags` flag; it is advisory only,
+  and the skill still loads. A malformed expression is treated as absent, with a
+  warning.
 - Unknown keys (`license`, `compatibility`, arbitrary `metadata`, …) survive in
   `getFrontMatter()` untouched.
 
@@ -78,7 +83,7 @@ concatenation.
 | Precedence | Kind | Path | Visibility | Trust |
 |---|---|---|---|---|
 | 10 | `PROJECT_PRIVATE` | `<project>/.naru/local/skills` | private | native |
-| 100 + distance | `FOLDER_PUBLIC` | `<dir>/.naru/skills` for each `dir` from `projectDir` down to `workingDir` | public | native |
+| 100 + distance | `FOLDER_PUBLIC` | `<dir>/.naru/skills` for each `dir` from `directory` down to `workingDir` | public | native |
 | 5000 | `USER` | `~/.naru/skills` | private | native |
 | 6000 | `FOREIGN_PROJECT` | `<project>/.claude/skills` | public | opt-in |
 | 6001 | `FOREIGN_PROJECT` | `<project>/.agents/skills` | public | opt-in |
@@ -95,9 +100,9 @@ Consequences:
   `shadowed` so the collision is never hidden (§3).
 - **The folder walk is closest-first.** `distance` is the number of levels from
   the task's `workingDir`; the working directory itself is distance `0` and the
-  project directory is the weakest of the walk. The walk mirrors
-  `NaruTaskImpl.loadLoadModelAgentInfos` and falls back to the project
-  directory alone when the task's working directory leaves the project.
+  session directory is the weakest of the walk. The walk mirrors
+  `NaruTaskImpl.loadLoadModelAgentInfos` and falls back to the session
+  directory alone when the task's working directory leaves it.
 - **Folder-scoped skills are advertised, never auto-loaded.** They appear for a
   task working inside the folder, and simply disappear when it leaves: the next
   resolution walks from the task's new working directory. There is no
@@ -147,13 +152,13 @@ This is the opt-in boundary: trusting a root says "read it", not "obey it".
 The manager reads two ways:
 
 - **Base snapshot.** At `open()` and on every `/skill reload`, the manager scans
-  the roots effective at the **project directory** and snapshots each winning
+  the roots effective at the **session directory** and snapshots each winning
   skill (name, description, body, front-matter, content hash). Request-time
   contribution for those roots is then disk-free.
 - **Live folder walk.** Roots between the project and the task's current
   `workingDir` are read at request time, because they depend on the task.
 
-`/project` re-resolves the base snapshot: the extension recreates the manager bound
+`/sessiondir` re-resolves the base snapshot: the extension recreates the manager bound
 to the new project root and reloads it, keeping each task's flat `LOADED` selection.
 A skill that disappears at the new root is therefore reported by `/skill doctor`
 rather than silently unloaded.
@@ -163,9 +168,17 @@ silent mid-session edit is *reported* rather than auto-applied.
 
 `entries(task)` returns **every copy of every name**, winners and losers, with
 `NaruSkillEntry.shadowed()` true exactly for the losing copies. `available(task)`
-collapses to one winner per name. The `/skill list` listing prints the ordered
-roots and then every entry, so a collision between a native skill and a foreign
-one is visible instead of silently resolved.
+collapses to one winner per name. `/skill list` prints the ordered roots followed
+by the skills **loaded** for the task, and `/skill available` prints the same
+roots followed by the discovered skills still **not loaded**. Each row carries the
+origin family (`naru` for native roots, `claude`/`agents`/`opencode` for foreign
+ones) and the description, so a collision between a native skill and a foreign one
+is visible instead of silently resolved. Both listings accept `--source=<family>`
+(repeatable or comma-separated, plus `native`/`foreign`), a keyword — `--search=`
+or a bare positional word — matched against the name and description, `--semantic`
+for TF-IDF relevance ranking, and `--all` to show both states at once. The same
+keyword/semantic search backs the `skill` tool's `query` argument, so the model can
+find the right skill when the advertised catalog is not enough.
 
 ## 4. The selection model: flat, per task
 
@@ -247,7 +260,10 @@ Both kinds of message carry `NaruSource.SKILL` (so they live in the stable
 - loaded bodies → the file path.
 
 That is how `/context skills` tells an advertisement apart from an injected
-body. `/stats` (where present) attributes by the same `source`.
+body. `/budget --explain` attributes the AGENT bucket by that same `source`:
+advertised catalog rows (`catalog:*`), loaded bodies, and the "other agent"
+remainder are reported separately so a context that grows with skill count can
+be read at a glance.
 
 ### Compaction
 

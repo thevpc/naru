@@ -1,6 +1,6 @@
 package net.thevpc.naru.agent.spawn;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.scheduler.NaruEvent;
@@ -13,11 +13,9 @@ import net.thevpc.naru.api.spawn.NaruSpawnSource;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -67,33 +65,26 @@ public class NaruSpawnTest {
         }
     };
 
-    private NaruAgent agent;
-    private NaruSessionImpl session;
+    private NaruWorkspace agent;
+    private NaruSession session;
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     @BeforeEach
     public void setUp() {
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-spawn"));
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), null, true,
-                NOOP_LISTENER, null, null, null);
+        session = agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(null)
+                .configureDefaults(true)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach
@@ -134,7 +125,7 @@ public class NaruSpawnTest {
     public void plainSpawnIsNONEAndGrantsNothing() {
         NaruTask parent = newTask();
         parent.addToolTag("fs").addToolTag("exec");
-        parent.setTaskEnv("k", "v");
+        parent.setTaskEnv("k", NElement.of("v"));
 
         NaruTask child = spawn(parent);
         NaruSpawnResolution r = resolve(parent, NaruTaskSpec.of());
@@ -230,13 +221,13 @@ public class NaruSpawnTest {
     @Test
     public void inheritEnvIsASnapshotOfTheParentEnv() {
         NaruTask parent = newTask();
-        parent.setTaskEnv("k", "1");
+        parent.setTaskEnv("k", NElement.of("1"));
 
         NaruTask child = spawn(parent, NaruTaskSpec.of().inherit(NaruSpawnInherit.ENV));
-        assertEquals("1", child.getTaskEnv().get("k"));
+        assertEquals(NElement.of("1"), child.getTaskEnv().get("k"));
 
-        parent.setTaskEnv("k", "2");
-        assertEquals("1", child.getTaskEnv().get("k"),
+        parent.setTaskEnv("k", NElement.of("2"));
+        assertEquals(NElement.of("1"), child.getTaskEnv().get("k"),
                 "an env change on the parent must not reach a child that snapshotted the env");
     }
 
@@ -405,6 +396,43 @@ public class NaruSpawnTest {
                 () -> "a contract that adds tags must be rejected at parse time: " + e.getMessage());
     }
 
+    @Test
+    public void contractToolsRoundTripThroughParse() {
+        NaruSpawnContract contract = NaruSpawnContract.parse("{ tools: [\"file_read\", \"git_status\"] }");
+        assertNotNull(contract);
+        assertEquals(List.of("file_read", "git_status"), contract.tools());
+    }
+
+    @Test
+    public void contractToolThatTheResolutionExcludesFailsTheSpawn() {
+        NaruTask parent = newTask();
+        parent.addToolTag("fs");
+        NaruSpawnContract contract = NaruSpawnContract.parse("{ tools: [\"run_shell\"] }");
+        assertNotNull(contract);
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> resolve(parent, NaruTaskSpec.of()
+                        .inherit(NaruSpawnInherit.TAGS)
+                        .excludeTools("run_shell")
+                        .contract(contract)));
+        assertTrue(e.getMessage().contains("run_shell"),
+                () -> "the failure must name the tool the resolution excludes: " + e.getMessage());
+    }
+
+    @Test
+    public void contractToolThatSurvivesTheResolutionPasses() {
+        NaruTask parent = newTask();
+        parent.addToolTag("fs");
+        NaruSpawnContract contract = NaruSpawnContract.parse("{ tools: [\"file_read\"] }");
+        assertNotNull(contract);
+
+        // naming a tool is a constraint, not a grant: the spawn succeeds and grants nothing
+        NaruTask child = spawn(parent, NaruTaskSpec.of()
+                .inherit(NaruSpawnInherit.TAGS)
+                .contract(contract));
+        assertEquals(Set.of("fs"), child.findToolTagNames());
+    }
+
     // ── the TaskSpawned event ───────────────────────────────────────────────
 
     @Test
@@ -422,17 +450,17 @@ public class NaruSpawnTest {
 
         NaruEvent spawned = session.eventLog().scan(0, e -> NaruEvent.TASK_SPAWNED.equals(e.name()))
                 .stream().reduce((a, b) -> b).orElseThrow(() -> new AssertionError("no TaskSpawned event"));
-        Map<String, Object> payload = spawned.payload();
+        Map<String, NElement> payload = spawned.payload();
 
-        assertEquals(child.id(), payload.get("child"));
-        assertEquals(parent.id(), payload.get("parent"));
-        assertEquals("task", payload.get("kind"));
-        assertEquals("fork (flag)", payload.get("strategy"));
+        assertEquals(NElement.of(child.id()), payload.get("child"));
+        assertEquals(NElement.of(parent.id()), payload.get("parent"));
+        assertEquals(NElement.of("task"), payload.get("kind"));
+        assertEquals(NElement.of("fork (flag)"), payload.get("strategy"));
         assertTrue(payload.get("tags").toString().contains("fs"),
                 () -> "the resolved tags must be visible in the provenance: " + payload);
         assertTrue(payload.get("skills").toString().contains("code-review"), payload.toString());
         assertTrue(payload.get("exclusions").toString().contains("run_shell"), payload.toString());
-        assertEquals("review-safe", payload.get("policy"));
+        assertEquals(NElement.of("review-safe"), payload.get("policy"));
 
         Set<String> allowed = Set.of("child", "parent", "kind", "strategy", "inherit",
                 "tags", "skills", "exclusions", "env", "policy", "contract");
@@ -449,8 +477,8 @@ public class NaruSpawnTest {
         NaruTask root = newTask();
         NaruEvent spawned = session.eventLog().scan(0, e -> NaruEvent.TASK_SPAWNED.equals(e.name()))
                 .stream().reduce((a, b) -> b).orElseThrow(() -> new AssertionError("no TaskSpawned event"));
-        assertEquals(root.id(), spawned.payload().get("child"));
-        assertEquals(-1L, spawned.payload().get("parent"));
+        assertEquals(NElement.of(root.id()), spawned.payload().get("child"));
+        assertEquals(NElement.of(-1L), spawned.payload().get("parent"));
     }
 
     @Test

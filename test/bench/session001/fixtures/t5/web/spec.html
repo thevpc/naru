@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head><title>Slugifier Specification</title></head>
+<body>
+<h1>Module Specification: slugifier/slug.py</h1>
+<p>Implement the function <code>to_slug(text, max_len=None)</code> with the following rules:</p>
+<ol>
+  <li>Convert all characters to lowercase.</li>
+  <li>Replace any sequence of non-alphanumeric characters (spaces, punctuation) with a single hyphen <code>-</code>.</li>
+  <li>Strip leading and trailing hyphens.</li>
+  <li>If <code>max_len</code> is specified and the slug exceeds <code>max_len</code>, truncate to <code>max_len</code> characters, removing any trailing hyphen after truncation.</li>
+  <li>If the resulting string is empty, return an empty string.</li>
+</ol>
+</body>
+</html>

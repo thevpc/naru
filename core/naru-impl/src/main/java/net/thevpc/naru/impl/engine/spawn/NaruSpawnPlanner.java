@@ -16,6 +16,7 @@ import net.thevpc.naru.api.spawn.NaruSpawnSource;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NNameFormat;
 
@@ -199,15 +200,66 @@ public final class NaruSpawnPlanner {
         List<NaruSpawnSeed<String>> skills = new ArrayList<>(skillMap.values());
 
         // ── env ─────────────────────────────────────────────────────────────
-        Map<String, NaruSpawnSeed<Object>> envMap = new TreeMap<>();
-        for (Map.Entry<String, NaruSpawnSeed<Object>> e : ctx.envSeeds().entrySet()) {
+        Map<String, NaruSpawnSeed<NElement>> envMap = new TreeMap<>();
+        for (Map.Entry<String, NaruSpawnSeed<NElement>> e : ctx.envSeeds().entrySet()) {
             mergeEnvSeed(envMap, e.getKey(), e.getValue());
         }
         if (inherited.containsKey(NaruSpawnInherit.ENV) && parent != null) {
             NaruSpawnSource envSource = inherited.get(NaruSpawnInherit.ENV);
-            for (Map.Entry<String, Object> e : parent.getTaskEnv().entrySet()) {
+            for (Map.Entry<String, NElement> e : parent.getTaskEnv().entrySet()) {
                 mergeEnvSeed(envMap, e.getKey(), NaruSpawnSeed.of(e.getValue(), envSource));
             }
+        }
+
+        // ── user labels ─────────────────────────────────────────────────────
+        Map<String, NaruSpawnSeed<String>> labelAdds = new LinkedHashMap<>();
+        for (Map.Entry<String, NaruSpawnSeed<String>> e : ctx.labelSeeds().entrySet()) {
+            mergeSeed(labelAdds, e.getKey(), e.getValue());
+        }
+        if (policy != null) {
+            for (Map.Entry<String, String> e : policy.addLabels().entrySet()) {
+                mergeSeed(labelAdds, e.getKey(), NaruSpawnSeed.of(e.getValue(), NaruSpawnSource.POLICY));
+            }
+        }
+        for (Map.Entry<String, String> e : spec.addLabels().entrySet()) {
+            mergeSeed(labelAdds, e.getKey(), NaruSpawnSeed.of(e.getValue(), NaruSpawnSource.FLAG));
+        }
+
+        Map<String, NaruSpawnSeed<String>> labelRevokes = new LinkedHashMap<>();
+        for (Map.Entry<String, NaruSpawnSeed<String>> e : ctx.revokeLabelSeeds().entrySet()) {
+            mergeSeed(labelRevokes, e.getKey(), e.getValue());
+        }
+        if (policy != null) {
+            for (String k : policy.revokeLabels()) {
+                mergeSeed(labelRevokes, k, NaruSpawnSeed.of(k, NaruSpawnSource.POLICY));
+            }
+        }
+        for (String k : spec.revokeLabels()) {
+            mergeSeed(labelRevokes, k, NaruSpawnSeed.of(k, NaruSpawnSource.FLAG));
+        }
+
+        // Labels inherit by default: a caller who enumerates no inherit set at all still
+        // gets them (unlike tags/env), because a child almost always shares its spawner's
+        // descriptive dimensions. A caller who enumerates an inherit set without labels
+        // has opted out.
+        boolean inheritLabels = inherited.containsKey(NaruSpawnInherit.LABELS) || inherited.isEmpty();
+        Map<String, NaruSpawnSeed<String>> labelMap = new TreeMap<>();
+        if (inheritLabels && parent != null) {
+            NaruSpawnSource labelSource = inherited.getOrDefault(NaruSpawnInherit.LABELS, NaruSpawnSource.DEFAULT);
+            for (Map.Entry<String, String> e : parent.labels().entrySet()) {
+                mergeSeed(labelMap, e.getKey(), NaruSpawnSeed.of(e.getValue(), labelSource));
+            }
+        }
+        for (Map.Entry<String, NaruSpawnSeed<String>> e : labelAdds.entrySet()) {
+            mergeSeed(labelMap, e.getKey(), e.getValue());
+        }
+        for (Map.Entry<String, NaruSpawnSeed<String>> e : labelRevokes.entrySet()) {
+            String key = e.getKey();
+            NaruSpawnSeed<String> add = labelAdds.get(key);
+            if (add != null && rank(add.source()) >= rank(e.getValue().source())) {
+                continue; // add-wins-over-revoke at equal or higher precedence
+            }
+            labelMap.remove(key);
         }
 
         // ── contract validation ─────────────────────────────────────────────
@@ -231,6 +283,27 @@ public final class NaruSpawnPlanner {
                         "spawn contract " + contract + " is not satisfied by the resolved tags "
                                 + tagNames + " (violations: " + String.join(", ", violations) + "); "
                                 + String.join("; ", hints));
+            }
+            // A contract cannot grant a tool -- tags do that -- but it can name the tools the
+            // target needs and refuse to spawn if the resolution excludes one by name.
+            if (!contract.tools().isEmpty()) {
+                Set<String> excludedNames = new LinkedHashSet<>();
+                for (NaruSpawnSeed<String> e : exclusions) {
+                    excludedNames.add(e.value());
+                    excludedNames.add(norm(e.value()));
+                }
+                List<String> missing = new ArrayList<>();
+                for (String t : contract.tools()) {
+                    if (excludedNames.contains(t) || excludedNames.contains(norm(t))) {
+                        missing.add(t);
+                    }
+                }
+                if (!missing.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "spawn contract " + contract + " requires tools the resolution excludes: "
+                                    + String.join(", ", missing) + "; drop the exclusion ("
+                                    + "--exclude-tools=... at the call site or the policy) or remove the tool from the contract");
+                }
             }
         }
 
@@ -258,6 +331,7 @@ public final class NaruSpawnPlanner {
                 exclusions,
                 skills,
                 envMap,
+                labelMap,
                 policy == null ? null : policy.name(),
                 contract,
                 warnings);
@@ -411,9 +485,9 @@ public final class NaruSpawnPlanner {
         }
     }
 
-    private static void mergeEnvSeed(Map<String, NaruSpawnSeed<Object>> map, String key,
-                                     NaruSpawnSeed<Object> seed) {
-        NaruSpawnSeed<Object> old = map.get(key);
+    private static void mergeEnvSeed(Map<String, NaruSpawnSeed<NElement>> map, String key,
+                                     NaruSpawnSeed<NElement> seed) {
+        NaruSpawnSeed<NElement> old = map.get(key);
         if (old == null || rank(seed.source()) >= rank(old.source())) {
             map.put(key, seed);
         }

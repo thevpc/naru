@@ -1,6 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruLogMode;
@@ -13,9 +13,9 @@ import net.thevpc.naru.api.stmt.NaruStatement;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
 import net.thevpc.naru.impl.registry.NaruDirectiveCallContextImpl;
-import net.thevpc.naru.impl.registry.builtindirectives.NaruProjectDirective;
+import net.thevpc.naru.impl.registry.builtindirectives.NaruSessionDirDirective;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.AfterEach;
@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * WP7/WP8: {@code /cd} is pure navigation, {@code /project} is the one navigation with side
+ * WP7/WP8: {@code /cd} is pure navigation, {@code /sessiondir} is the one navigation with side
  * effects (it runs the workspace init exactly once), the deprecated init-on-cd path is opt-in
  * behind a warning, and the session announces {@code session-start}.
  * <p>
@@ -43,33 +43,27 @@ public class NaruProjectInitializationTest {
 
     private NPath projectDir;
     private RecordingInteraction interaction;
-    private NaruSessionImpl session;
+    private NaruSession session;
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     @BeforeEach
     public void setUp() {
         projectDir = NPath.ofTempFolder("naru-init-hooks-" + System.nanoTime());
         interaction = new RecordingInteraction();
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(projectDir);
-        session = new NaruSessionImpl(agent, projectDir, interaction, false, null, null, null, null);
+        session = agent.newSession()
+                .sessionDir(projectDir)
+                .interaction(interaction)
+                .configureDefaults(false)
+                .sessionListener(null)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach
@@ -87,7 +81,7 @@ public class NaruProjectInitializationTest {
     private NaruTaskImpl newTask(NPath workingDir) {
         NaruTaskImpl task = new NaruTaskImpl(1, -1, session);
         task._setWorkingDir(workingDir);
-        task._setProjectDir(projectDir);
+        task._setSessionDir(projectDir);
         return task;
     }
 
@@ -117,7 +111,7 @@ public class NaruProjectInitializationTest {
 
     private static NaruStmtResult runProject(NaruTask task, NPath dir) {
         NaruDirectiveCallContext ctx = new NaruDirectiveCallContextImpl("project", dir.toString(), task);
-        return new NaruProjectDirective().execute(ctx);
+        return new NaruSessionDirDirective().execute(ctx);
     }
 
     // ── WP7: cd runs no hooks ────────────────────────────────────────────────
@@ -160,15 +154,15 @@ public class NaruProjectInitializationTest {
         initHook(other, "project-marker");
         NaruTaskImpl task = newTask(projectDir);
 
-        session.projectDir(other);
+        session.sessionDir(other);
 
-        assertEquals(other.normalize(), session.projectDir());
+        assertEquals(other.normalize(), session.sessionDir());
         assertEquals(0, countMarker(task, "project-marker"),
-                "the raw setter re-resolves roots; running the init is /project's job");
+                "the raw setter re-resolves roots; running the init is /sessiondir's job");
     }
 
     @Test
-    public void projectDirectiveRunsWorkspaceInitExactlyOnce() {
+    public void sessionDirDirectiveRunsWorkspaceInitExactlyOnce() {
         NPath other = NPath.ofTempFolder("naru-init-other-" + System.nanoTime());
         initHook(other, "project-marker");
         NaruTaskImpl task = newTask(projectDir);
@@ -176,9 +170,9 @@ public class NaruProjectInitializationTest {
         NaruStmtResult r = runProject(task, other);
 
         assertEquals(0, r.exitCode(), "the project directive reports success");
-        assertEquals(other.normalize(), session.projectDir());
+        assertEquals(other.normalize(), session.sessionDir());
         assertEquals(1, countMarker(task, "project-marker"),
-                "/project must run the workspace init exactly once");
+                "/sessiondir must run the workspace init exactly once");
     }
 
     // ── WP7: deprecated init-on-cd is opt-in, with a warning ─────────────────
@@ -187,7 +181,7 @@ public class NaruProjectInitializationTest {
     public void initOnCdFlagRestoresOldBehaviourWithAWarning() {
         NPath sub = projectDir.resolve("sub");
         initHook(sub, "cd-marker");
-        session.setSessionEnv("naru.initOnCd", true);
+        session.setSessionEnv("naru.initOnCd", NElement.of(true));
         NaruTaskImpl task = newTask(projectDir);
 
         task.setWorkingDir(sub);
@@ -211,7 +205,7 @@ public class NaruProjectInitializationTest {
                 .filter(e -> NaruEvent.SESSION_START.equals(e.name()))
                 .toList();
         assertEquals(1, starts.size(), "session-start is fired exactly once per session");
-        assertEquals(projectDir.normalize().toString(), starts.get(0).payload("projectDir"));
+        assertEquals(NElement.of(projectDir.normalize().toString()), starts.get(0).payload("sessionDir"));
     }
 
     // ── help ─────────────────────────────────────────────────────────────────

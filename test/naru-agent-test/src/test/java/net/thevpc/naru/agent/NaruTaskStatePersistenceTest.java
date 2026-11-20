@@ -1,6 +1,6 @@
 package net.thevpc.naru.agent;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
@@ -9,12 +9,9 @@ import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.scheduler.NaruEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
-import net.thevpc.naru.impl.engine.NaruAgentImpl;
-import net.thevpc.naru.impl.engine.NaruSessionImpl;
 import net.thevpc.naru.impl.engine.scheduler.NaruTaskImpl;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
@@ -44,39 +41,32 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 public class NaruTaskStatePersistenceTest {
 
-    private NaruAgent agent;
+    private NaruWorkspace agent;
     private NaruSession session;
     private final List<String> warnings = new ArrayList<>();
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     @BeforeEach
     public void setUp() {
-        agent = new NaruAgentImpl();
+        agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-task-state"));
         NaruStreamInteraction interaction = new NaruStreamInteraction(output -> {
             if (output.mode() == NaruLogMode.SCRIPT) {
                 warnings.add(output.message().toString());
             }
         });
-        session = new NaruSessionImpl(agent, agent.projectDirectory(), interaction, true,
-                NOOP_LISTENER, null, null, null);
+        session = agent.newSession()
+                .sessionDir(agent.projectDirectory())
+                .interaction(interaction)
+                .configureDefaults(true)
+                .sessionListener(NOOP_LISTENER)
+                .directiveFilter(null)
+                .toolFilter(null)
+                .tagFilter(null)
+                .build();
     }
 
     @AfterEach
@@ -122,9 +112,9 @@ public class NaruTaskStatePersistenceTest {
         NaruTask task = session.newTask(NaruTaskSpec.of().toolTags("fs", "network"));
         // sanity: both are actually offered before the ban takes effect
         List<String> before = toolNames(task);
-        assertTrue(before.contains("search_web"), () -> before.toString());
+        assertTrue(before.contains("web_search"), () -> before.toString());
         assertTrue(before.contains("file_read"), () -> before.toString());
-        task.addToolExclusion("search_web");
+        task.addToolExclusion("web_search");
         task.addToolExclusion("file_read");
 
         long id = task.id();
@@ -133,7 +123,7 @@ public class NaruTaskStatePersistenceTest {
 
         List<String> tools = toolNames(session.findTask(id)
                 .orElseThrow(() -> new AssertionError("the task did not come back after the reload")));
-        assertFalse(tools.contains("search_web"), () -> "the restored task still sees a banned tool: " + tools);
+        assertFalse(tools.contains("web_search"), () -> "the restored task still sees a banned tool: " + tools);
         assertFalse(tools.contains("file_read"), () -> "the restored task still sees a banned tool: " + tools);
     }
 

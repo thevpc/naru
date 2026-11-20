@@ -16,11 +16,6 @@ public class NaruElseStmt extends NaruStatement implements Cloneable {
         super(Type.ELSE,element);
     }
 
-    @Override
-    public NElement toElement() {
-        NObjectElementBuilder a = (NObjectElementBuilder) super.toElement().builder();
-        return a.build();
-    }
 
     @Override
     public void exec(NaruTask task) {

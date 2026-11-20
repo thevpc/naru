@@ -1,7 +1,11 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.registry.NaruDirective;
+import net.thevpc.naru.api.registry.NaruDirectiveBase;
+import net.thevpc.naru.api.registry.NaruDirectiveProvider;
+import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.naru.impl.cmdline.NaruNArgCompleteResolver;
 import net.thevpc.naru.impl.engine.stmt.shared.NaruStatementHelper;
 import net.thevpc.nuts.Nuts;
@@ -10,9 +14,11 @@ import net.thevpc.nuts.cmdline.NArgCompletePosition;
 import net.thevpc.nuts.cmdline.NArgCompleteResolver;
 import net.thevpc.nuts.cmdline.NArgCompleteResult;
 import net.thevpc.nuts.cmdline.NCmdLine;
-import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NIO;
 import net.thevpc.nuts.io.NPath;
+import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,25 +47,11 @@ public class NaruNArgCompleteResolverTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
-    }
+        Nuts.require();    }
 
     @BeforeEach
     public void setUp() {
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-complete-test"));
         session = agent.newSession()
                 .build();
@@ -130,6 +122,75 @@ public class NaruNArgCompleteResolverTest {
     }
 
     @Test
+    public void anAliasedDirectiveStillDelegatesArguments() {
+        // /help also answers to "?", and an argument typed after the alias must
+        // still reach the aliased directive's completer instead of resolving to
+        // nothing, which would make every aliased command un-completable
+        List<String> canonical = argumentCandidates("/help", "p");
+        List<String> aliased = argumentCandidates("/?", "p");
+        assertFalse(canonical.isEmpty(), "sanity: /help must complete directive names: " + canonical);
+        assertEquals(canonical, aliased,
+                "the ? alias must complete exactly like its canonical /help form");
+        assertTrue(aliased.contains("project"),
+                "the help completer should offer matching directive names: " + aliased);
+    }
+
+    @Test
+    public void aSubCommandArgumentReachesItsCompleterThroughTheResolver() {
+        // /tags enable <TAB> relies on this hop: word 2 is an argument of the
+        // "enable" sub-command, and the base directive has to look the sub-command
+        // up and hand the words over. If that lookup regresses, every sub-command
+        // argument completer silently stops appearing in the shell.
+        session.registry().registerDirectiveProvider(new NaruDirectiveProvider() {
+            @Override
+            public String name() {
+                return "resolver-complete-probe";
+            }
+
+            @Override
+            public List<NaruDirective> directives() {
+                return List.of(new TagLikeDirective());
+            }
+        });
+        List<String> c = argumentCandidates("/taggate", "enable", "");
+        assertTrue(c.contains("all"),
+                "the resolver must reach the sub-command completer at word 2, got " + c);
+    }
+
+    /** A directive shaped like {@code /tags}: sub-command then tag-like arguments. */
+    static class TagLikeDirective extends NaruDirectiveBase {
+        TagLikeDirective() {
+            super("taggate", "test", "synthetic sub-command completion probe");
+            register(new AbstractSubCommand("enable", NText.ofPlain("enable things"),
+                    new SubCommandHelp("<name>...", "synthetic")) {
+                @Override
+                public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
+                    return NaruStmtResult.ofSuccess(NElement.of(0), NMsg.ofC("%s",0));
+                }
+
+                @Override
+                public NArgCompleteResult resolveCandidates(NCmdLine cmdLine, NArgCompletePosition pos, NaruSession session) {
+                    return NArgCompleteResult.ofCandidates(List.of(NArgCompleteCandidate.of("all")));
+                }
+            });
+        }
+    }
+
+    /** Argument-position completion, using the same position shape the other suites use. */
+    private List<String> argumentCandidates(String... words) {
+        NCmdLine cmdLine = NCmdLine.of(words);
+        int last = words.length - 1;
+        NArgCompletePosition pos = NArgCompletePosition.of(last, words[last].length(), 0);
+        NArgCompleteResult result = new NaruNArgCompleteResolver(session)
+                .resolveCandidates(cmdLine.completePosition(pos), pos);
+        List<String> out = new ArrayList<>();
+        for (NArgCompleteCandidate c : result.candidates()) {
+            out.add(c.value());
+        }
+        return out;
+    }
+
+    @Test
     public void aPartialDirectiveIsCompleted() {
         // typing "/he" then Tab should narrow to /help
         List<String> all = candidates("/he");
@@ -174,7 +235,7 @@ public class NaruNArgCompleteResolverTest {
     public void buildingARichTerminalSessionRegistersTheCompleter() {
         NArgCompleteResolver previous = NIO.of().systemTerminal().autoCompleteResolver();
         try {
-            NaruAgent agent = new NaruAgentImpl();
+            NaruWorkspace agent = NaruWorkspace.of();
             agent.projectDirectory(NPath.ofTempFolder("naru-complete-wiring"));
             agent.newSession()
                     .richTerm(true)
@@ -196,7 +257,7 @@ public class NaruNArgCompleteResolverTest {
         // the registration is process-global, so a session that does not own the
         // console must leave it alone
         NArgCompleteResolver previous = NIO.of().systemTerminal().autoCompleteResolver();
-        NaruAgent agent = new NaruAgentImpl();
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-complete-headless"));
         agent.newSession()
                 .richTerm(false)

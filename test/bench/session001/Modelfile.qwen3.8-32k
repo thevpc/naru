@@ -1,0 +1,2 @@
+FROM qwen3.8:latest
+PARAMETER num_ctx 32768

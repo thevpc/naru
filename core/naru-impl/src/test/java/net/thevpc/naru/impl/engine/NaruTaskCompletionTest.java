@@ -1,13 +1,13 @@
 package net.thevpc.naru.impl.engine;
 
-import net.thevpc.naru.api.agent.NaruAgent;
+import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.scheduler.NaruTaskMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.impl.interaction.NaruStreamInteraction;
 import net.thevpc.nuts.Nuts;
-import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NLiteral;
 import net.thevpc.nuts.util.NEmptyOptionalException;
@@ -41,27 +41,11 @@ public class NaruTaskCompletionTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            // --sandbox, unlike the --system --standalone the rest of the suite uses, keeps this
-            // class's workspace off the machine's real one. Worth knowing if a test here starts
-            // depending on state another class left behind -- that state will not be there.
-            NWorkspace ws = Nuts.openWorkspace("--sandbox");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
+        Nuts.require();
     }
 
-    private static NaruAgentImpl newAgent(String name) {
-        NaruAgentImpl agent = new NaruAgentImpl();
+    private static NaruWorkspace newAgent(String name) {
+        NaruWorkspace agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-run-" + name));
         return agent;
     }
@@ -110,7 +94,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void runReturnsTheValueItProduced() {
-        NaruAgent agent = newAgent("value");
+        NaruWorkspace agent = newAgent("value");
         NaruTask result = await(agent.newSession()
                 .interaction(silent())
                 .task(spec("/print 40+2"))
@@ -131,7 +115,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void handleOutlivesTheTasksRegistration() {
-        NaruAgent agent = newAgent("outlive");
+        NaruWorkspace agent = newAgent("outlive");
         NaruSession session = agent.newSession()
                 .interaction(silent())
                 .task(spec("/print 7").name("seven"))
@@ -149,7 +133,7 @@ public class NaruTaskCompletionTest {
         Assertions.assertEquals(id, run.id());
         Assertions.assertEquals("seven", run.name());
         Assertions.assertNotNull(run.session());
-        Assertions.assertNotNull(run.projectDir());
+        Assertions.assertNotNull(run.sessionDir());
         Assertions.assertTrue(run.isCompleted());
         Assertions.assertTrue(run.endTime().isPresent(), "run.endTime() should be set once the task has finished");
         Assertions.assertTrue(run.duration().isPresent(), "run.duration() should be set once the task has finished");
@@ -163,7 +147,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void runOnAnAlreadyStartedSession() {
-        NaruAgent agent = newAgent("run2");
+        NaruWorkspace agent = newAgent("run2");
         NaruSession session = agent.newSession()
                 .interaction(deaf())
                 .interactive()
@@ -188,7 +172,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void runOnAnUnstartedSessionIsRefused() {
-        NaruAgent agent = newAgent("unstarted");
+        NaruWorkspace agent = newAgent("unstarted");
         NaruSession session = agent.newSession().interaction(silent()).build();
 
         Assertions.assertThrows(IllegalStateException.class, () -> session.run(spec("/print 1")));
@@ -197,7 +181,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void runTwiceIsRefused() {
-        NaruAgent agent = newAgent("twice");
+        NaruWorkspace agent = newAgent("twice");
         NaruSession session = agent.newSession()
                 .interaction(silent())
                 .task(spec("/print 1"))
@@ -210,7 +194,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void runWithoutATaskIsRefused() {
-        NaruAgent agent = newAgent("notask");
+        NaruWorkspace agent = newAgent("notask");
         NaruSession session = agent.newSession().interaction(silent()).build();
 
         Assertions.assertThrows(IllegalStateException.class, session::run);
@@ -221,10 +205,10 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void specVarsSeedTheTaskEnvWithoutStringifying() {
-        NaruAgent agent = newAgent("vars");
-        Map<String, Object> seed = new LinkedHashMap<>();
-        seed.put("count", 41);
-        seed.put("label", "hello world");
+        NaruWorkspace agent = newAgent("vars");
+        Map<String, NElement> seed = new LinkedHashMap<>();
+        seed.put("count", NElement.of(41));
+        seed.put("label", NElement.of("hello world"));
         NaruTaskSpec withVars = spec("/print count+1").vars(seed);
 
         NaruTask result = await(agent.newSession()
@@ -237,19 +221,19 @@ public class NaruTaskCompletionTest {
         // one value rather than two shell-ish words
         Assertions.assertEquals(42L, asLong(result.value().orNull()));
         Assertions.assertEquals(41, NLiteral.ofLong(result.var("count").orNull()).get());
-        Assertions.assertEquals("hello world", result.var("label").orElse(null));
+        Assertions.assertEquals(NElement.of("hello world"), result.var("label").orElse(null));
         Assertions.assertTrue(result.vars().containsKey("label"));
     }
 
     @Test
     @Timeout(60)
     public void varsAreReadableWhileTheTaskIsStillRunning() {
-        NaruAgent agent = newAgent("livevars");
+        NaruWorkspace agent = newAgent("livevars");
         // interactive never terminates, so the handle is still open when we look
         NaruTask run = agent.newSession()
                 .interaction(deaf())
                 .interactive()
-                .task(spec("/print 1").vars(Map.of("seeded", 5)).name("live"))
+                .task(spec("/print 1").vars(Map.of("seeded", NElement.of(5))).name("live"))
                 .build()
                 .run();
 
@@ -266,7 +250,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void resultVarsAreAnUnmodifiableSnapshot() {
-        NaruAgent agent = newAgent("frozen");
+        NaruWorkspace agent = newAgent("frozen");
         NaruTask result = await(agent.newSession()
                 .interaction(silent())
                 .task(spec("/print 1"))
@@ -274,7 +258,7 @@ public class NaruTaskCompletionTest {
                 .run());
 
         Assertions.assertThrows(UnsupportedOperationException.class,
-                () -> result.vars().put("b", 2));
+                () -> result.vars().put("b", NElement.of(2)));
     }
 
     // ── the wide result: value, exit code and error together ───────────────────
@@ -292,10 +276,10 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void doneWithANonZeroCodeIsNotSuccess() {
-        NaruAgent agent = newAgent("soft");
+        NaruWorkspace agent = newAgent("soft");
         NaruTask result = await(agent.newSession()
                 .interaction(silent())
-                .task(spec("/assert 1 == 2").vars(Map.of("input", "kept")))
+                .task(spec("/assert 1 == 2").vars(Map.of("input", NElement.of("kept"))))
                 .build()
                 .run());
 
@@ -305,7 +289,7 @@ public class NaruTaskCompletionTest {
                 "the soft failure must be visible as an exit code");
         Assertions.assertFalse(result.isSuccess());
         Assertions.assertNotNull(result.error());
-        Assertions.assertEquals("kept", result.var("input").orElse(null),
+        Assertions.assertEquals(NElement.of("kept"), result.var("input").orElse(null),
                 "data handed to the task must not be lost just because it complained");
         // opting in to the exception is a choice, not something forced on the caller
         Assertions.assertThrows(IllegalStateException.class, result::throwIfFailed);
@@ -318,10 +302,10 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void carryingVariablesDoesNotMakeARunFail() {
-        NaruAgent agent = newAgent("clean2");
+        NaruWorkspace agent = newAgent("clean2");
         NaruTask result = await(agent.newSession()
                 .interaction(silent())
-                .task(spec("/print 5").vars(Map.of("noise", "harmless")))
+                .task(spec("/print 5").vars(Map.of("noise", NElement.of("harmless"))))
                 .build()
                 .run());
 
@@ -339,7 +323,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void aBrokenDirectiveIsReportedAsAStatementErrorNotATaskFailure() {
-        NaruAgent agent = newAgent("brokendir");
+        NaruWorkspace agent = newAgent("brokendir");
         NaruTask result = await(agent.newSession()
                 .interaction(silent())
                 .task(spec("/print 1", "/assert --set green count == \"nope\""))
@@ -356,7 +340,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void callbackAndAwaitAgree() throws Exception {
-        NaruAgent agent = newAgent("cb");
+        NaruWorkspace agent = newAgent("cb");
         CountDownLatch fired = new CountDownLatch(1);
         AtomicReference<NaruTask> seen = new AtomicReference<>();
 
@@ -386,7 +370,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void callbackRegisteredAfterCompletionStillFires() throws Exception {
-        NaruAgent agent = newAgent("late");
+        NaruWorkspace agent = newAgent("late");
         NaruTask run = agent.newSession()
                 .interaction(silent())
                 .task(spec("/print 1"))
@@ -409,7 +393,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void eachSubscriberIsNotifiedExactlyOnce() throws Exception {
-        NaruAgent agent = newAgent("once");
+        NaruWorkspace agent = newAgent("once");
         AtomicInteger first = new AtomicInteger();
         AtomicInteger second = new AtomicInteger();
         CountDownLatch fired = new CountDownLatch(1);
@@ -435,7 +419,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void aThrowingCallbackDoesNotBreakTheOthers() throws Exception {
-        NaruAgent agent = newAgent("throwing");
+        NaruWorkspace agent = newAgent("throwing");
         CountDownLatch good = new CountDownLatch(1);
 
         NaruTask run = agent.newSession()
@@ -457,7 +441,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void callbacksDoNotRunOnTheSchedulerThread() {
-        NaruAgent agent = newAgent("thread");
+        NaruWorkspace agent = newAgent("thread");
         AtomicReference<String> thread = new AtomicReference<>();
         CountDownLatch fired = new CountDownLatch(1);
 
@@ -486,7 +470,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void futureCompletesWithTheResult() throws Exception {
-        NaruAgent agent = newAgent("future");
+        NaruWorkspace agent = newAgent("future");
         NaruTask run = agent.newSession()
                 .interaction(silent())
                 .task(spec("/print 8"))
@@ -510,7 +494,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void untimedAwaitRejectsInteractiveTasks() {
-        NaruAgent agent = newAgent("interactive");
+        NaruWorkspace agent = newAgent("interactive");
         NaruTask run = agent.newSession()
                 .interaction(deaf())
                 .interactive()
@@ -527,7 +511,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void timedAwaitGivesUpWithoutFailingTheTask() {
-        NaruAgent agent = newAgent("timeout");
+        NaruWorkspace agent = newAgent("timeout");
         NaruTask run = agent.newSession()
                 .interaction(deaf())
                 .interactive()
@@ -548,7 +532,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void awaitRejectsANonPositiveTimeout() {
-        NaruAgent agent = newAgent("badtimeout");
+        NaruWorkspace agent = newAgent("badtimeout");
         NaruTask run = agent.newSession()
                 .interaction(silent())
                 .task(spec("/print 1"))
@@ -574,7 +558,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void cancelSettlesTheRunAsKilled() {
-        NaruAgent agent = newAgent("cancel");
+        NaruWorkspace agent = newAgent("cancel");
         NaruTask run = agent.newSession()
                 .interaction(deaf())
                 .interactive()
@@ -595,7 +579,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void cancelIsIdempotentAndSafeToRepeat() {
-        NaruAgent agent = newAgent("cancel2");
+        NaruWorkspace agent = newAgent("cancel2");
         NaruTask run = agent.newSession()
                 .interaction(deaf())
                 .interactive()
@@ -615,7 +599,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(120)
     public void manyWaitersAllSeeTheSameResult() throws Exception {
-        NaruAgent agent = newAgent("many");
+        NaruWorkspace agent = newAgent("many");
         int waiters = 8;
         CountDownLatch ready = new CountDownLatch(waiters);
         CountDownLatch go = new CountDownLatch(1);
@@ -660,7 +644,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void concurrentSubscribersAllFireExactlyOnce() throws Exception {
-        NaruAgent agent = newAgent("race");
+        NaruWorkspace agent = newAgent("race");
         AtomicInteger fired = new AtomicInteger();
         CountDownLatch done = new CountDownLatch(16);
         NaruTask run = agent.newSession()
@@ -693,7 +677,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void stoppingTheSessionSettlesRunsStillInFlight() {
-        NaruAgent agent = newAgent("sessionstop");
+        NaruWorkspace agent = newAgent("sessionstop");
         NaruSession session = agent.newSession()
                 .interaction(deaf())
                 .interactive()
@@ -717,7 +701,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void aTaskThatFinishedBeforeTheStopIsStillReportedAsDone() {
-        NaruAgent agent = newAgent("normalstop");
+        NaruWorkspace agent = newAgent("normalstop");
         NaruSession session = agent.newSession()
                 .interaction(silent())
                 .task(spec("/print 6"))
@@ -745,7 +729,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void aTaskFailedByAnUnanswerableQuestionSaysWhy() {
-        NaruAgent agent = newAgent("unanswerable");
+        NaruWorkspace agent = newAgent("unanswerable");
         // An interactive task with nothing to do asks a question -- that is how a REPL works.
         // silent() has no input listener at all, which the interaction reports as a
         // cancellation: the right outcome for a question nobody is ever going to answer, and
@@ -802,7 +786,7 @@ public class NaruTaskCompletionTest {
                 .build()
                 .run());
 
-        Assertions.assertEquals("fallback", run.varOrDefault("missing", "fallback"));
+        Assertions.assertEquals(NElement.of("fallback"), run.varOrDefault("missing", NElement.of("fallback")));
         Assertions.assertTrue(run.var("missing").isEmpty(), "absent is not the same as null-valued");
         // Reading an absent variable as a number is a caller error, not something to default
         // quietly -- and because var() is empty rather than null, the failure names the missing
@@ -828,16 +812,16 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void aFinishedTaskKeepsWhatItProducedEvenIfItsVariablesAreLaterChanged() {
-        NaruAgent agent = newAgent("frozen");
+        NaruWorkspace agent = newAgent("frozen");
         NaruTask run = await(agent.newSession()
                 .interaction(silent())
-                .task(spec("/return 7").vars(Map.of("x", 1L)))
+                .task(spec("/return 7").vars(Map.of("x", NElement.of(1L))))
                 .build()
                 .run());
 
         Object value = run.value().orNull();
         int exit = run.exitCode();
-        Map<String, Object> vars = run.vars();
+        Map<String, NElement> vars = run.vars();
         Assertions.assertEquals(7L, asLong(value));
         Assertions.assertEquals(0, exit);
         Assertions.assertEquals(1L, asLong(vars.get("x")));
@@ -846,7 +830,7 @@ public class NaruTaskCompletionTest {
         // go by now -- so writing to its variables afterwards must not quietly rewrite that. The
         // setters stay live because they describe the task rather than its run; the outcome
         // readers do not move.
-        run.setTaskEnv("x", 999L).setTaskEnv("lastResult", "tampered").setTaskEnv("lastExitCode", 5L);
+        run.setTaskEnv("x", NElement.of(999L)).setTaskEnv("lastResult", NElement.of("tampered")).setTaskEnv("lastExitCode", NElement.of(5L));
 
         Assertions.assertEquals(7L, asLong(run.value().orNull()), "value must not follow a later write");
         Assertions.assertEquals(0, run.exitCode(), "exit code must not follow a later write");
@@ -915,7 +899,7 @@ public class NaruTaskCompletionTest {
         // the way out therefore has to keep working, and throwing from any of it kills the
         // worker mid-drain -- which used to surface as a stray "session is stopped" on a
         // scheduler thread and a task whose cancellation never landed.
-        NaruAgent agent = newAgent("stopped-lookup");
+        NaruWorkspace agent = newAgent("stopped-lookup");
         NaruSession session = agent.newSession()
                 .interaction(silent())
                 .task(spec("/print 1"))
@@ -937,7 +921,7 @@ public class NaruTaskCompletionTest {
     @Test
     @Timeout(60)
     public void stoppingASessionLeavesItsTaskReadableRatherThanHalfSettled() {
-        NaruAgent agent = newAgent("stop-settles");
+        NaruWorkspace agent = newAgent("stop-settles");
         NaruTask run = agent.newSession()
                 .interaction(deaf())
                 .interactive()

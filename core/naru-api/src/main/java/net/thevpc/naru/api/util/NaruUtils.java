@@ -3,6 +3,11 @@ package net.thevpc.naru.api.util;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.nuts.cmdline.NCmdLine;
+import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NListContainerElement;
+import net.thevpc.nuts.elem.NObjectElement;
+import net.thevpc.nuts.elem.NPairElement;
+import net.thevpc.nuts.elem.NElementType;
 import net.thevpc.nuts.text.*;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NStringUtils;
@@ -12,13 +17,16 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class NaruUtils {
 
-    public static void showItemsWithFormat(String context2, String format, List<NaruUtils.LineRange> ranges, NaruTask task) {
+    public static void showItemsWithFormat(String context2, String format, List<NaruUtils.LineRange> ranges, NaruTask task,Consumer<NMsg> textBuilder) {
         NText nText;
         switch (format) {
             case "markdown": {
@@ -32,7 +40,7 @@ public class NaruUtils {
         }
         List<NText> linesOk = nText.splitLines();
         Set<Integer> toShow = net.thevpc.naru.api.util.NaruUtils.resolveIndexes(ranges.toArray(new net.thevpc.naru.api.util.NaruUtils.LineRange[0]), linesOk.size());
-        showItems(linesOk, toShow, task);
+        showItems(linesOk, toShow, task,textBuilder);
     }
 
     public static NText formattedTokensSize(long cl) {
@@ -66,13 +74,13 @@ public class NaruUtils {
     }
 
 
-    public static void showItems(List<NText> items, Set<Integer> toShow, NaruTask task) {
+    public static void showItems(List<NText> items, Set<Integer> toShow, NaruTask task,Consumer<NMsg> textBuilder) {
         int lastKey = items.size() + 1;
         if (toShow.isEmpty()) {
             if (!items.isEmpty()) {
                 for (int i = 0; i < items.size(); i++) {
                     NText e = items.get(i);
-                    showItem(i + 1, lastKey, e, task);
+                    showItem(i + 1, lastKey, e, task,textBuilder);
                 }
             }
         } else {
@@ -81,14 +89,14 @@ public class NaruUtils {
                 int i = bb.get(k);
                 int im1 = i - 1;
                 if (im1 >= 0 && im1 < items.size()) {
-                    showItem(i, lastKey, items.get(im1), task);
+                    showItem(i, lastKey, items.get(im1), task,textBuilder);
                 }
             }
         }
     }
 
 
-    private static void showItem(int rowIndex, int max, NText item, NaruTask task) {
+    private static void showItem(int rowIndex, int max, NText item, NaruTask task, Consumer<NMsg> textBuilder) {
         int zeros = (int) Math.ceil(Math.log10(max));
         if (zeros <= 0) {
             zeros = 1;
@@ -99,15 +107,15 @@ public class NaruUtils {
         for (int j = 0; j < lines.size(); j++) {
             NText line = lines.get(j);
             if (j == 0) {
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
+                textBuilder.accept(NMsg.ofC("%s %s",
                         NMsg.ofStyledNumber(zformat.format(rowIndex)),
                         line));
             } else {
-                task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("        %s", line));
+                textBuilder.accept(NMsg.ofC("        %s", line));
             }
         }
         if (lines.isEmpty()) {
-            task.log(NaruLogMode.AGENT_RESPONSE, NMsg.ofC("%s %s",
+            textBuilder.accept(NMsg.ofC("%s %s",
                     NMsg.ofStyledNumber(zformat.format(rowIndex)),
                     item));
         }
@@ -191,6 +199,98 @@ public class NaruUtils {
         }
         String cc = content.substring(0, Math.min(content.length(), 40));
         return cc.replace("\r\n", " ").replace("\n", " ");
+    }
+
+    public static NText snippet(NMsg content) {
+        return snippet(NText.of(content));
+    }
+
+    public static NText snippet(NText content) {
+        if (NBlankable.isBlank(content)) {
+            return NText.ofBlank();
+        }
+        NText cc = content.substring(0, Math.min(content.length(), 40));
+        NTextBuilder sb=NTextBuilder.of();
+        for (NPrimitiveText a : cc.toCharArray()) {
+            if(a.isNewLine()){
+                sb.append(" ");
+            }else{
+                sb.append(a);
+            }
+        }
+        return sb.build();
+    }
+
+    /**
+     * The Java value an element was built from: scalars become String/Number/Boolean/null
+     * and containers become Map/List, walked all the way down.
+     *
+     * <p>Values that crossed into {@code NElement}-typed slots are elements even when they
+     * started as plain strings, so code that dispatches on {@code instanceof Map}, or that
+     * puts a leaf into a JSON wire payload, must undo the wrap first.
+     * {@link net.thevpc.nuts.elem.NElement#simpleOf} does not: it converts Java to element
+     * and returns an element untouched, which leaves the element in front of value-shaped
+     * code. A non-element passes through unchanged so nested Java values recurse cleanly.
+     */
+    public static Object plainValue(Object value) {
+        if (!(value instanceof NElement element)) {
+            return value;
+        }
+        NElementType type = element.type();
+        if (type == NElementType.NULL) {
+            return null;
+        }
+        if (type.isAnyString()) {
+            return element.asStringValue().orNull();
+        }
+        if (type.isAnyNumber()) {
+            return element.asNumberValue().orNull();
+        }
+        if (type == NElementType.BOOLEAN) {
+            return element.asBooleanValue().orNull();
+        }
+        NObjectElement object = element.asObject().orNull();
+        if (object != null) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            for (NElement pair : object.stream().toList()) {
+                if (pair instanceof NPairElement p) {
+                    map.put(p.key().asStringValue().orNull(), plainValue(p.value()));
+                }
+            }
+            return map;
+        }
+        NListContainerElement list = element.asListContainer().orNull();
+        if (list != null) {
+            List<Object> values = new ArrayList<>();
+            for (int i = 0; i < list.size(); i++) {
+                values.add(plainValue(list.get(i).orNull()));
+            }
+            return values;
+        }
+        return element;
+    }
+
+    /**
+     * The fields of an object element, kept as elements, in declaration order.
+     *
+     * <p>The counterpart of {@link #plainValue}: a JSON arguments object read off a model
+     * response has to land in a {@code Map<String, NElement>} slot, and
+     * {@code element.convertTo(Map.class)} is not it — that produces a map of Java values
+     * and only fits because an unchecked cast erases the difference. Anything downstream
+     * that then reads a value as an element gets a ClassCastException, or worse, a String
+     * where every other producer stores an element.
+     */
+    public static Map<String, NElement> fields(NElement element) {
+        Map<String, NElement> map = new LinkedHashMap<>();
+        NObjectElement object = element == null ? null : element.asObject().orNull();
+        if (object != null) {
+            for (NElement pair : object.stream().toList()) {
+                if (pair instanceof NPairElement p) {
+                    map.put(p.key().asStringValue().orNull(), p.value());
+                }
+            }
+        }
+        return map;
     }
 
     public static String timeAgo(Instant instant) {

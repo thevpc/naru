@@ -11,6 +11,7 @@ import net.thevpc.naru.api.spawn.NaruSpawnSource;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.util.NNameFormat;
 
 import java.util.ArrayList;
@@ -39,7 +40,9 @@ public class NaruSpawnContextImpl implements NaruSpawnContext {
     private final Map<String, NaruSpawnSeed<String>> revokeTagSeeds = new LinkedHashMap<>();
     private final Map<String, NaruSpawnSeed<String>> exclusionSeeds = new LinkedHashMap<>();
     private final Map<String, NaruSpawnSeed<String>> skillSeeds = new LinkedHashMap<>();
-    private final Map<String, NaruSpawnSeed<Object>> envSeeds = new LinkedHashMap<>();
+    private final Map<String, NaruSpawnSeed<NElement>> envSeeds = new LinkedHashMap<>();
+    private final Map<String, NaruSpawnSeed<String>> labelSeeds = new LinkedHashMap<>();
+    private final Map<String, NaruSpawnSeed<String>> revokeLabelSeeds = new LinkedHashMap<>();
     private final Map<NaruSpawnInherit, NaruSpawnSeed<NaruSpawnInherit>> inheritSeeds = new LinkedHashMap<>();
     private NaruSpawnSeed<NaruSpawnStrategy> strategySeed;
 
@@ -132,7 +135,7 @@ public class NaruSpawnContextImpl implements NaruSpawnContext {
     }
 
     @Override
-    public NaruSpawnContext seedEnv(String key, Object value, NaruSpawnSource source) {
+    public NaruSpawnContext seedEnv(String key, NElement value, NaruSpawnSource source) {
         if (key == null || key.isBlank()) {
             return this;
         }
@@ -142,8 +145,27 @@ public class NaruSpawnContextImpl implements NaruSpawnContext {
     }
 
     @Override
-    public NaruSpawnContext seedInherit(NaruSpawnInherit kind, NaruSpawnSource source) {
-        if (kind != null) {
+    public NaruSpawnContext seedLabel(String key, String value, NaruSpawnSource source) {
+        if (key == null || key.isBlank()) {
+            return this;
+        }
+        labelSeeds.merge(key, NaruSpawnSeed.of(value, source == null ? NaruSpawnSource.DEFAULT : source),
+                (a, b) -> rank(b.source()) >= rank(a.source()) ? b : a);
+        return this;
+    }
+
+    @Override
+    public NaruSpawnContext seedRevokeLabel(String key, NaruSpawnSource source) {
+        if (key == null || key.isBlank()) {
+            return this;
+        }
+        revokeLabelSeeds.merge(key, NaruSpawnSeed.of(key, source == null ? NaruSpawnSource.DEFAULT : source),
+                (a, b) -> rank(b.source()) >= rank(a.source()) ? b : a);
+        return this;
+    }
+
+    @Override
+    public NaruSpawnContext seedInherit(NaruSpawnInherit kind, NaruSpawnSource source) {        if (kind != null) {
             inheritSeeds.merge(kind, NaruSpawnSeed.of(kind, source == null ? NaruSpawnSource.DEFAULT : source),
                     (a, b) -> rank(b.source()) >= rank(a.source()) ? b : a);
         }
@@ -208,8 +230,16 @@ public class NaruSpawnContextImpl implements NaruSpawnContext {
         return Collections.unmodifiableMap(skillSeeds);
     }
 
-    Map<String, NaruSpawnSeed<Object>> envSeeds() {
+    Map<String, NaruSpawnSeed<NElement>> envSeeds() {
         return Collections.unmodifiableMap(envSeeds);
+    }
+
+    Map<String, NaruSpawnSeed<String>> labelSeeds() {
+        return Collections.unmodifiableMap(labelSeeds);
+    }
+
+    Map<String, NaruSpawnSeed<String>> revokeLabelSeeds() {
+        return Collections.unmodifiableMap(revokeLabelSeeds);
     }
 
     Map<NaruSpawnInherit, NaruSpawnSeed<NaruSpawnInherit>> inheritSeeds() {
@@ -245,7 +275,7 @@ public class NaruSpawnContextImpl implements NaruSpawnContext {
     private static NaruSpawnResolution emptyResolution() {
         return new NaruSpawnResolution(
                 NaruSpawnStrategy.NONE, 0, NaruSpawnSource.DEFAULT,
-                Map.of(), List.of(), List.of(), List.of(), List.of(), Map.of(),
+                Map.of(), List.of(), List.of(), List.of(), List.of(), Map.of(), Map.of(),
                 null, null, List.of());
     }
 }

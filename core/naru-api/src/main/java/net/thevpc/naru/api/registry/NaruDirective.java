@@ -1,5 +1,6 @@
 package net.thevpc.naru.api.registry;
 
+import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.routine.NaruStmtResult;
 import net.thevpc.nuts.cmdline.NArgCompleteCandidate;
 import net.thevpc.nuts.cmdline.NArgCompletePosition;

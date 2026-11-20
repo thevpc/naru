@@ -1,5 +1,7 @@
 package net.thevpc.naru.api.registry;
 
+import net.thevpc.nuts.elem.NElement;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -21,11 +23,11 @@ public class NaruToolParameter {
     private final String name;
     private final Type type;
     private final String description;
-    private final Object defaultValue;
+    private final NElement defaultValue;
     private final boolean required;
 
     // ── any type ─────────────────────────────────────────────────────────────
-    private final List<Object> enumValues;       // allowed values
+    private final List<NElement> enumValues;     // allowed values
     private final boolean nullable;              // type | null
 
     // ── STRING ───────────────────────────────────────────────────────────────
@@ -55,9 +57,9 @@ public class NaruToolParameter {
         this.name                = b.name;
         this.type                = b.type;
         this.description         = b.description;
-        this.defaultValue        = b.defaultValue;
+        this.defaultValue        = asElement(b.defaultValue);
         this.required            = b.required;
-        this.enumValues          = b.enumValues;
+        this.enumValues          = b.enumValues == null ? null : b.enumValues.stream().map(NaruToolParameter::asElement).collect(java.util.stream.Collectors.toList());
         this.nullable            = b.nullable;
         this.format              = b.format;
         this.minLength           = b.minLength;
@@ -76,14 +78,37 @@ public class NaruToolParameter {
         this.additionalProperties = b.additionalProperties;
     }
 
+    /**
+     * A default or an enum value is written straight into the schema a model reads, so it
+     * becomes an element here rather than at emit time. Converting late would let a bean
+     * declared as a default reach the wire as an empty object, which is what the
+     * element-typed slots exist to prevent.
+     */
+    private static NElement asElement(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof NElement e) {
+            return e;
+        }
+        if (v instanceof String || v instanceof Number || v instanceof Boolean
+                || v instanceof Character || v instanceof Enum<?> || v instanceof java.util.Collection
+                || v instanceof java.util.Map || v instanceof Object[]) {
+            return NElement.of(v);
+        }
+        throw new IllegalArgumentException(
+                "a tool schema default/enum must be a scalar, a collection or an element, not "
+                        + v.getClass().getName());
+    }
+
 // ── getters ──────────────────────────────────────────────────────────────
 
     public String getName()                       { return name; }
     public Type getType()                         { return type; }
     public String getDescription()                { return description; }
-    public Object getDefaultValue()               { return defaultValue; }
+    public NElement getDefaultValue()             { return defaultValue; }
     public boolean isRequired()                   { return required; }
-    public List<Object> getEnumValues()           { return enumValues; }
+    public List<NElement> getEnumValues()         { return enumValues; }
     public boolean isNullable()                   { return nullable; }
     public String getFormat()                     { return format; }
     public Integer getMinLength()                 { return minLength; }

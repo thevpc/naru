@@ -1,11 +1,14 @@
 package net.thevpc.naru.api.task;
 
+import net.thevpc.naru.api.access.NaruActor;
 import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.spawn.NaruSpawnContract;
 import net.thevpc.naru.api.spawn.NaruSpawnInherit;
 import net.thevpc.naru.api.spawn.NaruSpawnStrategy;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.util.NBlankable;
+import net.thevpc.nuts.util.NOptional;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -23,7 +26,8 @@ public class NaruTaskSpec {
     private List<String> statements = new ArrayList<>();
     private NaruPromptMode promptMode;
     private final Set<String> toolTags = new LinkedHashSet<>();
-    private final Map<String, Object> vars = new LinkedHashMap<>();
+    private final Map<String, NElement> vars = new LinkedHashMap<>();
+    private final Map<String, NElement> params = new LinkedHashMap<>();
     // ── spawn inputs (WP3: strategy, seeds with provenance, named policy, contract) ──
     private NaruSpawnStrategy strategy;
     private int windowTurns;
@@ -32,11 +36,19 @@ public class NaruTaskSpec {
     private final Set<String> revokeTags = new LinkedHashSet<>();
     private final Set<String> excludeTools = new LinkedHashSet<>();
     private final Set<String> addSkills = new LinkedHashSet<>();
+    private final Map<String, String> addLabels = new LinkedHashMap<>();
+    private final Set<String> revokeLabels = new LinkedHashSet<>();
     private String policy;
     private String spawnKind;
     private NaruSpawnContract contract;
     private String model;
-    private final Map<String, Object> ext = new LinkedHashMap<>();
+    private final Map<String, NElement> ext = new LinkedHashMap<>();
+
+    /**
+     * The actor that authors this task's statements. Null means the task
+     * inherits its parent's actor, or the session's user for a root task.
+     */
+    private NaruActor actor;
 
     public static NaruTaskSpec of() {
         return new NaruTaskSpec();
@@ -78,6 +90,27 @@ public class NaruTaskSpec {
         return this;
     }
 
+    /**
+     * The actor that authored this task's statements, if declared. Carries who
+     * created the instruction, so a task an agent spawns runs as that agent and
+     * not as an unowned nameless run.
+     */
+    public NOptional<NaruActor> actor() {
+        return NOptional.ofNullable(actor);
+    }
+
+    public NaruTaskSpec actor(NaruActor actor) {
+        this.actor = actor;
+        return this;
+    }
+
+    /** Declares statements and stamps them, in one call, with their author. */
+    public NaruTaskSpec statements(String[] lines, NaruActor actor) {
+        this.statements = lines == null ? new ArrayList<>() : new ArrayList<>(Arrays.asList(lines));
+        this.actor = actor;
+        return this;
+    }
+
     public String name() {
         return name;
     }
@@ -89,7 +122,7 @@ public class NaruTaskSpec {
 
     /**
      * Prompt mode to run the task in. When {@code null} the task inherits its
-     * parent's mode, falling back to {@code PLANNING} for root tasks.
+     * parent's mode, falling back to {@code DEFAULT} for root tasks.
      * <p>
      * Declaring it here rather than calling {@code NaruTask.promptMode(..)} after
      * {@code newTask(..)} matters: a freshly created task is already visible to
@@ -140,10 +173,10 @@ public class NaruTaskSpec {
      *
      * @param vars the variables, may be null to clear; null keys are ignored
      */
-    public NaruTaskSpec vars(Map<String, Object> vars) {
+    public NaruTaskSpec vars(Map<String, NElement> vars) {
         this.vars.clear();
         if (vars != null) {
-            for (Map.Entry<String, Object> entry : vars.entrySet()) {
+            for (Map.Entry<String, NElement> entry : vars.entrySet()) {
                 if (entry.getKey() != null) {
                     this.vars.put(entry.getKey(), entry.getValue());
                 }
@@ -155,7 +188,7 @@ public class NaruTaskSpec {
     /**
      * Add or replace a single initial task variable, keeping the others.
      */
-    public NaruTaskSpec var(String name, Object value) {
+    public NaruTaskSpec var(String name, NElement value) {
         if (name != null) {
             vars.put(name, value);
         }
@@ -165,8 +198,35 @@ public class NaruTaskSpec {
     /**
      * The initial task variables, unmodifiable. Empty rather than null when none were set.
      */
-    public Map<String, Object> vars() {
+    public Map<String, NElement> vars() {
         return Collections.unmodifiableMap(vars);
+    }
+
+    /**
+     * Replace named input parameters for this task. Parameters are seeded into the task
+     * environment before any statement or prompt runs, and override same-named entries
+     * supplied through {@link #vars(Map)}. Positional parameters are intentionally not
+     * supported so callers can add or reorder inputs without breaking existing calls.
+     */
+    public NaruTaskSpec params(Map<String, NElement> params) {
+        this.params.clear();
+        if (params != null) {
+            for (Map.Entry<String, NElement> entry : params.entrySet()) {
+                if (entry.getKey() != null) this.params.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return this;
+    }
+
+    /** Add or replace one named task input parameter. */
+    public NaruTaskSpec param(String name, NElement value) {
+        if (name != null) params.put(name, value);
+        return this;
+    }
+
+    /** Named input parameters, unmodifiable. */
+    public Map<String, NElement> params() {
+        return Collections.unmodifiableMap(params);
     }
 
     public NaruTaskSpec resolveName() {
@@ -324,6 +384,51 @@ public class NaruTaskSpec {
         return this;
     }
 
+    /** User-defined budget labels to add for the spawned task ({@code --add-labels=k=v}). */
+    public Map<String, String> addLabels() {
+        return Collections.unmodifiableMap(addLabels);
+    }
+
+    public NaruTaskSpec addLabels(Map<String, String> labels) {
+        addLabels.clear();
+        if (labels != null) {
+            for (Map.Entry<String, String> e : labels.entrySet()) {
+                if (e.getKey() != null && !NBlankable.isBlank(e.getKey()) && e.getValue() != null) {
+                    addLabels.put(e.getKey().trim(), e.getValue());
+                }
+            }
+        }
+        return this;
+    }
+
+    public NaruTaskSpec addLabel(String key, String value) {
+        if (key != null && !NBlankable.isBlank(key) && value != null) {
+            addLabels.put(key.trim(), value);
+        }
+        return this;
+    }
+
+    /** User-defined budget label keys to revoke ({@code --revoke-labels=...}). */
+    public Set<String> revokeLabels() {
+        return Collections.unmodifiableSet(revokeLabels);
+    }
+
+    public NaruTaskSpec revokeLabels(String... keys) {
+        return revokeLabels(keys == null ? new ArrayList<>() : Arrays.asList(keys));
+    }
+
+    public NaruTaskSpec revokeLabels(List<String> keys) {
+        revokeLabels.clear();
+        if (keys != null) {
+            for (String k : keys) {
+                if (!NBlankable.isBlank(k)) {
+                    revokeLabels.add(k.trim());
+                }
+            }
+        }
+        return this;
+    }
+
     /** The named spawn policy to apply, or null ({@code --policy=...}). */
     public String policy() {
         return policy;
@@ -371,16 +476,17 @@ public class NaruTaskSpec {
      * Generic extension slot: a place for extensions and directives to stash spawn inputs
      * without the core knowing what they mean. Round-tripped by callers that own the keys;
      * the core ignores it during resolution.
+     * <p>
      */
-    public Map<String, Object> ext() {
+    public Map<String, NElement> ext() {
         return Collections.unmodifiableMap(ext);
     }
 
-    public Object ext(String key) {
+    public NElement ext(String key) {
         return ext.get(key);
     }
 
-    public NaruTaskSpec ext(String key, Object value) {
+    public NaruTaskSpec ext(String key, NElement value) {
         if (key == null || key.trim().isEmpty()) {
             throw new IllegalArgumentException("ext key must not be blank");
         }

@@ -2,6 +2,7 @@ package net.thevpc.naru.api.model;
 
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.core.NWorkspace;
+import net.thevpc.nuts.text.NMsg;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -24,20 +25,7 @@ public class NaruStreamPipelineTest {
 
     @BeforeAll
     public static void setUpWorkspace() {
-        try {
-            NWorkspace ws = Nuts.openWorkspace("--system", "--standalone");
-            if (ws != null) {
-                ws.share();
-            }
-        } catch (Exception e) {
-            try {
-                NWorkspace ws = Nuts.openWorkspace();
-                if (ws != null) {
-                    ws.share();
-                }
-            } catch (Exception ignored) {
-            }
-        }
+        Nuts.require();
     }
 
     private static final class Recorder implements NaruStreamHandler {
@@ -88,7 +76,7 @@ public class NaruStreamPipelineTest {
     public void thinkingIsSeparatedFromTheAnswer() {
         Recorder r = new Recorder();
         NaruMessage m = streaming(r, defaultTags(), "a<think>weighing it up</think>b").message();
-        assertEquals("ab", m.getContent());
+        assertEquals(NMsg.ofP("ab"), m.getContent());
         assertEquals(1, m.getThinkingSegments().size());
         assertEquals("weighing it up", m.getThinkingSegments().get(0).getText());
         assertEquals("weighing it up", r.thinking());
@@ -102,7 +90,7 @@ public class NaruStreamPipelineTest {
         p.feedNativeThinking("step one");
         p.feed("the answer");
         NaruMessage m = p.finish();
-        assertEquals("the answer", m.getContent());
+        assertEquals(NMsg.ofP("the answer"), m.getContent());
         assertEquals(1, m.getThinkingSegments().size());
         assertEquals(NaruThinkingExtraction.NATIVE_FIELD, m.getThinkingSegments().get(0).getExtraction());
         assertEquals("step one", r.thinking());
@@ -121,7 +109,50 @@ public class NaruStreamPipelineTest {
         assertEquals("native thoughts", segments.get(0).getText());
         assertEquals(NaruThinkingExtraction.TAG_DELIMITED, segments.get(1).getExtraction());
         assertEquals("tagged thoughts", segments.get(1).getText());
-        assertEquals("xy", m.getContent());
+        assertEquals(NMsg.ofP("xy"), m.getContent());
+    }
+
+    /**
+     * A provider that carries one thought twice on the same stream — as deltas and
+     * again complete in a trailing field, or as cumulative frames — must not put it
+     * on the transcript twice. This is the duplicate the reported session showed as
+     * two identical THINKING rows above the same answer.
+     */
+    @Test
+    public void aReEmittedReasoningSummaryIsNotDeliveredTwice() {
+        Recorder r = new Recorder();
+        NaruStreamPipeline p = new NaruStreamPipeline("test-provider", r, NaruThinkingTags.NATIVE_ONLY);
+        String thought = "The user wants the email corrected. Two typos and a wrong time.";
+        p.feedNativeThinking(thought);
+        p.feedNativeThinking(thought);
+        p.feed("the answer");
+        NaruMessage m = p.finish();
+        assertEquals(thought, r.thinking(), "the reader hears the thought once");
+        assertEquals(1, m.getThinkingSegments().size());
+        assertEquals(thought, m.getThinkingSegments().get(0).getText());
+    }
+
+    @Test
+    public void aCumulativeReasoningFrameContributesOnlyItsNewTail() {
+        Recorder r = new Recorder();
+        NaruStreamPipeline p = new NaruStreamPipeline("test-provider", r, NaruThinkingTags.NATIVE_ONLY);
+        String first = "The user wants the email corrected,";
+        p.feedNativeThinking(first);
+        p.feedNativeThinking(first + " and the time is wrong.");
+        p.finish();
+        assertEquals(first + " and the time is wrong.", r.thinking());
+    }
+
+    @Test
+    public void aShortRepeatedPhraseIsStillDelivered() {
+        // below the floor, two identical feeds are more likely two thoughts than one
+        // echo: swallowing the second would lose reasoning the model really produced
+        Recorder r = new Recorder();
+        NaruStreamPipeline p = new NaruStreamPipeline("test-provider", r, NaruThinkingTags.NATIVE_ONLY);
+        p.feedNativeThinking("Let's think.");
+        p.feedNativeThinking("Let's think.");
+        p.finish();
+        assertEquals("Let's think.Let's think.", r.thinking());
     }
 
     @Test
@@ -135,7 +166,7 @@ public class NaruStreamPipelineTest {
         assertEquals("two", segments.get(1).getText());
         assertEquals(0, segments.get(0).getIndex());
         assertEquals(1, segments.get(1).getIndex());
-        assertEquals("midend", m.getContent());
+        assertEquals(NMsg.ofP("midend"), m.getContent());
     }
 
     @Test
@@ -146,7 +177,7 @@ public class NaruStreamPipelineTest {
         NaruMessage m = streaming(r, defaultTags(), "<thi", "nk>a lon", "g thoug", "ht</thi", "nk>done").message();
         assertEquals(1, m.getThinkingSegments().size());
         assertEquals("a long thought", m.getThinkingSegments().get(0).getText());
-        assertEquals("done", m.getContent());
+        assertEquals(NMsg.ofP("done"), m.getContent());
     }
 
     @Test
@@ -156,7 +187,7 @@ public class NaruStreamPipelineTest {
         NaruStreamPipeline p = new NaruStreamPipeline("test-provider", r, NaruThinkingTags.NATIVE_ONLY);
         p.feed("you can use <think> tags like this");
         NaruMessage m = p.finish();
-        assertEquals("you can use <think> tags like this", m.getContent());
+        assertEquals(NMsg.ofP("you can use <think> tags like this"), m.getContent());
         assertFalse(m.hasThinking());
     }
 
@@ -164,7 +195,7 @@ public class NaruStreamPipelineTest {
     public void aModelWithNoThinkingProducesNoSegments() {
         Recorder r = new Recorder();
         NaruMessage m = streaming(r, defaultTags(), "just an answer").message();
-        assertEquals("just an answer", m.getContent());
+        assertEquals(NMsg.ofP("just an answer"), m.getContent());
         assertFalse(m.hasThinking());
         assertNull(m.getThinkingSegments());
     }
@@ -305,7 +336,7 @@ public class NaruStreamPipelineTest {
         NaruStreamPipeline p = new NaruStreamPipeline("p", null, defaultTags());
         p.feed("a<think>b</think>c");
         NaruMessage m = p.finish();
-        assertEquals("ac", m.getContent());
+        assertEquals(NMsg.ofP("ac"), m.getContent());
         assertEquals("b", m.getThinking());
     }
 
@@ -318,7 +349,7 @@ public class NaruStreamPipelineTest {
         p.feedNativeThinking("");
         p.feedNativeThinking(null);
         NaruMessage m = p.finish();
-        assertEquals("", m.getContent());
+        assertEquals(NMsg.ofP(""), m.getContent());
         assertFalse(m.hasThinking());
         assertTrue(r.chunks.isEmpty());
     }
@@ -347,6 +378,6 @@ public class NaruStreamPipelineTest {
         p.feed("second");
         NaruMessage m = p.finish(true);
         assertTrue(handler.isCancelled(), "a transport can poll this to stop reading");
-        assertEquals("firstsecond", m.getContent());
+        assertEquals(NMsg.ofP("firstsecond"), m.getContent());
     }
 }

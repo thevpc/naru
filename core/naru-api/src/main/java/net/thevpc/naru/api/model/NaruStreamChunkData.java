@@ -1,5 +1,7 @@
 package net.thevpc.naru.api.model;
 
+import net.thevpc.naru.api.agent.NaruPendingInput;
+import net.thevpc.nuts.elem.*;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NOptional;
 
@@ -12,13 +14,24 @@ import net.thevpc.nuts.util.NOptional;
  * both.
  */
 public record NaruStreamChunkData(
-        NaruChunkKind kind,
-        String text,
-        int index,
-        String provider,
-        NaruThinkingExtraction extraction,
-        boolean complete
-) implements NaruStreamChunk {
+        @NProperty("kind") NaruChunkKind kind,
+        @NProperty("text") String text,
+        @NProperty("index") int index,
+        @NProperty("provider") String provider,
+        @NProperty("extraction") NaruThinkingExtraction extraction,
+        @NProperty("complete") boolean complete
+) implements NaruStreamChunk, NToElement {
+
+    public static NOptional<net.thevpc.naru.api.agent.NaruPendingInput> of(NElement any) {
+        return NElement.defaultFromElement(any, net.thevpc.naru.api.agent.NaruPendingInput.class);
+    }
+    @Override
+    public NElement toElement() {
+        return NElement.defaultToElement(this).asObject().get().builder()
+                .name(getClass().getSimpleName())
+                .build()
+                ;
+    }
 
     public NaruStreamChunkData {
         if (kind == null) {

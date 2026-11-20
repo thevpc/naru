@@ -15,7 +15,15 @@ public enum NaruSpawnInherit {
     /** Copy the parent's granted tool tags (snapshot, later parent changes never reach the child). */
     TAGS,
     /** Copy the parent's task environment (snapshot). */
-    ENV;
+    ENV,
+    /**
+     * Copy the parent's user-defined budget labels (snapshot). Unlike {@link #TAGS} and
+     * {@link #ENV}, this kind is inherited <em>by default</em>: a caller who enumerates no
+     * inherit set at all still gets label inheritance, because labels are descriptive
+     * dimensions a child almost always shares with its spawner. A caller who enumerates
+     * another inherit set without {@code labels} opts out.
+     */
+    LABELS;
 
     public static NOptional<NaruSpawnInherit> parse(String value) {
         if (value == null) {

@@ -1,8 +1,19 @@
 package net.thevpc.naru.api.agent;
 
+import net.thevpc.naru.api.registry.NaruDirective;
+import net.thevpc.naru.api.registry.NaruTool;
+import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.model.NaruModelFilter;
 import net.thevpc.naru.api.task.NaruTaskSpec;
+import net.thevpc.naru.api.access.NaruActor;
+import net.thevpc.naru.api.access.NaruPrincipal;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.naru.api.store.NaruSessionScope;
+import net.thevpc.naru.api.store.NaruSessionStore;
+
+import java.time.Duration;
+import java.util.function.Predicate;
 
 /**
  * Configures and creates one {@link NaruSession}.
@@ -37,10 +48,107 @@ import net.thevpc.nuts.text.NMsg;
 public interface NaruSessionBuilder {
 
     /**
-     * Where the session keeps its state. Defaults to the agent's project directory, or the
+     * The directory this session uses to resolve project-relative files and skills. Defaults to the agent's workspace directory, or the
      * user's home directory when the agent has none.
      */
-    NaruSessionBuilder directory(NPath directory);
+    NaruSessionBuilder sessionDir(NPath sessionDir);
+
+    /**
+     * The project this session is created under: its folder seeds {@code sessionDir} and
+     * its user seeds {@code user} when those were not stated explicitly (copied at
+     * creation, never read through afterwards). Resolved when the session is built or its
+     * handle is activated; a reference naming no project is a build-time error.
+     *
+     * @param idOrName exact project id, else a case-insensitive normalized project name
+     */
+    default NaruSessionBuilder project(String idOrName) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * The opaque user string persisted with the session and returned by session
+     * summaries. Distinct from {@link #user(NaruPrincipal)}: this is a stored, filterable
+     * label with no authentication or permission meaning. Unset, it takes the project's
+     * user when a project is given, else stays null.
+     */
+    default NaruSessionBuilder user(String user) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * The principal that owns the session. Defaults to the OS user
+     * ({@code System.getProperty("user.name")}), so a single-user host needs to
+     * say nothing; a host that serves several people sets it explicitly.
+     */
+    default NaruSessionBuilder user(NaruPrincipal user) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Binds the owner as an already-acted actor, carrying its kind and groups.
+     */
+    default NaruSessionBuilder userActor(NaruActor actor) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Stable id used by a backend handle; existing ids are resolved by the store.
+     */
+    default NaruSessionBuilder id(String id) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder store(NaruSessionStore store) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder scope(NaruSessionScope scope) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder onInputBlock(NaruInputBlockPolicy policy) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder hibernateAfter(Duration grace) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder streaming(boolean enabled) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder busy(NaruBusyPolicy policy) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder listener(NaruTurnEventListener listener) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder maxLiveSessions(int maximum) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder checkpointEachMessage(boolean enabled) {
+        throw new UnsupportedOperationException();
+    }
+
+    default NaruSessionBuilder capacityTimeout(Duration timeout) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * The label the session starts with.
+     *
+     * <p>A name supplied here is a person's name (or their backend's), so it is stored as
+     * {@link NaruSessionNameSource#USER}. A session left unnamed gets the generated
+     * {@code Session N} placeholder; whether anything ever replaces it is a feature's
+     * decision, not the kernel's.
+     */
+    default NaruSessionBuilder name(String name) {
+        throw new UnsupportedOperationException();
+    }
 
     /**
      * How the session reaches its user: a terminal, a stream, or anything else.
@@ -96,10 +204,46 @@ public interface NaruSessionBuilder {
      */
     NaruSessionBuilder richTerm(boolean richTerm);
 
+    NaruSessionBuilder sessionListener(NaruSessionListener value);
+
+    /**
+     * Whether the session registers the built-in directives, tools, tags and every
+     * extension provider found on the classpath.
+     * <p>
+     * On by default: that is what makes a session useful the moment it is built. A test
+     * that wants to observe one subsystem in isolation turns it off and registers only
+     * what it is exercising, so an unrelated provider cannot perturb it.
+     */
+    default NaruSessionBuilder configureDefaults(boolean value) {
+        throw new UnsupportedOperationException();
+    }
+
+    NaruSessionBuilder directiveFilter(Predicate<NaruDirective> value);
+
+    NaruSessionBuilder toolFilter(Predicate<NaruTool> value);
+
+    NaruSessionBuilder tagFilter(Predicate<NaruToolTag> value);
+
+    /**
+     * Narrows the models this session may use, on top of the workspace's own filter (the
+     * two are AND-combined). A denied model disappears from listings and resolution and a
+     * call to it is refused before the transport is built.
+     */
+    default NaruSessionBuilder modelFilter(NaruModelFilter value) {
+        throw new UnsupportedOperationException();
+    }
+
     /**
      * Creates the session without starting it.
      *
      * @throws IllegalStateException if the agent has no project directory and none was set
      */
     NaruSession build();
+
+    /**
+     * Builds a lazy backend handle while preserving {@link #build()} for existing callers.
+     */
+    default NaruSessionHandle buildHandle() {
+        throw new UnsupportedOperationException();
+    }
 }

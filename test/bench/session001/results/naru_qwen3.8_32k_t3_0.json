@@ -1,0 +1,28 @@
+{
+  "run_id": "naru_qwen3.8_32k_t3_0",
+  "agent": "naru",
+  "agent_version": "b706a6c",
+  "model": "qwen3.8:32k",
+  "task": "t3",
+  "run_index": 0,
+  "pass": false,
+  "accept_output": "FAIL: No new tests added in tests/\n.\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nOK",
+  "wall_s": 498.373,
+  "exit_code": 0,
+  "hit_cap": false,
+  "requests_main": 2,
+  "requests_title": 0,
+  "requests_other": 0,
+  "prompt_tokens": 5295,
+  "completion_tokens": 194,
+  "reasoning_tokens": 0,
+  "cached_prompt_tokens": 0,
+  "peak_prompt_tokens_single_request": 2697,
+  "tool_calls_by_name": {
+    "run_shell": 1,
+    "file_read": 4
+  },
+  "request_bytes_total": 30281,
+  "files_changed": 1,
+  "final_text": ""
+}

@@ -24,12 +24,18 @@ public interface NaruInputRequest {
     /** The task blocked on this answer. */
     NaruTask task();
 
+    /** Stable within a persisted task activation; old interactions may ignore this. */
+    default String requestId() { return Long.toString(task().id()); }
+
     /**
      * Answers the question and lets the task continue.
      *
      * @param line what the user typed. May be empty, but not null.
      */
     void deliver(String line);
+
+    /** Delivers an idempotent host submission when the implementation supports it. */
+    default void deliver(String line, String idempotencyKey) { deliver(line); }
 
     /**
      * Abandons the question because no answer will come — the user closed the tab, the

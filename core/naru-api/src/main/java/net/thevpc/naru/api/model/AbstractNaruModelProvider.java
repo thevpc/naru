@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NIllegalArgumentException;
@@ -114,7 +115,7 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
     @Override
     public void setParam(String name, String value) {
         if (name != null) {
-            Object old = params.get(name);
+            String old = params.get(name);
             if (!Objects.equals(old, value)) {
                 if (value != null) {
                     params.put(name, value);
@@ -186,5 +187,31 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
             }
         }
         return NOptional.ofEmpty();
+    }
+
+    /**
+     * Locality resolution: an explicit {@code local} parameter
+     * ({@code --local=true}, or the {@code <id>.local} env key) always decides;
+     * otherwise the provider's own rule ({@link #defaultLocal(NaruSession)}) is
+     * asked. Kept here so every provider supports the explicit override without
+     * repeating the parse.
+     */
+    @Override
+    public boolean isLocal(NaruSession session) {
+        NOptional<Boolean> own = configValue("local", session)
+                .flatMap(x -> NLiteral.of(x).asBoolean());
+        if (own.isPresent()) {
+            return own.get();
+        }
+        return defaultLocal(session);
+    }
+
+    /**
+     * The provider's own locality rule, used when no explicit {@code local}
+     * parameter is set. Defaults to remote; a provider that talks to a
+     * user-supplied url derives it from that url.
+     */
+    protected boolean defaultLocal(NaruSession session) {
+        return false;
     }
 }

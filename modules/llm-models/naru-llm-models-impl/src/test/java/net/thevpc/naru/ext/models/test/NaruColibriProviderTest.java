@@ -1,0 +1,130 @@
+package net.thevpc.naru.ext.models.test;
+
+import net.thevpc.naru.api.agent.NaruWorkspace;
+import net.thevpc.naru.api.agent.NaruEnv;
+import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruVisibility;
+import net.thevpc.naru.api.model.NaruModelCapabilities;
+import net.thevpc.naru.api.model.NaruModelConfig;
+import net.thevpc.naru.api.model.NaruModelProtocol;
+import net.thevpc.naru.ext.models.colibri.NaruColibriProvider;
+import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.util.NOptional;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Proxy;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class NaruColibriProviderTest {
+
+    @BeforeAll
+    public static void setUp() {
+        Nuts.require();
+    }
+
+    @Test
+    public void testDefaultModelIdsWithoutApiKey() {
+        // local server: discovery never gates on the API key
+        NaruColibriProvider provider = new NaruColibriProvider();
+        NaruSession session = createMockSession(Collections.emptyMap());
+        Assertions.assertEquals(List.of("glm-5.2-colibri"), provider.findModelIds(session));
+    }
+
+    @Test
+    public void testConfiguredModelIds() {
+        NaruColibriProvider provider = new NaruColibriProvider();
+        Map<String, String> env = new HashMap<>();
+        env.put("colibri.models", "glm-5.2-colibri, glm-4.5-colibri");
+        NaruSession session = createMockSession(env);
+        Assertions.assertEquals(List.of("glm-5.2-colibri", "glm-4.5-colibri"), provider.findModelIds(session));
+    }
+
+    @Test
+    public void testCapabilitiesDefaults() {
+        NaruColibriProvider provider = new NaruColibriProvider();
+        NaruSession session = createMockSession(Collections.emptyMap());
+
+        NaruModelConfig config = new NaruModelConfig("colibri", "glm-5.2-colibri");
+        NaruModelProtocol proto = provider.getProtocol(config, session).get();
+        NaruModelCapabilities caps = proto.getCapabilities();
+        Assertions.assertTrue(caps.isTools());
+        Assertions.assertTrue(caps.isThinking());
+        Assertions.assertEquals(65536L, caps.contextLength());
+    }
+
+    @Test
+    public void testGetProtocol() {
+        NaruColibriProvider provider = new NaruColibriProvider();
+        NaruSession session = createMockSession(Collections.emptyMap());
+
+        NaruModelConfig config = new NaruModelConfig("colibri", "glm-5.2-colibri");
+        NOptional<NaruModelProtocol> proto = provider.getProtocol(config, session);
+        Assertions.assertTrue(proto.isPresent());
+        Assertions.assertNotNull(proto.get().getCapabilities());
+    }
+
+    @Test
+    public void testIsAvailableProbeDisabled() {
+        NaruColibriProvider provider = new NaruColibriProvider();
+        Map<String, String> env = new HashMap<>();
+        env.put("colibri.probe", "false");
+        Assertions.assertTrue(provider.isAvailable(createMockSession(env)));
+        env.put("colibri.probe", "true");
+        env.put("colibri.url", "http://127.0.0.1:9"); // connection refused
+        Assertions.assertFalse(provider.isAvailable(createMockSession(env)));
+    }
+
+    private NaruSession createMockSession(Map<String, String> envMap) {
+        NaruEnv env = new NaruEnv() {
+            @Override
+            public NOptional<NElement> get(String key) {
+                String v = envMap.get(key);
+                if (v == null) {
+                    return NOptional.ofEmpty();
+                }
+                String lower = v.trim().toLowerCase();
+                if ("true".equals(lower) || "false".equals(lower)) {
+                    return NOptional.of(NElement.of(Boolean.parseBoolean(lower)));
+                }
+                return NOptional.of(NElement.of(v));
+            }
+
+            @Override
+            public NOptional<NElement> get(String key, NaruVisibility visibility) {
+                return get(key);
+            }
+
+            @Override
+            public void put(String key, NElement value, NaruVisibility visibility) {
+            }
+        };
+
+        NaruWorkspace agent = (NaruWorkspace) Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[]{NaruWorkspace.class},
+                (proxy, method, args) -> {
+                    if ("env".equals(method.getName())) {
+                        return env;
+                    }
+                    return null;
+                }
+        );
+
+        return (NaruSession) Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[]{NaruSession.class},
+                (proxy, method, args) -> {
+                    if ("agent".equals(method.getName())) {
+                        return agent;
+                    }
+                    return null;
+                }
+        );
+    }
+}

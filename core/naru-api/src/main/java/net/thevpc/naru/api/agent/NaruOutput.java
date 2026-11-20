@@ -20,16 +20,25 @@ import java.util.Objects;
  */
 public class NaruOutput {
 
+    /** The output came from the session itself, or from a host that does not stamp. */
+    public static final long NO_TASK = 0;
+
     private final long sequence;
     private final Instant instant;
     private final NaruLogMode mode;
     private final NMsg message;
+    private final long taskId;
 
     public NaruOutput(long sequence, Instant instant, NaruLogMode mode, NMsg message) {
+        this(sequence, instant, mode, message, NO_TASK);
+    }
+
+    public NaruOutput(long sequence, Instant instant, NaruLogMode mode, NMsg message, long taskId) {
         this.sequence = sequence;
         this.instant = Objects.requireNonNull(instant, "instant");
         this.mode = Objects.requireNonNull(mode, "mode");
         this.message = Objects.requireNonNull(message, "message");
+        this.taskId = taskId;
     }
 
     /** Monotonic within one session, starting at 1. */
@@ -49,8 +58,17 @@ public class NaruOutput {
         return message;
     }
 
+    /**
+     * Which task produced this line, or {@link #NO_TASK} when nobody knew. A host with
+     * per-task surfaces used to have to guess it from the text; the engine stamps it now.
+     */
+    public long taskId() {
+        return taskId;
+    }
+
     @Override
     public String toString() {
-        return "NaruOutput[" + sequence + " " + mode + " " + message + "]";
+        return "NaruOutput[" + sequence + " " + mode + (taskId == NO_TASK ? "" : " task=" + taskId)
+                + " " + message + "]";
     }
 }
