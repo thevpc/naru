@@ -145,6 +145,11 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
      */
     private String modelHint;
     /**
+     * The hint's resolution, kept for this activation only: resolving it reads every
+     * provider's catalog, which is network bound, and model() is called several times a turn.
+     */
+    private transient NaruModelConfig resolvedModelHint;
+    /**
      * One-shot result and flag for the tools-capable best fit, so its warnings fire once.
      */
     private NaruModelConfig resolvedConfiguredModel;
@@ -1013,7 +1018,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NaruTask cancel(String reason) {
-        if (reason != null) {
+        // the first reason wins: killing the last task stops the session, and the stop cancels
+        // its tasks again ("session stopped") before this one has frozen why it ended
+        if (reason != null && this.cancelReason == null) {
             this.cancelReason = reason;
         }
         return kill();
@@ -1156,6 +1163,9 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         o.set("creationDate", NElement.ofInstant(creationDate));
         o.set("modificationDate", NElement.ofInstant(modificationDate));
         o.set("model", model == null ? null : model.toElement());
+        // the spawn-time hint is resolved lazily, so a task saved before its first model call
+        // holds no model yet: without the hint a reloaded task had no model at all
+        o.set("modelHint", modelHint == null ? null : NElement.ofString(modelHint));
         o.set("sessionDir", NElement.ofString(sessionDir.toString()));
         o.set("workingDir", workingDir == null ? null : NElement.ofString(workingDir.toString()));
         o.set("userQueriesCount", userQueriesCount);
@@ -1260,6 +1270,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         this.modificationDate = NUtils.firstNonNull(o.getInstantValue("modificationDate").orElse(null), creationDate);
         NElement mv = o.get("model").orElse(null);
         this.model = mv == null || mv.isNull() ? null : new NaruModelConfig(mv);
+        this.modelHint = o.getStringValue("modelHint").orElse(this.modelHint);
         this.extraContext = o.getStringValue("extraContext").orElse(null);
         this.sessionDir = o.getStringValue("sessionDir").map(x -> NPath.of(x)).orElse(sessionDir);
         this.workingDir = o.getStringValue("workingDir").map(x -> NPath.of(x)).orElse(workingDir);
@@ -1411,6 +1422,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     public NaruTaskImpl _setModelHint(String modelHint) {
         this.modelHint = modelHint;
+        this.resolvedModelHint = null;
         return this;
     }
 
@@ -2034,9 +2046,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         if (modelHint != null) {
             // the spawn-time hint (spec.model() or the policy model), resolved the
             // first time it is actually needed
+            if (resolvedModelHint != null) {
+                return resolvedModelHint;
+            }
             NOptional<NaruModelConfig> hinted = session().findModel(modelHint);
             if (hinted.isPresent()) {
-                return hinted.get();
+                resolvedModelHint = hinted.get();
+                return resolvedModelHint;
             }
         }
         NaruTask parent = parent().orNull();

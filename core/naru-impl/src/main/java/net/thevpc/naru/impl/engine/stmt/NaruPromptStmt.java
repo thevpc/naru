@@ -100,10 +100,12 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
             response = task.chat(task.model(),
                     task.context(NaruSource.values())
             );
-            task.frame().lastResult(NaruStmtResult.ofSuccess(
-                    NElement.of(response.getMessage()==null?"":response.getMessage().getFilteredContent())
-
-            ));
+            NElement answer = NElement.of(response.getMessage()==null?"":response.getMessage().getFilteredContent());
+            task.frame().lastResult(NaruStmtResult.ofSuccess(answer));
+            // '_' resolves through the task env entry directives publish into, not the frame:
+            // without this, '/set x = _' after a prompt read whatever the previous directive
+            // left there. Each tool-call round re-enters here, so the final answer wins.
+            task.setTaskEnv("lastResult", answer);
         } catch (Exception e) {
             String err = "ERROR calling model: " + e.getMessage();
             // Reported, not swallowed. This branch ends the turn as if the model had

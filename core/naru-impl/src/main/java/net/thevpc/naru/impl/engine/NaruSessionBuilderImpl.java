@@ -411,7 +411,7 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
                 streaming, busyPolicy, turnListener, maxLiveSessions,
                 checkpointEachMessage, capacityTimeout, agent.sessionListener(), agent.directiveFilter(), agent.toolFilter(), agent.tagFilter(),
                 combineModelFilters(agent.modelFilter(), modelFilter),
-                projectRef, userSeed, sessionName);
+                projectRef, userSeed, sessionName, interactive);
     }
 
     /**
@@ -446,7 +446,14 @@ class NaruSessionBuilderImpl implements NaruSessionBuilder {
      * never reading from.
      */
     private void enableRichTerm(NaruInteraction useInteraction, NaruSession session) {
-        NSystemTerminal.enableRichTerm();
+        try {
+            NSystemTerminal.enableRichTerm();
+        } catch (RuntimeException e) {
+            // the rich terminal is an optional nuts extension (nuts-term): without it the REPL
+            // reads plain lines, which is a worse console, not a reason to refuse the session
+            session.log(NaruLogMode.TRACE, NMsg.ofC("rich terminal unavailable, using a plain one: %s",
+                    e.getMessage()).asWarning());
+        }
         if (useInteraction instanceof NaruTerminalInteraction) {
             NIO.of().systemTerminal()
                     // registered here because this is the only place that owns the

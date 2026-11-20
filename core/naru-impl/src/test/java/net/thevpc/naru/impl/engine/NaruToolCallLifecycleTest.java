@@ -1,5 +1,7 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.impl.interaction.NaruTerminalInteraction;
+
 import net.thevpc.naru.api.access.NaruAccessEffect;
 import net.thevpc.naru.api.access.NaruAction;
 import net.thevpc.naru.api.access.NaruPermissionRule;
@@ -198,12 +200,13 @@ public class NaruToolCallLifecycleTest {
     }
 
     /**
-     * The desktop reads the typed event; the terminal reads the log line. Both must still be
-     * true after E1, so the abbreviated line is asserted rather than assumed.
+     * Tool calls stay out of history and out of the generic output channel (27ccf219): every
+     * host draws them from the typed event. The terminal still shows its abbreviated line,
+     * now rendered from that event, so this pins the line rather than assuming it.
      */
     @Test
     @Timeout(60)
-    public void theLogLineIsStillTheSameAbbreviatedLine() {
+    public void theTerminalLineIsStillTheSameAbbreviatedLine() {
         String longResult = "X".repeat(4000);
         Recorder r = new Recorder();
         NaruToolCall call = new NaruToolCall("call-1", "big_tool", Map.of());
@@ -211,15 +214,18 @@ public class NaruToolCallLifecycleTest {
 
         run(s, "read it");
 
-        List<String> results = r.lines.stream()
-                .filter(l -> l.startsWith("PROGRESS") && l.contains("Result:"))
-                .collect(Collectors.toList());
-        assertEquals(1, results.size(), "the result is still logged once: " + r.lines);
-        String line = results.get(0);
+        assertTrue(r.lines.stream().noneMatch(l -> l.contains("Result:")),
+                "the result is not a generic output line any more: " + r.lines);
+        NaruToolCallEvent result = r.ofKind(NaruToolCallEvent.Kind.RESULT).get(0);
+        String line = String.valueOf(NaruTerminalInteraction.toolCallLine(result));
+        assertTrue(line.contains("Result:"), line);
         assertTrue(line.contains("X".repeat(300)), "300 characters, as the terminal has always shown");
         assertFalse(line.contains("X".repeat(301)), "and not one more: the event, not the line, is untruncated");
-        assertTrue(r.ofKind(NaruToolCallEvent.Kind.RESULT).get(0).result().length() > line.length(),
+        assertTrue(result.result().length() > line.length(),
                 "the event must be the one holding the whole result");
+        assertTrue(String.valueOf(NaruTerminalInteraction.toolCallLine(
+                        r.ofKind(NaruToolCallEvent.Kind.STARTED).get(0))).contains("big_tool"),
+                "the start line names the tool");
     }
 
     // ── the calls that do not run ─────────────────────────────────────────────
@@ -402,9 +408,9 @@ public class NaruToolCallLifecycleTest {
         List<NaruOutput> mine = outputs.stream()
                 .filter(o -> o.taskId() == task.id()).collect(Collectors.toList());
         assertFalse(mine.isEmpty(), "task output must be attributed, got: " + outputs);
-        assertTrue(mine.stream().anyMatch(o -> o.mode() == NaruLogMode.PROGRESS
-                        && String.valueOf(o.message()).contains("Result")),
-                "the tool result line is stamped: " + mine);
+        assertTrue(mine.stream().anyMatch(o -> o.mode() == NaruLogMode.MODEL_RESPONSE
+                        && String.valueOf(o.message()).contains("done")),
+                "the answer after the tool round is stamped: " + mine);
         // the other half of honesty: nothing is stamped with a task that did not say it
         List<Long> foreign = outputs.stream()
                 .map(NaruOutput::taskId)

@@ -4,11 +4,16 @@ import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruToolCallEvent;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.util.NaruTerminalFormatter;
+import net.thevpc.naru.impl.util.ImplNaruUtils;
+import net.thevpc.nuts.elem.NElement;
+import net.thevpc.nuts.elem.NObjectElementBuilder;
 import net.thevpc.nuts.io.NTerminal;
 import net.thevpc.nuts.log.NLogger;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NText;
 import net.thevpc.nuts.text.NTextStyle;
 import net.thevpc.nuts.util.NStringUtils;
@@ -173,6 +178,45 @@ public class NaruTerminalInteraction implements NaruInteraction {
         closeStreamLine();
         sequence.incrementAndGet();
         emitLines(mode, message);
+    }
+
+    /**
+     * Tool calls are kept out of history (the assistant message and the role=tool result are
+     * already the record), so every host draws them from {@link NaruToolCallEvent}. A terminal
+     * draws them as the two lines it has always shown.
+     */
+    @Override
+    public void reportToolCall(NaruToolCallEvent event) {
+        NMsg line = toolCallLine(event);
+        if (line != null) {
+            write(NaruLogMode.PROGRESS, line);
+        }
+    }
+
+    /**
+     * The terminal line for one tool-call event: the call with its arguments when it starts,
+     * the result cut at 300 characters when it settles, nothing for a parked call. The event
+     * keeps the whole result; only the line is abbreviated.
+     */
+    public static NMsg toolCallLine(NaruToolCallEvent event) {
+        switch (event.kind()) {
+            case STARTED: {
+                NObjectElementBuilder call = NElement.ofObjectBuilder(event.toolName());
+                event.arguments().forEach(call::set);
+                return NMsg.ofC("%s Tool: %s",
+                        NMsg.ofStyledPrimary9("\uD83D\uDD27"),
+                        NText.ofCode("tson", call.build().toString())
+                ).withIntent(NMsgIntent.PROGRESS);
+            }
+            case RESULT:
+            case FAILED:
+                return NMsg.ofC("  %s Result: %s",
+                        NMsg.ofStyledPrimary6("\uD83D\uDCE4"),
+                        ImplNaruUtils.abbreviate(event.result(), 300)
+                ).withIntent(NMsgIntent.PROGRESS);
+            default:
+                return null;
+        }
     }
 
     private void emitLines(NaruLogMode mode, NMsg message) {
