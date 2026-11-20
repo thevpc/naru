@@ -10,4 +10,7 @@
         <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>42.7.14</version><scope>runtime</scope></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.10.0</version><scope>test</scope></dependency>
     </dependencies>
+    <repositories>
+        <repository><id>thevpc</id><url>https://maven.thevpc.net</url></repository>
+    </repositories>
 </project>
