@@ -105,12 +105,14 @@ public class NaruLineCompletionTest {
         NaruSession s = sessionAt(NPath.ofTempFolder("naru-complete-arg"));
             // /help completes directive names at word 1 (NaruHelpDirective.resolveCandidates),
             // and it expects the bare word -- the leading slash belongs to the command, not the arg
-            Result r = NaruLineCompletion.complete(s, "/help pro", 9);
-            Assertions.assertEquals("pro", r.token());
+            // a built-in target: the session holds only the built-in directives, and /project
+            // now ships in its own module
+            Result r = NaruLineCompletion.complete(s, "/help pri", 9);
+            Assertions.assertEquals("pri", r.token());
             Assertions.assertFalse(r.isEmpty(),
                     "the directive's own candidates must be used before falling back to files");
             Assertions.assertEquals(Kind.DIRECTIVE_ARGUMENT, r.candidates().get(0).kind());
-            Assertions.assertTrue(r.candidates().stream().anyMatch(c -> c.insert().equals("project")),
+            Assertions.assertTrue(r.candidates().stream().anyMatch(c -> c.insert().equals("print")),
                     "the directive's own list must come through: " + r.candidates());
             Assertions.assertEquals(6, r.replaceStart(), "the replacement covers only the argument");
     }

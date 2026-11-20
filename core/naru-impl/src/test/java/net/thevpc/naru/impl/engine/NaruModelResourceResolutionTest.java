@@ -56,11 +56,11 @@ public class NaruModelResourceResolutionTest {
         Assertions.assertEquals("true",
                 stringValue(context.env().get("emulate_tool_calls")));
         boolean bodyIncluded = context.messages().stream()
-                .anyMatch(m -> m.getContent() != null
-                        && m.getContent().toString().contains("### AGENT CLASSPATH:")
-                        && m.getContent().toString().contains("classpath default body"));
+                .anyMatch(m -> m.getFilteredContent() != null
+                        && m.getFilteredContent().contains("### AGENT CLASSPATH:")
+                        && m.getFilteredContent().contains("classpath default body"));
         Assertions.assertTrue(bodyIncluded,
-                "the resource body must be contributed as a classpath system message");
+                "the resource body must be contributed as a classpath system message: " + describe(context));
     }
 
     @Test
@@ -78,9 +78,9 @@ public class NaruModelResourceResolutionTest {
                 stringValue(context.env().get("probe_key")),
                 "a project .naru/models file must beat the jar-shipped default");
         long projectMessages = context.messages().stream()
-                .filter(m -> m.getContent() != null && m.getContent().toString().contains("### PROJECT CONTEXT:"))
+                .filter(m -> m.getFilteredContent() != null && m.getFilteredContent().contains("### PROJECT CONTEXT:"))
                 .count();
-        Assertions.assertEquals(1, projectMessages);
+        Assertions.assertEquals(1, projectMessages, describe(context));
     }
 
     private NaruTask taskFor(NPath projectDir) {
@@ -221,5 +221,12 @@ public class NaruModelResourceResolutionTest {
         @Override
         public void setEnabled(boolean enabled) {
         }
+    }
+
+    private static String describe(NaruModelRequest context) {
+        return context.messages().stream()
+                .map(m -> m.getRole() + "/" + m.getSource() + ": "
+                        + String.valueOf(m.getFilteredContent()).lines().findFirst().orElse(""))
+                .collect(java.util.stream.Collectors.joining(" | "));
     }
 }

@@ -1,5 +1,7 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.agent.NaruRole;
+
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
@@ -404,8 +406,8 @@ public class NaruTaskInterruptTest {
 
         Assertions.assertTrue(task.history().stream().noneMatch(NaruMessage::hasToolCalls),
                 "a tool call with no results must not reach the history: " + task.history());
-        Assertions.assertEquals(1, task.history().size(),
-                "only the prompt the user sent belongs to this interrupted turn");
+        Assertions.assertEquals(1, conversation(task).size(),
+                "only the prompt the user sent belongs to this interrupted turn: " + conversation(task));
         NaruStatement next = task.peekStatement().orNull();
         Assertions.assertNotNull(next);
         Assertions.assertNotEquals(NaruStatement.Type.TOOL_CALL, next.type,
@@ -482,11 +484,21 @@ public class NaruTaskInterruptTest {
         Assertions.assertTrue(interaction.fragments.stream().anyMatch(f -> f.contains("t0")),
                 "the partial answer must have been drawn while it streamed: " + interaction.fragments);
 
-        List<NaruMessage> history = run.history();
+        List<NaruMessage> history = conversation(run);
         Assertions.assertEquals(2, history.size(),
                 "prompt plus interrupted answer, nothing else: " + history);
         Assertions.assertEquals(NMsg.ofP("partial answer"), history.get(1).getContent(),
                 "the partial answer is committed so the next turn continues from it");
         run.cancel();
+    }
+
+    /**
+     * The turn as the model sees it. Engine notices (the model banner, scheduler traces) are
+     * kept in history for hosts and replays, and NaruContextViews leaves them out of requests.
+     */
+    private static List<NaruMessage> conversation(NaruTask task) {
+        return task.history().stream()
+                .filter(m -> m.getRole() != NaruRole.engine && m.getRole() != NaruRole.directive)
+                .collect(java.util.stream.Collectors.toList());
     }
 }

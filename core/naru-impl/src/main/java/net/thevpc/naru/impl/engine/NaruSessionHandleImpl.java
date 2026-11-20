@@ -8,6 +8,7 @@ import net.thevpc.nuts.text.NMsgSnapshot;
 import net.thevpc.naru.api.registry.NaruDirective;
 import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
+import net.thevpc.naru.api.scheduler.NaruTaskMode;
 import net.thevpc.naru.api.scheduler.NaruTaskStatus;
 import net.thevpc.naru.api.store.*;
 import net.thevpc.naru.api.model.NaruChunkKind;
@@ -76,6 +77,11 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
      * A name the host chose at creation, or null for a placeholder.
      */
     private final String sessionName;
+    /**
+     * Whether the first task is a conversation: it parks on input after each turn, which is
+     * what lets the handle hibernate the session between turns instead of completing it.
+     */
+    private final boolean interactive;
 
     NaruSessionHandleImpl(NaruWorkspaceImpl agent, NPath sessionDir, NaruInteraction interaction,
                           NaruTaskSpec task, String id, NaruSessionStore store, NaruSessionScope scope,
@@ -86,13 +92,14 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                           NaruSessionListener sessionListener, Predicate<NaruDirective> directiveFilter,
                           Predicate<NaruTool> toolFilter, Predicate<NaruToolTag> tagFilter,
                           NaruModelFilter modelFilter, String projectRef, String userSeed,
-                          String sessionName) {
+                          String sessionName, boolean interactive) {
         this.agent = agent;
         this.sessionDir = sessionDir;
         this.customInteraction = interaction;
         this.projectRef = projectRef;
         this.userSeed = userSeed;
         this.sessionName = sessionName;
+        this.interactive = interactive;
         this.task = task;
         this.id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id;
         this.requestedStore = store;
@@ -159,6 +166,13 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                         NaruPendingInput target = chooseInput(inputs, input.requestId());
                         if (!live.session.deliverPendingInput(target.requestId(), input.text(), input.idempotencyKey())) {
                             throw new IllegalStateException("pending input request expired: " + target.requestId());
+                        }
+                        // a session just rehydrated from the store holds the parked request but
+                        // is not running yet: without this the answer is delivered to a task
+                        // nothing schedules, and the turn never ends
+                        if (!live.started) {
+                            live.session.start();
+                            live.started = true;
                         }
                     } else if (live.started && !live.session.tasks().isEmpty()) {
                         if (busy == NaruBusyPolicy.REJECT) throw new NaruSessionBusyException(id);
@@ -227,8 +241,12 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
             if (sessionName != null) {
                 session.rename(sessionName, NaruSessionNameSource.USER);
             }
-            if (task != null) {
-                NaruTask initial = session.newTask(task);
+            if (task != null || interactive) {
+                NaruTask initial = session.newTask(task != null ? task : NaruTaskSpec.of().resolveNameOr("naru"));
+                if (interactive) {
+                    initial.taskMode(NaruTaskMode.INTERACTIVE);
+                    initial.fg();
+                }
                 initial.unhold();
             }
         }
@@ -266,7 +284,13 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                     LIVE.remove(id, live);
                     return;
                 }
-                if (inputPolicy == NaruInputBlockPolicy.HIBERNATE && live.session.isHibernateEligible()) {
+                boolean undelivered;
+                synchronized (live.monitor) {
+                    undelivered = !live.queued.isEmpty();
+                }
+                // a task parked on input is only idle once the input this turn carries has
+                // reached it: hibernating earlier dropped the first turn's text on the floor
+                if (inputPolicy == NaruInputBlockPolicy.HIBERNATE && !undelivered && live.session.isHibernateEligible()) {
                     if (idleSince == 0) idleSince = System.nanoTime();
                     if (System.nanoTime() - idleSince >= grace.toNanos()) {
                         hibernateLive(live);
@@ -275,7 +299,9 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                 } else {
                     idleSince = 0;
                 }
-                live.monitor.wait(20L);
+                synchronized (live.monitor) {
+                    live.monitor.wait(20L);
+                }
             }
         } catch (Throwable e) {
 
@@ -420,11 +446,19 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                         monitor.notifyAll();
                     }
                     Pending p = current;
-                    if (newStatus == NaruTaskStatus.BLOCKED_ON_INPUT && p != null && !queued.isEmpty()) {
-                        Pending next = queued.poll();
+                    if (newStatus == NaruTaskStatus.BLOCKED_ON_INPUT && p != null) {
+                        // the status can change before the input request is registered; taking
+                        // the queued input with nothing to deliver it to used to lose it, so it
+                        // stays queued for onInputRequested in that case
                         NaruPendingInput request = session.pendingInputs().stream()
                                 .filter(x -> x.taskId() == t.id()).findFirst().orElse(null);
-                        if (request != null) session.deliverPendingInput(request.requestId(), next.input.text());
+                        Pending next = null;
+                        if (request != null) {
+                            synchronized (monitor) {
+                                next = queued.poll();
+                            }
+                        }
+                        if (next != null) session.deliverPendingInput(request.requestId(), next.input.text());
                     }
                 }
             };

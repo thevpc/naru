@@ -1,6 +1,9 @@
 # NARU Examples
 
-Learn NARU step by step. Run any example with:
+Using NARU from Java (as an LLM bridge, a LangChain-style chain, a LangGraph-style graph,
+or a server that wakes a conversation once per request)? See [library/](library/README.md).
+
+Learn the NARU script language step by step. Run any example with:
 
     naru --source examples/<filename>.naru
 
