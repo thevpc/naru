@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>net.thevpc.naru.examples</groupId>
+    <artifactId>naru-library-examples</artifactId>
+    <version>1.2.0.0</version>
+    <packaging>jar</packaging>
+    <description>Tutorial examples: NARU used as a Java library</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <!-- which example `mvn exec:java` runs; override with -Dexample=... -->
+        <example>net.thevpc.naru.examples.Ex01LlmBridge</example>
+    </properties>
+
+    <dependencies>
+        <!-- the runtime: sessions, tasks, scheduler, turn handles -->
+        <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.2.0.0</version></dependency>
+        <!-- model providers: ollama, openai, anthropic, gemini, groq, mistral, ... -->
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-llm-models-impl</artifactId><version>1.2.0.0</version></dependency>
+        <!-- /model directive -->
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-llm-impl</artifactId><version>1.2.0.0</version></dependency>
+        <!-- /use /call /set /if /print ... : routines -->
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-routines-impl</artifactId><version>1.2.0.0</version></dependency>
+        <!-- /start /fire /on /wait : tasks and events -->
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-tasks-impl</artifactId><version>1.2.0.0</version></dependency>
+        <!-- file-backed NaruSessionStore, used by the turn-server example -->
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-store-file</artifactId><version>1.2.0.0</version></dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.16.0</version>
+                <configuration>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <mainClass>${example}</mainClass>
+                    <cleanupDaemonThreads>false</cleanupDaemonThreads>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    <repositories>
+        <repository><id>thevpc</id><url>https://maven.thevpc.net</url></repository>
+    </repositories>
+</project>

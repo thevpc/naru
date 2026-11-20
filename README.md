@@ -152,6 +152,7 @@ One task blocked on a 3-minute LLM call never blocks the others.
 
 → [See the full help](HELP.md) for more examples including databases, IDEs, security tools, and games.
 → [See Examples](examples/README.md) for more examples including databases, IDEs, security tools, and games.
+→ [Use NARU as a Java library](examples/library/README.md): an LLM bridge, a LangChain-style chain, a LangGraph-style graph, and a server that runs one turn per request.
 
 ---
 
