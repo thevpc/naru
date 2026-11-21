@@ -17,6 +17,7 @@ import net.thevpc.naru.examples.support.Examples;
 import net.thevpc.naru.examples.support.ScriptedModelProvider;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -103,14 +104,14 @@ public class Ex04TurnServer {
             // AGENT_RESPONSE also carries engine notices ("Loading agent from ..."), so a chat
             // answer is MODEL_RESPONSE only
             if (mode == NaruLogMode.MODEL_RESPONSE) {
-                answer.append(Examples.plain(message));
+                answer.append(NText.of(message).filteredText());
             }
         }
 
         @Override
         public synchronized void writeStream(NaruLogMode mode, NMsg fragment, boolean end) {
             if (mode == NaruLogMode.MODEL_RESPONSE) {
-                answer.append(Examples.plain(fragment));
+                answer.append(NText.of(fragment).filteredText());
             }
         }
 

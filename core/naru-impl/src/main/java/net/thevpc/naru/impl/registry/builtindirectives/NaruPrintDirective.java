@@ -14,12 +14,14 @@ public class NaruPrintDirective extends NaruDirectiveBase {
             @Override
             public NaruStmtResult execute(SubCommandContext context, NCmdLine cmdLine) {
                 NaruTask task = context.task();
-                Object e = context.task().evalExpression(context.argument());
-                String line = String.valueOf(e);
+                NElement e = context.task().evalExpression(context.argument());
+                // a string prints as its text: the element's own form quotes it, so
+                // /print "done" used to print "done" with the quotes
+                String line = e == null ? "" : e.isAnyString() ? e.asStringValue().orElse("") : e.toString();
                 task.addResultMessage(NMsg.ofC("%s", line));
                 return NaruStmtResult.ofSuccess(
-                        NElement.of(e),
-                        NMsg.ofC("%s",e)
+                        e == null ? NElement.ofNull() : e,
+                        NMsg.ofC("%s", line)
                 );
             }
         });

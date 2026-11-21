@@ -109,6 +109,26 @@ public class NaruTaskCompletionTest {
     }
 
     /**
+     * A string prints as its text. The evaluated element's own form quotes it, and printing
+     * that put the quotes in front of the user: {@code /print "done"} showed {@code "done"}.
+     */
+    @Test
+    @Timeout(60)
+    public void printShowsAStringWithoutItsQuotes() {
+        NaruWorkspace agent = newAgent("print-string");
+        NaruTask result = await(agent.newSession()
+                .interaction(silent())
+                .task(spec("/print \"hello world\""))
+                .build()
+                .run());
+
+        Assertions.assertTrue(result.isSuccess(), () -> "expected success but got " + result);
+        Assertions.assertTrue(result.history().stream()
+                        .anyMatch(m -> "hello world".equals(m.getFilteredContent())),
+                () -> "the printed line must be the bare text; history was " + result.history());
+    }
+
+    /**
      * The reason this class exists at all: a terminated task is dropped from the session, so
      * the handle has to keep working after the lookup stops resolving.
      */

@@ -9,6 +9,7 @@ import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 
 import java.util.EnumSet;
 import java.util.Set;
@@ -92,7 +93,9 @@ public final class Examples {
             if (!shown.contains(mode)) {
                 return;
             }
-            String text = plain(message);
+            // messages carry nuts style markup (##{p9:ollama}##) for terminals that
+            // render it; filteredText() is the same message as plain text
+            String text = NText.of(message).filteredText();
             // PROGRESS also announces every model call; keep the /print lines, drop that banner
             if (text.isBlank() || (mode == NaruLogMode.PROGRESS && text.startsWith("\uD83E\uDDE0"))) {
                 return;
@@ -103,7 +106,7 @@ public final class Examples {
         @Override
         public void writeStream(NaruLogMode mode, NMsg fragment, boolean end) {
             if (shown.contains(mode)) {
-                System.out.print(plain(fragment));
+                System.out.print(NText.of(fragment).filteredText());
                 if (end) {
                     System.out.println();
                 }
@@ -113,19 +116,5 @@ public final class Examples {
         @Override
         public void close() {
         }
-    }
-
-    /**
-     * Messages carry nuts style markup ({@code ##{p9:ollama}##}) for terminals that render it.
-     * A host without that renderer strips it to plain text.
-     */
-    public static String plain(NMsg message) {
-        String s = String.valueOf(message);
-        s = s.replaceAll("##\\{[^:}]+:([^}]*)\\}##", "$1");
-        s = s.replaceAll("##\\{[^}]*\\}##", "");
-        if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) {
-            s = s.substring(1, s.length() - 1);
-        }
-        return s;
     }
 }
