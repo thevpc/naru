@@ -4,7 +4,9 @@ import net.thevpc.naru.api.mode.NaruPromptMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.nuts.Nuts;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
@@ -20,6 +22,11 @@ import java.util.Set;
  * planning mode and a plain read-only chat leave it off (zero messages).
  */
 public class NaruCoderExtensionTest {
+
+    @BeforeAll
+    static void setUpWorkspace() {
+        Nuts.require();
+    }
 
     private final NaruCoderExtension ext = new NaruCoderExtension();
 

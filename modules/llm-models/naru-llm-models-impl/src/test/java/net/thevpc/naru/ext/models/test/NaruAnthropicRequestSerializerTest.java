@@ -32,7 +32,7 @@ public class NaruAnthropicRequestSerializerTest {
         NaruModelRequest request = new NaruModelRequest(messages, Collections.emptyMap());
         NaruModelConfig model = new NaruModelConfig("anthropic-compat", "claude-sonnet-4");
 
-        NObjectElement body = serializer.serialize(request, model, null).asObject().get();
+        NObjectElement body = serializer.serialize(request, model, (NaruModelContext) null).asObject().get();
 
         Assertions.assertEquals("claude-sonnet-4", body.getStringValue("model").get());
         // system message must NOT appear in messages[]
@@ -51,7 +51,7 @@ public class NaruAnthropicRequestSerializerTest {
         NaruModelConfig model = new NaruModelConfig(null, "anthropic-compat", "claude-sonnet-4",
                 null, null, null, null, null, Collections.emptyList());
 
-        NObjectElement body = serializer.serialize(request, model, null).asObject().get();
+        NObjectElement body = serializer.serialize(request, model, (NaruModelContext) null).asObject().get();
         Assertions.assertEquals(4096, body.getIntValue("max_tokens").get());
     }
 
@@ -70,7 +70,7 @@ public class NaruAnthropicRequestSerializerTest {
         NaruModelRequest request = new NaruModelRequest(messages, Collections.emptyMap());
         NaruModelConfig model = new NaruModelConfig("anthropic-compat", "claude-sonnet-4");
 
-        NObjectElement body = serializer.serialize(request, model, null).asObject().get();
+        NObjectElement body = serializer.serialize(request, model, (NaruModelContext) null).asObject().get();
         List<NElement> msgs = body.getArray("messages").get().children();
 
         // assistant message carries tool_use block
@@ -103,7 +103,7 @@ public class NaruAnthropicRequestSerializerTest {
                 Collections.singletonList(NaruMessage.user("search")), tools, Collections.emptyMap());
         NaruModelConfig model = new NaruModelConfig("anthropic-compat", "claude-sonnet-4");
 
-        NObjectElement body = serializer.serialize(request, model, null).asObject().get();
+        NObjectElement body = serializer.serialize(request, model, (NaruModelContext) null).asObject().get();
         NObjectElement tool = body.getArray("tools").get().children().get(0).asObject().get();
         Assertions.assertEquals("web_search", tool.getStringValue("name").get());
         NObjectElement inputSchema = tool.getObject("input_schema").get();
@@ -121,7 +121,7 @@ public class NaruAnthropicRequestSerializerTest {
                 Collections.singletonList(user), Collections.emptyMap());
         NaruModelConfig model = new NaruModelConfig("anthropic-compat", "claude-sonnet-4");
 
-        NObjectElement body = serializer.serialize(request, model, null).asObject().get();
+        NObjectElement body = serializer.serialize(request, model, (NaruModelContext) null).asObject().get();
         NObjectElement userMsg = body.getArray("messages").get().children().get(0).asObject().get();
         List<NElement> content = userMsg.getArray("content").get().children();
         Assertions.assertEquals(2, content.size());

@@ -195,6 +195,13 @@ public abstract class NaruDirectiveBase implements NaruDirective {
         // a silent command must not add an empty line to the transcript
         if (!msg.isBlank()) {
             task.log(NaruLogMode.DIRECTIVE, msg);
+            // a sub-command that fails with a printed message and no value of its own: the message
+            // is the error, which is what lastError and a host reading errorValue() see. A success
+            // keeps its own value, which may deliberately be none (--explain only prints)
+            if (sub != null && sub.isError() && (sub.value() == null || sub.value().isNull())) {
+                return new NaruStmtResult(NElement.ofString(other.build().filteredText().strip()),
+                        sub.type(), sub.exitCode());
+            }
         }
         return sub;
     }

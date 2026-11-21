@@ -63,7 +63,7 @@ class NaruJdbcDataStoreTest {
         assertEquals(1, appended.created());
         assertEquals(firstId, appended.ids().getFirst());
         assertEquals(List.of("first", "second"), store.loadHistory("s-1", NaruSessionScope.PRIVATE, 7)
-                .stream().map(NaruMessage::getContent).toList());
+                .stream().map(NaruMessage::getFilteredContent).toList());
 
         NaruSessionState snapshot = new NaruSessionState(data);
         snapshot.tasks().put(7L, store.loadTask("s-1", NaruSessionScope.PRIVATE, 7).get());

@@ -114,7 +114,7 @@ public class NaruAnthropicCacheSerializerTest {
                 NaruMessage.user("Hello"),
                 NaruMessage.assistant("Hi"));
         NaruModelRequest plain = new NaruModelRequest(messages, Collections.emptyMap());
-        NObjectElement a = serializer.serialize(plain, model(), null).asObject().get();
+        NObjectElement a = serializer.serialize(plain, model(), (NaruModelContext) null).asObject().get();
 
         // same request, but carrying a context that grants no breakpoints
         NaruCacheableContext ctx = NaruCacheableContext.builder()
@@ -122,7 +122,7 @@ public class NaruAnthropicCacheSerializerTest {
                 .volatileMessages("chat", Arrays.asList(NaruMessage.user("Hello"), NaruMessage.assistant("Hi")))
                 .build();
         NaruModelRequest segmented = plain.withCacheableContext(ctx);
-        NObjectElement b = serializer.serialize(segmented, model(), null, NaruCachePlanView.none())
+        NObjectElement b = serializer.serialize(segmented, model(), (NaruModelContext) null, NaruCachePlanView.none())
                 .asObject().get();
 
         Assertions.assertEquals(a, b, "caching must not alter the body when no breakpoint is granted");
@@ -140,7 +140,7 @@ public class NaruAnthropicCacheSerializerTest {
                 Arrays.asList(NaruMessage.user("one"), NaruMessage.user("two")), Collections.emptyMap())
                 .withCacheableContext(ctx);
 
-        NObjectElement body = serializer.serialize(request, model(), null, allHit(ctx)).asObject().get();
+        NObjectElement body = serializer.serialize(request, model(), (NaruModelContext) null, allHit(ctx)).asObject().get();
         List<String> markers = markersIn(body);
 
         Assertions.assertEquals(1, markers.size(), "expected exactly one marker, got " + markers);
@@ -163,7 +163,7 @@ public class NaruAnthropicCacheSerializerTest {
                 .build();
         NaruModelRequest request = ctx.toRequest(Collections.emptyMap());
 
-        NObjectElement body = serializer.serialize(request, model(), null, allHit(ctx)).asObject().get();
+        NObjectElement body = serializer.serialize(request, model(), (NaruModelContext) null, allHit(ctx)).asObject().get();
         List<String> markers = markersIn(body);
 
         Assertions.assertTrue(markers.contains("tools:beta"),
@@ -180,7 +180,7 @@ public class NaruAnthropicCacheSerializerTest {
                 .build();
         NaruModelRequest request = ctx.toRequest(Collections.emptyMap());
 
-        NObjectElement body = serializer.serialize(request, model(), null, allHit(ctx)).asObject().get();
+        NObjectElement body = serializer.serialize(request, model(), (NaruModelContext) null, allHit(ctx)).asObject().get();
 
         Assertions.assertTrue(body.get("system").get().isAnyArray(),
                 "cache_control cannot ride on a bare JSON string, so block form is mandatory");
@@ -201,7 +201,7 @@ public class NaruAnthropicCacheSerializerTest {
         NaruModelRequest request = new NaruModelRequest(msgs, Collections.emptyMap())
                 .withCacheableContext(ctx);
 
-        NObjectElement body = serializer.serialize(request, model(), null, allHit(ctx)).asObject().get();
+        NObjectElement body = serializer.serialize(request, model(), (NaruModelContext) null, allHit(ctx)).asObject().get();
 
         Assertions.assertEquals(4, markersIn(body).size(),
                 "Anthropic rejects more than four breakpoints");
@@ -216,7 +216,7 @@ public class NaruAnthropicCacheSerializerTest {
                 .build();
         NaruModelRequest request = ctx.toRequest(Collections.emptyMap());
 
-        NObjectElement body = serializer.serialize(request, model(), null, allHit(ctx)).asObject().get();
+        NObjectElement body = serializer.serialize(request, model(), (NaruModelContext) null, allHit(ctx)).asObject().get();
         NElement msgs = body.get("messages").get();
         NObjectElement first = msgs.asArray().get().children().get(0).asObject().get();
         NObjectElement block = first.getArray("content").get().children().get(0).asObject().get();
@@ -256,7 +256,7 @@ public class NaruAnthropicCacheSerializerTest {
                 return List.of(0);
             }
         };
-        NObjectElement body = serializer.serialize(request, model(), null, automatic).asObject().get();
+        NObjectElement body = serializer.serialize(request, model(), (NaruModelContext) null, automatic).asObject().get();
         Assertions.assertTrue(markersIn(body).isEmpty());
         Assertions.assertTrue(body.get("system").get().isAnyString(),
                 "with no markers, system must keep its compact string form");

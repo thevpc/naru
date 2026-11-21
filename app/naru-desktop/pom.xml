@@ -27,6 +27,7 @@
         <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-plan-api</artifactId><version>1.2.0.0</version></dependency>
 
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.2.0.0</version></dependency>
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-store-file</artifactId><version>1.2.0.0</version><scope>test</scope></dependency>
 
         <!--
             No extension here on purpose. The console launcher does not declare them either:

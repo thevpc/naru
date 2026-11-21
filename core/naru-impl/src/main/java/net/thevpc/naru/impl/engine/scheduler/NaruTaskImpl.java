@@ -1603,7 +1603,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
             if (session().registry().findAvailableTag(name).isEmpty()) {
                 addHistory(NaruMessage.engine(NMsg.ofC(
                         "⚠ task %s holds tool tag '%s' but no provider declares it; the tag is kept and reveals no tool",
-                        id(), name).asInfo().withIntent(NMsgIntent.FAIL)));
+                        id(), name).asWarning().withIntent(NMsgIntent.FAIL)));
             }
         }
     }

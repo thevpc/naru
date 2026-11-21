@@ -70,7 +70,7 @@ public class NaruToolParameterSchemaTest {
 
     private static NObjectElement ollamaSchema(NaruModelRequest request) {
         return new NaruOllamaNativeRequestSerializer()
-                .serialize(request, model(), null).asObject().get()
+                .serialize(request, model(), (NaruModelContext) null).asObject().get()
                 .getArray("tools").get().children().get(0).asObject().get()
                 .getObject("function").get()
                 .getObject("parameters").get();
@@ -78,7 +78,7 @@ public class NaruToolParameterSchemaTest {
 
     private static NObjectElement openApiSchema(NaruModelRequest request) {
         return new NaruOpenAiRequestSerializer()
-                .serialize(request, model(), null).asObject().get()
+                .serialize(request, model(), (NaruModelContext) null).asObject().get()
                 .getArray("tools").get().children().get(0).asObject().get()
                 .getObject("function").get()
                 .getObject("parameters").get();
@@ -86,14 +86,14 @@ public class NaruToolParameterSchemaTest {
 
     private static NObjectElement anthropicSchema(NaruModelRequest request) {
         return new NaruAnthropicRequestSerializer()
-                .serialize(request, model(), null, null).asObject().get()
+                .serialize(request, model(), (NaruModelContext) null, null).asObject().get()
                 .getArray("tools").get().children().get(0).asObject().get()
                 .getObject("input_schema").get();
     }
 
     private static NObjectElement geminiSchema(NaruModelRequest request) {
         return new NaruGeminiNativeRequestSerializer()
-                .serialize(request, model(), null, null).asObject().get()
+                .serialize(request, model(), (NaruModelContext) null, null).asObject().get()
                 .getArray("tools").get().children().get(0).asObject().get()
                 .getArray("functionDeclarations").get().children().get(0).asObject().get()
                 .getObject("parameters").get();
@@ -360,7 +360,7 @@ public class NaruToolParameterSchemaTest {
 
     private static String ollamaToolDescription(NaruModelRequest request) {
         return new NaruOllamaNativeRequestSerializer()
-                .serialize(request, model(), null).asObject().get()
+                .serialize(request, model(), (NaruModelContext) null).asObject().get()
                 .getArray("tools").get().children().get(0).asObject().get()
                 .getObject("function").get()
                 .getStringValue("description").get();
@@ -368,7 +368,7 @@ public class NaruToolParameterSchemaTest {
 
     private static String openAiToolDescription(NaruModelRequest request) {
         return new NaruOpenAiRequestSerializer()
-                .serialize(request, model(), null).asObject().get()
+                .serialize(request, model(), (NaruModelContext) null).asObject().get()
                 .getArray("tools").get().children().get(0).asObject().get()
                 .getObject("function").get()
                 .getStringValue("description").get();
@@ -376,14 +376,14 @@ public class NaruToolParameterSchemaTest {
 
     private static String anthropicToolDescription(NaruModelRequest request) {
         return new NaruAnthropicRequestSerializer()
-                .serialize(request, model(), null, null).asObject().get()
+                .serialize(request, model(), (NaruModelContext) null, null).asObject().get()
                 .getArray("tools").get().children().get(0).asObject().get()
                 .getStringValue("description").get();
     }
 
     private static String geminiToolDescription(NaruModelRequest request) {
         return new NaruGeminiNativeRequestSerializer()
-                .serialize(request, model(), null, null).asObject().get()
+                .serialize(request, model(), (NaruModelContext) null, null).asObject().get()
                 .getArray("tools").get().children().get(0).asObject().get()
                 .getArray("functionDeclarations").get().children().get(0).asObject().get()
                 .getStringValue("description").get();

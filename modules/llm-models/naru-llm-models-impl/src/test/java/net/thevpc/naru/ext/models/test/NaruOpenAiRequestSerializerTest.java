@@ -37,7 +37,7 @@ public class NaruOpenAiRequestSerializerTest {
         NaruModelRequest request = new NaruModelRequest(messages, Collections.emptyMap());
         NaruModelConfig model = new NaruModelConfig("custom-llm", "llama-3.1-8b");
 
-        NObjectElement body = serializer.serialize(request, model, null).asObject().get();
+        NObjectElement body = serializer.serialize(request, model, (NaruModelContext) null).asObject().get();
 
         Assertions.assertEquals("llama-3.1-8b", body.getStringValue("model").get());
         Assertions.assertEquals(false, body.getBooleanValue("stream").get());
@@ -66,7 +66,7 @@ public class NaruOpenAiRequestSerializerTest {
                 .withMaxTokens(512)
                 .withStop(Collections.singletonList("END"));
 
-        NObjectElement body = serializer.serialize(request, model, null).asObject().get();
+        NObjectElement body = serializer.serialize(request, model, (NaruModelContext) null).asObject().get();
 
         Assertions.assertEquals(0.7f, body.getFloatValue("temperature").get());
         Assertions.assertEquals(0.9f, body.getFloatValue("top_p").get()); // nucleusThreshold -> top_p
@@ -90,7 +90,7 @@ public class NaruOpenAiRequestSerializerTest {
         NaruModelRequest request = new NaruModelRequest(messages, Collections.emptyMap());
         NaruModelConfig model = new NaruModelConfig("custom-llm", "llama-3.1-8b");
 
-        NObjectElement body = serializer.serialize(request, model, null).asObject().get();
+        NObjectElement body = serializer.serialize(request, model, (NaruModelContext) null).asObject().get();
         List<NElement> msgs = body.getArray("messages").get().children();
 
         // assistant message carries tool_calls[]
@@ -124,7 +124,7 @@ public class NaruOpenAiRequestSerializerTest {
                 Collections.singletonList(NaruMessage.user("search")), tools, Collections.emptyMap());
         NaruModelConfig model = new NaruModelConfig("custom-llm", "llama-3.1-8b");
 
-        NObjectElement body = serializer.serialize(request, model, null).asObject().get();
+        NObjectElement body = serializer.serialize(request, model, (NaruModelContext) null).asObject().get();
         NObjectElement tool = body.getArray("tools").get().children().get(0).asObject().get();
         Assertions.assertEquals("function", tool.getStringValue("type").get());
         NObjectElement functionBlock = tool.getObject("function").get();
@@ -145,7 +145,7 @@ public class NaruOpenAiRequestSerializerTest {
                 Collections.singletonList(user), Collections.emptyMap());
         NaruModelConfig model = new NaruModelConfig("custom-llm", "llava-v1.6");
 
-        NObjectElement body = serializer.serialize(request, model, null).asObject().get();
+        NObjectElement body = serializer.serialize(request, model, (NaruModelContext) null).asObject().get();
         NObjectElement userMsg = body.getArray("messages").get().children().get(0).asObject().get();
         List<NElement> content = userMsg.getArray("content").get().children();
         Assertions.assertEquals(2, content.size());

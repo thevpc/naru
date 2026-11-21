@@ -23,18 +23,24 @@ import java.util.stream.Collectors;
 public class WebToolHelper {
 
     /** The DuckDuckGo endpoint {@link #searchWeb} talks to, named so the guard can name it. */
-    public static final String SEARCH_URL = "https://html.duckduckgo.com/html/";
+    public static final String SEARCH_URL = "https://api.duckduckgo.com/";
 
     public static String searchWeb(NaruTask task, String query) {
         if (NBlankable.isBlank(query)) {
             return "Error: query is required";
+        }
+        // checked against the endpoint actually called: when the search moved to the API endpoint
+        // the check was left behind, and a policy denying the fetch no longer stopped a search
+        String denied = deny(task, SEARCH_URL);
+        if (denied != null) {
+            return denied;
         }
 
         // Still use the API endpoint to avoid CAPTCHA
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(30));
 
-        NHttpResponse response = http.GET("https://api.duckduckgo.com/")
+        NHttpResponse response = http.GET(SEARCH_URL)
                 .parameter("q", query)
                 .parameter("format", "json")
                 .parameter("no_html", "1")

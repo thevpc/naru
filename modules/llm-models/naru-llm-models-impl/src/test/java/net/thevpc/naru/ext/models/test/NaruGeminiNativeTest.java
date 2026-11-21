@@ -42,7 +42,7 @@ public class NaruGeminiNativeTest {
 
     private static NObjectElement serialize(NaruModelRequest request) {
         return new NaruGeminiNativeRequestSerializer()
-                .serialize(request, model(), null, NaruCachePlanView.none())
+                .serialize(request, model(), (NaruModelContext) null, NaruCachePlanView.none())
                 .asObject().get();
     }
 

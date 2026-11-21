@@ -1,4 +1,4 @@
-package net.thevpc.naru.impl.engine;
+package net.thevpc.naru.agent;
 
 import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruInputRequest;

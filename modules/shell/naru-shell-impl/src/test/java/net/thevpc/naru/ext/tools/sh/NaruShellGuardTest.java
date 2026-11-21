@@ -85,8 +85,8 @@ public class NaruShellGuardTest {
         NaruStmtResult result = new NaruShDirective().execute(ctx);
 
         assertNotNull(result.errorValue(), "a denied /sh yields a failed statement");
-        assertTrue(String.valueOf(result.errorValue()).startsWith("ERROR: permission denied"),
-                String.valueOf(result.errorValue()));
+        String error = result.errorValue().asStringValue().orElse(String.valueOf(result.errorValue()));
+        assertTrue(error.startsWith("ERROR: permission denied"), error);
     }
 
     @Test

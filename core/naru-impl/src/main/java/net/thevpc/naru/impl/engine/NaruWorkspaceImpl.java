@@ -82,6 +82,13 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     private NaruProjectEnv projectEnv;
     private volatile NClassLoader classLoader;
     private List<NId> requestedExtensions = new ArrayList<>();
+    /**
+     * Whether an empty extension list means "the installed dev profile". True for a workspace
+     * assembled by {@link NaruWorkspaceBuilderImpl} (the apps); false for {@code NaruWorkspace.of()},
+     * which is documented to use the classpath as it is. Resolving the profile there loaded
+     * whatever version happened to be installed next to the classes under test.
+     */
+    private final boolean defaultProfile;
     private List<NId> effectiveExtensions = new ArrayList<>();
     /**
      * The in-memory agent env. Unlike {@link #projectEnv}, it is not rebuilt when the
@@ -181,10 +188,15 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     };
 
     public NaruWorkspaceImpl() {
-        this(null);
+        this(null, false);
     }
 
     public NaruWorkspaceImpl(NId[] extensions) {
+        this(extensions, true);
+    }
+
+    public NaruWorkspaceImpl(NId[] extensions, boolean defaultProfile) {
+        this.defaultProfile = defaultProfile;
         if (extensions != null) {
             for (NId e : extensions) {
                 if (e != null) {
@@ -621,21 +633,22 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                             NOut.println(NMsg.ofC("loaded extension %s", found));
                         }
                     }
-                    if (loaded.isEmpty()) {
+                    if (loaded.isEmpty() && defaultProfile) {
                         List<NId> profiles = new ArrayList<>();
                         for (String profile : DEFAULT_PROFILES) {
                             profiles.add(NId.of(profile));
                         }
                         NId found = searchLatest(profiles, currentVersion);
                         if (found == null) {
-                            // failing here is the point: a workspace that resolves no profile has
-                            // no features at all, and every one of them would just do nothing
-                            throw new IllegalStateException("no naru profile is installed, tried "
-                                    + String.join(" then ", DEFAULT_PROFILES));
+                            // nothing installed: what the classpath carries is all there is. An
+                            // empty classpath still fails, at session build, naming the missing store
+                            log(NaruLogMode.TRACE, NMsg.ofC("no naru profile is installed (tried %s); using the classpath only",
+                                    String.join(", ", DEFAULT_PROFILES)).asWarning());
+                        } else {
+                            nopsClassLoader.add(found);
+                            loaded.add(found);
+                            log(NaruLogMode.TRACE, NMsg.ofC("loaded extension %s", found).asInfo().withIntent(NMsgIntent.SETTINGS));
                         }
-                        nopsClassLoader.add(found);
-                        loaded.add(found);
-                        log(NaruLogMode.TRACE, NMsg.ofC("loaded extension %s", found).asInfo().withIntent(NMsgIntent.SETTINGS));
                     }
                     effectiveExtensions.addAll(loaded);
                     classLoader = nopsClassLoader;
