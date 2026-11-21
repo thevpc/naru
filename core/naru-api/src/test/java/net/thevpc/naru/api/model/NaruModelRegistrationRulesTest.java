@@ -303,9 +303,9 @@ public class NaruModelRegistrationRulesTest {
         @Override public String type() { return type; }
         @Override public String defaultProtocol() { return defaultProtocol; }
         @Override public Set<String> supportedProtocols() { return supported; }
-        @Override public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig m, NaruSession s) { return NOptional.ofEmpty(); }
-        @Override public NOptional<String> apiKey(NaruSession s) { return NOptional.ofEmpty(); }
-        @Override public List<String> findModelIds(NaruSession s) { return List.of(); }
+        @Override public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig m, NaruModelContext context) { return NOptional.ofEmpty(); }
+        @Override public NOptional<String> apiKey(NaruModelContext context) { return NOptional.ofEmpty(); }
+        @Override public List<String> findModelIds(NaruModelContext context) { return List.of(); }
         @Override public void setParam(String n, String v) { params.put(n, v); }
         @Override public NOptional<String> getParam(String n) { return NOptional.ofNullable(params.get(n)); }
         @Override public Set<String> getParamNames() { return params.keySet(); }

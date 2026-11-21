@@ -1,7 +1,7 @@
 package net.thevpc.naru.ext.models.github;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.openai.AbstractOpenAICompatProvider;
@@ -46,12 +46,12 @@ public class NaruGitHubModelsProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
+    protected String baseUrl(NaruModelContext context) {
         return CATALOG_BASE_URL + "/inference";
     }
 
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
+    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
         boolean vision = modelName.contains("gpt-4o") || modelName.contains("gpt-4.1") || modelName.contains("Scout");
         boolean tools = !modelName.contains("DeepSeek-R1");
         boolean thinking = modelName.contains("DeepSeek-R1") || modelName.contains("o1") || modelName.contains("o3");
@@ -66,18 +66,18 @@ public class NaruGitHubModelsProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
-        String apiKey = apiKey(session).orNull();
+    public List<String> findModelIds(NaruModelContext context) {
+        String apiKey = apiKey(context).orNull();
         if (NBlankable.isBlank(apiKey)) {
             return Collections.emptyList();
         }
         try {
             NHttpClient http = NHttpClient.of()
-                    .connectTimeout(connectTimeout(session))
+                    .connectTimeout(connectTimeout(context))
                     .baseUri(CATALOG_BASE_URL);
 
             NHttpRequest request = http.GET("catalog/models")
-                    .timeout(readTimeout(session))
+                    .timeout(readTimeout(context))
                     .header("Authorization", "Bearer " + apiKey)
                     .header("Accept", "application/vnd.github+json");
             // NOTE: confirm whether X-GitHub-Api-Version is also required here —

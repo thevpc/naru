@@ -374,8 +374,9 @@ public class NaruRegistryImpl implements NaruRegistry {
      */
     private NaruModelInfo describe(NaruModelProvider p, NaruModelKey k, NaruSession session) {
         try {
-            NaruModelProtocol protocol = p.getProtocol(new NaruModelConfig(p.name(), k.model()), session).orNull();
-            return p.getModelInfo(k.model(), protocol == null ? null : protocol.getCapabilities(), session);
+            NaruModelContext context = NaruModelContext.of(session);
+            NaruModelProtocol protocol = p.getProtocol(new NaruModelConfig(p.name(), k.model()), context).orNull();
+            return p.getModelInfo(k.model(), protocol == null ? null : protocol.getCapabilities(), context);
         } catch (Throwable t) {
             session.log(NaruLogMode.DEBUG, NMsg.ofC("could not describe %s : %s", k, t));
             return new NaruModelInfo(k.provider(), k.model(), null);
@@ -389,7 +390,7 @@ public class NaruRegistryImpl implements NaruRegistry {
         // positional indexes ambiguous, so only the first occurrence is kept.
         Set<NaruModelKey> set = new LinkedHashSet<>();
         for (NaruModelProvider p : modelProviders.values()) {
-            if (!p.isAvailable(session)) {
+            if (!p.isAvailable(NaruModelContext.of(session))) {
                 continue;
             }
             if (!p.isEnabled()) {
@@ -399,7 +400,7 @@ public class NaruRegistryImpl implements NaruRegistry {
             }
             List<String> ids;
             try {
-                ids = p.findModelIds(session);
+                ids = p.findModelIds(NaruModelContext.of(session));
             } catch (RuntimeException e) {
                 // a single unreachable provider must not break listing for all the others
                 ids = Collections.emptyList();
@@ -466,7 +467,7 @@ public class NaruRegistryImpl implements NaruRegistry {
     @Override
     public NOptional<NaruModelProtocol> protocol(NaruModelConfig model, NaruSession session) {
         return provider(model.provider())
-                .flatMap(p -> p.getProtocol(model, session));
+                .flatMap(p -> p.getProtocol(model, NaruModelContext.of(session)));
     }
 
     @Override

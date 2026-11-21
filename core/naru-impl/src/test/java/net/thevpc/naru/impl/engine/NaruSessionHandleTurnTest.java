@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruInput;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
@@ -134,7 +135,7 @@ public class NaruSessionHandleTurnTest {
 
         private final NaruModelProtocol protocol = new NaruModelProtocol() {
             @Override
-            public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+            public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
                 long users = request.messages().stream().filter(m -> m.getRole() == NaruRole.user).count();
                 return new NaruResponse(NaruMessage.assistant("user turns seen: " + users), true);
             }
@@ -201,7 +202,7 @@ public class NaruSessionHandleTurnTest {
         };
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(protocol);
         }
 
@@ -211,12 +212,12 @@ public class NaruSessionHandleTurnTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of("m");
         }
 

@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.ollama;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelRequest;
@@ -7,7 +8,6 @@ import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruResponse;
 import net.thevpc.naru.api.model.NaruStreamHandler;
 import net.thevpc.naru.api.model.NaruThinkingConfig;
-import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.time.NDuration;
@@ -61,8 +61,8 @@ public class NaruModelProtocolOllamaNative extends NaruModelProtocolBase {
      * model which can be asked to think from one that will refuse the request.
      */
     @Override
-    protected NaruModelRequest preprocessRequest(NaruModelRequest mrequest, NaruTask task) {
-        NaruModelRequest request = super.preprocessRequest(mrequest, task);
+    protected NaruModelRequest preprocessRequest(NaruModelRequest mrequest, NaruModelContext context) {
+        NaruModelRequest request = super.preprocessRequest(mrequest, context);
         if (request.env() != null && request.env().containsKey(THINK_ENV)) {
             return request;
         }
@@ -78,11 +78,11 @@ public class NaruModelProtocolOllamaNative extends NaruModelProtocolBase {
     }
 
     @Override
-    public NaruResponse chatStream(NaruModelRequest request, NaruTask task, NaruStreamHandler handler) {
+    public NaruResponse chatStream(NaruModelRequest request, NaruModelContext context, NaruStreamHandler handler) {
         if (!capabilities.isStreaming()) {
-            return super.chatStream(request, task, handler);
+            return super.chatStream(request, context, handler);
         }
-        return streamChat(request, task,
+        return streamChat(request, context,
                 new NaruOllamaNativeStreamParser(providerName(), handler, model));
     }
 }

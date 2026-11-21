@@ -2,7 +2,6 @@ package net.thevpc.naru.ext.models;
 
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruRole;
-import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.util.NaruUtils;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolSchema;
@@ -182,13 +181,13 @@ public class NoToolWrapHelper {
         return unwrapResponse(naruResponse, TOOL_CALL_SEP, null);
     }
 
-    public static NaruResponse unwrapResponse(NaruResponse naruResponse, Separators openClose, NaruTask task) {
+    public static NaruResponse unwrapResponse(NaruResponse naruResponse, Separators openClose, NaruModelContext context) {
         NaruMessage msg = naruResponse.getMessage();
         // an empty turn (no text at all) has nothing to recover a call from
         if (msg == null || msg.getContent() == null) {
             return naruResponse;
         }
-        ParsedEmulatedResponse parsed = parseEmulatedToolCalls(msg.getContent().toString(), openClose, task);
+        ParsedEmulatedResponse parsed = parseEmulatedToolCalls(msg.getContent().toString(), openClose, context);
         if (!parsed.calls.isEmpty()) {
             // withContent keeps the provenance and, importantly, the reasoning
             // channel the parser may have filled (thinking / thinkingSegments) --
@@ -215,7 +214,7 @@ public class NoToolWrapHelper {
     }
 
     private static ParsedEmulatedResponse parseEmulatedToolCalls(
-            String content, Separators separators, NaruTask task) {
+            String content, Separators separators, NaruModelContext context) {
         List<NaruToolCall> calls = new ArrayList<>();
         if (content == null) return new ParsedEmulatedResponse(null, calls);
 
@@ -240,10 +239,8 @@ public class NoToolWrapHelper {
                 call.setArguments(NaruUtils.fields(argsEl));
                 calls.add(call);
             } catch (Exception e) {
-                if (task != null) {
-                    task.addHistory(NaruMessage.engine(
-                            NMsg.ofC("Failed to parse emulated tool_call: %s", json).asError()
-                    ));
+                if (context != null) {
+                    context.notice(NMsg.ofC("Failed to parse emulated tool_call: %s", json).asError());
                 }
             }
             matcher.appendReplacement(clean, "");

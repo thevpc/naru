@@ -36,17 +36,20 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
      * default env keys. An unresolved {@code $NAME} is not a value: it falls
      * through, which is how a registration "finds its key by itself".
      */
-    public NOptional<String> apiKey(NaruSession session) {
+    public NOptional<String> apiKey(NaruModelContext context) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProvider.class, "apiKey", NaruSession.class)) {
+            return apiKey(NaruModelLegacy.session(context));
+        }
         for (String s : new String[]{"apiKey","apikey","key"}) {
             String own = params.get(s);
             if (!NBlankable.isBlank(own)) {
                 NOptional<String> resolved = NaruModelRegistration.interpolate(
-                        own, NaruModelRegistration.envResolver(session));
+                        own, NaruModelRegistration.envResolver(context));
                 if (resolved.isPresent() && !NBlankable.isBlank(resolved.get())) {
                     return NOptional.of(NStringUtils.strip(resolved.get()));
                 }
             }
-            String key = NaruModelRegistration.envValue(session, name() + "." + s);
+            String key = context.envValue(name() + "." + s);
             if (!NBlankable.isBlank(key)) {
                 return NOptional.of(key);
             }
@@ -54,7 +57,7 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
         String[] de = defaultEnvKey();
         if (de != null) {
             for (String d : de) {
-                String z = NaruModelRegistration.envValue(session, d);
+                String z = context.envValue(d);
                 if (!NBlankable.isBlank(z)) {
                     return NOptional.of(z);
                 }
@@ -171,17 +174,23 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
      * references an unset variable: an unresolved reference is not a value), so
      * the caller falls through to its own default.
      */
+    /** @deprecated use {@link #configValue(String, NaruModelContext)} */
+    @Deprecated
     public NOptional<String> configValue(String key, NaruSession session) {
+        return configValue(key, NaruModelContext.of(session));
+    }
+
+    public NOptional<String> configValue(String key, NaruModelContext context) {
         if (key != null) {
             String own = params.get(key);
             if (!NBlankable.isBlank(own)) {
                 NOptional<String> resolved = NaruModelRegistration.interpolate(
-                        own, NaruModelRegistration.envResolver(session));
+                        own, NaruModelRegistration.envResolver(context));
                 if (resolved.isPresent() && !NBlankable.isBlank(resolved.get())) {
                     return NOptional.of(NStringUtils.strip(resolved.get()));
                 }
             }
-            String env = NaruModelRegistration.envValue(session, name() + "." + key);
+            String env = context.envValue(name() + "." + key);
             if (!NBlankable.isBlank(env)) {
                 return NOptional.of(env);
             }
@@ -192,18 +201,21 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
     /**
      * Locality resolution: an explicit {@code local} parameter
      * ({@code --local=true}, or the {@code <id>.local} env key) always decides;
-     * otherwise the provider's own rule ({@link #defaultLocal(NaruSession)}) is
+     * otherwise the provider's own rule ({@link #defaultLocal(NaruModelContext)}) is
      * asked. Kept here so every provider supports the explicit override without
      * repeating the parse.
      */
     @Override
-    public boolean isLocal(NaruSession session) {
-        NOptional<Boolean> own = configValue("local", session)
+    public boolean isLocal(NaruModelContext context) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProvider.class, "isLocal", NaruSession.class)) {
+            return isLocal(NaruModelLegacy.session(context));
+        }
+        NOptional<Boolean> own = configValue("local", context)
                 .flatMap(x -> NLiteral.of(x).asBoolean());
         if (own.isPresent()) {
             return own.get();
         }
-        return defaultLocal(session);
+        return defaultLocal(context);
     }
 
     /**
@@ -211,7 +223,16 @@ public abstract class AbstractNaruModelProvider implements NaruModelProvider {
      * parameter is set. Defaults to remote; a provider that talks to a
      * user-supplied url derives it from that url.
      */
-    protected boolean defaultLocal(NaruSession session) {
+    protected boolean defaultLocal(NaruModelContext context) {
+        if (NaruModelLegacy.overridesDeclared(getClass(), AbstractNaruModelProvider.class, "defaultLocal", NaruSession.class)) {
+            return defaultLocal(NaruModelLegacy.session(context));
+        }
         return false;
+    }
+
+    /** @deprecated override {@link #defaultLocal(NaruModelContext)} */
+    @Deprecated
+    protected boolean defaultLocal(NaruSession session) {
+        return defaultLocal(NaruModelContext.of(session));
     }
 }

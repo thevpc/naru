@@ -59,7 +59,7 @@ public interface NaruModelCapabilities extends NToElement {
 
     /**
      * Whether this model runs on a local endpoint. Mirrors
-     * {@link NaruModelProvider#isLocal(NaruSession)} at the model level so a
+     * {@link NaruModelProvider#isLocal(NaruModelContext)} at the model level so a
      * catalog entry can be filtered without re-asking the provider. Defaults to
      * {@code false}.
      */

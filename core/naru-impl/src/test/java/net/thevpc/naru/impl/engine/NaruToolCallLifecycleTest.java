@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.impl.interaction.NaruTerminalInteraction;
 
 import net.thevpc.naru.api.access.NaruAccessEffect;
@@ -454,7 +455,7 @@ public class NaruToolCallLifecycleTest {
         }
 
         @Override
-        public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+        public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
             NaruResponse r = new NaruResponse();
             calls++;
             if (calls == 1) {
@@ -531,7 +532,7 @@ public class NaruToolCallLifecycleTest {
         }
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(protocol);
         }
 
@@ -541,12 +542,12 @@ public class NaruToolCallLifecycleTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of("fake-model");
         }
 

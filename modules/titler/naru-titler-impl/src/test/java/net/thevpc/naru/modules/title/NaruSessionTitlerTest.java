@@ -1,5 +1,6 @@
 package net.thevpc.naru.modules.title;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionNameSource;
 import net.thevpc.naru.api.title.NaruSessionTitler;
@@ -128,11 +129,11 @@ public class NaruSessionTitlerTest {
         }
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             String id = model.model();
             return NOptional.of(new NaruModelProtocol() {
                 @Override
-                public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+                public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
                     called.add(id);
                     requests.add(request);
                     tuned.add(model);
@@ -164,12 +165,12 @@ public class NaruSessionTitlerTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.of("none");
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of(CHEAP, PRICY);
         }
 

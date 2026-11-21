@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.llamacpp;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.elem.NArrayElement;
 import net.thevpc.nuts.elem.NElement;
@@ -81,8 +82,8 @@ public final class LlamaCppPlatform {
     public static LlamaCppRelease resolve(NaruSession session, Consumer<NMsg> logger) {
         String os = osKey();
         String arch = archKey();
-        String backend = LlamaCppPaths.backend(session);
-        String pinned = LlamaCppPaths.releaseTag(session);
+        String backend = LlamaCppPaths.backend(NaruModelContext.of(session));
+        String pinned = LlamaCppPaths.releaseTag(NaruModelContext.of(session));
         String suffix = assetSuffix();
         String expected = "llama-<tag>-bin-" + osTokenPattern(os) + "-" + arch + suffix;
         if (logger != null) {

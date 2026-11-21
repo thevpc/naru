@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.models.nvidia;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -23,12 +23,12 @@ public class NaruNvidiaProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
+    protected String baseUrl(NaruModelContext context) {
         return "https://integrate.api.nvidia.com/v1";
     }
 
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
+    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
         // a name match is a guess, and for this provider it is only ever a guess about whether
         // the reasoning channel exists at all: unlike Ollama, an OpenAI-compatible endpoint is
         // asked nothing from this flag, so a wrong answer costs a tool's presence in the schema.
@@ -44,7 +44,7 @@ public class NaruNvidiaProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
-        return findModelIdsWithLiveFallback(session, FALLBACK_MODELS);
+    public List<String> findModelIds(NaruModelContext context) {
+        return findModelIdsWithLiveFallback(context, FALLBACK_MODELS);
     }
 }

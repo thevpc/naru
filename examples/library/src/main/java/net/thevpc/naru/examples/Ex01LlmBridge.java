@@ -1,52 +1,60 @@
 package net.thevpc.naru.examples;
 
-import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruChunkKind;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelConfig;
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruModelProtocol;
+import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruResponse;
-import net.thevpc.naru.api.task.NaruTask;
-import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.examples.support.Examples;
 import net.thevpc.naru.examples.support.ScriptedModelProvider;
+import net.thevpc.nuts.Nuts;
+import net.thevpc.nuts.ext.NServiceLoader;
 
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Example 1 — NARU as an LLM bridge.
  *
  * <p>The lowest layer: one Java API in front of every provider. No agent loop, no
- * scripting — build a request, get a response. Switching from a local Ollama model to
- * OpenAI, Anthropic, Gemini, Groq, Mistral, OpenRouter ... is a change of the
- * {@code provider/model} string, not of code.
+ * scripting, and no workspace or session either — build a request, get a response.
+ * Switching from a local Ollama model to OpenAI, Anthropic, Gemini, Groq, Mistral,
+ * OpenRouter ... is a change of the {@code provider/model} string, not of code.
+ *
+ * <p>A call runs in a {@link NaruModelContext}. Inside the engine it is the calling task's,
+ * and inherits its settings; here it is {@link NaruModelContext#standalone()}: settings
+ * from system properties, credentials from the environment (or the map given to it).
  *
  * <p>Run offline: {@code mvn -q exec:java -Dexample=net.thevpc.naru.examples.Ex01LlmBridge}
  * <br>Run on Ollama: add {@code -Dnaru.model=ollama/qwen2.5-coder:7b}
  */
 public class Ex01LlmBridge {
+
     public static void main(String[] args) {
+        // nuts is NARU's host framework; providers are nuts components found on the classpath
+        Nuts.require();
         ScriptedModelProvider.when("capital of tunisia", "Tunis.");
         ScriptedModelProvider.when("haiku", "Old code wakes at dawn / one interface, many tongues / the JVM hums");
 
-        NaruWorkspace ws = Examples.workspace("llm-bridge");
-        NaruSession session = Examples.session(ws);
-
-        // Every installed provider is already registered: they come from the classpath.
-        System.out.println("providers: " + session.registry().modelProviders().keySet());
+        Map<String, NaruModelProvider> providers = new TreeMap<>();
+        for (NaruModelProvider p : NServiceLoader.of(NaruModelProvider.class, null,
+                Thread.currentThread().getContextClassLoader()).loadAll(null)) {
+            providers.put(p.name(), p);
+        }
+        System.out.println("providers: " + providers.keySet());
 
         // A model is (provider, model) plus sampling options.
         NaruModelConfig model = Examples.model()
                 .withTemperature(0.2f)
                 .withMaxTokens(200);
-        NaruModelProtocol llm = session.registry().protocol(model, session).get();
-
-        // Protocols take a task as their call context: it is where they read API keys from
-        // the session env, retry settings, and where usage is reported. Built, never run.
-        NaruTask context = session.newTask(NaruTaskSpec.of().name("bridge"));
+        // No workspace, no session. Pass API keys here instead of exporting them, e.g.
+        // NaruModelContext.standalone(Map.of("OPENAI_API_KEY", key)).
+        NaruModelContext context = NaruModelContext.standalone();
+        NaruModelProtocol llm = providers.get(model.provider()).getProtocol(model, context).get();
 
         // 1. A plain completion.
         NaruResponse answer = llm.chat(new NaruModelRequest(List.of(

@@ -20,7 +20,7 @@ import net.thevpc.nuts.util.NOptional;
  * different fallback:
  *
  * <ul>
- *   <li>the wire -- {@link #find(NaruTask)} and let the protocol decide what
+ *   <li>the wire -- {@link #find(NaruModelContext)} and let the protocol decide what
  *       explicit {@code false} means on that provider's API;</li>
  *   <li>the {@code think} tool -- {@link #isEnabled(NaruTask)}, where unset means
  *       enabled and only an explicit {@code false} hides the tool.</li>
@@ -45,7 +45,12 @@ public final class NaruThinkingConfig {
      * {@code false} and quietly switch reasoning off.
      */
     public static NOptional<Boolean> find(NaruTask task) {
-        NOptional<NElement> raw = NaruTaskConfig.find(task, THINKING_KEY);
+        return find(NaruModelContext.of(task));
+    }
+
+    /** {@link #find(NaruTask)} for any model call, inside a task or not. */
+    public static NOptional<Boolean> find(NaruModelContext context) {
+        NOptional<NElement> raw = context == null ? null : context.config(THINKING_KEY);
         if (raw == null || !raw.isPresent()) {
             return NOptional.ofNamedEmpty(NMsg.ofC("'%s' is not set in any scope", THINKING_KEY));
         }
@@ -61,5 +66,10 @@ public final class NaruThinkingConfig {
     /** Whether thinking is on, counting "unset" as on. */
     public static boolean isEnabled(NaruTask task) {
         return find(task).orElse(Boolean.TRUE);
+    }
+
+    /** Whether thinking is on for this call, counting "unset" as on. */
+    public static boolean isEnabled(NaruModelContext context) {
+        return find(context).orElse(Boolean.TRUE);
     }
 }

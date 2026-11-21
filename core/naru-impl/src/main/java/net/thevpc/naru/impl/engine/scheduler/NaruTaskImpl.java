@@ -3143,7 +3143,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 logStream(mode, NMsg.ofC("%s", text), false);
             });
             try {
-                r = protocol.chatStream(request, this, collector);
+                r = protocol.chatStream(request, NaruModelContext.of(this), collector);
             } finally {
                 // close whatever is still open, even if the call failed: a dangling
                 // half-drawn line swallows whatever is printed next
@@ -3154,7 +3154,7 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
                 responseStreamed = sawAnswer.get();
             }
         } else {
-            r = protocol.chat(request, this);
+            r = protocol.chat(request, NaruModelContext.of(this));
         }
         // Announce what the provider reported, cache accounting included: the response
         // carries cacheWrite/cacheRead counts, and dropping them here is what used to make

@@ -1,7 +1,6 @@
 package net.thevpc.naru.ext.models.openai;
 
 import net.thevpc.naru.api.agent.NaruRole;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolParameter;
 import net.thevpc.naru.api.registry.NaruToolSchema;
@@ -15,12 +14,12 @@ import java.util.*;
 public class NaruOpenAiRequestSerializer implements NaruModelRequestSerializer {
 
     @Override
-    public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session) {
-        return serialize(request, model, session, false);
+    public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruModelContext context) {
+        return serialize(request, model, context, false);
     }
 
     @Override
-    public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session, boolean stream) {
+    public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruModelContext context, boolean stream) {
         NObjectElementBuilder body = NElement.ofObjectBuilder();
 
         body.set("model", model.model());

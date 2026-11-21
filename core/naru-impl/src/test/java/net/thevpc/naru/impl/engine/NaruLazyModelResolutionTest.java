@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruVisibility;
@@ -153,7 +154,7 @@ public class NaruLazyModelResolutionTest {
     private static final class FakeProvider implements NaruModelProvider {
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(new NaruModelProtocol() {
                 @Override
                 public String providerName() {
@@ -161,7 +162,7 @@ public class NaruLazyModelResolutionTest {
                 }
 
                 @Override
-                public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+                public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
                     NaruResponse r = new NaruResponse();
                     r.setMessage(NaruMessage.assistant("ok"));
                     return r;
@@ -230,12 +231,12 @@ public class NaruLazyModelResolutionTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of(MODEL);
         }
 

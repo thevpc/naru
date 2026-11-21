@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
@@ -101,7 +102,7 @@ public class NaruTurnOutputChannelTest {
         }
 
         @Override
-        public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+        public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
             NaruResponse r = new NaruResponse();
             r.setMessage(NaruMessage.assistant(ANSWER));
             return r;
@@ -167,7 +168,7 @@ public class NaruTurnOutputChannelTest {
         private final AnswerProtocol protocol = new AnswerProtocol();
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(protocol);
         }
 
@@ -177,12 +178,12 @@ public class NaruTurnOutputChannelTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of("fake-model");
         }
 

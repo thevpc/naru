@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
@@ -112,7 +113,7 @@ public class NaruRepeatedToolCallGuardTest {
         }
 
         @Override
-        public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+        public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
             int n = calls.incrementAndGet();
             Map<String, NElement> arguments = new LinkedHashMap<>();
             arguments.put("thought", NElement.of(varyArguments ? "attempt " + n : "The capital of Tunisia is Tunis."));
@@ -186,7 +187,7 @@ public class NaruRepeatedToolCallGuardTest {
         }
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(protocol);
         }
 
@@ -196,12 +197,12 @@ public class NaruRepeatedToolCallGuardTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of("fake-model");
         }
 
@@ -398,7 +399,7 @@ public class NaruRepeatedToolCallGuardTest {
         }
 
         @Override
-        public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+        public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
             int n = calls.incrementAndGet();
             requests.add(request);
             NaruResponse r = new NaruResponse();

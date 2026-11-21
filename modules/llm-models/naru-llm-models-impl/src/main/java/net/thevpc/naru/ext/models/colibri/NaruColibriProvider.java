@@ -1,7 +1,7 @@
 package net.thevpc.naru.ext.models.colibri;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.openai.AbstractOpenAICompatProvider;
@@ -47,8 +47,8 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
-        String url = configValue("url", session).orElse(DEFAULT_BASE_URL);
+    protected String baseUrl(NaruModelContext context) {
+        String url = configValue("url", context).orElse(DEFAULT_BASE_URL);
         return url.replaceAll("/$", "");
     }
 
@@ -63,8 +63,8 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
-        long contextLength = configValue("contextLength", session)
+    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
+        long contextLength = configValue("contextLength", context)
                 .flatMap(x -> NLiteral.of(x).asLong())
                 .orElse(DEFAULT_CONTEXT_LENGTH);
         // GLM 5.2 (colibri build): tool calling + thinking supported, no vision/embedding.
@@ -72,18 +72,18 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public boolean isAvailable(NaruSession session) {
-        boolean probe = configValue("probe", session)
+    public boolean isAvailable(NaruModelContext context) {
+        boolean probe = configValue("probe", context)
                 .flatMap(x -> NLiteral.of(x).asBoolean()).orElse(true);
         if (!probe) {
             return true;
         }
-        return isReachable(baseUrl(session));
+        return isReachable(baseUrl(context));
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
-        String models = configValue("models", session).orNull();
+    public List<String> findModelIds(NaruModelContext context) {
+        String models = configValue("models", context).orNull();
         if (!NBlankable.isBlank(models)) {
             List<String> ids = new ArrayList<>();
             for (String s : models.split("[,\\s]+")) {
@@ -94,8 +94,8 @@ public class NaruColibriProvider extends AbstractOpenAICompatProvider {
             return ids;
         }
         // Local server: never gate model discovery on the API key (cloud behaviour).
-        if (isApiKeySet(session)) {
-            List<String> live = fetchLiveModelIds(session);
+        if (isApiKeySet(context)) {
+            List<String> live = fetchLiveModelIds(context);
             if (!live.isEmpty()) {
                 return live;
             }

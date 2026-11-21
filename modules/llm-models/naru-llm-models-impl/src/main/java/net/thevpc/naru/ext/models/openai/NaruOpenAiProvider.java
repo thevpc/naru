@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.models.openai;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -46,12 +46,12 @@ public class NaruOpenAiProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
+    protected String baseUrl(NaruModelContext context) {
         return "https://api.openai.com/v1";
     }
 
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
+    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
         boolean vision = modelName.contains("gpt-4") || modelName.contains("gpt-5");
         boolean tools = true;
         boolean thinking = modelName.contains("o1") || modelName.contains("o3")
@@ -69,7 +69,7 @@ public class NaruOpenAiProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
-        return findModelIdsWithLiveFallback(session, FALLBACK_MODELS);
+    public List<String> findModelIds(NaruModelContext context) {
+        return findModelIdsWithLiveFallback(context, FALLBACK_MODELS);
     }
 }

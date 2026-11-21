@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruSession;
@@ -80,7 +81,7 @@ public class NaruOpenRouterProviderTest {
      */
     private static class KeylessOpenRouterProvider extends NaruOpenRouterProvider {
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
     }

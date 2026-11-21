@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.cache;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.registry.NaruSessionExtension;
@@ -41,12 +42,12 @@ public class NaruModelCacheExtension implements NaruSessionExtension {
      * <p>Callers treat null as "no cache support configured" and fall back to
      * full resend, which is the correct behaviour rather than an error.
      */
-    public static NaruModelCacheExtension of(NaruSession session) {
-        if (session == null || session.registry() == null) {
+    public static NaruModelCacheExtension of(NaruModelContext context) {
+        if (context == null) {
             return null;
         }
         try {
-            return session.registry().extension(NAME, NaruModelCacheExtension.class).orNull();
+            return context.sessionExtension(NAME, NaruModelCacheExtension.class).orNull();
         } catch (RuntimeException ex) {
             return null;
         }

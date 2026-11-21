@@ -119,14 +119,14 @@ public class ModelIndexStabilityTest {
         session.registry().registerModelProvider(new FakeProvider("ollama",
                 Arrays.asList("qwen3:latest", "llama3:latest"), true) {
             @Override
-            public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession s) {
+            public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
                 throw new AbstractMethodError("stale runtime jar");
             }
         });
         session.registry().registerModelProvider(new FakeProvider("openrouter",
                 Arrays.asList("a-paid", "b-paid"), true) {
             @Override
-            public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession s) {
+            public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
                 // an unresolvable protocol is not a catalog-wide failure either
                 return NOptional.ofEmpty();
             }
@@ -264,25 +264,25 @@ public class ModelIndexStabilityTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return new ArrayList<>(modelIds);
         }
 
         @Override
-        public boolean isAvailable(NaruSession session) {
+        public boolean isAvailable(NaruModelContext context) {
             return available;
         }
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(new NaruModelProtocol() {
                 @Override
-                public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+                public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
                     throw new UnsupportedOperationException();
                 }
 

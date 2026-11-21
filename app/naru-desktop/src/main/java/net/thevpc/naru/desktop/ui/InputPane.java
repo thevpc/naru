@@ -1,5 +1,6 @@
 package net.thevpc.naru.desktop.ui;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.registry.NaruLineCompletion;
@@ -1237,7 +1238,7 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                     notes.add(p.name() + ": disabled");
                     continue;
                 }
-                String why = p.statusMessage(current);
+                String why = p.statusMessage(NaruModelContext.of(current));
                 if (why != null && !why.isBlank()) {
                     notes.add(p.name() + ": " + why);
                 }

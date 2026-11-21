@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.sessions;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruResourceInfo;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
@@ -618,15 +619,15 @@ public class NaruSessionDirectiveTest {
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of(modelId);
         }
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(new NaruModelProtocol() {
                 @Override
-                public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+                public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
                     if (answer == null) {
                         throw new UnsupportedOperationException("offline test model never chats");
                     }

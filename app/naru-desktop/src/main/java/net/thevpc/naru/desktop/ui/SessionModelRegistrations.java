@@ -1,5 +1,6 @@
 package net.thevpc.naru.desktop.ui;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelRegistration;
@@ -154,7 +155,7 @@ final class SessionModelRegistrations implements ModelRegistrationGateway {
             if (chosen == null) {
                 return List.of();
             }
-            List<String> ids = chosen.findModelIds(s);
+            List<String> ids = chosen.findModelIds(NaruModelContext.of(s));
             return ids == null ? List.of() : List.copyOf(ids);
         } catch (RuntimeException e) {
             // an unreachable endpoint is a picker with no candidates, not a form that fails

@@ -1,7 +1,7 @@
 package net.thevpc.naru.ext.models.groq;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.openai.AbstractOpenAICompatProvider;
@@ -44,12 +44,12 @@ public class NaruGroqProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
+    protected String baseUrl(NaruModelContext context) {
         return "https://api.groq.com/openai/v1";
     }
 
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
+    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
         boolean vision = modelName.contains("maverick") || modelName.contains("scout");
         boolean tools = true; // deepseek-r1-distill exception removed — model is decommissioned
         boolean thinking = modelName.contains("qwen3") || modelName.contains("kimi-k2");
@@ -64,7 +64,7 @@ public class NaruGroqProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
-        return findModelIdsWithLiveFallback(session, FALLBACK_MODELS);
+    public List<String> findModelIds(NaruModelContext context) {
+        return findModelIdsWithLiveFallback(context, FALLBACK_MODELS);
     }
 }

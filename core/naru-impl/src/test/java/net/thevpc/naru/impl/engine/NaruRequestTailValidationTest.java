@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruCachingMode;
@@ -219,7 +220,7 @@ public class NaruRequestTailValidationTest {
         }
 
         @Override
-        public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+        public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
             chatCalls++;
             NaruResponse r = new NaruResponse();
             r.setMessage(NaruMessage.assistant("answered"));
@@ -312,7 +313,7 @@ public class NaruRequestTailValidationTest {
         }
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(protocol);
         }
 
@@ -322,12 +323,12 @@ public class NaruRequestTailValidationTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of("fake-model");
         }
 

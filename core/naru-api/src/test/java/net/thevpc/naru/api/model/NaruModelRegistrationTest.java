@@ -169,7 +169,7 @@ public class NaruModelRegistrationTest {
         // resolve() goes through the real environment: an unset variable is not a value
         NaruModelRegistration r = NaruModelRegistration.builder("personal").put("provider", NElement.ofString("gemini")).put("apiKey", NElement.ofString("$NARU_TEST_UNSET_VAR_42")).build();
         // an unset reference is not a value, and neither is an unset endpoint
-        Assertions.assertFalse(r.apiKeyResolved(null).isPresent());
+        Assertions.assertFalse(r.apiKeyResolved((net.thevpc.naru.api.agent.NaruSession) null).isPresent());
         Assertions.assertFalse(r.url().isPresent());
     }
 

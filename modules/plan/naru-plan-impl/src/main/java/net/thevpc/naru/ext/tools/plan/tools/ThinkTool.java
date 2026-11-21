@@ -54,7 +54,7 @@ public class ThinkTool extends DefaultNaruTool {
             return true;
         }
         return task.session().registry().provider(mc.provider())
-                .flatMap(p -> p.getProtocol(mc, task.session()))
+                .flatMap(p -> p.getProtocol(mc, NaruModelContext.of(task)))
                 .map(p -> !p.getCapabilities().isThinking())
                 .orElse(true);
     }

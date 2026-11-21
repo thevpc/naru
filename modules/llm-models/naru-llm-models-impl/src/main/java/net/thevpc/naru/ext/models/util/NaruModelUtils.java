@@ -1,7 +1,6 @@
 package net.thevpc.naru.ext.models.util;
 
-import net.thevpc.naru.api.agent.NaruSession;
-import net.thevpc.naru.api.task.NaruTask;
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.nuts.artifact.NId;
 import net.thevpc.nuts.cmdline.NCmdLine;
 import net.thevpc.nuts.core.NStoreKey;
@@ -177,17 +176,16 @@ public class NaruModelUtils {
         return null;
     }
 
-    public static List<NPath> resolveTaskAuditPaths(NaruTask task, net.thevpc.naru.api.agent.NaruSession session) {
+    public static List<NPath> resolveTaskAuditPaths(NaruModelContext context) {
         List<NPath> paths = new ArrayList<>();
-        final net.thevpc.naru.api.agent.NaruSession finalSession = (session == null && task != null) ? task.session() : session;
-        long taskId = task != null ? task.id() : 0;
-        String sessionUuid = finalSession != null ? finalSession.uuid() : "default";
+        long taskId = context != null ? context.taskId() : 0;
+        String sessionUuid = context != null && context.sessionId() != null ? context.sessionId() : "default";
 
         // Check if custom audit dir configured in env
-        if (finalSession != null) {
-            String customDir = finalSession.agent().env().get("audit.dir")
+        if (context != null) {
+            String customDir = context.config("audit.dir")
                     .flatMap(NElement::asStringValue)
-                    .orElseGetOptionalFrom(() -> finalSession.agent().env().get("llm.audit.dir").flatMap(NElement::asStringValue))
+                    .orElseGetOptionalFrom(() -> context.config("llm.audit.dir").flatMap(NElement::asStringValue))
                     .orNull();
             if (NBlankable.isNonBlank(customDir)) {
                 paths.add(NPath.of(customDir).resolve("task-" + taskId + ".tson"));
@@ -196,9 +194,10 @@ public class NaruModelUtils {
         }
 
         // 1. Session audit folder in sessionDir
-        if (finalSession != null && finalSession.sessionDir() != null) {
-            paths.add(finalSession.sessionDir().resolve(".naru/local/sessions").resolve(sessionUuid).resolve("audit").resolve("task-" + taskId + ".tson"));
-//            paths.add(finalSession.sessionDir().resolve(".naru/local/logs").resolve("task-" + sessionUuid + "-" + taskId + "-llm-audit.tson"));
+        NPath sessionDir = context == null ? null : context.sessionDir().orNull();
+        if (sessionDir != null) {
+            paths.add(sessionDir.resolve(".naru/local/sessions").resolve(sessionUuid).resolve("audit").resolve("task-" + taskId + ".tson"));
+//            paths.add(sessionDir.resolve(".naru/local/logs").resolve("task-" + sessionUuid + "-" + taskId + "-llm-audit.tson"));
         } else {
             // 2. Workspace log fallback
             paths.add(NPath.of(NStoreKey.of(
@@ -229,8 +228,7 @@ public class NaruModelUtils {
         return value;
     }
 
-    public static void logAudit(NaruTask task,
-                                NaruSession session,
+    public static void logAudit(NaruModelContext context,
                                 String provider,
                                 String model,
                                 NHttpRequest request,
@@ -242,20 +240,17 @@ public class NaruModelUtils {
                                 NDuration duration,
                                 Instant requestTime) {
         try {
-            if (session == null && task != null) {
-                session = task.session();
-            }
             Map<String, Object> auditMap = new LinkedHashMap<>();
             auditMap.put("id", UUID.randomUUID().toString());
             auditMap.put("timestamp", requestTime != null ? requestTime.toString() : Instant.now().toString());
-            if (task != null) {
-                auditMap.put("taskId", task.id());
-                if (task.name() != null) {
-                    auditMap.put("taskName", task.name());
+            if (context != null && context.taskId() != 0) {
+                auditMap.put("taskId", context.taskId());
+                if (context.taskName() != null) {
+                    auditMap.put("taskName", context.taskName());
                 }
             }
-            if (session != null) {
-                auditMap.put("sessionUuid", session.uuid());
+            if (context != null && context.sessionId() != null) {
+                auditMap.put("sessionUuid", context.sessionId());
             }
             if (provider != null) {
                 auditMap.put("provider", provider);
@@ -313,7 +308,7 @@ public class NaruModelUtils {
             }
 
             String tsonRecord = NElementWriter.ofTson().formatPlain(auditMap);
-            List<NPath> auditPaths = resolveTaskAuditPaths(task, session);
+            List<NPath> auditPaths = resolveTaskAuditPaths(context);
             synchronized (NaruModelUtils.class) {
                 for (NPath p : auditPaths) {
                     p.mkParentDirs().writeString(tsonRecord + "\n\n", NPathOption.APPEND, NPathOption.CREATE);

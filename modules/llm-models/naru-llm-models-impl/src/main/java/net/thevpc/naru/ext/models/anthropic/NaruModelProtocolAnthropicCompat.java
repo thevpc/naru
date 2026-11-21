@@ -1,7 +1,6 @@
 package net.thevpc.naru.ext.models.anthropic;
 
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.net.NHttpRequest;
@@ -49,15 +48,15 @@ public class NaruModelProtocolAnthropicCompat extends NaruModelProtocolBase {
     }
 
     @Override
-    public String url(NaruTask task, Map<String, NElement> env) {
-        NOptional<String> own = configValue(task, "url");
+    public String url(NaruModelContext context, Map<String, NElement> env) {
+        NOptional<String> own = configValue(context, "url");
         if (own.isPresent()) {
             return own.get().replaceAll("/+$", "");
         }
         if (defaultBaseUrl != null) {
             return defaultBaseUrl;
         }
-        return super.url(task, env);
+        return super.url(context, env);
     }
 
     // ── Live-model listing facts (wire-level GETs, session-scoped) ─────────────
@@ -81,8 +80,8 @@ public class NaruModelProtocolAnthropicCompat extends NaruModelProtocolBase {
     }
 
     @Override
-    protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
-        String apiKey = apiKey(task);
+    protected void prepareRequest(NHttpRequest request, NElement body, NaruModelContext context) {
+        String apiKey = apiKey(context);
         request.header("anthropic-version", "2023-06-01");
         if (!NBlankable.isBlank(apiKey)) {
             request.header("x-api-key", apiKey);

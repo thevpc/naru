@@ -17,7 +17,22 @@ import java.util.Set;
  */
 public interface NaruModelProvider extends NComponent {
 
-    NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session);
+    /**
+     * The protocol that talks to {@code model}. Implementations override this; the default only
+     * serves a provider written against the deprecated session form.
+     */
+    default NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProvider.class, "getProtocol", NaruModelConfig.class, NaruSession.class)) {
+            return getProtocol(model, NaruModelLegacy.session(context));
+        }
+        throw NaruModelLegacy.missing(this, "getProtocol");
+    }
+
+    /** @deprecated use {@link #getProtocol(NaruModelConfig, NaruModelContext)} */
+    @Deprecated
+    default NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        return getProtocol(model, NaruModelContext.of(session));
+    }
 
     /**
      * Provider name for display purposes: the <b>instance id</b> this provider is
@@ -51,17 +66,49 @@ public interface NaruModelProvider extends NComponent {
         throw new NIllegalArgumentException(NMsg.ofC("provider '%s' cannot be instantiated multiple times", name()));
     }
 
-    NOptional<String> apiKey(NaruSession session);
+    default NOptional<String> apiKey(NaruModelContext context) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProvider.class, "apiKey", NaruSession.class)) {
+            return apiKey(NaruModelLegacy.session(context));
+        }
+        throw NaruModelLegacy.missing(this, "apiKey");
+    }
+
+    /** @deprecated use {@link #apiKey(NaruModelContext)} */
+    @Deprecated
+    default NOptional<String> apiKey(NaruSession session) {
+        return apiKey(NaruModelContext.of(session));
+    }
+
     /**
      * Fetch the list of available models from this provider.
      *
      * @return a list of model names
      */
-    List<String> findModelIds(NaruSession session);
+    default List<String> findModelIds(NaruModelContext context) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProvider.class, "findModelIds", NaruSession.class)) {
+            return findModelIds(NaruModelLegacy.session(context));
+        }
+        throw NaruModelLegacy.missing(this, "findModelIds");
+    }
+
+    /** @deprecated use {@link #findModelIds(NaruModelContext)} */
+    @Deprecated
+    default List<String> findModelIds(NaruSession session) {
+        return findModelIds(NaruModelContext.of(session));
+    }
 
     /** Optional provider-supplied catalog metadata beyond capabilities. */
-    default NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruSession session) {
+    default NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruModelContext context) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProvider.class, "getModelInfo", String.class, NaruModelCapabilities.class, NaruSession.class)) {
+            return getModelInfo(model, capabilities, NaruModelLegacy.session(context));
+        }
         return new NaruModelInfo(name(), model, capabilities);
+    }
+
+    /** @deprecated use {@link #getModelInfo(String, NaruModelCapabilities, NaruModelContext)} */
+    @Deprecated
+    default NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruSession session) {
+        return getModelInfo(model, capabilities, NaruModelContext.of(session));
     }
 
     /**
@@ -72,8 +119,17 @@ public interface NaruModelProvider extends NComponent {
      * <p>Default is {@code true} (assume available). Providers backed by a
      * remote/local HTTP server may override this to probe reachability.
      */
-    default boolean isAvailable(NaruSession session) {
+    default boolean isAvailable(NaruModelContext context) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProvider.class, "isAvailable", NaruSession.class)) {
+            return isAvailable(NaruModelLegacy.session(context));
+        }
         return true;
+    }
+
+    /** @deprecated use {@link #isAvailable(NaruModelContext)} */
+    @Deprecated
+    default boolean isAvailable(NaruSession session) {
+        return isAvailable(NaruModelContext.of(session));
     }
 
     /**
@@ -86,8 +142,17 @@ public interface NaruModelProvider extends NComponent {
      * the user <em>why</em> a provider they expect is missing instead of leaving them guessing
      * between "no key", "disabled" and "not registered at all".
      */
-    default String statusMessage(NaruSession session) {
+    default String statusMessage(NaruModelContext context) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProvider.class, "statusMessage", NaruSession.class)) {
+            return statusMessage(NaruModelLegacy.session(context));
+        }
         return null;
+    }
+
+    /** @deprecated use {@link #statusMessage(NaruModelContext)} */
+    @Deprecated
+    default String statusMessage(NaruSession session) {
+        return statusMessage(NaruModelContext.of(session));
     }
 
     /**
@@ -101,8 +166,17 @@ public interface NaruModelProvider extends NComponent {
      * talks to a configured {@code --url} derives it from that url
      * (localhost/127.0.0.1/[::1]). Defaults to {@code false} (remote).
      */
-    default boolean isLocal(NaruSession session) {
+    default boolean isLocal(NaruModelContext context) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProvider.class, "isLocal", NaruSession.class)) {
+            return isLocal(NaruModelLegacy.session(context));
+        }
         return false;
+    }
+
+    /** @deprecated use {@link #isLocal(NaruModelContext)} */
+    @Deprecated
+    default boolean isLocal(NaruSession session) {
+        return isLocal(NaruModelContext.of(session));
     }
 
     /**
@@ -119,13 +193,22 @@ public interface NaruModelProvider extends NComponent {
      * time, before any explicit configuration is consulted.
      *
      * <p>The provider is the factory of the protocol, so it is the one place that
-     * knows both locality ({@link #isLocal(NaruSession)}) and hardware
+     * knows both locality ({@link #isLocal(NaruModelContext)}) and hardware
      * ({@link #hasDedicatedGpu()}). The protocol receives this value and never
      * probes the host itself. An explicit {@code readTimeout}/{@code timeout} still
      * wins over it.
      */
+    default NDuration defaultReadTimeout(NaruModelContext context) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProvider.class, "defaultReadTimeout", NaruSession.class)) {
+            return defaultReadTimeout(NaruModelLegacy.session(context));
+        }
+        return NaruModelTimeouts.defaultReadTimeout(isLocal(context), hasDedicatedGpu());
+    }
+
+    /** @deprecated use {@link #defaultReadTimeout(NaruModelContext)} */
+    @Deprecated
     default NDuration defaultReadTimeout(NaruSession session) {
-        return NaruModelTimeouts.defaultReadTimeout(isLocal(session), hasDedicatedGpu());
+        return defaultReadTimeout(NaruModelContext.of(session));
     }
 
     void setParam(String name, String value);

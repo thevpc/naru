@@ -76,6 +76,11 @@ public final class NaruTaskConfig {
         return resolve(task, key).map(Resolved::value);
     }
 
+    /** {@link #find(NaruTask, String)} for a session, or for no session at all. */
+    public static NOptional<NElement> find(NaruSession session, String key) {
+        return resolve(session, key).map(Resolved::value);
+    }
+
     public static final String SCOPE_TASK = "task";
     public static final String SCOPE_SESSION = "session";
     public static final String SCOPE_AGENT = "agent";
@@ -144,7 +149,18 @@ public final class NaruTaskConfig {
         if (taskEnv != null && taskEnv.isPresent()) {
             return NOptional.of(new Resolved(taskEnv.get(), SCOPE_TASK, null));
         }
-        NaruSession session = task.session();
+        return resolve(task.session(), key);
+    }
+
+    /**
+     * The same chain without a task: session env, agent env, project config, then the JVM
+     * system property. A null session leaves only the system property, which is what a model
+     * call made outside any session can still be configured with.
+     */
+    public static NOptional<Resolved> resolve(NaruSession session, String key) {
+        if (key == null) {
+            return NOptional.ofNamedEmpty(NMsg.ofC("no key to resolve"));
+        }
         // 2. session env, shared by sibling tasks
         if (session != null) {
             NOptional<NElement> sessionEnv = session.getSessionEnv(key);

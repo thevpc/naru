@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.llamacpp;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.nuts.command.NExec;
 import net.thevpc.nuts.io.NPath;
@@ -42,7 +43,7 @@ public final class LlamaCppInstaller {
                     NMsg.ofStyledPrimary3(LlamaCppPlatform.archKey())));
         }
 
-        NPath home = LlamaCppPaths.home(session);
+        NPath home = LlamaCppPaths.home(NaruModelContext.of(session));
         NPath staging = home.resolve("tmp").resolve(release.getTag());
         try {
             staging.deleteTree();
@@ -72,14 +73,14 @@ public final class LlamaCppInstaller {
                 return false;
             }
 
-            NPath binDir = LlamaCppPaths.binDir(session);
+            NPath binDir = LlamaCppPaths.binDir(NaruModelContext.of(session));
             if (binDir.exists()) {
                 binDir.deleteTree();
             }
             binDir.mkdirs();
             copyTreeFlattened(extractDir, binDir);
 
-            NPath installedServer = LlamaCppPaths.serverExecutable(session);
+            NPath installedServer = LlamaCppPaths.serverExecutable(NaruModelContext.of(session));
             if (!NEnv.of().osFamily().isWindow()) {
                 try {
                     NExec.ofSystem("chmod", "+x", installedServer.toString()).failFast(false).run();
@@ -112,8 +113,8 @@ public final class LlamaCppInstaller {
 
     public static boolean uninstall(NaruSession session, boolean purgeModels, Consumer<NMsg> logger) {
         LlamaCppProcessManager.stopIfStartedByNaru();
-        NPath home = LlamaCppPaths.home(session);
-        NPath binDir = LlamaCppPaths.binDir(session);
+        NPath home = LlamaCppPaths.home(NaruModelContext.of(session));
+        NPath binDir = LlamaCppPaths.binDir(NaruModelContext.of(session));
         boolean removed = false;
         try {
             if (binDir.exists()) {
@@ -129,7 +130,7 @@ public final class LlamaCppInstaller {
             }
         }
         if (purgeModels) {
-            NPath modelsDir = LlamaCppPaths.modelsDir(session);
+            NPath modelsDir = LlamaCppPaths.modelsDir(NaruModelContext.of(session));
             try {
                 if (modelsDir.exists()) {
                     modelsDir.deleteTree();
