@@ -20,6 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TurnActivityTest {
 
+    // the classes under test use nuts types, which need a workspace; without this the test only
+    // passed when an earlier test class in the same JVM happened to start one
+    @org.junit.jupiter.api.BeforeAll
+    static void requireNuts() {
+        net.thevpc.nuts.Nuts.require();
+    }
+
     @Test
     void aTurnRemembersItsToolsFilesAndFailures() {
         TurnActivity activity = new TurnActivity();
