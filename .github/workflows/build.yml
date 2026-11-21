@@ -21,6 +21,11 @@ jobs:
           cache: maven
           mvn-toolchain-vendor: openjdk
 
+      # the assess tests score the java-ref sample project with an offline 'mvn -o test', so its
+      # plugins and dependencies have to be in the local repository before they run
+      - name: Prime Maven for the assess sample project
+        run: mvn -B -ntp -q -Dmaven.test.failure.ignore=true -f modules/assess/naru-assess-impl/src/main/resources/net/thevpc/naru/ext/assess/java-ref/project/pom.xml test
+
       # the desktop module's tests build Swing components, which need a display; tests that
       # call a real model are opt-in (-Dnaru.test.model / -Dnaru.assess.model) and stay off
       - name: Build and test
