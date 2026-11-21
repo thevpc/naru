@@ -182,6 +182,26 @@ public class NaruPlanEditDirectiveTest {
         assertEquals("halfway", plans().findItem(plan.id(), itemId).orNull().notes());
     }
 
+    /**
+     * Ids are random, so a key can be a prefix of another item's id. The key is what the user
+     * wrote, and it must win: tried after the prefix, "remove a" dropped the other item about
+     * one run in sixteen. Built here so the collision happens on every run.
+     */
+    @Test
+    public void aKeyWinsOverAnotherItemsIdPrefix() {
+        NaruPlan plan = plans().createPlan("goal", List.of(NaruPlanItemSpec.of("first", "keep me")));
+        String collidingKey = plan.items().get(0).id().substring(0, 1);
+        plan.addItems(List.of(NaruPlanItemSpec.of(collidingKey, "remove me")));
+        plans().setActivePlanId(plan.id());
+
+        NaruStmtResult r = plan("remove " + collidingKey);
+
+        assertTrue(!isErr(r), err(r));
+        NaruPlan after = plans().findPlan(plan.id()).orNull();
+        assertEquals(1, after.items().size());
+        assertEquals("keep me", after.items().get(0).description());
+    }
+
     @Test
     public void removeDropsTheItemAndUnblocksItsDependent() {
         NaruPlan plan = plans().createPlan("goal", List.of(

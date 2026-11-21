@@ -539,16 +539,19 @@ public class NaruPlanDirectiveProvider extends NaruDirectiveProviderBase {
             if (ref == null || ref.isBlank()) {
                 return null;
             }
-            NaruPlanItem byId = plan.findItemByPrefix(ref);
-            if (byId != null) {
-                return byId;
+            String r = ref.trim();
+            NaruPlanItem exact = plan.item(r);
+            if (exact != null) {
+                return exact;
             }
+            // a key names its item exactly, a prefix is only a guess: tried first, the prefix
+            // made "remove a" drop whichever other item's random id happened to start with "a"
             for (NaruPlanItem i : plan.items()) {
-                if (ref.trim().equals(plan.keyOf(i.id()))) {
+                if (r.equals(plan.keyOf(i.id()))) {
                     return i;
                 }
             }
-            return null;
+            return plan.findItemByPrefix(r);
         }
 
         private NaruStmtResult logAll(SubCommandContext context) {
