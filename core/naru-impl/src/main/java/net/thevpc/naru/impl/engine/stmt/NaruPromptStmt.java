@@ -16,8 +16,11 @@ import net.thevpc.nuts.log.NMsgIntent;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NBlankable;
 import net.thevpc.nuts.util.NLiteral;
+import net.thevpc.nuts.util.NOptional;
 
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class NaruPromptStmt extends NaruStatement implements Cloneable {
 
@@ -44,6 +47,11 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
      * Overridable per session with the session env entry {@code maxSteps}.
      */
     private static final int DEFAULT_MAX_STEPS = 20;
+
+    /**
+     * {@code $name} or {@code ${name}}, optionally preceded by the {@code $} that escapes it.
+     */
+    private static final Pattern VARIABLE = Pattern.compile("(\\$?)\\$(?:\\{([^{}]+)\\}|([A-Za-z_][A-Za-z0-9_]*))");
 
     private final String prompt;
 
@@ -92,7 +100,9 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
                 task.model().toText()
         ).asFine().withIntent(NMsgIntent.SETTINGS)));
         if (!NBlankable.isBlank(prompt)) {
-            task.addHistory(NaruMessage.user(prompt));
+            // expanded when the line runs, not when it is parsed, so a routine sees the
+            // arguments it was called with; history keeps what the model was actually sent
+            task.addHistory(NaruMessage.user(expandVariables(prompt, task)));
         }
         NaruResponse response;
         try {
@@ -227,6 +237,64 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
         task.setLastResult(assistantMsg);
         task.setTaskEnv(TOOL_CALL_ROUNDS_KEY, NElement.of(0));
         task.defaultAdvance(this);
+    }
+
+    /**
+     * Expands the variables a prompt line names, the way directives already do.
+     *
+     * <p>{@code $name} and {@code ${name}} are replaced by the variable's value, resolved like
+     * any directive argument: routine parameters, locals, the task env, then the session env.
+     * {@code ${a.b}} also accepts a path, evaluated as an expression. A name that resolves to
+     * nothing is left as written, because a prompt is prose and code: {@code $HOME} in a shell
+     * snippet must reach the model intact unless the script defined {@code HOME} itself.
+     * {@code $$name} and {@code $${name}} are the escape for a literal {@code $name}.
+     */
+    public static String expandVariables(String prompt, NaruTask task) {
+        if (prompt == null || prompt.indexOf('$') < 0) {
+            return prompt;
+        }
+        Matcher m = VARIABLE.matcher(prompt);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            String token = m.group();
+            String replacement;
+            if (!m.group(1).isEmpty()) {
+                replacement = token.substring(1);
+            } else {
+                String name = m.group(2) != null ? m.group(2).strip() : m.group(3);
+                String value = variableText(name, task);
+                replacement = value == null ? token : value;
+            }
+            m.appendReplacement(out, Matcher.quoteReplacement(replacement));
+        }
+        m.appendTail(out);
+        return out.toString();
+    }
+
+    /**
+     * The text a variable contributes to a prompt, or null when no such variable exists.
+     */
+    private static String variableText(String name, NaruTask task) {
+        NElement value;
+        NOptional<NElement> resolved = task.resolveVariable(name);
+        if (resolved.isPresent()) {
+            value = resolved.orNull();
+        } else if (name.indexOf('.') > 0) {
+            try {
+                value = task.evalExpression(name);
+            } catch (RuntimeException e) {
+                return null;
+            }
+            if (value == null || value.isNull()) {
+                return null;
+            }
+        } else {
+            return null;
+        }
+        if (value == null || value.isNull()) {
+            return "";
+        }
+        return value.asStringValue().orElse(value.toString());
     }
 
     /**
