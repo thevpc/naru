@@ -70,14 +70,28 @@ public final class NaruModelTimeouts {
     }
 
     /**
+     * Probed once per process: whether a GPU is present does not change while it runs, and
+     * {@code NEnv.gpus()} re-reads memory usage on every call ({@code nvidia-smi} on Linux),
+     * which used to run each time a protocol was built.
+     */
+    private static volatile Boolean dedicatedGpu;
+
+    /**
      * Whether the current machine exposes at least one GPU device. Detection is
      * best-effort: a platform probe that fails is reported as "no GPU", which
-     * errs on the side of the longer timeout rather than aborting a call.
+     * errs on the side of the longer timeout rather than aborting a call. A failed
+     * probe is not remembered, so the next call tries again.
      */
     public static boolean hasDedicatedGpu() {
+        Boolean known = dedicatedGpu;
+        if (known != null) {
+            return known;
+        }
         try {
             List<NGpuDevice> gpus = NEnv.of().gpus();
-            return gpus != null && !gpus.isEmpty();
+            boolean present = gpus != null && !gpus.isEmpty();
+            dedicatedGpu = present;
+            return present;
         } catch (Throwable e) {
             return false;
         }
