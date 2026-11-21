@@ -54,8 +54,14 @@ NaruWorkspace          the runtime: extensions, providers, settings      NaruWor
   on the next line: `/set reply = _`.
 - **Variables**: `/set x = ...` writes the task env (`task.getTaskEnv("x", false)` in Java),
   `/set --session x = ...` the session env (`session.getSessionEnv("x")`), shared by every task.
-- **Tools** are `NaruTool`s grouped in a `NaruToolset`, registered on the session or shipped in a
-  jar through `META-INF/services/net.thevpc.nuts.spi.NComponent`.
+- **Tools** are methods annotated with `@NaruToolSpec` (parameters with `@NaruArg`); the schema
+  the model sees comes from the signature. Register a class with
+  `session.registry().registerToolsetProviderType(MyTools.class)` (static methods are called
+  directly, instance methods on one instance per session), or make it discoverable: implement
+  `NaruToolContainer` and list it in `META-INF/services/net.thevpc.nuts.spi.NComponent`. Give
+  each tool the tags it needs (`fs`, `network`, `write`, `exec`...) and grant them to the task
+  (`NaruTaskSpec.addTags`): the gate is fail-closed, so an untagged tool is refused at
+  registration unless it is `essential`.
 - **Providers** are `NaruModelProvider`s, found the same way.
   [`ScriptedModelProvider`](src/main/java/net/thevpc/naru/examples/support/ScriptedModelProvider.java)
   is a complete one in about a hundred lines.

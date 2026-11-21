@@ -2,21 +2,13 @@ package net.thevpc.naru.examples;
 
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
-import net.thevpc.naru.api.model.NaruToolDefinition;
-import net.thevpc.naru.api.model.NaruToolDefinitionFunction;
-import net.thevpc.naru.api.registry.DefaultNaruTool;
-import net.thevpc.naru.api.registry.DefaultNaruToolset;
-import net.thevpc.naru.api.registry.NaruToolCallContext;
-import net.thevpc.naru.api.registry.NaruToolParameter;
-import net.thevpc.naru.api.registry.NaruToolset;
-import net.thevpc.naru.api.registry.NaruToolsetProvider;
+import net.thevpc.naru.api.annotations.NaruArg;
+import net.thevpc.naru.api.annotations.NaruToolSpec;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.examples.support.Examples;
 import net.thevpc.naru.examples.support.ScriptedModelProvider;
 import net.thevpc.nuts.elem.NElement;
-import net.thevpc.nuts.elem.NObjectElement;
-import net.thevpc.nuts.text.NText;
 
 import java.time.Duration;
 import java.util.List;
@@ -33,8 +25,8 @@ import java.util.Map;
  *       {@code /set x = _} keeps a step's answer ({@code _} is the last result, and every
  *       statement replaces it, so capture it on the very next line).</li>
  *   <li><b>Memory</b> — a task <i>is</i> a conversation: each step sees the earlier ones.</li>
- *   <li><b>Tool / function calling</b> — a {@link DefaultNaruTool}; the runtime runs the
- *       call-tool-answer loop, no AgentExecutor to wire.</li>
+ *   <li><b>Tool / function calling</b> — an annotated method ({@link NaruToolSpec}); the
+ *       runtime runs the call-tool-answer loop, no AgentExecutor to wire.</li>
  *   <li><b>Output</b> — read back from Java with {@link NaruTask#getTaskEnv}.</li>
  * </ul>
  *
@@ -43,55 +35,20 @@ import java.util.Map;
  */
 public class Ex02Chain {
 
-    /** A tool is a name, a JSON-schema definition and a Java method. */
-    static class LookupOrderTool extends DefaultNaruTool {
-        LookupOrderTool() {
-            // no tags: tools are fail-closed, so an untagged tool must say it is essential to be
-            // offered. A real tool would carry tags (fs, network, write...) that tasks are granted.
-            super("lookup_order", new String[0]);
-        }
-
-        @Override
-        public boolean isEssential() {
-            return true;
-        }
-
-        @Override
-        public NText getDescription(NaruTask task) {
-            return NText.ofPlain("Return the shipping status of an order.");
-        }
-
-        @Override
-        public NaruToolDefinition getDefinition(NaruTask task) {
-            return new NaruToolDefinitionFunction(name(), getDescription(task),
-                    NaruToolParameter.string("order_id", "The order id, e.g. A-1042", true).build());
-        }
-
-        @Override
-        public String execute(NaruToolCallContext context) {
-            String id = context.stringArg("order_id").orElse("?").strip();
+    /**
+     * Tools are plain methods: the schema the model sees comes from the signature. Tags say what a
+     * tool needs, and a task is offered it only if it holds one of them (the gate is fail-closed).
+     * To have a class found on the classpath instead of registered, implement NaruToolContainer
+     * and list it in META-INF/services/net.thevpc.nuts.spi.NComponent.
+     */
+    public static class OrderTools {
+        @NaruToolSpec(description = "Return the shipping status of an order.", tags = "network")
+        public static String lookupOrder(
+                @NaruArg(name = "order_id", description = "The order id, e.g. A-1042") String orderId) {
             // your database / REST call goes here
-            return "A-1042".equalsIgnoreCase(id)
+            return "A-1042".equalsIgnoreCase(orderId.strip())
                     ? "order A-1042: shipped 2026-11-02 via DHL, last scan at Tunis hub 9 days ago"
-                    : "order " + id + ": not found";
-        }
-    }
-
-    /** Toolsets are how tools reach a session; register one, or ship it via META-INF/services. */
-    static class OrderToolsetProvider implements NaruToolsetProvider {
-        @Override
-        public String name() {
-            return "orders";
-        }
-
-        @Override
-        public List<String> supportedTypes() {
-            return List.of("orders");
-        }
-
-        @Override
-        public NaruToolset createToolset(String id, NObjectElement config) {
-            return new DefaultNaruToolset(id, List.of(new LookupOrderTool()));
+                    : "order " + orderId + ": not found";
         }
     }
 
@@ -100,12 +57,13 @@ public class Ex02Chain {
         NaruWorkspace ws = Examples.workspace("chain");
         scriptOfflineAnswers();
         NaruSession session = Examples.session(ws);
-        session.registry().registerToolsetProvider(new OrderToolsetProvider());
+        session.registry().registerToolsetProviderType(OrderTools.class);
 
         String ticket = "Hi, my package for order A-1042 never arrived and it has been two weeks. Can you check?";
 
         NaruTask chain = session.newTask(NaruTaskSpec.of()
                 .name("support-chain")
+                .addTags("network")   // lookup_order needs it; without it the model is never offered the tool
                 .var("ticket", NElement.ofString(ticket))
                 .statements(
                         // step 1: classify; ${ticket} is the variable handed over from Java

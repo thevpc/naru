@@ -645,6 +645,11 @@ public class NaruRegistryImpl implements NaruRegistry {
         for (NaruToolsetProvider provider : loadServices(NaruToolsetProvider.class)) {
             this.registerToolsetProvider(provider);
         }
+        // classes with @NaruTool methods, discovered like any other extension; each session loads
+        // its own instances, so tool state is never shared between sessions
+        for (NaruToolContainer container : loadServices(NaruToolContainer.class)) {
+            this.registerToolsetProvider(NaruTools.provider(container.getClass().getName(), () -> container));
+        }
         for (NaruDirectiveProvider provider : loadServices(NaruDirectiveProvider.class)) {
             this.registerDirectiveProvider(provider);
         }
