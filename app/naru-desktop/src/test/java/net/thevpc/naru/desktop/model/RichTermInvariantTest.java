@@ -13,6 +13,7 @@ import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.io.NSystemTerminal;
 import net.thevpc.nuts.spi.base.NSystemTerminalBase;
 import net.thevpc.nuts.text.NMsg;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -126,6 +127,14 @@ class RichTermInvariantTest {
         assertNotNull(plainBase, "no terminal base to restore; this test must not run");
         assertSame(ref, NIO.of().systemTerminal(), "the system terminal ref is not a JVM singleton");
         try {
+            // the swap needs the optional nuts-term extension; where it cannot be loaded (a CI
+            // runner, a bare install) there is nothing to witness, which is a skip, not a failure
+            try {
+                NSystemTerminal.enableRichTerm();
+            } catch (RuntimeException e) {
+                Assumptions.abort("nuts-term is not available here: " + e.getMessage());
+            }
+            NIO.of().systemTerminal(plainBase);
             NPath dir = NPath.ofTempFolder("naru-desktop-richterm-control");
             NaruWorkspace agent = NaruWorkspace.of();
             agent.projectDirectory(dir);

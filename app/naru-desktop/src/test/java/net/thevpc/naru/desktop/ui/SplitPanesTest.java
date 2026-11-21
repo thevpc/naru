@@ -12,6 +12,7 @@ import java.awt.Container;
 import java.awt.Dimension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -52,10 +53,11 @@ class SplitPanesTest {
             JSplitPane split = laid(SplitPanes.horizontal(new JPanel(), pane));
             assertEquals(new Dimension(0, 0), pane.getMinimumSize(),
                     "the floor the component arrived with has to go, not just the one on the split pane");
-            assertEquals(freeRange(), split.getMaximumDividerLocation(),
+            // compared with a split of the same divider and border: only the floor may differ
+            assertEquals(freeRange(split.getDividerSize(), split.getBorder()), split.getMaximumDividerLocation(),
                     "and the drag then reaches as far as it would have with a pane that was never floored");
-            assertTrue(split.isOneTouchExpandable(),
-                    "a pane that can be dragged shut needs a visible way back");
+            assertFalse(split.isOneTouchExpandable(),
+                    "the divider stays a thin hit area, without the look-and-feel's one-touch arrows");
             assertTrue(split.isContinuousLayout(),
                     "the drag should show the new layout, not just a moving bar");
         });
@@ -93,11 +95,21 @@ class SplitPanesTest {
 
     /** The farthest a drag may go in a pane that was laid out at {@link #WIDTH} with nothing pinned. */
     private static int freeRange() {
+        return freeRange(-1, null);
+    }
+
+    /** As {@link #freeRange()}, with a given divider size and border; -1 keeps the look-and-feel's. */
+    private static int freeRange(int dividerSize, javax.swing.border.Border border) {
         JPanel first = new JPanel();
         JPanel second = new JPanel();
         first.setMinimumSize(new Dimension(0, 0));
         second.setMinimumSize(new Dimension(0, 0));
-        return laid(new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, first, second)).getMaximumDividerLocation();
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, first, second);
+        if (dividerSize >= 0) {
+            split.setDividerSize(dividerSize);
+            split.setBorder(border);
+        }
+        return laid(split).getMaximumDividerLocation();
     }
 
     /** A split pane only answers where a divider may go once it has a size and a layout pass. */

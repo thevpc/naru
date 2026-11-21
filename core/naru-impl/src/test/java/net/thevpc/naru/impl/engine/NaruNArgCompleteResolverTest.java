@@ -131,7 +131,8 @@ public class NaruNArgCompleteResolverTest {
         assertFalse(canonical.isEmpty(), "sanity: /help must complete directive names: " + canonical);
         assertEquals(canonical, aliased,
                 "the ? alias must complete exactly like its canonical /help form");
-        assertTrue(aliased.contains("project"),
+        // a built-in: /project ships in its own module, which this module's tests do not load
+        assertTrue(aliased.contains("print"),
                 "the help completer should offer matching directive names: " + aliased);
     }
 

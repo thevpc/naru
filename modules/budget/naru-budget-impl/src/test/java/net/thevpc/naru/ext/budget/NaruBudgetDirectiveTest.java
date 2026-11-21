@@ -176,8 +176,8 @@ public class NaruBudgetDirectiveTest {
                 NaruMessage.assistantWithToolCalls("", List.of(new NaruToolCall("c1", "read_file", args))));
 
         Assertions.assertEquals(1, s.toolCalls);
-        Assertions.assertTrue(
-                s.chars(Bucket.ASSISTANT) > MSG_OVERHEAD_CHARS + args.toString().length(),
+        // tool calls have a bucket of their own, apart from the assistant's text
+        Assertions.assertEquals("read_file".length() + args.toString().length(), s.chars(Bucket.TOOL_CALLS),
                 "the call name has to be counted as well as the arguments");
     }
 

@@ -46,7 +46,10 @@ public record NaruStmtResult(NElement value, NaruStmtResultType type, int exitCo
     }
 
     public static NaruStmtResult ofError(NMsg message, int exitCode) {
-        return new NaruStmtResult(NElement.ofNull(), NaruStmtResultType.ERROR, exitCode);
+        // the message is the error: dropping it left every failing directive reporting "null"
+        return new NaruStmtResult(
+                message == null ? NElement.ofNull() : NElement.ofString(message.toString())
+                , NaruStmtResultType.ERROR, exitCode);
     }
 
 //    public static NaruStmtResult ofError(NElement value, NMsg message, int exitCode) {

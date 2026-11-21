@@ -1,7 +1,6 @@
 package net.thevpc.naru.agent;
 
 import net.thevpc.naru.api.agent.NaruWorkspace;
-import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionListener;
 import net.thevpc.naru.api.model.NaruToolDefinition;
@@ -53,9 +52,12 @@ public class NaruTaskStatePersistenceTest {
     public void setUp() {
         agent = NaruWorkspace.of();
         agent.projectDirectory(NPath.ofTempFolder("naru-task-state"));
+        // whatever channel a host is told on: since warnings became history messages they reach
+        // the interaction as agent output rather than as a SCRIPT log line
         NaruStreamInteraction interaction = new NaruStreamInteraction(output -> {
-            if (output.mode() == NaruLogMode.SCRIPT) {
-                warnings.add(output.message().toString());
+            String text = String.valueOf(output.message());
+            if (text.contains("no provider declares it")) {
+                warnings.add(text);
             }
         });
         session = agent.newSession()

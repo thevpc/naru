@@ -24,6 +24,7 @@
              the statements that carry a task's result, and the only way to test that contract
              end to end is to run one, which is impossible against the API alone. -->
         <dependency><groupId>net.thevpc.naru</groupId><artifactId>naru-impl</artifactId><version>1.2.0.0</version><scope>test</scope></dependency>
+        <dependency><groupId>net.thevpc.naru.modules</groupId><artifactId>naru-store-file</artifactId><version>1.2.0.0</version><scope>test</scope></dependency>
     </dependencies>
 
     <scm>

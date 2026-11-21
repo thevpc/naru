@@ -45,7 +45,7 @@ public class NaruOllamaThinkRequestTest {
 
     private static NElement body(Map<String, NElement> env, boolean stream) {
         return new NaruOllamaNativeRequestSerializer()
-                .serialize(request(env), new NaruModelConfig("ollama", "qwen3"), null, stream);
+                .serialize(request(env), new NaruModelConfig("ollama", "qwen3"), (NaruModelContext) null, stream);
     }
 
     @Test

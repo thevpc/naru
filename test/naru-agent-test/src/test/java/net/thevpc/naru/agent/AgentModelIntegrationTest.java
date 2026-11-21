@@ -20,6 +20,7 @@ import net.thevpc.nuts.util.NOptional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -81,7 +82,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * offline in the project root, and {@code calc.Main} prints the expected results.
  * This doubles as a cheap benchmark of which local LLMs are capable enough for a
  * full write-build-test-fix loop.</p>
+ *
+ * <p>It drives a real local model through whole tasks (it starts Ollama and can take over an
+ * hour), so it runs only when asked: {@code -Dnaru.test.model=ollama/qwen2.5-coder:7b}.</p>
  */
+@EnabledIfSystemProperty(named = "naru.test.model", matches = ".+")
 public class AgentModelIntegrationTest {
 
     private static final Duration TEST_TIMEOUT = Duration.ofMinutes(10);

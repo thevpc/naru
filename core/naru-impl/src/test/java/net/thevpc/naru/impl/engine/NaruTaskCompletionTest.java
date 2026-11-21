@@ -930,7 +930,16 @@ public class NaruTaskCompletionTest {
                 .run();
 
         // deaf() never answers, so this task is parked on a question; stopping is the only way
-        // out, and it has to leave a task that reports a verdict rather than hanging.
+        // out, and it has to leave a task that reports a verdict rather than hanging. Waiting
+        // for the park makes the stop land after /print succeeded, which is the case that used
+        // to report a clean exit; stopping earlier only sometimes hit it.
+        long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+        while (run.status() != net.thevpc.naru.api.scheduler.NaruTaskStatus.BLOCKED_ON_INPUT
+                && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        Assertions.assertEquals(net.thevpc.naru.api.scheduler.NaruTaskStatus.BLOCKED_ON_INPUT, run.status(),
+                "premise: the task ran /print and parked on its question");
         run.session().stop();
 
         Assertions.assertTrue(run.await(Duration.ofSeconds(20)), "a stopped session must settle its tasks");

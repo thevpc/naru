@@ -143,7 +143,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                 pending.forEach(task::setLabel);
                 String r = formatLabels(task.labels());
                 context.outln(r);
-                return NaruStmtResult.ofSuccess();
+                return NaruStmtResult.ofSuccess(NElement.of(r));
             }
             case "unset": {
                 List<String> keys = new ArrayList<>();
@@ -160,7 +160,7 @@ public class NaruBudgetDirective extends NaruDirectiveBase {
                 keys.forEach(task::removeLabel);
                 String r = formatLabels(task.labels());
                 context.outln(r);
-                return NaruStmtResult.ofSuccess();
+                return NaruStmtResult.ofSuccess(NElement.of(r));
             }
             case "clear": {
                 NaruStmtResult denied = requireAccountingWrite(context, "label");

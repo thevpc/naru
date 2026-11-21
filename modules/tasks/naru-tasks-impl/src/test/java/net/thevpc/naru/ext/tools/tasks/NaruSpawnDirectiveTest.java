@@ -149,7 +149,7 @@ public class NaruSpawnDirectiveTest {
 
         NaruStmtResult def = call(parent, "spawn-policy",
                 "review-safe --inherit=tags --revoke-tags=write --add-tags=network --exclude-tools=run_shell");
-        assertEquals("review-safe", def.successValue());
+        assertEquals(NElement.of("review-safe"), def.successValue());
         assertTrue(session.findSpawnPolicy("review-safe").isPresent());
 
         // no scheduler start: these assertions read the spawn-time resolution, so the child

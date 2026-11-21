@@ -125,6 +125,8 @@ public class NaruPlanModeToolGateTest {
             "semantic_index", "semantic_search",
             // planning itself
             "plan_create", "plan_get", "plan_update",
+            // a clarifying question to the user: no file, process or network effect
+            "ask_user",
             // read-only research / navigation
             "delegate_to_model", "model_list", "web_search", "web_fetch", "routine_list_lines",
             // tag listing/revocation is a permission edit, not a repo write

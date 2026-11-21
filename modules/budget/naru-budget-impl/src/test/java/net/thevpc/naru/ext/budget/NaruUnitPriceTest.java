@@ -14,6 +14,13 @@ import java.util.List;
  */
 public class NaruUnitPriceTest {
 
+    // the classes under test use nuts types, which need a workspace; without this the test only
+    // passed when an earlier test class in the same JVM happened to start one
+    @org.junit.jupiter.api.BeforeAll
+    static void requireNuts() {
+        net.thevpc.nuts.Nuts.require();
+    }
+
     private static BigDecimal bd(String s) {
         return new BigDecimal(s);
     }
