@@ -81,6 +81,13 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     private NaruRegistrationStore registrations;
     private NaruProjectEnv projectEnv;
     private volatile NClassLoader classLoader;
+    /**
+     * The context class loader of the thread that created this workspace, which is what the
+     * host's classpath is. The workspace class loader is built lazily, and the thread that
+     * first needs it can be anyone's: an HTTP worker under {@code exec:java} only sees the
+     * JDK's application loader, and every store and extension went missing.
+     */
+    private final ClassLoader hostClassLoader = Thread.currentThread().getContextClassLoader();
     private List<NId> requestedExtensions = new ArrayList<>();
     /**
      * Whether an empty extension list means "the installed dev profile". True for a workspace
@@ -607,7 +614,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                     // a set: a profile and an explicit --extension may name the same artifact, and it
                     // must be loaded once
                     NVersion currentVersion = apiVersion();
-                    NMutableClassLoader nopsClassLoader = NMutableClassLoader.of("nops", Thread.currentThread().getContextClassLoader());
+                    NMutableClassLoader nopsClassLoader = NMutableClassLoader.of("nops", hostClassLoader);
                     List<NId> loaded = new ArrayList<>();
                     Set<String> visited = new LinkedHashSet<>();
                     for (NId id : requestedExtensions) {
