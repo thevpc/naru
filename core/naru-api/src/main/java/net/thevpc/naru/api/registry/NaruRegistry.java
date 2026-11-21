@@ -27,6 +27,15 @@ public interface NaruRegistry {
 
     NaruRegistry registerToolsetProvider(NaruToolsetProvider tool);
 
+    /**
+     * Registers the {@link net.thevpc.naru.api.annotations.NaruToolSpec} methods of {@code type} as
+     * tools of this session. Static methods are called directly; for instance methods an instance
+     * is created, with the no-argument constructor, the first time one of them is called.
+     */
+    default NaruRegistry registerToolsetProviderType(Class<?> type) {
+        return registerToolsetProvider(NaruTools.provider(type));
+    }
+
     NaruRegistry registerToolTagProvider(NaruToolTagProvider toolTagProvider);
 
     NaruRegistry registerDirectiveProvider(NaruDirectiveProvider naruDirectiveProvider);
