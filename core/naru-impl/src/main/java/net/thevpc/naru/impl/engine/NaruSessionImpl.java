@@ -96,7 +96,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     private long foregroundTaskId;
     private final Map<Long, NaruTask> tasks = new ConcurrentHashMap<>();
     private final Map<Long, String> persistedTaskStates = new HashMap<>();
-    private final Map<Long, String> persistedTaskHistoryStates = new HashMap<>();
+    /** Per task, the history the store holds; see {@link PersistedHistory}. */
+    private final Map<Long, PersistedHistory> persistedHistories = new ConcurrentHashMap<>();
     private final Map<Long, Set<String>> persistedTaskMessageIds = new HashMap<>();
     private final Map<String, String> persistedRoutineStates = new HashMap<>();
     private final Map<String, String> persistedExtensionStates = new HashMap<>();
@@ -1289,7 +1290,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
 
         tasks.clear();
         persistedTaskStates.clear();
-        persistedTaskHistoryStates.clear();
+        persistedHistories.clear();
         persistedTaskMessageIds.clear();
         NLongRef maxLong = NRef.ofLong(-1);
         for (long taskId : store.taskIds(uuid, scope)) {
@@ -1299,13 +1300,22 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             }
             NaruTaskImpl t = new NaruTaskImpl(withHistory(state), this);
             if (state.history().isEmpty() && !state.historyIds().isEmpty()) {
-                t.setLazyHistoryLoader(() -> store.loadHistory(uuid, scope, taskId));
+                List<String> storedIds = List.copyOf(state.historyIds());
+                t.setLazyHistoryLoader(() -> {
+                    List<NaruMessage> loaded = store.loadHistory(uuid, scope, taskId);
+                    // the very objects the task keeps, so the next checkpoint appends to them
+                    PersistedHistory stored = PersistedHistory.of(loaded, storedIds);
+                    if (stored != null) persistedHistories.put(taskId, stored);
+                    return loaded;
+                });
             }
             maxLong.set(Math.max(maxLong.get(), t.id()));
             tasks.put(t.id(), t);
             persistedTaskStates.put(t.id(), state.skeleton().toString());
-            if (t.isHistoryLoaded())
-                persistedTaskHistoryStates.put(t.id(), t.toElement().asObject().get().get("history").orNull().toString());
+            if (t.isHistoryLoaded()) {
+                PersistedHistory stored = PersistedHistory.of(t.loadedHistorySnapshot(), state.historyIds());
+                if (stored != null) persistedHistories.put(t.id(), stored);
+            }
             persistedTaskMessageIds.put(t.id(), new LinkedHashSet<>(state.historyIds()));
             if (t.status() == NaruTaskStatus.BLOCKED_ON_INPUT) {
                 NaruInputRequest request = new TaskInputRequest(t);
@@ -1579,8 +1589,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         for (NaruTask t : tasks.values()) {
             NaruTaskImpl impl = (NaruTaskImpl) t;
-            NElement taskElement = impl.toElement();
-            NElement skeleton = NaruTaskState.withoutHistory(taskElement);
+            NElement skeleton = impl.toSkeletonElement();
             String skeletonHash = skeleton.toString();
             if (!impl.isHistoryLoaded()) {
                 if (!skeletonHash.equals(persistedTaskStates.get(t.id()))) {
@@ -1594,24 +1603,8 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 }
                 continue;
             }
-            String historyHash = taskElement.asObject().get().get("history").orNull().toString();
-            String previousHistoryHash = persistedTaskHistoryStates.get(t.id());
-            if (previousHistoryHash == null) previousHistoryHash = impl.loadedHistoryHash();
-            if (!skeletonHash.equals(persistedTaskStates.get(t.id()))
-                    || !historyHash.equals(previousHistoryHash)) {
-                NaruTaskState state = taskState(impl);
-                List<String> ids = store.saveTaskAndGetHistoryIds(uuid(), scope, state);
-                Set<String> oldIds = persistedTaskMessageIds.computeIfAbsent(t.id(), x -> new LinkedHashSet<>());
-                for (String cursor : ids) {
-                    if (oldIds.add(cursor)) {
-                        if (sessionListener != null) sessionListener.onMessageComplete(t.id(), cursor);
-                        for (NaruSessionListener listener : sessionListeners)
-                            listener.onMessageComplete(t.id(), cursor);
-                    }
-                }
-                persistedTaskStates.put(t.id(), skeletonHash);
-                persistedTaskHistoryStates.put(t.id(), historyHash);
-            }
+            persistLoadedTask(impl, scope, skeleton, skeletonHash, () -> {
+            });
         }
         for (Map.Entry<String, NaruRoutine> e : routines.entrySet()) {
             NElement state = e.getValue().toElement();
@@ -1645,14 +1638,6 @@ public class NaruSessionImpl implements NaruSession, NToElement {
                 .user(userName)
                 .version(storeVersion)
                 .env(values);
-    }
-
-    /**
-     * A task as the store's own value type: skeleton without history, plus the messages.
-     */
-    private NaruTaskState taskState(NaruTaskImpl task) {
-        NElement element = task.toElement();
-        return NaruTaskState.ofInline(task.id(), element);
     }
 
     /**
@@ -3120,6 +3105,98 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     /**
+     * Stores a task whose history is in memory, writing as little as the change needs.
+     * <p>
+     * When the messages the store already holds are untouched (same objects, same
+     * {@link NaruMessage#revision()}) only the new ones are appended. Anything else (a message
+     * edited, removed or inserted, or no record of what was stored) rewrites the history.
+     * Deciding used to mean serialising the whole history and comparing strings, on every
+     * message of every turn.
+     *
+     * @param beforeWrite runs once, only when something is written
+     */
+    private void persistLoadedTask(NaruTaskImpl impl, NaruSessionScope scope, NElement skeleton,
+                                   String skeletonHash, Runnable beforeWrite) {
+        long id = impl.id();
+        List<NaruMessage> current = impl.loadedHistorySnapshot();
+        PersistedHistory stored = persistedHistories.get(id);
+        List<NaruMessage> appended = stored == null ? null : stored.appendedIn(current);
+        boolean skeletonChanged = !skeletonHash.equals(persistedTaskStates.get(id));
+        if (appended != null && appended.isEmpty() && !skeletonChanged) {
+            return;
+        }
+        beforeWrite.run();
+        List<String> ids;
+        if (appended == null) {
+            ids = store.saveTaskAndGetHistoryIds(uuid(), scope, NaruTaskState.of(id, skeleton, List.of(), current));
+        } else if (appended.isEmpty()) {
+            store.saveTaskSkeleton(uuid(), scope, NaruTaskState.of(id, skeleton, stored.ids(), List.of()));
+            ids = stored.ids();
+        } else {
+            ids = store.appendHistory(uuid(), scope, id, skeleton, stored.ids(), appended);
+        }
+        Set<String> oldIds = persistedTaskMessageIds.computeIfAbsent(id, x -> new LinkedHashSet<>());
+        for (String cursor : ids) {
+            if (oldIds.add(cursor)) {
+                if (sessionListener != null) sessionListener.onMessageComplete(id, cursor);
+                for (NaruSessionListener listener : sessionListeners) listener.onMessageComplete(id, cursor);
+            }
+        }
+        persistedTaskStates.put(id, skeletonHash);
+        PersistedHistory now = PersistedHistory.of(current, ids);
+        if (now == null) {
+            persistedHistories.remove(id);
+        } else {
+            persistedHistories.put(id, now);
+        }
+    }
+
+    /**
+     * A task's history as the store holds it: the message objects, the revision each had when
+     * stored, and their store ids, in order.
+     */
+    private static final class PersistedHistory {
+        private final List<NaruMessage> messages;
+        private final long[] revisions;
+        private final List<String> ids;
+
+        private PersistedHistory(List<NaruMessage> messages, List<String> ids) {
+            this.messages = List.copyOf(messages);
+            this.revisions = new long[messages.size()];
+            for (int i = 0; i < revisions.length; i++) {
+                revisions[i] = messages.get(i).revision();
+            }
+            this.ids = List.copyOf(ids);
+        }
+
+        /** {@code null} when the ids do not name the messages one to one. */
+        static PersistedHistory of(List<NaruMessage> messages, List<String> ids) {
+            return messages.size() == ids.size() ? new PersistedHistory(messages, ids) : null;
+        }
+
+        List<String> ids() {
+            return ids;
+        }
+
+        /**
+         * The messages {@code current} adds after the stored ones, or {@code null} when a stored
+         * one is no longer there as it was stored.
+         */
+        List<NaruMessage> appendedIn(List<NaruMessage> current) {
+            if (current.size() < messages.size()) {
+                return null;
+            }
+            for (int i = 0; i < messages.size(); i++) {
+                NaruMessage m = current.get(i);
+                if (m != messages.get(i) || m.revision() != revisions[i]) {
+                    return null;
+                }
+            }
+            return new ArrayList<>(current.subList(messages.size(), current.size()));
+        }
+    }
+
+    /**
      * Called after a complete history message has been added.
      */
     public void checkpointMessage(long taskId) {
@@ -3137,32 +3214,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         }
         try {
             NaruTaskImpl impl = (NaruTaskImpl) t;
-            NElement element = impl.toElement();
-            NElement skeleton = NaruTaskState.withoutHistory(element);
+            NElement skeleton = impl.toSkeletonElement();
             String skeletonHash = skeleton.toString();
-            String historyHash = element.asObject().get().get("history").orNull().toString();
-            String previousHistoryHash = persistedTaskHistoryStates.get(id);
-            if (previousHistoryHash == null) previousHistoryHash = impl.loadedHistoryHash();
-            boolean skeletonChanged = !skeletonHash.equals(persistedTaskStates.get(id));
-            boolean historyChanged = impl.isHistoryLoaded() && !historyHash.equals(previousHistoryHash);
-            if (!skeletonChanged && !historyChanged) return;
-            storeVersion = store.compareAndSetData(sessionData(), scope, storeVersion);
             if (!impl.isHistoryLoaded()) {
+                if (skeletonHash.equals(persistedTaskStates.get(id))) return;
+                storeVersion = store.compareAndSetData(sessionData(), scope, storeVersion);
                 NaruTaskState old = store.loadTaskSkeleton(uuid(), scope, id).orNull();
                 if (old != null) store.saveTaskSkeleton(uuid(), scope,
                         NaruTaskState.of(id, skeleton, old.historyIds(), List.of()));
-            } else {
-                NaruTaskState state = taskState(impl);
-                List<String> ids = store.saveTaskAndGetHistoryIds(uuid(), scope, state);
-                Set<String> oldIds = persistedTaskMessageIds.computeIfAbsent(id, x -> new LinkedHashSet<>());
-                for (String cursor : ids)
-                    if (oldIds.add(cursor)) {
-                        if (sessionListener != null) sessionListener.onMessageComplete(id, cursor);
-                        for (NaruSessionListener listener : sessionListeners) listener.onMessageComplete(id, cursor);
-                    }
-                persistedTaskHistoryStates.put(id, historyHash);
+                persistedTaskStates.put(id, skeletonHash);
+                return;
             }
-            persistedTaskStates.put(id, skeletonHash);
+            persistLoadedTask(impl, scope, skeleton, skeletonHash,
+                    () -> storeVersion = store.compareAndSetData(sessionData(), scope, storeVersion));
         } catch (Exception ex) {
             if (ex instanceof NaruSessionConflictException conflict) throw conflict;
             log(NaruLogMode.SCHEDULER, NMsg.ofC(

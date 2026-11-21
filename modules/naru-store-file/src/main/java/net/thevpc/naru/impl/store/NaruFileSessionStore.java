@@ -515,6 +515,37 @@ public class NaruFileSessionStore implements NaruSessionStore {
         return List.copyOf(write.ids());
     }
 
+    /**
+     * Writes the new messages only: the stored ones keep their files, untouched and unread.
+     * <p>
+     * {@link #saveTaskAndGetHistoryIds} reads and hashes every stored message to reconcile
+     * by content, which made each message of a turn cost the whole conversation. The order is
+     * the same: messages, then the counter, then the skeleton naming them, so a crash never
+     * leaves the skeleton naming a file that is not there.
+     */
+    @Override
+    public List<String> appendHistory(String uuid, NaruSessionScope scope, long taskId, NElement skeleton,
+                                      List<String> storedIds, List<NaruMessage> appended) {
+        NPath dir = taskDir(requireDir(uuid, scope), taskId);
+        NPath historyDir = dir.resolve("history");
+        NaruFileIo.mkdirs(historyDir);
+        long next = nextId(historyDir);
+        List<String> ids = new ArrayList<>(storedIds.size() + appended.size());
+        ids.addAll(storedIds);
+        try {
+            for (NaruMessage message : appended) {
+                String id = idOf(next++);
+                NaruFileIo.writeAtomic(historyFile(historyDir, id), pretty(message.toElement()));
+                ids.add(id);
+            }
+            NaruFileIo.writeAtomic(historyDir.resolve("next-id"), Long.toString(next));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        commitHistory(dir, skeleton, new HistoryWrite(ids, List.of()));
+        return ids;
+    }
+
     private static NElement withHistoryIds(NElement skeleton, List<String> ids) {
         NObjectElementBuilder b = NObjectElementBuilder.of();
         for (NElement child : skeleton.asObject().get().children()) {
