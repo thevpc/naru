@@ -40,6 +40,8 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
      * land in that window, which is otherwise a few instructions wide.
      */
     static volatile Runnable beforeHibernate;
+    /** Runs once a session is marked hibernating, before it is saved; see {@link #beforeHibernate}. */
+    static volatile Runnable whileHibernating;
     private static final ExecutorService WORKERS = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "naru-turn");
         t.setDaemon(true);
@@ -129,9 +131,48 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         return id;
     }
 
+    /**
+     * Submits a turn. A session that is being saved for hibernation is not busy: its last turn
+     * is over, and the save is housekeeping the caller cannot see. So whatever the busy policy,
+     * the submit waits for the save (at most the capacity timeout) and serves the turn from
+     * the session the store now holds. Only a timeout reports it busy.
+     */
     @Override
     public NaruTurn submit(NaruInput input) {
         Objects.requireNonNull(input, "input");
+        long deadline = System.nanoTime() + capacityTimeout.toNanos();
+        while (true) {
+            CompletableFuture<Void> saving;
+            try {
+                return submitOnce(input);
+            } catch (HibernationInProgress h) {
+                saving = h.saving;
+            }
+            // outside every lock: the save does not need them, but the next submit does
+            try {
+                saving.get(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+            } catch (TimeoutException e) {
+                throw new NaruSessionBusyException(id);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new NaruSessionBusyException(id);
+            } catch (ExecutionException e) {
+                // the save failed and the session stays live; the next attempt finds it so
+            }
+        }
+    }
+
+    /** Thrown inside {@link #submitOnce} to leave its locks before waiting on {@link #saving}. */
+    private static final class HibernationInProgress extends RuntimeException {
+        final CompletableFuture<Void> saving;
+
+        HibernationInProgress(CompletableFuture<Void> saving) {
+            super(null, null, false, false);
+            this.saving = saving;
+        }
+    }
+
+    private NaruTurn submitOnce(NaruInput input) {
         Pending pending = new Pending(input);
         Object lock = LOCKS.computeIfAbsent(id, x -> new Object());
         synchronized (lock) {
@@ -154,7 +195,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                 }
             }
             synchronized (live.monitor) {
-                if (live.hibernating.get()) throw new NaruSessionBusyException(id);
+                if (live.hibernating.get()) throw new HibernationInProgress(live.saving);
                 live.submits++;
                 live.lastUse = System.nanoTime();
                 TurnEvents events = new TurnEvents(listener, streaming, live.sequence);
@@ -381,11 +422,15 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
      * @return whether it hibernated; {@code false} leaves the session live
      */
     private boolean hibernateLive(Live live, long seenSubmits) {
+        CompletableFuture<Void> saving = new CompletableFuture<>();
         synchronized (live.monitor) {
             if (live.submits != seenSubmits || !live.queued.isEmpty()) return false;
             if (!live.hibernating.compareAndSet(false, true)) return false;
+            live.saving = saving;
         }
         try {
+            Runnable hook = whileHibernating;
+            if (hook != null) hook.run();
             TurnEvents events = live.events();
             events.emit(NaruTurnEvent.Kind.HIBERNATING, null);
             List<NaruPendingInput> pendingInputs = live.session.pendingInputs();
@@ -396,9 +441,12 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
             // and be told the session is busy
             LIVE.remove(live.session.uuid(), live);
             live.finishAll(NaruTurnResult.hibernated(pendingInputs, events.lagged()));
+            // only now, out of LIVE: a waiting submit retries and activates from the store
+            saving.complete(null);
             return true;
         } catch (RuntimeException e) {
             live.hibernating.set(false);
+            saving.completeExceptionally(e);
             throw e;
         }
     }
@@ -443,6 +491,8 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         final AtomicBoolean driving = new AtomicBoolean();
         final AtomicLong sequence;
         final AtomicBoolean hibernating = new AtomicBoolean();
+        /** Completes when the hibernation under way ends; set with {@link #hibernating}. */
+        volatile CompletableFuture<Void> saving = CompletableFuture.completedFuture(null);
         /** Turns submitted so far; written under {@link #monitor}, see {@link #hibernateLive}. */
         volatile long submits;
         volatile Pending current;
