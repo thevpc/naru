@@ -902,25 +902,32 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     }
 
     private int computeExitCode() {
-        NElement raw = envValue(ENV_EXIT_CODE);
-        if (raw instanceof Number n) {
-            return n.intValue();
-        }
-        if (raw != null) {
-            try {
-                return Integer.parseInt(raw.toString().trim());
-            } catch (NumberFormatException e) {
-                return EXIT_FAILURE;
-            }
-        }
-        // a task that ended badly without publishing a verdict must not look clean
+        // a killed task was interrupted whatever its last statement reported: lastExitCode is the
+        // last directive's code, so a task stopped after a successful /print used to look clean
         if (status == NaruTaskStatus.KILLED) {
             return EXIT_INTERRUPTED;
         }
+        Integer published = publishedExitCode();
         if (status == NaruTaskStatus.FAILED) {
+            return published != null && published != 0 ? published : EXIT_FAILURE;
+        }
+        return published == null ? 0 : published;
+    }
+
+    /** The exit code the last statement published, or null when none did. */
+    private Integer publishedExitCode() {
+        NElement raw = envValue(ENV_EXIT_CODE);
+        if (raw == null) {
+            return null;
+        }
+        if (raw instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(raw.toString().trim());
+        } catch (NumberFormatException e) {
             return EXIT_FAILURE;
         }
-        return 0;
     }
 
     @Override
