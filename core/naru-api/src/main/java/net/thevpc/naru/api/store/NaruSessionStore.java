@@ -409,6 +409,17 @@ public interface NaruSessionStore extends AutoCloseable {
         return saveTaskAndGetHistoryIds(uuid, scope, NaruTaskState.of(taskId, skeleton, List.of(), all));
     }
 
+    /**
+     * Makes everything written for a session so far survive a power loss.
+     * <p>
+     * The engine calls it where losing work would be visible: when a turn ends (the task
+     * waits for input, the session is saved or hibernates). A store that defers its disk
+     * syncs between those points, as the file store does, must have made them by the time
+     * this returns. A store whose every write is already durable has nothing to do.
+     */
+    default void sync(String uuid, NaruSessionScope scope) {
+    }
+
     // ---------------------------------------------------------------- routines
 
     List<String> routineNames(String uuid, NaruSessionScope scope);

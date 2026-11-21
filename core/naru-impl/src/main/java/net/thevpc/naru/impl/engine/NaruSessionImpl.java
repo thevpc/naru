@@ -1541,7 +1541,24 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             writeToStore(wanted);
             return null;
         });
+        syncStore();
         return this;
+    }
+
+    /**
+     * Makes what this session wrote durable ({@link NaruSessionStore#sync}). Called where a
+     * turn ends: a save (so a hibernation), a task parking on input or finishing. Between
+     * those points the store may defer its disk syncs.
+     */
+    private void syncStore() {
+        try {
+            NaruSessionScope scope = store.scopeOf(uuid()).orNull();
+            if (scope != null) {
+                store.sync(uuid(), scope);
+            }
+        } catch (RuntimeException e) {
+            log(NaruLogMode.SCHEDULER, NMsg.ofC("could not sync session %s: %s", uuid(), e.getMessage()).asError());
+        }
     }
 
     /**
@@ -2890,6 +2907,10 @@ public class NaruSessionImpl implements NaruSession, NToElement {
      * already returns empty.
      */
     public void onTaskStatusChanged(NaruTask task, NaruTaskStatus oldStatus, NaruTaskStatus newStatus) {
+        // a task waiting for input or done is the end of a turn: what it wrote must be durable
+        if (newStatus == NaruTaskStatus.BLOCKED_ON_INPUT || newStatus.isCompleted()) {
+            syncStore();
+        }
         // deliberately not guarded on 'stopped': onTerminated() stops the session when the
         // last task dies, and a listener must still observe that final transition
         try {

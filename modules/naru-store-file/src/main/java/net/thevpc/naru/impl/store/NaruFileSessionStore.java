@@ -75,12 +75,175 @@ public class NaruFileSessionStore implements NaruSessionStore {
     private final NPath publicRoot;
     private final NPath privateRoot;
     private final NPath legacyRoot;
+    /**
+     * Each session folder's write-ahead log, opened (and replayed) the first time this process
+     * uses the folder. Shared by every store instance, since each session opens its own: kept
+     * per instance, every wake replayed the log the previous turn left, synced file by file.
+     */
+    private static final Map<java.nio.file.Path, NaruFileJournal> journals = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Folders whose log has a sync pending on {@link #SYNC_TIMER}. */
+    private static final Set<java.nio.file.Path> syncPending = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** How long a write may stay unsynced; 0 syncs each write. See {@link #parseSyncPolicy}. */
+    private final long syncIntervalMillis;
+
+    /** One daemon thread for every store: a sync is a few milliseconds every so often. */
+    private static final java.util.concurrent.ScheduledExecutorService SYNC_TIMER =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "naru-store-sync");
+                t.setDaemon(true);
+                return t;
+            });
 
     public NaruFileSessionStore(NaruStoreConfig config) {
         this.config = config;
         this.publicRoot = config.storeDir().resolve("sessions");
         this.privateRoot = config.storeDir().resolve("local").resolve("sessions");
         this.legacyRoot = config.storeDir().resolve("local").resolve("snapshot");
+        String policy = config.property("sync");
+        this.syncIntervalMillis = parseSyncPolicy(policy != null ? policy : System.getProperty("naru.store.sync"));
+    }
+
+    /**
+     * When a session's writes reach the disk, besides the end of each turn ({@link #sync}).
+     * <p>
+     * {@code always}: each write. A duration ({@code 200ms}, the default, or {@code 1s}, or a
+     * number of milliseconds): at most that long after a write, so a power loss costs at most
+     * that much work, however long a turn runs (a routine looping with no model call, say).
+     * A crash of the process alone loses nothing either way: the files are written at once.
+     */
+    static long parseSyncPolicy(String policy) {
+        if (policy == null || policy.isBlank()) {
+            return 200;
+        }
+        String p = policy.trim().toLowerCase();
+        if (p.equals("always")) {
+            return 0;
+        }
+        try {
+            if (p.endsWith("ms")) {
+                return Math.max(0, Long.parseLong(p.substring(0, p.length() - 2).trim()));
+            }
+            if (p.endsWith("s")) {
+                return Math.max(0, Long.parseLong(p.substring(0, p.length() - 1).trim()) * 1000);
+            }
+            return Math.max(0, Long.parseLong(p));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("naru.store.sync: expected 'always' or a duration such as 200ms, got '"
+                    + policy + "'");
+        }
+    }
+
+    // ---------------------------------------------------------------- write-ahead log
+
+    /** Forgets every open log, as a new process starts; for tests that play a restart. */
+    static void forgetOpenJournals() {
+        journals.clear();
+        syncPending.clear();
+    }
+
+    /** The session folder {@code target} is in, or {@code null} when it is in none. */
+    private java.nio.file.Path sessionFolderOf(java.nio.file.Path target) {
+        for (NPath root : List.of(privateRoot, publicRoot, legacyRoot)) {
+            java.nio.file.Path r = NaruFileIo.path(root);
+            if (target.startsWith(r) && target.getNameCount() > r.getNameCount() + 1) {
+                return r.resolve(r.relativize(target).getName(0));
+            }
+        }
+        return null;
+    }
+
+    private NaruFileJournal journalOf(java.nio.file.Path sessionFolder) {
+        return journals.computeIfAbsent(sessionFolder, NaruFileJournal::open);
+    }
+
+    /** Writes a file of a session through its log, syncing as the policy says. */
+    private void writeSessionFile(NPath target, String content) throws IOException {
+        java.nio.file.Path t = NaruFileIo.path(target);
+        java.nio.file.Path folder = sessionFolderOf(t);
+        if (folder == null) {
+            NaruFileIo.writeAtomic(target, content);
+            return;
+        }
+        NaruFileJournal journal = journalOf(folder);
+        journal.write(t, content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        afterWrite(folder, journal);
+    }
+
+    private void deleteSessionFile(NPath target) throws IOException {
+        java.nio.file.Path t = NaruFileIo.path(target);
+        java.nio.file.Path folder = sessionFolderOf(t);
+        if (folder == null) {
+            NaruFileIo.deleteIfExists(target);
+            return;
+        }
+        NaruFileJournal journal = journalOf(folder);
+        journal.delete(t);
+        afterWrite(folder, journal);
+    }
+
+    private void deleteSessionFileQuietly(NPath target) {
+        try {
+            deleteSessionFile(target);
+        } catch (IOException | RuntimeException ignored) {
+            // an unreferenced file left behind is harmless; failing the save over it is not
+        }
+    }
+
+    private void afterWrite(java.nio.file.Path folder, NaruFileJournal journal) throws IOException {
+        if (syncIntervalMillis == 0) {
+            journal.sync();
+            return;
+        }
+        if (syncPending.add(folder)) {
+            SYNC_TIMER.schedule(() -> {
+                syncPending.remove(folder);
+                try {
+                    journal.sync();
+                } catch (IOException | RuntimeException ignored) {
+                    // the next sync (a turn end, the next write) tries again; the log keeps
+                    // the records until one succeeds
+                }
+            }, syncIntervalMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /** Replays what a previous process left in a session's log, before anything reads it. */
+    private void recoverJournal(NPath sessionDir) {
+        java.nio.file.Path folder = NaruFileIo.path(sessionDir);
+        if (!journals.containsKey(folder) && java.nio.file.Files.isRegularFile(folder.resolve(NaruFileJournal.FILE_NAME))) {
+            journalOf(folder);
+        }
+    }
+
+    /** Syncs the files a session's log covers and empties it; the log stays open. */
+    private void checkpointJournal(NPath sessionDir) throws IOException {
+        java.nio.file.Path folder = NaruFileIo.path(sessionDir);
+        recoverJournal(sessionDir);
+        NaruFileJournal journal = journals.get(folder);
+        if (journal != null) {
+            journal.checkpoint();
+        }
+    }
+
+    /**
+     * Checkpoints and drops a session's log, before its folder is moved or deleted outside
+     * of it: a replay must never write back what such a change removed.
+     */
+    private void forgetJournal(NPath sessionDir) throws IOException {
+        checkpointJournal(sessionDir);
+        journals.remove(NaruFileIo.path(sessionDir));
+    }
+
+    @Override
+    public void sync(String uuid, NaruSessionScope scope) {
+        NaruFileJournal journal = journals.get(NaruFileIo.path(rootOf(scope).resolve(uuid)));
+        if (journal != null) {
+            try {
+                journal.sync();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
     }
 
     public NaruStoreConfig config() {
@@ -311,6 +474,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public NOptional<NaruSessionData> loadData(String uuid, NaruSessionScope scope) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath meta = rootOf(scope).resolve(uuid).resolve("session.tson");
         if (!NaruFileIo.isFile(meta)) {
             return NOptional.ofEmpty();
@@ -454,7 +618,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
             }
             rebuilt.set("version", expectedVersion + 1);
             try {
-                NaruFileIo.writeAtomic(dir.resolve("session.tson"), pretty(rebuilt.build()));
+                writeSessionFile(dir.resolve("session.tson"), pretty(rebuilt.build()));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -479,7 +643,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     private void writeSessionData(NPath dir, NaruSessionData data) {
         try {
-            NaruFileIo.writeAtomic(dir.resolve("session.tson"), pretty(data.toElement()));
+            writeSessionFile(dir.resolve("session.tson"), pretty(data.toElement()));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -535,10 +699,10 @@ public class NaruFileSessionStore implements NaruSessionStore {
         try {
             for (NaruMessage message : appended) {
                 String id = idOf(next++);
-                NaruFileIo.writeAtomic(historyFile(historyDir, id), pretty(message.toElement()));
+                writeSessionFile(historyFile(historyDir, id), pretty(message.toElement()));
                 ids.add(id);
             }
-            NaruFileIo.writeAtomic(historyDir.resolve("next-id"), Long.toString(next));
+            writeSessionFile(historyDir.resolve("next-id"), Long.toString(next));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -563,6 +727,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public NOptional<NaruTaskState> loadTask(String uuid, NaruSessionScope scope, long taskId) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath sessionDir = rootOf(scope).resolve(uuid);
         if (!NaruFileIo.isDirectory(sessionDir)) {
             return NOptional.ofEmpty();
@@ -578,6 +743,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public NOptional<NaruTaskState> loadTaskSkeleton(String uuid, NaruSessionScope scope, long taskId) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath taskFile = taskDir(rootOf(scope).resolve(uuid), taskId).resolve("task.tson");
         if (!NaruFileIo.isFile(taskFile)) return NOptional.ofEmpty();
         NElement element = read(taskFile);
@@ -594,6 +760,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
     @Override
     public NaruMessagePage queryMessages(String uuid, NaruSessionScope scope, long taskId,
                                           NaruMessageQuery query) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath taskDir = taskDir(rootOf(scope).resolve(uuid), taskId);
         NPath taskFile = taskDir.resolve("task.tson");
         if (!NaruFileIo.isFile(taskFile)) return new NaruMessagePage(List.of(), null, null, false);
@@ -641,6 +808,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public List<Long> taskIds(String uuid, NaruSessionScope scope) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         List<Long> ids = new ArrayList<>();
         for (NPath dir : NaruFileIo.children(rootOf(scope).resolve(uuid).resolve("tasks"))) {
             if (NaruFileIo.isDirectory(dir)) {
@@ -659,6 +827,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
     public void deleteTask(String uuid, NaruSessionScope scope, long taskId) {
         NPath dir = taskDir(rootOf(scope).resolve(uuid), taskId);
         try {
+            checkpointJournal(rootOf(scope).resolve(uuid));
             NaruFileIo.deleteTreeIfExists(dir);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -788,7 +957,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
                 id = idOf(nextId++);
                 NaruFileIo.mkdirs(historyDir);
                 try {
-                    NaruFileIo.writeAtomic(historyFile(historyDir, id), pretty(element));
+                    writeSessionFile(historyFile(historyDir, id), pretty(element));
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
@@ -797,7 +966,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
             ids.add(id);
         }
         try {
-            NaruFileIo.writeAtomic(historyDir.resolve("next-id"), Long.toString(nextId));
+            writeSessionFile(historyDir.resolve("next-id"), Long.toString(nextId));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -820,13 +989,13 @@ public class NaruFileSessionStore implements NaruSessionStore {
      */
     private void commitHistory(NPath taskDir, NElement skeleton, HistoryWrite write) {
         try {
-            NaruFileIo.writeAtomic(taskDir.resolve("task.tson"),
+            writeSessionFile(taskDir.resolve("task.tson"),
                     pretty(withHistoryIds(skeleton, write.ids())));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
         for (String id : write.stale()) {
-            NaruFileIo.deleteQuietly(historyFile(taskDir.resolve("history"), id));
+            deleteSessionFileQuietly(historyFile(taskDir.resolve("history"), id));
         }
     }
 
@@ -929,6 +1098,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public List<NaruMessage> loadHistory(String uuid, NaruSessionScope scope, long taskId) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath dir = taskDir(rootOf(scope).resolve(uuid), taskId);
         NPath meta = dir.resolve("task.tson");
         if (!NaruFileIo.isFile(meta)) {
@@ -963,6 +1133,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public List<String> routineNames(String uuid, NaruSessionScope scope) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         List<String> names = new ArrayList<>();
         for (NPath f : NaruFileIo.children(rootOf(scope).resolve(uuid).resolve("routines"))) {
             if (NaruFileIo.isFile(f) && f.name().endsWith(".tson")) {
@@ -975,6 +1146,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public NOptional<NElement> loadRoutine(String uuid, NaruSessionScope scope, String name) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath f = rootOf(scope).resolve(uuid).resolve("routines").resolve(name + ".tson");
         return NaruFileIo.isFile(f) ? NOptional.of(read(f)) : NOptional.ofEmpty();
     }
@@ -984,7 +1156,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
         NPath dir = rootOf(scope).resolve(uuid).resolve("routines");
         NaruFileIo.mkdirs(dir);
         try {
-            NaruFileIo.writeAtomic(dir.resolve(name + ".tson"), pretty(element));
+            writeSessionFile(dir.resolve(name + ".tson"), pretty(element));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -993,7 +1165,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
     @Override
     public void deleteRoutine(String uuid, NaruSessionScope scope, String name) {
         try {
-            NaruFileIo.deleteIfExists(rootOf(scope).resolve(uuid).resolve("routines").resolve(name + ".tson"));
+            deleteSessionFile(rootOf(scope).resolve(uuid).resolve("routines").resolve(name + ".tson"));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -1003,6 +1175,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public NOptional<NElement> loadExtensionState(String uuid, NaruSessionScope scope, String extension) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath f = rootOf(scope).resolve(uuid).resolve("ext").resolve(extension + ".tson");
         return NaruFileIo.isFile(f) ? NOptional.of(read(f)) : NOptional.ofEmpty();
     }
@@ -1012,7 +1185,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
         NPath dir = rootOf(scope).resolve(uuid).resolve("ext");
         NaruFileIo.mkdirs(dir);
         try {
-            NaruFileIo.writeAtomic(dir.resolve(extension + ".tson"), pretty(element));
+            writeSessionFile(dir.resolve(extension + ".tson"), pretty(element));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -1021,7 +1194,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
     @Override
     public void deleteExtensionState(String uuid, NaruSessionScope scope, String extension) {
         try {
-            NaruFileIo.deleteIfExists(rootOf(scope).resolve(uuid).resolve("ext").resolve(extension + ".tson"));
+            deleteSessionFile(rootOf(scope).resolve(uuid).resolve("ext").resolve(extension + ".tson"));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -1033,6 +1206,11 @@ public class NaruFileSessionStore implements NaruSessionStore {
     public void move(String uuid, NaruSessionScope from, NaruSessionScope to) {
         NPath src = rootOf(from).resolve(uuid);
         NPath dst = rootOf(to).resolve(uuid);
+        try {
+            forgetJournal(src);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
         if (!NaruFileIo.isDirectory(src)) {
             throw new IllegalArgumentException("no session " + uuid + " in scope " + from);
         }
@@ -1061,6 +1239,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
             return false;
         }
         try {
+            forgetJournal(dir);
             NaruFileIo.deleteTreeIfExists(dir);
             return true;
         } catch (IOException e) {
@@ -1074,6 +1253,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
         for (NPath dir : NaruFileIo.children(rootOf(scope))) {
             if (describe(dir, scope) != null) {
                 try {
+                    forgetJournal(dir);
                     NaruFileIo.deleteTreeIfExists(dir);
                     n++;
                 } catch (IOException e) {
@@ -1134,7 +1314,18 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public void close() {
-        // nothing pooled: every operation opens what it needs and closes it
+        // what is still unsynced is made durable before the store goes away
+        for (Map.Entry<java.nio.file.Path, NaruFileJournal> e : journals.entrySet()) {
+            if (sessionFolderOf(e.getKey().resolve(NaruFileJournal.FILE_NAME)) == null) {
+                continue;
+            }
+            NaruFileJournal journal = e.getValue();
+            try {
+                journal.sync();
+            } catch (IOException ignored) {
+                // closing must not fail on one session; its log replays on the next open
+            }
+        }
     }
 
     // ---------------------------------------------------------------- helpers
