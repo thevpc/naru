@@ -26,6 +26,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Covers the plan graph itself: alias resolution, cycle rejection, derived readiness,
@@ -505,11 +507,18 @@ public class NaruPlanGraphTest {
         Assertions.assertFalse(plans(session).findPlan("ffffffff-nope").isPresent());
         Assertions.assertFalse(plans(session).findItem(planPrefix, "ffffffff-nope").isPresent());
 
-        // ambiguity cannot be forced here (ids are random), so it is asserted on the
-        // deterministic single-character case: no id may be assumed to start with 'f'
-        Assertions.assertFalse(plans(session).findPlan("f").isPresent()
-                        && plans(session).plans().keySet().stream()
-                        .filter(id -> id.startsWith("f")).count() == 1,
+        // ids are random, but with 17 plans two must share their first hex digit, and that
+        // digit is a prefix that matches more than one plan
+        for (int i = 0; i < 16; i++) {
+            plans(session).createPlan("goal " + i, List.of());
+        }
+        Map<Character, Long> byFirstDigit = plans(session).plans().keySet().stream()
+                .collect(Collectors.groupingBy(id -> id.charAt(0), Collectors.counting()));
+        String ambiguous = byFirstDigit.entrySet().stream()
+                .filter(e -> e.getValue() > 1)
+                .map(e -> String.valueOf(e.getKey()))
+                .findFirst().orElseThrow();
+        Assertions.assertFalse(plans(session).findPlan(ambiguous).isPresent(),
                 "an ambiguous plan prefix must resolve to nothing, not to an arbitrary plan");
     }
 
