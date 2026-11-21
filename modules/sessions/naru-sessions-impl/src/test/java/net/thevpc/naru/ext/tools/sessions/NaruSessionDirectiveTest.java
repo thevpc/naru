@@ -53,8 +53,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Drives /session the way the REPL does, so a subcommand that is broken is caught here
  * rather than by typing it at a prompt.
+ * <p>
+ * The timeout runs each test in a thread of its own so that a hang reports the stack it
+ * is stuck in: in the default mode a timeout only shows JUnit's own frames.
  */
-@Timeout(60)
+@Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 public class NaruSessionDirectiveTest {
 
     private static final NaruSessionListener NOOP_LISTENER = new NaruSessionListener() {

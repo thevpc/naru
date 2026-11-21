@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -169,9 +168,12 @@ public class ParityReplayTest {
         }
 
         String outputJson = NElementWriter.ofJson().compact(false).formatPlain(records);
-        File outDir = new File("/home/vpc/xprojects/nuts-world/nuts-productivity/naru/bench/parity-probes");
+        // under the module's target/: an absolute path only existed on one machine, and writing
+        // the tracked bench/parity-probes/results.json dirtied the tree on every build
+        File outDir = new File("target/parity-probes");
         outDir.mkdirs();
-        Files.write(Paths.get("/home/vpc/xprojects/nuts-world/nuts-productivity/naru/bench/parity-probes/results.json"), outputJson.getBytes());
+        Files.write(new File(outDir, "results.json").toPath(), outputJson.getBytes());
+        System.out.println("PARITY PROBES REPORT: " + new File(outDir, "results.json").getAbsolutePath());
         System.out.println("PARITY PROBES RESULT: " + passed + "/" + probes.size() + " MATCHED");
     }
 

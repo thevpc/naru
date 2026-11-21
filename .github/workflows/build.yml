@@ -29,6 +29,13 @@ jobs:
           cp -r modules/assess/naru-assess-impl/src/main/resources/net/thevpc/naru/ext/assess/java-ref/project "$RUNNER_TEMP/assess-prime"
           mvn -B -ntp -q -Dmaven.test.failure.ignore=true -f "$RUNNER_TEMP/assess-prime/pom.xml" test
 
+      # the desktop typeface tests check that CJK and emoji fall back to a platform font, and
+      # the runner image ships neither
+      - name: Install CJK and emoji fonts
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends fonts-noto-cjk fonts-noto-color-emoji
+
       # the desktop module's tests build Swing components, which need a display; tests that
       # call a real model are opt-in (-Dnaru.test.model / -Dnaru.assess.model) and stay off
       - name: Build and test

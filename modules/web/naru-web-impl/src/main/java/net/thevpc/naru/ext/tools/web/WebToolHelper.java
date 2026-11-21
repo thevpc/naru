@@ -40,14 +40,20 @@ public class WebToolHelper {
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(30));
 
-        NHttpResponse response = http.GET(SEARCH_URL)
-                .parameter("q", query)
-                .parameter("format", "json")
-                .parameter("no_html", "1")
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-                .run();
-
-        String jsonContent = response.contentAsString();
+        // an unreachable endpoint is an answer the model can act on, as for a fetch: thrown, it
+        // aborted the whole tool call
+        String jsonContent;
+        try {
+            NHttpResponse response = http.GET(SEARCH_URL)
+                    .parameter("q", query)
+                    .parameter("format", "json")
+                    .parameter("no_html", "1")
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                    .run();
+            jsonContent = response.contentAsString();
+        } catch (Exception e) {
+            return "Error searching the web: " + e.getMessage();
+        }
 
         // Parse and extract meaningful text from JSON
         return extractTextFromDDGResponse(jsonContent);
