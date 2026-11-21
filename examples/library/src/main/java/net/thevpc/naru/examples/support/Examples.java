@@ -7,7 +7,6 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelKey;
-import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 
@@ -44,12 +43,11 @@ public final class Examples {
     }
 
     /**
-     * Boots nuts (NARU's host framework) and returns a workspace rooted in a scratch folder.
-     * {@link NaruWorkspace#of()} takes the extensions already on the classpath, which is what
-     * a library user wants: the pom decides what the agent can do.
+     * A workspace rooted in a scratch folder. {@link NaruWorkspace#of()} boots nuts (NARU's host
+     * framework) when needed and takes the extensions already on the classpath, which is what a
+     * library user wants: the pom decides what the agent can do.
      */
     public static NaruWorkspace workspace(String name) {
-        Nuts.require();
         NaruWorkspace ws = NaruWorkspace.of();
         NPath dir = NPath.ofTempFolder("naru-example-" + name);
         dir.mkdirs();

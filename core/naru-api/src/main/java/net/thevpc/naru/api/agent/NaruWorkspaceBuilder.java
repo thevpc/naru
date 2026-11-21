@@ -1,5 +1,6 @@
 package net.thevpc.naru.api.agent;
 
+import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.artifact.NId;
 import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.io.NPath;
@@ -26,9 +27,10 @@ import java.util.function.Supplier;
  * extension is declared, the builder falls back to the {@code dev} profile, whichever of
  * its installed coordinates resolves first.
  *
- * <p>A builder needs a running nuts workspace (obtained via {@code Nuts.require()} or by
- * running inside a naru app). To create a workspace from the classes already on the
- * classpath with no resolution at all, use {@link NaruWorkspace#of()}.
+ * <p>A builder resolves artifacts through nuts: {@link #of()} reuses the running workspace
+ * (a naru app's, say) and opens an in-memory one when there is none. To create a workspace
+ * from the classes already on the classpath with no resolution at all, use
+ * {@link NaruWorkspace#of()}.
  *
  * <pre>{@code
  * NaruWorkspace ws = NaruWorkspaceBuilder.of()
@@ -40,6 +42,7 @@ import java.util.function.Supplier;
  */
 public interface NaruWorkspaceBuilder extends NComponent {
     static NaruWorkspaceBuilder of() {
+        Nuts.require();
         return NExtensions.of(NaruWorkspaceBuilder.class);
     }
 

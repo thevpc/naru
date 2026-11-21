@@ -7,6 +7,7 @@ import net.thevpc.naru.api.registry.NaruTool;
 import net.thevpc.naru.api.registry.NaruToolTag;
 import net.thevpc.naru.api.model.NaruModelFilter;
 import net.thevpc.naru.api.store.NaruDataStore;
+import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.artifact.NVersion;
 import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.io.NPath;
@@ -25,12 +26,14 @@ public interface NaruWorkspace {
     /**
      * The agent implementation on the classpath.
      * <p>
-     * Resolved through the nuts extension registry when a workspace is available, and
-     * by name otherwise, so a plain {@code main()} that never bootstrapped a workspace
-     * can still start an agent. Fails loudly when {@code naru-impl} is absent: there is
-     * no meaningful agent without an implementation.
+     * Opens an in-memory nuts workspace first when none is running (an existing one, such as
+     * a naru app's, is reused), so a plain {@code main()} needs no bootstrap of its own.
+     * Resolved through the nuts extension registry, and by name as a fallback. Fails loudly
+     * when {@code naru-impl} is absent: there is no meaningful agent without an
+     * implementation.
      */
     static NaruWorkspace of() {
+        Nuts.require();
         NOptional<NaruWorkspace> bySpi = NExtensions.get()
                 .flatMap(x -> x.createComponent(NaruWorkspace.class));
         if (bySpi.isPresent()) {
