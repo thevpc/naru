@@ -1,7 +1,7 @@
 package net.thevpc.naru.ext.models.xai;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.openai.AbstractOpenAICompatProvider;
@@ -35,12 +35,12 @@ public class NaruXaiProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
+    protected String baseUrl(NaruModelContext context) {
         return "https://api.x.ai/v1";
     }
 
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
+    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
         boolean vision = modelName.contains("vision") || modelName.startsWith("grok-4");
         boolean tools = true; // all current Grok chat models support function calling
         boolean thinking = modelName.contains("grok-3-mini")
@@ -71,14 +71,14 @@ public class NaruXaiProvider extends AbstractOpenAICompatProvider {
      *         seen in their docs example: "total": {"val": "-1000"} means $10.00 available),
      *         or null if the check failed
      */
-    public Long fetchPrepaidBalanceCents(String managementApiKey, String teamId,NaruSession session) {
+    public Long fetchPrepaidBalanceCents(String managementApiKey, String teamId,NaruModelContext context) {
         try {
             NHttpClient http = NHttpClient.of()
-                    .connectTimeout(connectTimeout(session))
+                    .connectTimeout(connectTimeout(context))
                     .baseUri(MANAGEMENT_BASE_URL);
 
             NHttpRequest request = http.GET("v1/billing/teams/" + teamId + "/prepaid/balance")
-                    .timeout(readTimeout(session))
+                    .timeout(readTimeout(context))
                     .header("Authorization", "Bearer " + managementApiKey);
 
             NHttpResponse response = request.run();

@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.models.gemini;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -51,10 +51,10 @@ public class NaruGeminiProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
+    protected String baseUrl(NaruModelContext context) {
         // §6: the registration's own url (a proxy in front of Google, a
         // regional endpoint) beats the fixed default
-        return configValue("url", session)
+        return configValue("url", context)
                 .orElse("https://generativelanguage.googleapis.com/v1beta/openai");
     }
 
@@ -73,7 +73,7 @@ public class NaruGeminiProvider extends AbstractOpenAICompatProvider {
      * route can only do automatic prefix caching.
      */
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
+    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
         boolean vision = true;
         boolean tools = true;
         boolean thinking = modelName.contains("pro");
@@ -85,14 +85,14 @@ public class NaruGeminiProvider extends AbstractOpenAICompatProvider {
         }
 
         return new NaruModelCapabilitiesImpl(vision, tools, thinking, embedding, contextLength,
-                NaruModelProtocolGeminiNative.PROTOCOL_ID.equalsIgnoreCase(resolvedProtocolId(session))
+                NaruModelProtocolGeminiNative.PROTOCOL_ID.equalsIgnoreCase(resolvedProtocolId(context))
                         ? NaruCachingMode.EXPLICIT_RESOURCE
                         : NaruCachingMode.AUTOMATIC_PREFIX);
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
-        return findModelIdsWithLiveFallback(session, FALLBACK_MODELS);
+    public List<String> findModelIds(NaruModelContext context) {
+        return findModelIdsWithLiveFallback(context, FALLBACK_MODELS);
     }
 
 }

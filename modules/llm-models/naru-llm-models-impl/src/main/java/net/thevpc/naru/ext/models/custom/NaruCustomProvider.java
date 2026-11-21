@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.models.custom;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -53,8 +53,8 @@ public class NaruCustomProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
-        return configValue("url", session).orNull();
+    protected String baseUrl(NaruModelContext context) {
+        return configValue("url", context).orNull();
     }
 
     @Override
@@ -68,34 +68,34 @@ public class NaruCustomProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String model, NaruSession session) {
-        long contextLength = configValue("contextLength", session)
+    protected NaruModelCapabilities resolveCapabilities(String model, NaruModelContext context) {
+        long contextLength = configValue("contextLength", context)
                 .flatMap(x -> NLiteral.of(x).asLong()).orElse(-1L);
-        boolean tools = configValue("tools", session)
+        boolean tools = configValue("tools", context)
                 .flatMap(x -> NLiteral.of(x).asBoolean()).orElse(true);
         // tool-call emulation kicks in automatically when tools=false
         return new NaruModelCapabilitiesImpl(false, tools, false, false, contextLength,
-                resolveCachingMode(session));
+                resolveCachingMode(context));
     }
 
     @Override
-    public boolean isAvailable(NaruSession session) {
-        String url = baseUrl(session);
+    public boolean isAvailable(NaruModelContext context) {
+        String url = baseUrl(context);
         if (NBlankable.isBlank(url)) {
             // no url: the registration declares an endpoint nothing can talk to
             return false;
         }
-        boolean probe = configValue("probe", session)
+        boolean probe = configValue("probe", context)
                 .flatMap(x -> NLiteral.of(x).asBoolean()).orElse(true);
         return !probe || isReachable(url);
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
-        if (NBlankable.isBlank(baseUrl(session))) {
+    public List<String> findModelIds(NaruModelContext context) {
+        if (NBlankable.isBlank(baseUrl(context))) {
             return Collections.emptyList();
         }
-        return declaredModels(session);
+        return declaredModels(context);
     }
 
     /**
@@ -104,10 +104,10 @@ public class NaruCustomProvider extends AbstractOpenAICompatProvider {
      * registration's catalogue is what its owner wrote down, not what the server
      * happens to answer on {@code GET /models}.
      */
-    private List<String> declaredModels(NaruSession session) {
+    private List<String> declaredModels(NaruModelContext context) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         for (String key : new String[]{"model", "models"}) {
-            String v = configValue(key, session).orNull();
+            String v = configValue(key, context).orNull();
             if (!NBlankable.isBlank(v)) {
                 for (String s : v.split("[,\\s]+")) {
                     if (!s.isBlank()) {
@@ -131,8 +131,8 @@ public class NaruCustomProvider extends AbstractOpenAICompatProvider {
      * mode the user did not ask for could send a request shape their server
      * rejects.
      */
-    private NaruCachingMode resolveCachingMode(NaruSession session) {
-        NOptional<String> explicit = configValue("cachingMode", session);
+    private NaruCachingMode resolveCachingMode(NaruModelContext context) {
+        NOptional<String> explicit = configValue("cachingMode", context);
         if (explicit.isPresent()) {
             String raw = explicit.get();
             for (NaruCachingMode m : NaruCachingMode.values()) {
@@ -142,7 +142,7 @@ public class NaruCustomProvider extends AbstractOpenAICompatProvider {
             }
             return NaruCachingMode.NONE;
         }
-        String protocolId = resolvedProtocolId(session);
+        String protocolId = resolvedProtocolId(context);
         if (protocolId != null && protocolId.equalsIgnoreCase(NaruModelProtocolAnthropicCompat.PROTOCOL_ID)) {
             return NaruCachingMode.EXPLICIT_INLINE;
         }

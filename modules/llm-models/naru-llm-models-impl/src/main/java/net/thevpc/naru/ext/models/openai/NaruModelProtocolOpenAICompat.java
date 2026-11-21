@@ -1,7 +1,6 @@
 package net.thevpc.naru.ext.models.openai;
 
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.net.NHttpRequest;
@@ -51,15 +50,15 @@ public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
     }
 
     @Override
-    public String url(NaruTask task, Map<String, NElement> env) {
-        NOptional<String> own = configValue(task, "url");
+    public String url(NaruModelContext context, Map<String, NElement> env) {
+        NOptional<String> own = configValue(context, "url");
         if (own.isPresent()) {
             return own.get().replaceAll("/+$", "");
         }
         if (defaultBaseUrl != null) {
             return defaultBaseUrl;
         }
-        return super.url(task, env);
+        return super.url(context, env);
     }
 
     // ── Live-model listing facts (wire-level GETs, session-scoped) ─────────────
@@ -100,20 +99,20 @@ public class NaruModelProtocolOpenAICompat extends NaruModelProtocolBase {
 
 
     @Override
-    public NaruResponse chatStream(NaruModelRequest request, NaruTask task, NaruStreamHandler handler) {
+    public NaruResponse chatStream(NaruModelRequest request, NaruModelContext context, NaruStreamHandler handler) {
         if (!capabilities.isStreaming()) {
             // Declared as unable to stream, so the body must not ask for it: some
             // providers answer a streaming request with a single JSON body, and
             // the reader would then see a document where it expects frames.
             // Delivering it as a batch of chunks is still a valid stream shape.
-            return super.chatStream(request, task, handler);
+            return super.chatStream(request, context, handler);
         }
-        return streamChat(request, task, new NaruOpenAiStreamParser(providerName(), handler, model));
+        return streamChat(request, context, new NaruOpenAiStreamParser(providerName(), handler, model));
     }
 
     @Override
-    protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
-        String apiKey = apiKey(task);
+    protected void prepareRequest(NHttpRequest request, NElement body, NaruModelContext context) {
+        String apiKey = apiKey(context);
         if (!NBlankable.isBlank(apiKey)) {
             request.header("Authorization", "Bearer " + apiKey);
         }

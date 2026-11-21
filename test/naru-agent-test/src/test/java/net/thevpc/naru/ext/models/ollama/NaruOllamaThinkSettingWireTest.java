@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.ollama;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruCachingMode;
@@ -83,9 +84,9 @@ public class NaruOllamaThinkSettingWireTest {
         NaruModelRequest prepared = reasoningProtocol(task.session())
                 .preprocessRequest(new NaruModelRequest(
                         List.of(NaruMessage.user("hi")), Collections.emptyList(),
-                        new HashMap<>()), task);
+                        new HashMap<>()), NaruModelContext.of(task));
         return new NaruOllamaNativeRequestSerializer()
-                .serialize(prepared, new NaruModelConfig("ollama", "qwen3"), task.session(), true);
+                .serialize(prepared, new NaruModelConfig("ollama", "qwen3"), NaruModelContext.of(task), true);
     }
 
     private static boolean thinkOnTheWire(NaruTask task) {

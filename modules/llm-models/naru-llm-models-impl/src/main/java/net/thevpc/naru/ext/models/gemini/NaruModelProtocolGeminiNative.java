@@ -1,9 +1,9 @@
 package net.thevpc.naru.ext.models.gemini;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProvider;
-import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelProtocolBase;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NElementDeserializer;
@@ -55,7 +55,7 @@ public class NaruModelProtocolGeminiNative extends NaruModelProtocolBase {
      * {@code models/gemini-2.5-pro:generateContent}.
      */
     @Override
-    protected String chatPath(NaruTask task, Map<String, NElement> env) {
+    protected String chatPath(NaruModelContext context, Map<String, NElement> env) {
         String prefix = chatPath == null ? "models" : chatPath;
         while (prefix.endsWith("/")) {
             prefix = prefix.substring(0, prefix.length() - 1);
@@ -64,12 +64,12 @@ public class NaruModelProtocolGeminiNative extends NaruModelProtocolBase {
     }
 
     @Override
-    protected String url(NaruTask task, Map<String, NElement> env) {
+    protected String url(NaruModelContext context, Map<String, NElement> env) {
         // the base path includes the api version, which the OpenAI-compat
         // provider does not: /v1beta/openai vs /v1beta. The instance's own url
         // wins (§6); with none configured this protocol talks to Google itself —
         // never the ollama-ish localhost default of the base class.
-        String u = configValue(task, "url").orElse(DEFAULT_BASE_URL);
+        String u = configValue(context, "url").orElse(DEFAULT_BASE_URL);
         while (u.endsWith("/")) {
             u = u.substring(0, u.length() - 1);
         }
@@ -87,8 +87,8 @@ public class NaruModelProtocolGeminiNative extends NaruModelProtocolBase {
      * {@code x-goog-api-key} header (the OpenAI-compatible route uses Bearer).
      */
     @Override
-    protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
-        String apiKey = apiKey(task);
+    protected void prepareRequest(NHttpRequest request, NElement body, NaruModelContext context) {
+        String apiKey = apiKey(context);
         if (!NBlankable.isBlank(apiKey)) {
             request.header("x-goog-api-key", apiKey);
         }

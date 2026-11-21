@@ -1,5 +1,6 @@
 package net.thevpc.naru.examples.support;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruCachingMode;
@@ -100,7 +101,7 @@ public class ScriptedModelProvider implements NaruModelProvider {
 
     private final NaruModelProtocol protocol = new NaruModelProtocol() {
         @Override
-        public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+        public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
             for (Function<NaruModelRequest, NaruResponse> rule : RULES) {
                 NaruResponse r = rule.apply(request);
                 if (r != null) {
@@ -126,7 +127,7 @@ public class ScriptedModelProvider implements NaruModelProvider {
     };
 
     @Override
-    public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+    public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
         return NOptional.of(protocol);
     }
 
@@ -136,17 +137,17 @@ public class ScriptedModelProvider implements NaruModelProvider {
     }
 
     @Override
-    public NOptional<String> apiKey(NaruSession session) {
+    public NOptional<String> apiKey(NaruModelContext context) {
         return NOptional.ofEmpty();
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
+    public List<String> findModelIds(NaruModelContext context) {
         return List.of("demo");
     }
 
     @Override
-    public boolean isLocal(NaruSession session) {
+    public boolean isLocal(NaruModelContext context) {
         return true;
     }
 

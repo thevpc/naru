@@ -1,10 +1,11 @@
 package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.agent.NaruSession;
+
 import net.thevpc.nuts.elem.NElement;
 
 public interface NaruModelRequestSerializer {
-    NElement serialize(NaruModelRequest request, NaruModelConfig model,NaruSession session);
+    NElement serialize(NaruModelRequest request, NaruModelConfig model,NaruModelContext context);
 
     /**
      * Serialise a request that is about to be read incrementally.
@@ -20,7 +21,19 @@ public interface NaruModelRequestSerializer {
      * protocol that has no streaming transport stays correct: the caller reads a
      * complete response and delivers it as one batch of chunks.
      */
+    default NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruModelContext context, boolean stream) {
+        return serialize(request, model, context);
+    }
+
+    /** @deprecated use {@link #serialize(NaruModelRequest, NaruModelConfig, NaruModelContext)} */
+    @Deprecated
+    default NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session) {
+        return serialize(request, model, NaruModelContext.of(session));
+    }
+
+    /** @deprecated use {@link #serialize(NaruModelRequest, NaruModelConfig, NaruModelContext, boolean)} */
+    @Deprecated
     default NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session, boolean stream) {
-        return serialize(request, model, session);
+        return serialize(request, model, NaruModelContext.of(session), stream);
     }
 }

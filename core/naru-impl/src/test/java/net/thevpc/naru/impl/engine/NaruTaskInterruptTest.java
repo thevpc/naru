@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruRole;
 
 import net.thevpc.naru.api.agent.NaruInputRequest;
@@ -102,6 +103,11 @@ public class NaruTaskInterruptTest {
 
         /** which call raises the interrupt; any other value means "none does" */
         int interruptAtCall = 1;
+        /**
+         * The task whose interrupt the fake raises. A model call no longer sees its task, so the
+         * test hands the fake the one it built.
+         */
+        java.util.function.Supplier<NaruTask> target;
         int callCount;
         int lastCallEmitted;
         boolean toolCallAnswer;
@@ -112,17 +118,17 @@ public class NaruTaskInterruptTest {
         }
 
         @Override
-        public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+        public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
             int thisCall = ++callCount;
             lastCallEmitted = 0;
             if (thisCall == interruptAtCall) {
-                task.interrupt();
+                target.get().interrupt();
             }
             return answer();
         }
 
         @Override
-        public NaruResponse chatStream(NaruModelRequest request, NaruTask task, NaruStreamHandler handler) {
+        public NaruResponse chatStream(NaruModelRequest request, NaruModelContext context, NaruStreamHandler handler) {
             int thisCall = ++callCount;
             lastCallEmitted = 0;
             boolean interruptsHere = thisCall == interruptAtCall;
@@ -135,7 +141,7 @@ public class NaruTaskInterruptTest {
                 // the signal lands while tokens are flowing, exactly as it would from
                 // a terminal -- the collector polls between chunks and stops here
                 if (interruptsHere && lastCallEmitted == 3) {
-                    task.interrupt();
+                    target.get().interrupt();
                 }
             }
             return answer();
@@ -267,7 +273,7 @@ public class NaruTaskInterruptTest {
         }
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(protocol);
         }
 
@@ -277,12 +283,12 @@ public class NaruTaskInterruptTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of("fake-model");
         }
 
@@ -325,6 +331,9 @@ public class NaruTaskInterruptTest {
         session.registry().registerModelProvider(new FakeProvider(protocol));
         NaruTask task = session.newTask(NaruTaskSpec.of().statements("noop"));
         task.setModel(new NaruModelConfig("fake", "fake-model"));
+        if (protocol instanceof InterruptingProtocol interrupting) {
+            interrupting.target = () -> task;
+        }
         return task;
     }
 
@@ -459,6 +468,7 @@ public class NaruTaskInterruptTest {
                         .model("fake/fake-model"))
                 .build();
         session.registry().registerModelProvider(new FakeProvider(protocol));
+        protocol.target = () -> session.findTask(session.foregroundTaskId()).orNull();
 
         NaruTask run = session.run();
 

@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.test;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProvider;
@@ -45,59 +46,59 @@ public class NaruModelProviderTimeoutTest {
     @Test
     public void aRemoteUrlIsRemote() {
         TestProvider p = new TestProvider(true).wire("https://api.openai.com/v1");
-        Assertions.assertFalse(p.isLocal(null));
-        Assertions.assertEquals(120, p.defaultReadTimeout(null).toSeconds());
+        Assertions.assertFalse(p.isLocal(NaruModelContext.standalone()));
+        Assertions.assertEquals(120, p.defaultReadTimeout(NaruModelContext.standalone()).toSeconds());
     }
 
     @Test
     public void aLocalUrlIsLocal() {
         for (String url : new String[]{"http://localhost:11434", "https://127.0.0.1", "http://[::1]:11434"}) {
             TestProvider p = new TestProvider(true).wire(url);
-            Assertions.assertTrue(p.isLocal(null), url);
+            Assertions.assertTrue(p.isLocal(NaruModelContext.standalone()), url);
         }
     }
 
     @Test
     public void aLocalEndpointWithAGpuGets300s() {
         TestProvider p = new TestProvider(true).wire("http://localhost:11434");
-        Assertions.assertTrue(p.isLocal(null));
-        Assertions.assertEquals(300, p.defaultReadTimeout(null).toSeconds());
+        Assertions.assertTrue(p.isLocal(NaruModelContext.standalone()));
+        Assertions.assertEquals(300, p.defaultReadTimeout(NaruModelContext.standalone()).toSeconds());
     }
 
     @Test
     public void aLocalEndpointWithoutAGpuGets600s() {
         TestProvider p = new TestProvider(false).wire("http://127.0.0.1:8080");
-        Assertions.assertTrue(p.isLocal(null));
-        Assertions.assertEquals(600, p.defaultReadTimeout(null).toSeconds());
+        Assertions.assertTrue(p.isLocal(NaruModelContext.standalone()));
+        Assertions.assertEquals(600, p.defaultReadTimeout(NaruModelContext.standalone()).toSeconds());
     }
 
     @Test
     public void explicitLocalTrueForcesALocalEndpoint() {
         TestProvider p = new TestProvider(true).wire("https://api.openai.com/v1");
         p.setParam("local", "true");
-        Assertions.assertTrue(p.isLocal(null), "--local=true must win over the url");
-        Assertions.assertEquals(300, p.defaultReadTimeout(null).toSeconds());
+        Assertions.assertTrue(p.isLocal(NaruModelContext.standalone()), "--local=true must win over the url");
+        Assertions.assertEquals(300, p.defaultReadTimeout(NaruModelContext.standalone()).toSeconds());
     }
 
     @Test
     public void explicitLocalFalseForcesARemoteEndpoint() {
         TestProvider p = new TestProvider(false).wire("http://127.0.0.1:8080");
         p.setParam("local", "false");
-        Assertions.assertFalse(p.isLocal(null), "--local=false must win over the url");
-        Assertions.assertEquals(120, p.defaultReadTimeout(null).toSeconds());
+        Assertions.assertFalse(p.isLocal(NaruModelContext.standalone()), "--local=false must win over the url");
+        Assertions.assertEquals(120, p.defaultReadTimeout(NaruModelContext.standalone()).toSeconds());
     }
 
     @Test
     public void ollamaIsLocalByDefault() {
         NaruOllamaProvider p = new NaruOllamaProvider();
-        Assertions.assertTrue(p.isLocal(null), "ollama's built-in default url is localhost");
+        Assertions.assertTrue(p.isLocal(NaruModelContext.standalone()), "ollama's built-in default url is localhost");
     }
 
     @Test
     public void aCloudProviderIsRemoteByDefault() {
         NaruOpenAiProvider p = new NaruOpenAiProvider();
-        Assertions.assertFalse(p.isLocal(null));
-        Assertions.assertEquals(120, p.defaultReadTimeout(null).toSeconds());
+        Assertions.assertFalse(p.isLocal(NaruModelContext.standalone()));
+        Assertions.assertEquals(120, p.defaultReadTimeout(NaruModelContext.standalone()).toSeconds());
     }
 
     @Test
@@ -107,7 +108,7 @@ public class NaruModelProviderTimeoutTest {
         p.setParam("url", "http://localhost:11434");
         p.setParam("models", "qwen3:32b");
         p.setParam("probe", "false");
-        Assertions.assertEquals(gpu ? 300 : 600, p.defaultReadTimeout(null).toSeconds(),
+        Assertions.assertEquals(gpu ? 300 : 600, p.defaultReadTimeout(NaruModelContext.standalone()).toSeconds(),
                 "the provider must ask NEnv, not hard-code a branch");
     }
 
@@ -137,7 +138,7 @@ public class NaruModelProviderTimeoutTest {
     public void aProtocolBuiltOutsideTheFactoryKeepsTheHistorical120s() {
         TestProvider p = new TestProvider(true).wire("http://localhost:11434");
         TestProtocol proto = new TestProtocol(p, new NaruModelConfig(p.name(), "qwen3:32b"),
-                capabilities(), p.isLocal(null), null);
+                capabilities(), p.isLocal(NaruModelContext.standalone()), null);
         Assertions.assertEquals(120, proto.resolvedReadTimeout(null).toSeconds());
     }
 
@@ -145,7 +146,7 @@ public class NaruModelProviderTimeoutTest {
 
     private static TestProtocol protocol(TestProvider p) {
         return new TestProtocol(p, new NaruModelConfig(p.name(), "qwen3:32b"),
-                capabilities(), p.isLocal(null), p.defaultReadTimeout(null));
+                capabilities(), p.isLocal(NaruModelContext.standalone()), p.defaultReadTimeout(NaruModelContext.standalone()));
     }
 
     private static NaruModelCapabilities capabilities() {
@@ -185,7 +186,7 @@ public class NaruModelProviderTimeoutTest {
         }
 
         NDuration resolvedReadTimeout(NaruTask task) {
-            return readTimeout(task, (Map<String, NElement>) null);
+            return readTimeout(NaruModelContext.of(task), (Map<String, NElement>) null);
         }
     }
 }

@@ -1,5 +1,6 @@
 package net.thevpc.naru.modules.title;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruCachingMode;
@@ -51,10 +52,10 @@ final class TitlingHarness {
         volatile boolean answered;
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(new NaruModelProtocol() {
                 @Override
-                public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+                public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
                     calls.incrementAndGet();
                     if (delayMillis > 0) {
                         try {
@@ -85,12 +86,12 @@ final class TitlingHarness {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.of("none");
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of(MODEL);
         }
 

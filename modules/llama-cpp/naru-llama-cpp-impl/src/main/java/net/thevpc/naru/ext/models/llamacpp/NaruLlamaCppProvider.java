@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.llamacpp;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
@@ -43,35 +44,35 @@ public class NaruLlamaCppProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
-        return LlamaCppPaths.url(session);
+    protected String baseUrl(NaruModelContext context) {
+        return LlamaCppPaths.url(context);
     }
 
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
-        long contextLength = configValue("contextLength", session)
+    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
+        long contextLength = configValue("contextLength", context)
                 .flatMap(x -> NLiteral.of(x).asLong()).orElse(32768L);
         // llama.cpp does automatic prefix caching natively
         return new NaruModelCapabilitiesImpl(false, true, false, false, contextLength, NaruCachingMode.AUTOMATIC_PREFIX, true, true, true);
     }
 
     @Override
-    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruModelContext context) {
         return new NaruModelProtocolOpenAICompat(this, model, name(),
-                resolvedChatPathFor(session), capabilities, resolvedBaseUrl(session, defaultProtocol()),
-                isLocal(session), defaultReadTimeout(session));
+                resolvedChatPathFor(context), capabilities, resolvedBaseUrl(context, defaultProtocol()),
+                isLocal(context), defaultReadTimeout(context));
     }
 
     /**
      * The OpenAI-compatible chat path, adjusted so it never doubles a {@code /v1}
      * that the configured base URL already carries.
      */
-    private String resolvedChatPathFor(NaruSession session) {
-        String explicit = configValue("chatPath", session).orNull();
+    private String resolvedChatPathFor(NaruModelContext context) {
+        String explicit = configValue("chatPath", context).orNull();
         if (!NBlankable.isBlank(explicit)) {
             return explicit.trim();
         }
-        String base = resolvedBaseUrl(session, defaultProtocol());
+        String base = resolvedBaseUrl(context, defaultProtocol());
         if (base != null && base.matches(".*/v\\d+$")) {
             return "chat/completions";
         }
@@ -79,26 +80,26 @@ public class NaruLlamaCppProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public boolean isAvailable(NaruSession session) {
-        return LlamaCppService.of().isRunning(session);
+    public boolean isAvailable(NaruModelContext context) {
+        return LlamaCppService.of().isRunning(context);
     }
 
     @Override
-    public String statusMessage(NaruSession session) {
-        if (!LlamaCppService.of().isRunning(session)) {
+    public String statusMessage(NaruModelContext context) {
+        if (!LlamaCppService.of().isRunning(context)) {
             return "server not running";
         }
         return null;
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
+    public List<String> findModelIds(NaruModelContext context) {
         LlamaCppService service = LlamaCppService.of();
-        LinkedHashSet<String> ids = new LinkedHashSet<>(service.modelIds(session));
+        LinkedHashSet<String> ids = new LinkedHashSet<>(service.modelIds(context));
         localModels.clear();
-        for (var info : service.listModels(session)) localModels.put(info.getId(), info);
-        if (service.isRunning(session)) {
-            for (NaruModelPsResult r : service.listPs(session)) {
+        for (var info : service.listModels(context)) localModels.put(info.getId(), info);
+        if (service.isRunning(context)) {
+            for (NaruModelPsResult r : service.listPs(context)) {
                 ids.add(r.getModel().model());
             }
         }
@@ -106,7 +107,7 @@ public class NaruLlamaCppProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruSession session) {
+    public NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruModelContext context) {
         var local = localModels.get(model);
         if (local != null) {
                 java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(

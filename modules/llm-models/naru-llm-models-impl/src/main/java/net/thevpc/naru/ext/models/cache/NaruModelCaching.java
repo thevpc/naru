@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.models.cache;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachePlanView;
 import net.thevpc.naru.api.model.NaruCacheableContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
@@ -36,7 +36,7 @@ public final class NaruModelCaching {
      * @param modelName    concrete model, so switching models cannot reuse a prefix
      * @param mode         provider's declared support; {@code NONE} short-circuits
      */
-    public static NaruCachePlanView plan(NaruSession session, String providerName, String modelName,
+    public static NaruCachePlanView plan(NaruModelContext modelContext, String providerName, String modelName,
                                          NaruCachingMode mode, NaruModelRequest request) {
         if (mode == null || mode == NaruCachingMode.NONE) {
             return NaruCachePlanView.none();
@@ -45,7 +45,7 @@ public final class NaruModelCaching {
         if (context == null || context.isEmpty()) {
             return NaruCachePlanView.none();
         }
-        NaruModelCacheExtension cache = NaruModelCacheExtension.of(session);
+        NaruModelCacheExtension cache = NaruModelCacheExtension.of(modelContext);
         NaruCacheBaseline baseline = cache == null
                 ? null
                 : cache.baseline(providerName, modelName, mode);
@@ -68,12 +68,12 @@ public final class NaruModelCaching {
      * would record a prefix the provider never actually stored, and the next turn
      * would then claim a hit that turns out to cost a full-price miss.
      */
-    public static void commit(NaruSession session, String providerName, String modelName,
+    public static void commit(NaruModelContext modelContext, String providerName, String modelName,
                               NaruCachingMode mode, NaruCacheableContext context) {
         if (mode == null || mode == NaruCachingMode.NONE || context == null || context.isEmpty()) {
             return;
         }
-        NaruModelCacheExtension cache = NaruModelCacheExtension.of(session);
+        NaruModelCacheExtension cache = NaruModelCacheExtension.of(modelContext);
         if (cache == null) {
             return;
         }
@@ -88,11 +88,11 @@ public final class NaruModelCaching {
      * knowable before the call. Providers with a stateful resource commit only
      * after they have the server's confirmation.
      */
-    public static NaruCachePlanView apply(NaruSession session, String providerName, String modelName,
+    public static NaruCachePlanView apply(NaruModelContext modelContext, String providerName, String modelName,
                                           NaruCachingMode mode, NaruModelRequest request) {
-        NaruCachePlanView plan = plan(session, providerName, modelName, mode, request);
+        NaruCachePlanView plan = plan(modelContext, providerName, modelName, mode, request);
         if (plan instanceof NaruCachePlan) {
-            commit(session, providerName, modelName, mode, request.cacheableContext());
+            commit(modelContext, providerName, modelName, mode, request.cacheableContext());
         }
         return plan;
     }

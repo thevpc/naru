@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.compact;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionUsageListener;
@@ -287,8 +288,9 @@ public class NaruCompactExtension implements NaruSessionExtension, NaruSessionUs
             return 0;
         }
         try {
-            NaruModelProtocol protocol = provider.getProtocol(new NaruModelConfig(provider.name(), key.model()), session).orNull();
-            NaruModelInfo info = provider.getModelInfo(key.model(), protocol == null ? null : protocol.getCapabilities(), session);
+            NaruModelContext context = NaruModelContext.of(task);
+            NaruModelProtocol protocol = provider.getProtocol(new NaruModelConfig(provider.name(), key.model()), context).orNull();
+            NaruModelInfo info = provider.getModelInfo(key.model(), protocol == null ? null : protocol.getCapabilities(), context);
             NaruModelCapabilities caps = info == null ? null : info.capabilities();
             return caps != null && caps.contextLength() > 0 ? caps.contextLength() : 0;
         } catch (RuntimeException e) {

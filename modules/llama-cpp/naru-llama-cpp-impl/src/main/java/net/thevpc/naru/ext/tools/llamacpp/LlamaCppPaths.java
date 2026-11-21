@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.tools.llamacpp;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruModelRegistration;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.platform.NEnv;
@@ -37,24 +37,24 @@ public final class LlamaCppPaths {
     }
 
     /** Layered lookup of a raw configuration key, or null when unset. */
-    public static String config(NaruSession session, String key) {
-        return NaruModelRegistration.envValue(session, key);
+    public static String config(NaruModelContext context, String key) {
+        return (context == null ? NaruModelContext.standalone() : context).envValue(key);
     }
 
-    public static String url(NaruSession session) {
-        String u = config(session, "llamacpp.url");
+    public static String url(NaruModelContext context) {
+        String u = config(context, "llamacpp.url");
         if (NBlankable.isBlank(u)) {
-            u = "http://" + host(session) + ":" + port(session);
+            u = "http://" + host(context) + ":" + port(context);
         }
         return u.replaceAll("/+$", "");
     }
 
-    public static String host(NaruSession session) {
-        String h = config(session, "llamacpp.host");
+    public static String host(NaruModelContext context) {
+        String h = config(context, "llamacpp.host");
         if (!NBlankable.isBlank(h)) {
             return h.trim();
         }
-        String u = config(session, "llamacpp.url");
+        String u = config(context, "llamacpp.url");
         if (!NBlankable.isBlank(u)) {
             try {
                 String host = URI.create(u.trim()).getHost();
@@ -67,15 +67,15 @@ public final class LlamaCppPaths {
         return DEFAULT_HOST;
     }
 
-    public static int port(NaruSession session) {
-        String p = config(session, "llamacpp.port");
+    public static int port(NaruModelContext context) {
+        String p = config(context, "llamacpp.port");
         if (!NBlankable.isBlank(p)) {
             try {
                 return Integer.parseInt(p.trim());
             } catch (Exception ignored) {
             }
         }
-        String u = config(session, "llamacpp.url");
+        String u = config(context, "llamacpp.url");
         if (!NBlankable.isBlank(u)) {
             try {
                 int pp = URI.create(u.trim()).getPort();
@@ -88,22 +88,22 @@ public final class LlamaCppPaths {
         return DEFAULT_PORT;
     }
 
-    public static NPath home(NaruSession session) {
-        String h = config(session, "llamacpp.home");
+    public static NPath home(NaruModelContext context) {
+        String h = config(context, "llamacpp.home");
         if (NBlankable.isBlank(h)) {
             return NPath.ofUserHome().resolve(".naru").resolve("llama.cpp");
         }
         return NPath.of(h.trim());
     }
 
-    public static NPath binDir(NaruSession session) {
-        return home(session).resolve("bin");
+    public static NPath binDir(NaruModelContext context) {
+        return home(context).resolve("bin");
     }
 
-    public static NPath modelsDir(NaruSession session) {
-        String m = config(session, "llamacpp.modelsDir");
+    public static NPath modelsDir(NaruModelContext context) {
+        String m = config(context, "llamacpp.modelsDir");
         if (NBlankable.isBlank(m)) {
-            return home(session).resolve("models");
+            return home(context).resolve("models");
         }
         return NPath.of(m.trim());
     }
@@ -112,25 +112,25 @@ public final class LlamaCppPaths {
         return NEnv.of().osFamily().isWindow() ? "llama-server.exe" : "llama-server";
     }
 
-    public static NPath serverExecutable(NaruSession session) {
-        return binDir(session).resolve(serverExecutableName());
+    public static NPath serverExecutable(NaruModelContext context) {
+        return binDir(context).resolve(serverExecutableName());
     }
 
-    public static String backend(NaruSession session) {
-        String b = config(session, "llamacpp.backend");
+    public static String backend(NaruModelContext context) {
+        String b = config(context, "llamacpp.backend");
         return NBlankable.isBlank(b) ? "cpu" : b.trim().toLowerCase();
     }
 
-    public static String releaseTag(NaruSession session) {
-        String t = config(session, "llamacpp.releaseTag");
+    public static String releaseTag(NaruModelContext context) {
+        String t = config(context, "llamacpp.releaseTag");
         if (NBlankable.isBlank(t)) {
-            t = config(session, "llamacpp.tag");
+            t = config(context, "llamacpp.tag");
         }
         return NBlankable.isBlank(t) ? null : t.trim();
     }
 
-    public static String defaultModel(NaruSession session) {
-        String m = config(session, "llamacpp.model");
+    public static String defaultModel(NaruModelContext context) {
+        String m = config(context, "llamacpp.model");
         return NBlankable.isBlank(m) ? null : m.trim();
     }
 }

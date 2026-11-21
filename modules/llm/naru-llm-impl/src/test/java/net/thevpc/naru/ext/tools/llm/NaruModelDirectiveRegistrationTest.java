@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.llm;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.agent.NaruEnv;
 import net.thevpc.naru.api.agent.NaruLogMode;
@@ -351,7 +352,7 @@ public class NaruModelDirectiveRegistrationTest {
     private List<NaruModelKey> computeKeys() {
         List<NaruModelKey> keys = new ArrayList<>();
         for (Map.Entry<String, NaruModelProvider> e : builtins.entrySet()) {
-            for (String m : e.getValue().findModelIds(null)) {
+            for (String m : e.getValue().findModelIds(NaruModelContext.standalone())) {
                 keys.add(new NaruModelKey(e.getKey(), m));
             }
         }
@@ -365,7 +366,7 @@ public class NaruModelDirectiveRegistrationTest {
                 continue;
             }
             List<String> declared = declaredModels(e.getValue());
-            List<String> enumerated = inst.findModelIds(null);
+            List<String> enumerated = inst.findModelIds(NaruModelContext.standalone());
             for (String m : enumerated) {
                 if (declared == null || declared.contains(m)) {
                     keys.add(new NaruModelKey(id, m));
@@ -484,12 +485,12 @@ public class NaruModelDirectiveRegistrationTest {
         }
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.ofNamedEmpty(NMsg.ofC("no protocol in test"));
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             List<String> u = UNIVERSE.get(type());
             if (u != null) {
                 return u;

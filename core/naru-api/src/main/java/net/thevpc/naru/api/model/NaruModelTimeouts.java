@@ -182,21 +182,29 @@ public final class NaruModelTimeouts {
      * @param key   the bare timeout key ({@code readTimeout}, {@code timeout}, ...)
      */
     public static NOptional<NDuration> findScoped(NaruTask task, NaruModelConfig model, String key) {
-        if (task == null || key == null) {
+        if (task == null) {
+            return NOptional.ofEmpty();
+        }
+        return findScoped(NaruModelContext.of(task), model, key);
+    }
+
+    /** {@link #findScoped(NaruTask, NaruModelConfig, String)} for any model call. */
+    public static NOptional<NDuration> findScoped(NaruModelContext context, NaruModelConfig model, String key) {
+        if (context == null || key == null) {
             return NOptional.ofEmpty();
         }
         String family = model == null ? null : modelFamily(model.model());
         if (family != null) {
-            NOptional<NDuration> indexed = findDuration(task, "model." + family + "." + key);
+            NOptional<NDuration> indexed = findDuration(context, "model." + family + "." + key);
             if (indexed.isPresent()) {
                 return indexed;
             }
         }
-        return findDuration(task, "model." + key);
+        return findDuration(context, "model." + key);
     }
 
-    private static NOptional<NDuration> findDuration(NaruTask task, String key) {
-        return NaruTaskConfig.find(task, key)
+    private static NOptional<NDuration> findDuration(NaruModelContext context, String key) {
+        return context.config(key)
                 .flatMap(x -> NDuration.of(NaruTaskConfig.toText(x)));
     }
 }

@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.llm;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelInfo;
@@ -283,7 +284,7 @@ public class ModelListTool extends DefaultNaruTool {
             try {
                 net.thevpc.naru.api.model.NaruModelProvider p =
                         task.session().registry().provider(m.provider()).orNull();
-                if (p != null && p.isLocal(task.session())) {
+                if (p != null && p.isLocal(NaruModelContext.of(task))) {
                     return true;
                 }
             } catch (RuntimeException ignored) {

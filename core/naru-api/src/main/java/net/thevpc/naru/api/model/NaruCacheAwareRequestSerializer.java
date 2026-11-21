@@ -1,6 +1,7 @@
 package net.thevpc.naru.api.model;
 
 import net.thevpc.naru.api.agent.NaruSession;
+
 import net.thevpc.nuts.elem.NElement;
 
 /**
@@ -21,7 +22,7 @@ public interface NaruCacheAwareRequestSerializer extends NaruModelRequestSeriali
      * anywhere" is a meaningful plan, and representing it as {@code null} would
      * make it indistinguishable from a provider that forgot to opt in.
      */
-    NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session,
+    NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruModelContext context,
                        NaruCachePlanView plan);
 
     /**
@@ -33,13 +34,27 @@ public interface NaruCacheAwareRequestSerializer extends NaruModelRequestSeriali
      * drops the flag, which is right for a provider whose caching markers and
      * streaming flag never interact.
      */
-    default NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session,
+    default NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruModelContext context,
                                NaruCachePlanView plan, boolean stream) {
-        return serialize(request, model, session, plan);
+        return serialize(request, model, context, plan);
     }
 
     @Override
-    default NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session) {
-        return serialize(request, model, session, NaruCachePlanView.none());
+    default NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruModelContext context) {
+        return serialize(request, model, context, NaruCachePlanView.none());
+    }
+
+    /** @deprecated use {@link #serialize(NaruModelRequest, NaruModelConfig, NaruModelContext, NaruCachePlanView)} */
+    @Deprecated
+    default NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session,
+                               NaruCachePlanView plan) {
+        return serialize(request, model, NaruModelContext.of(session), plan);
+    }
+
+    /** @deprecated use {@link #serialize(NaruModelRequest, NaruModelConfig, NaruModelContext, NaruCachePlanView, boolean)} */
+    @Deprecated
+    default NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session,
+                               NaruCachePlanView plan, boolean stream) {
+        return serialize(request, model, NaruModelContext.of(session), plan, stream);
     }
 }

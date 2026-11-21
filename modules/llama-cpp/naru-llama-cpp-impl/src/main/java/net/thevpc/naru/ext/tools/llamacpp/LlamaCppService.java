@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.llamacpp;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelKey;
 import net.thevpc.naru.api.model.NaruModelPsResult;
@@ -50,8 +51,12 @@ public class LlamaCppService {
         return NElementReader.ofJson();
     }
 
+    public String getUrl(NaruModelContext context) {
+        return LlamaCppPaths.url(context);
+    }
+
     public String getUrl(NaruSession session) {
-        return LlamaCppPaths.url(session);
+        return getUrl(NaruModelContext.of(session));
     }
 
     // ── Installation ───────────────────────────────────────────────────────────
@@ -68,7 +73,7 @@ public class LlamaCppService {
         String exePath = findExecutablePath(session);
         boolean installed = exePath != null;
         String version = installed ? resolveVersion(exePath) : null;
-        NPath home = LlamaCppPaths.home(session);
+        NPath home = LlamaCppPaths.home(NaruModelContext.of(session));
         return new LlamaCppInstallationInfo(
                 installed,
                 exePath,
@@ -77,14 +82,14 @@ public class LlamaCppService {
                 arch.id(),
                 dist,
                 home.toString(),
-                LlamaCppPaths.binDir(session).toString(),
-                LlamaCppPaths.modelsDir(session).toString(),
-                LlamaCppPaths.backend(session)
+                LlamaCppPaths.binDir(NaruModelContext.of(session)).toString(),
+                LlamaCppPaths.modelsDir(NaruModelContext.of(session)).toString(),
+                LlamaCppPaths.backend(NaruModelContext.of(session))
         );
     }
 
     public String findExecutablePath(NaruSession session) {
-        NPath managed = LlamaCppPaths.serverExecutable(session);
+        NPath managed = LlamaCppPaths.serverExecutable(NaruModelContext.of(session));
         if (managed.exists() && managed.isRegularFile()) {
             return managed.toString();
         }
@@ -140,8 +145,12 @@ public class LlamaCppService {
 
     // ── Running state ──────────────────────────────────────────────────────────
 
+    public boolean isRunning(NaruModelContext context) {
+        return isRunningAt(getUrl(context));
+    }
+
     public boolean isRunning(NaruSession session) {
-        return isRunningAt(getUrl(session));
+        return isRunning(NaruModelContext.of(session));
     }
 
     private boolean isRunningAt(String baseUrl) {
@@ -212,9 +221,9 @@ public class LlamaCppService {
 
     // ── Models ─────────────────────────────────────────────────────────────────
 
-    public List<LlamaCppModelInfo> listModels(NaruSession session) {
+    public List<LlamaCppModelInfo> listModels(NaruModelContext context) {
         List<LlamaCppModelInfo> out = new ArrayList<>();
-        NPath dir = LlamaCppPaths.modelsDir(session);
+        NPath dir = LlamaCppPaths.modelsDir(context);
         if (!dir.exists() || !dir.isDirectory()) {
             return out;
         }
@@ -244,12 +253,20 @@ public class LlamaCppService {
         return out;
     }
 
-    public List<String> modelIds(NaruSession session) {
+    public List<LlamaCppModelInfo> listModels(NaruSession session) {
+        return listModels(NaruModelContext.of(session));
+    }
+
+    public List<String> modelIds(NaruModelContext context) {
         List<String> ids = new ArrayList<>();
-        for (LlamaCppModelInfo m : listModels(session)) {
+        for (LlamaCppModelInfo m : listModels(context)) {
             ids.add(m.getId());
         }
         return ids;
+    }
+
+    public List<String> modelIds(NaruSession session) {
+        return modelIds(NaruModelContext.of(session));
     }
 
     public NPath resolveLocalModelPath(NaruSession session, String idOrName) {
@@ -269,7 +286,7 @@ public class LlamaCppService {
         if (direct.exists() && direct.isRegularFile()) {
             return direct;
         }
-        NPath dir = LlamaCppPaths.modelsDir(session);
+        NPath dir = LlamaCppPaths.modelsDir(NaruModelContext.of(session));
         NPath p = dir.resolve(s);
         if (p.exists() && p.isRegularFile()) {
             return p;
@@ -290,9 +307,9 @@ public class LlamaCppService {
         return null;
     }
 
-    public List<NaruModelPsResult> listPs(NaruSession session) {
+    public List<NaruModelPsResult> listPs(NaruModelContext context) {
         List<NaruModelPsResult> results = new ArrayList<>();
-        String baseUrl = getUrl(session);
+        String baseUrl = getUrl(context);
         try {
             NHttpClient http = NHttpClient.of()
                     .connectTimeout(NDuration.ofSeconds(5))
@@ -315,6 +332,10 @@ public class LlamaCppService {
         return results;
     }
 
+    public List<NaruModelPsResult> listPs(NaruSession session) {
+        return listPs(NaruModelContext.of(session));
+    }
+
     /**
      * Provision a model: download every file of the plan into the models
      * directory. Existing files of the same size are skipped.
@@ -331,7 +352,7 @@ public class LlamaCppService {
             }
         }
         LlamaCppDownloadPlan plan = LlamaCppModelResolver.resolve(spec);
-        NPath dir = LlamaCppPaths.modelsDir(session);
+        NPath dir = LlamaCppPaths.modelsDir(NaruModelContext.of(session));
         dir.mkdirs();
         if (logger != null) {
             logger.accept(NMsg.ofC("Provisioning %s (%s file(s))",
@@ -362,7 +383,7 @@ public class LlamaCppService {
             base = base.substring(slash + 1);
         }
         base = stripGguf(base).toLowerCase(Locale.ROOT);
-        NPath dir = LlamaCppPaths.modelsDir(session);
+        NPath dir = LlamaCppPaths.modelsDir(NaruModelContext.of(session));
         if (!dir.exists() || !dir.isDirectory()) {
             return out;
         }
@@ -461,7 +482,7 @@ public class LlamaCppService {
         // Resolve the model to serve.
         String modelName = modelArg;
         if (NBlankable.isBlank(modelName)) {
-            modelName = LlamaCppPaths.defaultModel(session);
+            modelName = LlamaCppPaths.defaultModel(NaruModelContext.of(session));
         }
         NPath modelPath = resolveLocalModelPath(session, modelName);
         if (modelPath == null && !NBlankable.isBlank(modelName)) {
@@ -493,9 +514,9 @@ public class LlamaCppService {
         }
 
         NPath server = NBlankable.isBlank(installInfo.getExecutablePath())
-                ? LlamaCppPaths.serverExecutable(session)
+                ? LlamaCppPaths.serverExecutable(NaruModelContext.of(session))
                 : NPath.of(installInfo.getExecutablePath());
-        NPath binDir = LlamaCppPaths.binDir(session);
+        NPath binDir = LlamaCppPaths.binDir(NaruModelContext.of(session));
         List<String> args = buildServerArgs(session, modelPath);
 
         if (logger != null) {
@@ -551,12 +572,12 @@ public class LlamaCppService {
         args.add("-m");
         args.add(modelPath.toString());
         args.add("--host");
-        args.add(LlamaCppPaths.host(session));
+        args.add(LlamaCppPaths.host(NaruModelContext.of(session)));
         args.add("--port");
-        args.add(String.valueOf(LlamaCppPaths.port(session)));
+        args.add(String.valueOf(LlamaCppPaths.port(NaruModelContext.of(session))));
 
-        String backend = LlamaCppPaths.backend(session);
-        String ngl = LlamaCppPaths.config(session, "llamacpp.ngl");
+        String backend = LlamaCppPaths.backend(NaruModelContext.of(session));
+        String ngl = LlamaCppPaths.config(NaruModelContext.of(session), "llamacpp.ngl");
         if (!NBlankable.isBlank(ngl)) {
             args.add("-ngl");
             args.add(ngl.trim());
@@ -564,15 +585,15 @@ public class LlamaCppService {
             args.add("-ngl");
             args.add("999");
         }
-        String ctx = LlamaCppPaths.config(session, "llamacpp.ctxSize");
+        String ctx = LlamaCppPaths.config(NaruModelContext.of(session), "llamacpp.ctxSize");
         if (NBlankable.isBlank(ctx)) {
-            ctx = LlamaCppPaths.config(session, "llamacpp.ctx");
+            ctx = LlamaCppPaths.config(NaruModelContext.of(session), "llamacpp.ctx");
         }
         if (!NBlankable.isBlank(ctx)) {
             args.add("--ctx-size");
             args.add(ctx.trim());
         }
-        String extra = LlamaCppPaths.config(session, "llamacpp.args");
+        String extra = LlamaCppPaths.config(NaruModelContext.of(session), "llamacpp.args");
         if (!NBlankable.isBlank(extra)) {
             for (String tok : extra.trim().split("\\s+")) {
                 if (!tok.isEmpty()) {

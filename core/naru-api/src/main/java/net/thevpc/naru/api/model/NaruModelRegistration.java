@@ -361,6 +361,11 @@ public class NaruModelRegistration implements NToElement {
         return apiKey(session == null ? null : envResolver(session));
     }
 
+    /** {@link #apiKeyResolved(NaruSession)} against a model call's context. */
+    public NOptional<String> apiKeyResolved(NaruModelContext context) {
+        return apiKey(context == null ? null : envResolver(context));
+    }
+
     private NOptional<String> apiKey(Function<String, String> resolver) {
         if (apiKey == null) {
             return NOptional.ofEmpty();
@@ -726,6 +731,11 @@ public class NaruModelRegistration implements NToElement {
      */
     public static Function<String, String> envResolver(NaruSession session) {
         return name -> envValue(session, name);
+    }
+
+    /** {@link #envResolver(NaruSession)} against a model call's context. */
+    public static Function<String, String> envResolver(NaruModelContext context) {
+        return context == null ? name -> envValue((NaruSession) null, name) : context::envValue;
     }
 
     /**

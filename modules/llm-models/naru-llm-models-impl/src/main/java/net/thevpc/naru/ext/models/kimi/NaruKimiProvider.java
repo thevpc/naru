@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.models.kimi;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
@@ -33,7 +33,7 @@ public class NaruKimiProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
+    protected String baseUrl(NaruModelContext context) {
         return "https://api.moonshot.cn/v1";
     }
 
@@ -43,7 +43,7 @@ public class NaruKimiProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
+    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
         // Kimi models: vision? (not currently), tools, thinking (Kimi K2 has thinking), embedding (not currently)
         boolean vision = false; // Kimi models do not support vision as of now
         boolean tools = true;
@@ -59,7 +59,7 @@ public class NaruKimiProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public java.util.List<String> findModelIds(NaruSession session) {
-        return findModelIdsWithLiveFallback(session, FALLBACK_MODELS);
+    public java.util.List<String> findModelIds(NaruModelContext context) {
+        return findModelIdsWithLiveFallback(context, FALLBACK_MODELS);
     }
 }

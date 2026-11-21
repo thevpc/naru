@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
@@ -105,8 +106,8 @@ public class NaruPromptVariableExpansionTest {
 
         private final NaruModelProtocol protocol = new NaruModelProtocol() {
             @Override
-            public NaruResponse chat(NaruModelRequest request, NaruTask task) {
-                if (task == null || task.id() != taskId) {
+            public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
+                if (context == null || context.taskId() != taskId) {
                     return new NaruResponse(NaruMessage.assistant("title"), true);
                 }
                 List<NaruMessage> messages = request.messages();
@@ -181,7 +182,7 @@ public class NaruPromptVariableExpansionTest {
         };
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(protocol);
         }
 
@@ -191,12 +192,12 @@ public class NaruPromptVariableExpansionTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of("m");
         }
 

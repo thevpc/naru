@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.compact;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
@@ -135,10 +136,10 @@ public class NaruSummaryModelSelector {
         }
         // A provider that probes reachability returns false for a server that is down. This
         // check can be slow for some providers, which is why it is last of the cheap ones.
-        if (!provider.isAvailable(session)) {
+        if (!provider.isAvailable(NaruModelContext.of(session))) {
             return new Candidate(key, false, "provider is not reachable");
         }
-        NOptional<String> apiKey = provider.apiKey(session);
+        NOptional<String> apiKey = provider.apiKey(NaruModelContext.of(session));
         if (apiKey != null && !apiKey.isPresent()) {
             return new Candidate(key, false, "no API key configured");
         }

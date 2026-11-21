@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.ollama;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
@@ -132,7 +133,7 @@ public class NaruOllamaThinkRequestTest {
 
     private static class StubProvider implements NaruModelProvider {
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
@@ -142,12 +143,12 @@ public class NaruOllamaThinkRequestTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of();
         }
 

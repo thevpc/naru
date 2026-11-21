@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.models.ollama;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -46,7 +47,7 @@ public class NaruOllamaNumCtxWireTest {
         session.run();
         NaruModelRequest request = new NaruModelRequest(
                 List.of(NaruMessage.user("hi")), Collections.emptyList(), new HashMap<>());
-        NElement body = new NaruOllamaNativeRequestSerializer().serialize(request, model, session, true);
+        NElement body = new NaruOllamaNativeRequestSerializer().serialize(request, model, NaruModelContext.of(session), true);
         return body.asObject().get().get("options").orNull();
     }
 

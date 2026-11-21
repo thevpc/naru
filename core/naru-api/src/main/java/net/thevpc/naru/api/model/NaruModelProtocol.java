@@ -14,7 +14,19 @@ public interface NaruModelProtocol {
      *
      * @return the model's response
      */
-    NaruResponse chat(NaruModelRequest request, NaruTask task);
+    default NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
+        // serves a protocol written against the deprecated task form; implementations override this
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProtocol.class, "chat", NaruModelRequest.class, NaruTask.class)) {
+            return chat(request, NaruModelLegacy.task(context));
+        }
+        throw NaruModelLegacy.missing(this, "chat");
+    }
+
+    /** @deprecated use {@link #chat(NaruModelRequest, NaruModelContext)} */
+    @Deprecated
+    default NaruResponse chat(NaruModelRequest request, NaruTask task) {
+        return chat(request, NaruModelContext.of(task));
+    }
 
     NaruModelCapabilities getCapabilities();
 
@@ -37,12 +49,21 @@ public interface NaruModelProtocol {
      *                stream purely for the assembled response
      * @return the same response a non-streaming call would have produced
      */
-    default NaruResponse chatStream(NaruModelRequest request, NaruTask task, NaruStreamHandler handler) {
-        NaruResponse response = chat(request, task);
+    default NaruResponse chatStream(NaruModelRequest request, NaruModelContext context, NaruStreamHandler handler) {
+        if (NaruModelLegacy.overrides(getClass(), NaruModelProtocol.class, "chatStream", NaruModelRequest.class, NaruTask.class, NaruStreamHandler.class)) {
+            return chatStream(request, NaruModelLegacy.task(context), handler);
+        }
+        NaruResponse response = chat(request, context);
         if (handler != null) {
             replayAsChunks(providerName(), response, handler);
         }
         return response;
+    }
+
+    /** @deprecated use {@link #chatStream(NaruModelRequest, NaruModelContext, NaruStreamHandler)} */
+    @Deprecated
+    default NaruResponse chatStream(NaruModelRequest request, NaruTask task, NaruStreamHandler handler) {
+        return chatStream(request, NaruModelContext.of(task), handler);
     }
 
     /**

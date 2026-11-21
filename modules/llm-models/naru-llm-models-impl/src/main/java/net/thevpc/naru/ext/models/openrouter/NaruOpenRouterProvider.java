@@ -1,12 +1,11 @@
 package net.thevpc.naru.ext.models.openrouter;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruModelRegistration;
-import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.NaruModelCapabilitiesImpl;
 import net.thevpc.naru.ext.models.openai.AbstractOpenAICompatProvider;
 import net.thevpc.naru.ext.models.openai.NaruModelProtocolOpenAICompat;
@@ -61,24 +60,24 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
      * behaviour, not a URL choice — {@code --url} merely relocates it.
      */
     @Override
-    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruModelContext context) {
         return new NaruOpenRouterProtocol(this, model, name(), capabilities,
-                isLocal(session), defaultReadTimeout(session));
+                isLocal(context), defaultReadTimeout(context));
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
-        if (!isApiKeySet(session)) {
+    public List<String> findModelIds(NaruModelContext context) {
+        if (!isApiKeySet(context)) {
             return Collections.emptyList();
         }
-        String apiKey = apiKey(session).orNull();
+        String apiKey = apiKey(context).orNull();
         if (NBlankable.isBlank(apiKey)) {
             return Collections.emptyList();
         }
 
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(10))
-                .baseUri(baseUrl(session));
+                .baseUri(baseUrl(context));
         NHttpRequest request = http.GET("models")
                 .readTimeout(NDuration.ofSeconds(30));
         request.header("Authorization", "Bearer " + apiKey);
@@ -87,10 +86,10 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
             NHttpResponse response = request.run().failFast();
             NElement root = elementReader().read(response.contentAsString());
 
-            boolean freeOnly = isFreeOnlyConfigured(session);
-            List<String> includeFilters = parseFilterList(getFilterString(session));
-            List<String> excludeFilters = parseFilterList(getExcludeString(session));
-            int limit = getLimitConfigured(session);
+            boolean freeOnly = isFreeOnlyConfigured(context);
+            List<String> includeFilters = parseFilterList(getFilterString(context));
+            List<String> excludeFilters = parseFilterList(getExcludeString(context));
+            int limit = getLimitConfigured(context);
 
             List<String> free = new ArrayList<>();
             List<String> paid = new ArrayList<>();
@@ -187,24 +186,24 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public String statusMessage(NaruSession session) {
-        if (!isApiKeySet(session)) {
+    public String statusMessage(NaruModelContext context) {
+        if (!isApiKeySet(context)) {
             return "API key not set";
         }
         return null;
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
-        return configValue("url", session)
+    protected String baseUrl(NaruModelContext context) {
+        return configValue("url", context)
                 .map(x -> x.replaceAll("/$", ""))
                 .orElse(DEFAULT_BASE_URL);
     }
 
-    private NOptional<NElement> getEnv(NaruSession session, String... keys) {
+    private NOptional<NElement> getEnv(NaruModelContext context, String... keys) {
         // §6 order: session env first, then agent env, then the system environment
         for (String key : keys) {
-            String val = NaruModelRegistration.envValue(session, key);
+            String val = context.envValue(key);
             if (!NBlankable.isBlank(val)) {
                 return NOptional.of(NElement.ofString(val));
             }
@@ -212,26 +211,26 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
         return NOptional.ofEmpty();
     }
 
-    private boolean isFreeOnlyConfigured(NaruSession session) {
-        return getEnv(session, name() + ".freeOnly", name() + ".onlyFree")
+    private boolean isFreeOnlyConfigured(NaruModelContext context) {
+        return getEnv(context, name() + ".freeOnly", name() + ".onlyFree")
                 .flatMap(NElement::asBooleanValue)
                 .orElse(false);
     }
 
-    private String getFilterString(NaruSession session) {
-        return getEnv(session, name() + ".filter", name() + ".models", name() + ".include")
+    private String getFilterString(NaruModelContext context) {
+        return getEnv(context, name() + ".filter", name() + ".models", name() + ".include")
                 .flatMap(NElement::asStringValue)
                 .orNull();
     }
 
-    private String getExcludeString(NaruSession session) {
-        return getEnv(session, name() + ".exclude")
+    private String getExcludeString(NaruModelContext context) {
+        return getEnv(context, name() + ".exclude")
                 .flatMap(NElement::asStringValue)
                 .orNull();
     }
 
-    private int getLimitConfigured(NaruSession session) {
-        return getEnv(session, name() + ".limit", name() + ".maxModels")
+    private int getLimitConfigured(NaruModelContext context) {
+        return getEnv(context, name() + ".limit", name() + ".maxModels")
                 .flatMap(NElement::asIntValue)
                 .orElse(-1);
     }
@@ -270,7 +269,7 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
+    public NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
         NaruModelCapabilities cached = cachedCapabilities.get(modelName);
         if (cached != null) {
             return cached;
@@ -301,12 +300,12 @@ public class NaruOpenRouterProvider extends AbstractOpenAICompatProvider {
         }
 
         @Override
-        protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
-            super.prepareRequest(request, body, task);
+        protected void prepareRequest(NHttpRequest request, NElement body, NaruModelContext context) {
+            super.prepareRequest(request, body, context);
             // Recommended attribution headers (optional, configurable)
-            configValue(task, "httpReferer")
+            configValue(context, "httpReferer")
                     .ifPresent(v -> request.header("HTTP-Referer", v));
-            configValue(task, "xTitle")
+            configValue(context, "xTitle")
                     .ifPresent(v -> request.header("X-Title", v));
         }
     }

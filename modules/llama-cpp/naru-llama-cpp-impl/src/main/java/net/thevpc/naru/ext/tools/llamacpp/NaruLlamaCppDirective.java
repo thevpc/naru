@@ -1,5 +1,6 @@
 package net.thevpc.naru.ext.tools.llamacpp;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruModelPsResult;
@@ -335,7 +336,7 @@ public class NaruLlamaCppDirective extends NaruDirectiveBase {
         NaruTask task = context.task();
         List<LlamaCppModelInfo> models = service.listModels(task.session());
         if (models.isEmpty()) {
-            NPath dir = LlamaCppPaths.modelsDir(task.session());
+            NPath dir = LlamaCppPaths.modelsDir(NaruModelContext.of(task.session()));
             context.outln(NMsg.ofC("No local GGUF model found in %s. Pull one with '/llamacpp pull <repo>'.",
                     NMsg.ofStyledPale(dir.toString())));
             return NaruStmtResult.ofSuccess();

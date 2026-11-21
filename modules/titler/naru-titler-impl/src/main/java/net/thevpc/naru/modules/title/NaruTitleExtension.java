@@ -1,5 +1,6 @@
 package net.thevpc.naru.modules.title;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruSessionNameSource;
@@ -475,7 +476,7 @@ public class NaruTitleExtension implements NaruSessionTitler {
                 List.of(),
                 env);
         NChronometer chronometer = NChronometer.of();
-        NaruResponse response = protocol.chat(request, transport);
+        NaruResponse response = protocol.chat(request, NaruModelContext.of(transport));
         announceUsage(transport.session(), config.key(), response, chronometer, transport);
         if (response == null || response.getMessage() == null) {
             return null;

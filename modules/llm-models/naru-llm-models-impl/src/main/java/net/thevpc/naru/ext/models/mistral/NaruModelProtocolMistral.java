@@ -2,7 +2,6 @@ package net.thevpc.naru.ext.models.mistral;
 
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.model.*;
-import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.ext.models.openai.NaruModelProtocolOpenAICompat;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElementBuilder;
@@ -36,14 +35,14 @@ public class NaruModelProtocolMistral extends NaruModelProtocolOpenAICompat {
     }
 
     @Override
-    protected NaruModelRequest preprocessRequest(NaruModelRequest mrequest, NaruTask task) {
+    protected NaruModelRequest preprocessRequest(NaruModelRequest mrequest, NaruModelContext context) {
         NaruModelRequest sanitized = sanitizeRequest(mrequest);
-        return super.preprocessRequest(sanitized, task);
+        return super.preprocessRequest(sanitized, context);
     }
 
     @Override
-    protected void onResponseReceived(NHttpResponse response, NaruTask task) {
-        if (task == null || task.session() == null) {
+    protected void onResponseReceived(NHttpResponse response, NaruModelContext context) {
+        if (context == null) {
             return;
         }
         try {
@@ -82,9 +81,9 @@ public class NaruModelProtocolMistral extends NaruModelProtocolOpenAICompat {
 
             providerLastResultInfo.set("retry-after", retryAfter == null ? null : retryAfter.toSeconds());
 
-            task.session().reportProviderRateLimits(
+            context.reportRateLimits(
                     new DefaultNaruProviderRateLimitInfo(
-                            task.session().uuid(),
+                            context.sessionId(),
                             null,
                             provider().name(),
                             serverInstant,

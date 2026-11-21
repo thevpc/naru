@@ -105,7 +105,7 @@ public interface NaruModelFilter {
      * custom registration whose URL is loopback).
      *
      * <p>Locality is a property of the provider instance and its session
-     * ({@link NaruModelProvider#isLocal(net.thevpc.naru.api.agent.NaruSession)}), so it can
+     * ({@link NaruModelProvider#isLocal(NaruModelContext)}), so it can
      * only be established with a task in context. Outside a task — a catalog listing — the
      * check falls back to the conventional local provider ids, so the listing still
      * reflects what a task could use.
@@ -118,7 +118,7 @@ public interface NaruModelFilter {
             if (task != null) {
                 NaruModelProvider p = task.session().registry().provider(model.provider()).orNull();
                 if (p != null) {
-                    return p.isLocal(task.session());
+                    return p.isLocal(NaruModelContext.of(task));
                 }
             }
             return isConventionallyLocal(model.provider());

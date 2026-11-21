@@ -1,6 +1,5 @@
 package net.thevpc.naru.ext.models;
 
-import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.ext.models.cache.NaruModelCaching;
 import net.thevpc.naru.ext.models.stream.NaruStreamResponseParser;
@@ -85,20 +84,20 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return provider;
     }
 
-    protected String apiKey(NaruTask task) {
+    protected String apiKey(NaruModelContext context) {
         // design §6: the instance's own value (post $NAME) → layered env (session →
         // agent → system) under <instance id>.apiKey → the type's default env keys.
         // provider.apiKey() *is* that chain, and reading it first is the one ordering
         // change §6 requires: a registration's value must beat the env key of the
         // same name, not lose to it.
         String k = provider == null ? null
-                : provider.apiKey(task.session()).map(NStringUtils::stripToNull).orNull();
+                : provider.apiKey(context).map(NStringUtils::stripToNull).orNull();
         if (k != null) {
             return k;
         }
         // legacy: a protocol built with a configPrefix that differs from the provider's
         // own name keeps resolving <configPrefix>.apiKey from env
-        return configValue(task, "apiKey").orNull();
+        return configValue(context, "apiKey").orNull();
     }
 
     protected String apiKeyConfigKey() {
@@ -113,19 +112,19 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
      * is set (or a {@code $NAME} references an unset variable): an unresolved
      * reference is not a value, the caller falls through to its default.
      */
-    protected NOptional<String> configValue(NaruTask task, String key) {
+    protected NOptional<String> configValue(NaruModelContext context, String key) {
         if (provider != null) {
             String raw = provider.rawParam(key).orNull();
             if (!NBlankable.isBlank(raw)) {
                 NOptional<String> resolved = NaruModelRegistration.interpolate(raw,
-                        NaruModelRegistration.envResolver(task == null ? null : task.session()));
+                        NaruModelRegistration.envResolver(context));
                 if (resolved.isPresent() && !NBlankable.isBlank(resolved.get())) {
                     return NOptional.of(NStringUtils.strip(resolved.get()));
                 }
             }
         }
-        if (task != null && task.session() != null) {
-            String env = NaruModelRegistration.envValue(task.session(), configPrefix + "." + key);
+        if (context != null) {
+            String env = context.envValue(configPrefix + "." + key);
             if (!NBlankable.isBlank(env)) {
                 return NOptional.of(env);
             }
@@ -167,8 +166,8 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return c;
     }
 
-    protected String url(NaruTask task, Map<String, NElement> env) {
-        String url = configValue(task, "url").orElse("http://localhost:11434");
+    protected String url(NaruModelContext context, Map<String, NElement> env) {
+        String url = configValue(context, "url").orElse("http://localhost:11434");
         while (url.endsWith("/")) {
             url = url.substring(0, url.length() - 1);
         }
@@ -182,15 +181,15 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
      * ({@code models/gemini-2.5-pro:generateContent}) rather than in the body,
      * which a fixed path cannot express.
      */
-    protected String chatPath(NaruTask task, Map<String, NElement> env) {
+    protected String chatPath(NaruModelContext context, Map<String, NElement> env) {
         return chatPath;
     }
 
-    protected NDuration connectTimeout(NaruTask task, Map<String, NElement> env) {
-        return configValue(task, "connectTimeout").flatMap(x -> NDuration.of(x))
-                .orElseGetOptionalFrom(() -> NaruModelTimeouts.findScoped(task, model, "connectTimeout"))
-                .orElseGetOptionalFrom(() -> configValue(task, "timeout").flatMap(x -> NDuration.of(x)))
-                .orElseGetOptionalFrom(() -> NaruModelTimeouts.findScoped(task, model, "timeout"))
+    protected NDuration connectTimeout(NaruModelContext context, Map<String, NElement> env) {
+        return configValue(context, "connectTimeout").flatMap(x -> NDuration.of(x))
+                .orElseGetOptionalFrom(() -> NaruModelTimeouts.findScoped(context, model, "connectTimeout"))
+                .orElseGetOptionalFrom(() -> configValue(context, "timeout").flatMap(x -> NDuration.of(x)))
+                .orElseGetOptionalFrom(() -> NaruModelTimeouts.findScoped(context, model, "timeout"))
                 .orElse(NDuration.ofSeconds(120));
     }
 
@@ -210,21 +209,21 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
      * <p>Host and GPU detection never happen here: the provider already asked, and
      * this protocol carries its answer.
      */
-    protected NDuration readTimeout(NaruTask task, Map<String, NElement> env) {
-        return configValue(task, "readTimeout").flatMap(x -> NDuration.of(x))
-                .orElseGetOptionalFrom(() -> NaruModelTimeouts.findScoped(task, model, "readTimeout"))
-                .orElseGetOptionalFrom(() -> configValue(task, "timeout").flatMap(x -> NDuration.of(x)))
-                .orElseGetOptionalFrom(() -> NaruModelTimeouts.findScoped(task, model, "timeout"))
+    protected NDuration readTimeout(NaruModelContext context, Map<String, NElement> env) {
+        return configValue(context, "readTimeout").flatMap(x -> NDuration.of(x))
+                .orElseGetOptionalFrom(() -> NaruModelTimeouts.findScoped(context, model, "readTimeout"))
+                .orElseGetOptionalFrom(() -> configValue(context, "timeout").flatMap(x -> NDuration.of(x)))
+                .orElseGetOptionalFrom(() -> NaruModelTimeouts.findScoped(context, model, "timeout"))
                 .orElse(defaultReadTimeout == null ? NDuration.ofSeconds(120) : defaultReadTimeout);
     }
 
-    protected NaruModelRequest preprocessRequest(NaruModelRequest mrequest, NaruTask task) {
+    protected NaruModelRequest preprocessRequest(NaruModelRequest mrequest, NaruModelContext context) {
         if (wrapsTools(mrequest) || emulatesToolCalls(mrequest)) {
             mrequest = NoToolWrapHelper.wrapRequest(mrequest,
                     NoToolWrapHelper.forToolCalls(mrequest.env()),
                     NoToolWrapHelper.forToolResults(mrequest.env()));
         }
-        return applyThinking(mrequest, task);
+        return applyThinking(mrequest, context);
     }
 
     /**
@@ -258,8 +257,8 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
      * protocol with no default of its own keeps its current behaviour instead of
      * inheriting an invented "off".
      */
-    protected NaruModelRequest applyThinking(NaruModelRequest mrequest, NaruTask task) {
-        NOptional<Boolean> thinking = NaruThinkingConfig.find(task);
+    protected NaruModelRequest applyThinking(NaruModelRequest mrequest, NaruModelContext context) {
+        NOptional<Boolean> thinking = NaruThinkingConfig.find(context);
         if (thinking == null || !thinking.isPresent()) {
             return mrequest;
         }
@@ -309,7 +308,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return null;
     }
 
-    protected void prepareRequest(NHttpRequest request, NElement body, NaruTask task) {
+    protected void prepareRequest(NHttpRequest request, NElement body, NaruModelContext context) {
         // Subclasses can inject headers, auth, etc.
     }
 
@@ -355,33 +354,33 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
      * error. {@code NaruCachePlanView.none()} keeps the emitted body identical
      * to what a non-segmented request always produced.
      */
-    protected NElement serialize(NaruModelRequest request, NaruCachePlanView plan, NaruTask task) {
-        return serialize(request, plan, task, false);
+    protected NElement serialize(NaruModelRequest request, NaruCachePlanView plan, NaruModelContext context) {
+        return serialize(request, plan, context, false);
     }
 
     /**
      * Serialise, adding the streaming flag when the body is going to be read
      * incrementally.
      */
-    protected NElement serialize(NaruModelRequest request, NaruCachePlanView plan, NaruTask task, boolean stream) {
+    protected NElement serialize(NaruModelRequest request, NaruCachePlanView plan, NaruModelContext context, boolean stream) {
         if (plan != null && plan.mode() != NaruCachingMode.NONE && serializer instanceof NaruCacheAwareRequestSerializer) {
             return ((NaruCacheAwareRequestSerializer) serializer).serialize(request, model,
-                    task == null ? null : task.session(), plan, stream);
+                    context, plan, stream);
         }
-        return serializer.serialize(request, model, task == null ? null : task.session(), stream);
+        return serializer.serialize(request, model, context, stream);
     }
 
-    protected void onResponseReceived(NHttpResponse response, NaruTask task) {
+    protected void onResponseReceived(NHttpResponse response, NaruModelContext context) {
         // Subclasses can inspect headers, track telemetry, etc.
     }
 
-    protected int maxRetries(NaruTask task, Map<String, NElement> env) {
-        if (task != null && task.session() != null) {
-            NOptional<String> own = configValue(task, "maxRetries");
+    protected int maxRetries(NaruModelContext context, Map<String, NElement> env) {
+        if (context != null) {
+            NOptional<String> own = configValue(context, "maxRetries");
             if (own.isPresent()) {
                 return NLiteral.of(own.get()).asInt().orElse(5);
             }
-            String global = NaruModelRegistration.envValue(task.session(), "model.maxRetries");
+            String global = context.envValue("model.maxRetries");
             if (!NBlankable.isBlank(global)) {
                 return NLiteral.of(global).asInt().orElse(5);
             }
@@ -389,13 +388,13 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         return 5;
     }
 
-    protected NDuration retryPeriod(NaruTask task, Map<String, NElement> env) {
-        if (task != null && task.session() != null) {
-            NOptional<NDuration> own = configValue(task, "retryPeriod").flatMap(NDuration::of);
+    protected NDuration retryPeriod(NaruModelContext context, Map<String, NElement> env) {
+        if (context != null) {
+            NOptional<NDuration> own = configValue(context, "retryPeriod").flatMap(NDuration::of);
             if (own.isPresent()) {
                 return own.get();
             }
-            String global = NaruModelRegistration.envValue(task.session(), "model.retryPeriod");
+            String global = context.envValue("model.retryPeriod");
             if (!NBlankable.isBlank(global)) {
                 return NDuration.of(global).orElse(NDuration.ofSeconds(2));
             }
@@ -417,12 +416,12 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
     }
 
     @Override
-    public NaruResponse chat(NaruModelRequest mrequest, NaruTask task) {
+    public NaruResponse chat(NaruModelRequest mrequest, NaruModelContext context) {
         Map<String, NElement> env = mrequest.env();
         boolean toolsWrapped = wrapsTools(mrequest);
         boolean emulate_tool_calls = emulatesToolCalls(mrequest);
 
-        NaruModelRequest preparedModelRequest = preprocessRequest(mrequest, task);
+        NaruModelRequest preparedModelRequest = preprocessRequest(mrequest, context);
 
         // Plan the cache before serialising: the plan decides where breakpoints
         // land, so the serializer needs it. The body is built once and retried
@@ -431,27 +430,27 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         NaruCachingMode cachingMode = capabilities.cachingMode();
         final NaruCachePlanView cachePlan;
         if (cachingMode != null && cachingMode != NaruCachingMode.NONE) {
-            cachePlan = NaruModelCaching.plan(task.session(), provider().name(), model.model(),
+            cachePlan = NaruModelCaching.plan(context, provider().name(), model.model(),
                     cachingMode, preparedModelRequest);
         } else {
             cachePlan = NaruCachePlanView.none();
         }
-        NElement body = serialize(preparedModelRequest, cachePlan, task);
+        NElement body = serialize(preparedModelRequest, cachePlan, context);
         byte[] jsonBody = formatRequestBody(body);
         NHttpClient http = NHttpClient.of()
-                .connectTimeout(connectTimeout(task, env))
-                .baseUri(url(task, env));
-        NHttpRequest request = http.POST(chatPath(task, env))
-                .timeout(readTimeout(task, env));
+                .connectTimeout(connectTimeout(context, env))
+                .baseUri(url(context, env));
+        NHttpRequest request = http.POST(chatPath(context, env))
+                .timeout(readTimeout(context, env));
         armRequestBody(request, jsonBody);
-        prepareRequest(request, body, task);
+        prepareRequest(request, body, context);
 
-        int maxRetries = maxRetries(task, env);
-        NDuration baseDelay = retryPeriod(task, env);
+        int maxRetries = maxRetries(context, env);
+        NDuration baseDelay = retryPeriod(context, env);
         AtomicReference<NDuration> dynamicRetryAfter = new AtomicReference<>();
         AtomicInteger attemptCounter = new AtomicInteger(0);
         NElement headersElements = NElement.of(request.headers());
-        try (NRetryCall<NaruResponse> retryCall = NRetryCall.of("llm-" + provider().name() + "-" + UUID.randomUUID(), new NaruProtocolChatWebCall(attemptCounter, request, body, jsonBody, dynamicRetryAfter, task, toolsWrapped, emulate_tool_calls, preparedModelRequest, cachePlan, cachingMode))) {
+        try (NRetryCall<NaruResponse> retryCall = NRetryCall.of("llm-" + provider().name() + "-" + UUID.randomUUID(), new NaruProtocolChatWebCall(attemptCounter, request, body, jsonBody, dynamicRetryAfter, context, toolsWrapped, emulate_tool_calls, preparedModelRequest, cachePlan, cachingMode))) {
             retryCall.maxRetries(maxRetries)
                     .retryPeriod(attempt -> {
                         NDuration custom = dynamicRetryAfter.getAndSet(null);
@@ -505,17 +504,17 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
      *
      * @param parser consumes events in order and assembles the response
      */
-    protected NaruResponse streamChat(NaruModelRequest mrequest, NaruTask task,
+    protected NaruResponse streamChat(NaruModelRequest mrequest, NaruModelContext context,
                                       NaruStreamResponseParser parser) {
         Map<String, NElement> env = mrequest.env();
         boolean toolsWrapped = wrapsTools(mrequest);
         boolean emulate_tool_calls = emulatesToolCalls(mrequest);
-        NaruModelRequest preparedModelRequest = preprocessRequest(mrequest, task);
+        NaruModelRequest preparedModelRequest = preprocessRequest(mrequest, context);
 
         NaruCachingMode cachingMode = capabilities.cachingMode();
         final NaruCachePlanView cachePlan;
         if (cachingMode != null && cachingMode != NaruCachingMode.NONE) {
-            cachePlan = NaruModelCaching.plan(task.session(), provider().name(), model.model(),
+            cachePlan = NaruModelCaching.plan(context, provider().name(), model.model(),
                     cachingMode, preparedModelRequest);
         } else {
             cachePlan = NaruCachePlanView.none();
@@ -523,22 +522,22 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         // The body is built once and retried verbatim, exactly as in the batched
         // path: a retry must re-send the identical prefix, or it invalidates the
         // very cache state it is relying on.
-        NElement body = serialize(preparedModelRequest, cachePlan, task, true);
+        NElement body = serialize(preparedModelRequest, cachePlan, context, true);
         byte[] jsonBody = formatRequestBody(body);
         NHttpClient http = NHttpClient.of()
-                .connectTimeout(connectTimeout(task, env))
-                .baseUri(url(task, env));
-        NHttpRequest request = http.POST(chatPath(task, env))
-                .timeout(readTimeout(task, env))
+                .connectTimeout(connectTimeout(context, env))
+                .baseUri(url(context, env));
+        NHttpRequest request = http.POST(chatPath(context, env))
+                .timeout(readTimeout(context, env))
                 // Without this some servers buffer the whole event stream before
                 // flushing, and "streaming" degrades into a slow batch call.
                 .header("Accept", "text/event-stream")
                 .header("Cache-Control", "no-cache");
         armRequestBody(request, jsonBody);
-        prepareRequest(request, body, task);
+        prepareRequest(request, body, context);
 
-        int maxRetries = maxRetries(task, env);
-        NDuration baseDelay = retryPeriod(task, env);
+        int maxRetries = maxRetries(context, env);
+        NDuration baseDelay = retryPeriod(context, env);
         AtomicReference<NDuration> dynamicRetryAfter = new AtomicReference<>();
         NElement headersElements = NElement.of(request.headers());
         int attempt = 0;
@@ -563,7 +562,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                                     provider().name(), response.statusMessage()),
                             null, response.statusCode());
                 }
-                onResponseReceived(response, task);
+                onResponseReceived(response, context);
                 NaruResponse result = parser.read(response);
                 if (toolsWrapped || emulate_tool_calls) {
                     // Same emulated-call extraction as the batched path: a wrapped
@@ -571,9 +570,9 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                     // parser only ever assembled text, so the tags must be turned
                     // into calls here or the turn reads as a plain answer.
                     result = NoToolWrapHelper.unwrapResponse(result,
-                            NoToolWrapHelper.forToolCalls(preparedModelRequest.env()), task);
+                            NoToolWrapHelper.forToolCalls(preparedModelRequest.env()), context);
                 }
-                commitCacheState(preparedModelRequest, cachePlan, cachingMode, task);
+                commitCacheState(preparedModelRequest, cachePlan, cachingMode, context);
                 return result;
             } catch (NonRetryableWebException nre) {
                 throw createAndLogWebError(request.effectiveUri(),headersElements,body,nre);
@@ -599,7 +598,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 }
                 throw createAndLogWebError(request.effectiveUri(),headersElements,body,e);
             } finally {
-                NaruModelUtils.logAudit(task, task != null ? task.session() : null,
+                NaruModelUtils.logAudit(context,
                         provider().name(), model.model(), request, body, response,
                         null, error, attempt, NDuration.ofSeconds(0), java.time.Instant.now());
             }
@@ -617,12 +616,12 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
      * costs tokens, and must never cost the response the user is waiting for.
      */
     protected void commitCacheState(NaruModelRequest request, NaruCachePlanView plan,
-                                    NaruCachingMode mode, NaruTask task) {
-        if (mode == null || mode == NaruCachingMode.NONE || plan == null || task == null) {
+                                    NaruCachingMode mode, NaruModelContext context) {
+        if (mode == null || mode == NaruCachingMode.NONE || plan == null || context == null) {
             return;
         }
         try {
-            NaruModelCaching.commit(task.session(), provider().name(), model.model(), mode,
+            NaruModelCaching.commit(context, provider().name(), model.model(), mode,
                     request.cacheableContext());
         } catch (RuntimeException ex) {
             NLog.of(getClass()).log(NMsg.ofC("Could not record prompt cache state: %s", ex.getMessage()));
@@ -645,20 +644,20 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         private final NElement body;
         private final byte[] jsonBody;
         private final AtomicReference<NDuration> dynamicRetryAfter;
-        private final NaruTask task;
+        private final NaruModelContext context;
         private final boolean toolsWrapped;
         private final boolean emulate_tool_calls;
         private final NaruModelRequest preparedModelRequest;
         private final NaruCachePlanView cachePlan;
         private final NaruCachingMode cachingMode;
 
-        public NaruProtocolChatWebCall(AtomicInteger attemptCounter, NHttpRequest request, NElement body, byte[] jsonBody, AtomicReference<NDuration> dynamicRetryAfter, NaruTask task, boolean toolsWrapped, boolean emulate_tool_calls, NaruModelRequest preparedModelRequest, NaruCachePlanView cachePlan, NaruCachingMode cachingMode) {
+        public NaruProtocolChatWebCall(AtomicInteger attemptCounter, NHttpRequest request, NElement body, byte[] jsonBody, AtomicReference<NDuration> dynamicRetryAfter, NaruModelContext context, boolean toolsWrapped, boolean emulate_tool_calls, NaruModelRequest preparedModelRequest, NaruCachePlanView cachePlan, NaruCachingMode cachingMode) {
             this.attemptCounter = attemptCounter;
             this.request = request;
             this.body = body;
             this.jsonBody = jsonBody;
             this.dynamicRetryAfter = dynamicRetryAfter;
-            this.task = task;
+            this.context = context;
             this.toolsWrapped = toolsWrapped;
             this.emulate_tool_calls = emulate_tool_calls;
             this.preparedModelRequest = preparedModelRequest;
@@ -703,7 +702,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 }
 
                 responseString = response.contentAsString();
-                NaruModelProtocolBase.this.onResponseReceived(response, task);
+                NaruModelProtocolBase.this.onResponseReceived(response, context);
                 NElement responseElement = null;
                 try {
                     responseElement = NElementReader.ofJson().read(responseString);
@@ -713,21 +712,20 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
                 NaruResponse naruResponse = NaruModelProtocolBase.this.parseResponse(responseString);
                 if (toolsWrapped || emulate_tool_calls) {
                     naruResponse = NoToolWrapHelper.unwrapResponse(naruResponse,
-                            NoToolWrapHelper.forToolCalls(preparedModelRequest.env()), task);
+                            NoToolWrapHelper.forToolCalls(preparedModelRequest.env()), context);
                 }
                 // Only now that the provider has accepted the request is the
                 // prefix genuinely stored. Committing earlier — say, right after
                 // serialising — would record a prefix that a failed call never
                 // cached, and the next turn would trust a lie.
-                NaruModelProtocolBase.this.commitCacheState(preparedModelRequest, cachePlan, cachingMode, task);
+                NaruModelProtocolBase.this.commitCacheState(preparedModelRequest, cachePlan, cachingMode, context);
                 return naruResponse;
             } catch (Throwable t) {
                 error = t instanceof NonRetryableWebException ? t.getCause() : t;
                 throw t;
             } finally {
                 NaruModelUtils.logAudit(
-                        task,
-                        task != null ? task.session() : null,
+                        context,
                         NaruModelProtocolBase.this.provider().name(),
                         model.model(),
                         request,

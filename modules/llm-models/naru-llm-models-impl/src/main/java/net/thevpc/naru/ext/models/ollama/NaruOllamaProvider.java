@@ -58,21 +58,21 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
      * stream frame format, ...) — ollama's one and only wire.
      */
     @Override
-    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruModelContext context) {
         return new NaruModelProtocolOllamaNative(this, model, name(), capabilities,
-                isLocal(session), defaultReadTimeout(session));
+                isLocal(context), defaultReadTimeout(context));
     }
 
-    public String baseUrl(NaruSession session) {
+    public String baseUrl(NaruModelContext context) {
         // §6: the instance's own url (a registration pointing at a remote Ollama)
         // wins over the env key, with localhost as the built-in default
-        String url = configValue("url", session).orElse("http://localhost:11434");
+        String url = configValue("url", context).orElse("http://localhost:11434");
         return url.replaceAll("/$", "");
     }
 
 
 
-    public NaruModelCapabilities resolveCapabilities(String model, NaruSession session) {
+    public NaruModelCapabilities resolveCapabilities(String model, NaruModelContext context) {
         NaruModelCapabilities c = cachedCapabilities.get(model);
         if (c != null) {
             return c;
@@ -81,10 +81,10 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
         body.put("model", model);
 
         NHttpClient http = NHttpClient.of()
-                .connectTimeout(connectTimeout(session))
-                .baseUri(baseUrl(session));
+                .connectTimeout(connectTimeout(context))
+                .baseUri(baseUrl(context));
         NHttpRequest request = http.POST("api/show")
-                .timeout(readTimeout(session))
+                .timeout(readTimeout(context))
                 .jsonRequestBody(body);
         try {
             NChronometer chrono = NChronometer.of();
@@ -103,7 +103,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruSession session) {
+    public NaruModelInfo getModelInfo(String model, NaruModelCapabilities capabilities, NaruModelContext context) {
         NElement entry = cachedTagDetails.get(model);
         if (entry == null || !entry.isAnyObject()) return new NaruModelInfo(name(), model, capabilities);
         NObjectElement obj = entry.asObject().get();
@@ -139,10 +139,10 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", key.model());
         NHttpClient http = NHttpClient.of()
-                .connectTimeout(connectTimeout(session))
-                .baseUri(baseUrl(session));
+                .connectTimeout(connectTimeout(NaruModelContext.of(session)))
+                .baseUri(baseUrl(NaruModelContext.of(session)));
         NHttpRequest request = http.POST("api/pull")
-                .timeout(readTimeout(session))
+                .timeout(readTimeout(NaruModelContext.of(session)))
                 .jsonRequestBody(body);
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("install of %s", key), body);
@@ -156,10 +156,10 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", key.model());
         NHttpClient http = NHttpClient.of()
-                .connectTimeout(connectTimeout(session))
-                .baseUri(baseUrl(session));
+                .connectTimeout(connectTimeout(NaruModelContext.of(session)))
+                .baseUri(baseUrl(NaruModelContext.of(session)));
         NHttpRequest request = http.POST("api/delete")
-                .timeout(readTimeout(session))
+                .timeout(readTimeout(NaruModelContext.of(session)))
                 .jsonRequestBody(body);
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("uninstall of %s", key), body);
@@ -174,10 +174,10 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
         body.put("model", key.model());
         body.put("keep_alive", 0);
         NHttpClient http = NHttpClient.of()
-                .connectTimeout(connectTimeout(session))
-                .baseUri(baseUrl(session));
+                .connectTimeout(connectTimeout(NaruModelContext.of(session)))
+                .baseUri(baseUrl(NaruModelContext.of(session)));
         NHttpRequest request = http.POST("api/generate")
-                .timeout(readTimeout(session))
+                .timeout(readTimeout(NaruModelContext.of(session)))
                 .jsonRequestBody(body);
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("uninstall of %s", key), body);
@@ -189,10 +189,10 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
     @Override
     public List<NaruModelPsResult> psModel(NaruSession session) {
         NHttpClient http = NHttpClient.of()
-                .connectTimeout(connectTimeout(session))
-                .baseUri(baseUrl(session));
+                .connectTimeout(connectTimeout(NaruModelContext.of(session)))
+                .baseUri(baseUrl(NaruModelContext.of(session)));
         NHttpRequest request = http.GET("api/ps")
-                .timeout(readTimeout(session));
+                .timeout(readTimeout(NaruModelContext.of(session)));
         NChronometer chrono = NChronometer.of();
         NaruModelUtils.logWebRequest(request, NMsg.ofC("ps of %s", name()), null);
         NHttpResponse response = request.run().failFast();
@@ -284,10 +284,10 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
+    public List<String> findModelIds(NaruModelContext context) {
         NHttpClient http = NHttpClient.of()
                 .connectTimeout(NDuration.ofSeconds(30))
-                .baseUri(baseUrl(session));
+                .baseUri(baseUrl(context));
         NHttpRequest request = http.GET("api/tags")
                 .connectTimeout(NDuration.ofSeconds(10))
                 .readTimeout(NDuration.ofSeconds(10));
@@ -310,7 +310,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
                     }
                 }
             }
-            lastStatusMessage = models.isEmpty() ? "no models found at " + baseUrl(session) : null;
+            lastStatusMessage = models.isEmpty() ? "no models found at " + baseUrl(context) : null;
             return models;
         } catch (Exception e) {
             lastStatusMessage = "endpoint unreachable: " + String.valueOf(e.getMessage());
@@ -320,7 +320,7 @@ public class NaruOllamaProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public String statusMessage(NaruSession session) {
+    public String statusMessage(NaruModelContext context) {
         return lastStatusMessage;
     }
 

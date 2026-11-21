@@ -1,7 +1,6 @@
 package net.thevpc.naru.ext.models.anthropic;
 
 import net.thevpc.naru.api.agent.NaruRole;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolSchema;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
@@ -62,7 +61,7 @@ public class NaruAnthropicRequestSerializer implements NaruCacheAwareRequestSeri
     public static final int MAX_CACHE_BREAKPOINTS = 4;
 
     @Override
-    public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session,
+    public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruModelContext context,
                               NaruCachePlanView plan) {
         NObjectElementBuilder body = NElement.ofObjectBuilder();
 

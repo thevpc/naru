@@ -1,5 +1,6 @@
 package net.thevpc.naru.impl.engine;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruInputRequest;
 import net.thevpc.naru.api.agent.NaruLogMode;
@@ -89,7 +90,7 @@ public class NaruTaskStreamingOutputTest {
         }
 
         @Override
-        public NaruResponse chat(NaruModelRequest request, NaruTask task) {
+        public NaruResponse chat(NaruModelRequest request, NaruModelContext context) {
             chatCalls++;
             NaruResponse r = new NaruResponse();
             r.setMessage(NaruMessage.assistant("batched answer"));
@@ -97,7 +98,7 @@ public class NaruTaskStreamingOutputTest {
         }
 
         @Override
-        public NaruResponse chatStream(NaruModelRequest request, NaruTask task, NaruStreamHandler handler) {
+        public NaruResponse chatStream(NaruModelRequest request, NaruModelContext context, NaruStreamHandler handler) {
             streamCalls++;
             if (thinking) {
                 handler.onChunk(chunk(NaruChunkKind.THINKING, "because ", "THINK"));
@@ -236,7 +237,7 @@ public class NaruTaskStreamingOutputTest {
         }
 
         @Override
-        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+        public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
             return NOptional.of(protocol);
         }
 
@@ -246,12 +247,12 @@ public class NaruTaskStreamingOutputTest {
         }
 
         @Override
-        public NOptional<String> apiKey(NaruSession session) {
+        public NOptional<String> apiKey(NaruModelContext context) {
             return NOptional.ofEmpty();
         }
 
         @Override
-        public List<String> findModelIds(NaruSession session) {
+        public List<String> findModelIds(NaruModelContext context) {
             return List.of("fake-model");
         }
 
@@ -361,7 +362,7 @@ public class NaruTaskStreamingOutputTest {
     public void aFailingStreamStillClosesItsLines() {
         FixedProtocol protocol = new FixedProtocol(true, false) {
             @Override
-            public NaruResponse chatStream(NaruModelRequest request, NaruTask task,
+            public NaruResponse chatStream(NaruModelRequest request, NaruModelContext context,
                                            NaruStreamHandler handler) {
                 handler.onChunk(chunk(NaruChunkKind.ANSWER, "half", "ANSWER"));
                 throw new IllegalStateException("provider died mid-answer");

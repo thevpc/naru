@@ -5,7 +5,7 @@ reach for a different tool to do, done with the same runtime.
 
 | Example | You would otherwise use | What it shows |
 | --- | --- | --- |
-| [`Ex01LlmBridge`](src/main/java/net/thevpc/naru/examples/Ex01LlmBridge.java) | a provider SDK, LiteLLM | one API in front of every model provider: chat, streaming, multi-turn |
+| [`Ex01LlmBridge`](src/main/java/net/thevpc/naru/examples/Ex01LlmBridge.java) | a provider SDK, LiteLLM | one API in front of every model provider: chat, streaming, multi-turn, with no workspace or session |
 | [`Ex02Chain`](src/main/java/net/thevpc/naru/examples/Ex02Chain.java) | LangChain / LangChain4j | prompt templates, a sequential chain with memory, a Java tool the model calls, results read back in Java |
 | [`Ex03Graph`](src/main/java/net/thevpc/naru/examples/Ex03Graph.java) | LangGraph | nodes, shared state, a conditional review cycle, parallel branches with a join |
 | [`Ex04TurnServer`](src/main/java/net/thevpc/naru/examples/Ex04TurnServer.java) | a hand-rolled chat backend | an HTTP server that runs one turn per request and keeps each conversation asleep in a store between requests |
@@ -64,7 +64,7 @@ NaruWorkspace          the runtime: extensions, providers, settings      NaruWor
 
 | You want | Use |
 | --- | --- |
-| a single completion, your own loop | `session.registry().protocol(model, session).get().chat(...)` (Ex01) |
+| a single completion, your own loop | `provider.getProtocol(model, NaruModelContext.standalone()).get().chat(...)`, no workspace needed (Ex01) |
 | a scripted pipeline, run to the end | `session.newTask(spec)`, `session.start()`, `task.unhold()`, `task.await(...)` (Ex02, Ex03) |
 | a conversation driven by outside events | `ws.newSession().id(id).interactive().buildHandle()`, then `handle.submit(NaruInput.of(text))` per event (Ex04) |
 

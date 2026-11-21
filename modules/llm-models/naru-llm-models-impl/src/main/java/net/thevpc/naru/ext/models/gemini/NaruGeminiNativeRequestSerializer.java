@@ -1,7 +1,6 @@
 package net.thevpc.naru.ext.models.gemini;
 
 import net.thevpc.naru.api.agent.NaruRole;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.*;
 import net.thevpc.naru.api.registry.NaruToolSchema;
 import net.thevpc.nuts.elem.NArrayElementBuilder;
@@ -53,7 +52,7 @@ public class NaruGeminiNativeRequestSerializer implements NaruCacheAwareRequestS
     private static final int DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 
     @Override
-    public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruSession session,
+    public NElement serialize(NaruModelRequest request, NaruModelConfig model, NaruModelContext context,
                               NaruCachePlanView plan) {
         NObjectElementBuilder body = NElement.ofObjectBuilder();
 

@@ -1,6 +1,6 @@
 package net.thevpc.naru.ext.models.openai;
 
-import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.AbstractNaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
@@ -59,8 +59,8 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      */
     private static final Map<String, ProbeResult> REACHABILITY_CACHE = new ConcurrentHashMap<>();
 
-    private final Map<NaruSession, String> providerErrors =
-            Collections.synchronizedMap(new WeakHashMap<>());
+    /** The last live-lookup error per session id ({@code ""} for a call outside any session). */
+    private final Map<String, String> providerErrors = new ConcurrentHashMap<>();
 
     protected final Map<NaruModelConfig, NaruModelProtocol> protocols = new HashMap<>();
 
@@ -75,18 +75,18 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
     /**
      * Fallback base url when {@code <name>.url} config is not set. This is the
      * provider's own endpoint and belongs to its {@link #defaultProtocol()} wire;
-     * protocol-aware resolution is {@link #resolvedBaseUrl(NaruSession, String)}.
+     * protocol-aware resolution is {@link #resolvedBaseUrl(NaruModelContext, String)}.
      */
-    protected abstract String baseUrl(NaruSession session);
+    protected abstract String baseUrl(NaruModelContext context);
 
     /**
      * Statically maps capabilities since cloud-hosted capabilities cannot be polled
      * natively. Capabilities may depend on the wire shape (native Gemini's
      * {@code CachedContent}-resource caching, ...) — when they do, resolve the wire
-     * via {@link #resolvedProtocolId(NaruSession)} rather than taking it as a
+     * via {@link #resolvedProtocolId(NaruModelContext)} rather than taking it as a
      * parameter; providers that do not change under {@code --protocol} ignore it.
      */
-    protected abstract NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session);
+    protected abstract NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context);
 
     /**
      * The wire decision (design doc §8). The provider types that build on this
@@ -97,19 +97,19 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      * the provider cannot speak is <b>ignored with a warning</b>, never silently
      * substituted and never fatal: the default wire keeps working.
      */
-    protected NaruModelProtocol createProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
-        String pid = resolvedProtocolId(session);
+    protected NaruModelProtocol createProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruModelContext context) {
+        String pid = resolvedProtocolId(context);
         if (pid == null || pid.equalsIgnoreCase(defaultProtocol())) {
-            return createDefaultProtocol(model, capabilities, session);
+            return createDefaultProtocol(model, capabilities, context);
         }
         if (!supportsProtocolId(pid)) {
             NLog.of(getClass()).log(NMsg.ofC(
                     "provider '%s' does not support protocol '%s' (supported: %s) — ignored, using its default wire '%s'.",
                     name(), pid, String.join(", ", new TreeSet<>(supportedProtocols())), defaultProtocol()
             ).asWarning());
-            return createDefaultProtocol(model, capabilities, session);
+            return createDefaultProtocol(model, capabilities, context);
         }
-        return createProtocolShape(model, capabilities, session, pid);
+        return createProtocolShape(model, capabilities, context, pid);
     }
 
     /**
@@ -119,25 +119,25 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      * wire id itself is not inspected here beyond the two distinct shapes — the
      * openai id and any provider-declared id that maps onto the openai wire).
      */
-    protected NaruModelProtocol createProtocolShape(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session, String protocolId) {
+    protected NaruModelProtocol createProtocolShape(NaruModelConfig model, NaruModelCapabilities capabilities, NaruModelContext context, String protocolId) {
         if (NaruModelProtocolGeminiNative.PROTOCOL_ID.equalsIgnoreCase(protocolId)) {
             return new NaruModelProtocolGeminiNative(this, model, name(), null,
-                    capabilities, resolvedBaseUrl(session, protocolId), isLocal(session), defaultReadTimeout(session));
+                    capabilities, resolvedBaseUrl(context, protocolId), isLocal(context), defaultReadTimeout(context));
         }
         if (NaruModelProtocolAnthropicCompat.PROTOCOL_ID.equalsIgnoreCase(protocolId)) {
             return new NaruModelProtocolAnthropicCompat(this, model, name(), "v1/messages",
-                    capabilities, resolvedBaseUrl(session, protocolId), isLocal(session), defaultReadTimeout(session));
+                    capabilities, resolvedBaseUrl(context, protocolId), isLocal(context), defaultReadTimeout(context));
         }
-        return new NaruModelProtocolOpenAICompat(this, model, name(), resolvedChatPath(session),
-                capabilities, resolvedBaseUrl(session, protocolId), isLocal(session), defaultReadTimeout(session));
+        return new NaruModelProtocolOpenAICompat(this, model, name(), resolvedChatPath(context),
+                capabilities, resolvedBaseUrl(context, protocolId), isLocal(context), defaultReadTimeout(context));
     }
 
     /**
      * The chat endpoint path of the openai-shaped wire: the instance's own
      * {@code chatPath} param, else the provider's {@link #chatPath()} hook.
      */
-    protected String resolvedChatPath(NaruSession session) {
-        return configValue("chatPath", session).orElse(chatPath());
+    protected String resolvedChatPath(NaruModelContext context) {
+        return configValue("chatPath", context).orElse(chatPath());
     }
 
     /**
@@ -146,10 +146,10 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      * provider with its own dialect — mistral's rate-limit headers, ollama's
      * native chat, openrouter's envelope — overrides this and returns its class.
      */
-    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruModelContext context) {
         return new NaruModelProtocolOpenAICompat(this, model, name(),
-                configValue("chatPath", session).orElse(chatPath()),
-                capabilities, resolvedBaseUrl(session, defaultProtocol()), isLocal(session), defaultReadTimeout(session));
+                configValue("chatPath", context).orElse(chatPath()),
+                capabilities, resolvedBaseUrl(context, defaultProtocol()), isLocal(context), defaultReadTimeout(context));
     }
 
     /**
@@ -178,8 +178,8 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      * (registration or the {@code <id>.protocol} env key), case-normalised, else
      * the type's {@link #defaultProtocol()}.
      */
-    protected String resolvedProtocolId(NaruSession session) {
-        NOptional<String> protocol = configValue("protocol", session);
+    protected String resolvedProtocolId(NaruModelContext context) {
+        NOptional<String> protocol = configValue("protocol", context);
         if (protocol.isPresent() && !NBlankable.isBlank(protocol.get())) {
             return protocol.get().trim().toLowerCase();
         }
@@ -189,18 +189,18 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
     /**
      * The base url the given wire shape talks to: the instance's own {@code url}
      * first (§6), then the wire class's own default base url (native gemini
-     * points at Google itself), then the provider's {@link #baseUrl(NaruSession)}
+     * points at Google itself), then the provider's {@link #baseUrl(NaruModelContext)}
      * (assumed to speak the type's default wire).
      */
-    protected String resolvedBaseUrl(NaruSession session, String protocolId) {
-        String own = configValue("url", session).orNull();
+    protected String resolvedBaseUrl(NaruModelContext context, String protocolId) {
+        String own = configValue("url", context).orNull();
         if (!NBlankable.isBlank(own)) {
             return own.replaceAll("/+$", "");
         }
         if (NaruModelProtocolGeminiNative.PROTOCOL_ID.equalsIgnoreCase(protocolId)) {
             return NaruModelProtocolGeminiNative.DEFAULT_BASE_URL;
         }
-        return baseUrl(session);
+        return baseUrl(context);
     }
 
     /**
@@ -210,7 +210,7 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      * {@link #modelsPath()} hook wins because the provider knows its own
      * endpoint layout.
      */
-    protected String resolvedModelsPath(NaruSession session, String protocolId) {
+    protected String resolvedModelsPath(NaruModelContext context, String protocolId) {
         if (!NaruModelProtocolAnthropicCompat.PROTOCOL_ID.equalsIgnoreCase(protocolId)
                 && !NaruModelProtocolGeminiNative.PROTOCOL_ID.equalsIgnoreCase(protocolId)) {
             return modelsPath();
@@ -222,13 +222,13 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
     }
 
     @Override
-    public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruSession session) {
+    public NOptional<NaruModelProtocol> getProtocol(NaruModelConfig model, NaruModelContext context) {
         if (!model.provider().equals(name())) {
             return NOptional.ofNamedEmpty(NMsg.ofC("protocol for %s", model));
         }
-        NaruModelCapabilities capabilities = applyCapabilityOverrides(resolveCapabilities(model.model(), session), session);
+        NaruModelCapabilities capabilities = applyCapabilityOverrides(resolveCapabilities(model.model(), context), context);
         return NOptional.of(protocols.computeIfAbsent(model,
-                k -> createProtocol(model, capabilities, session)));
+                k -> createProtocol(model, capabilities, context)));
     }
 
     /**
@@ -242,11 +242,11 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      * generic {@code custom} type already read this key; the override makes the
      * same knob work on every OpenAI-compatible cloud provider.
      */
-    protected NaruModelCapabilities applyCapabilityOverrides(NaruModelCapabilities capabilities, NaruSession session) {
+    protected NaruModelCapabilities applyCapabilityOverrides(NaruModelCapabilities capabilities, NaruModelContext context) {
         if (capabilities == null) {
             return null;
         }
-        Boolean tools = configValue("tools", session)
+        Boolean tools = configValue("tools", context)
                 .flatMap(x -> NLiteral.of(x).asBoolean()).orNull();
         if (tools == null || tools == capabilities.isTools()) {
             return capabilities;
@@ -256,31 +256,31 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
                 capabilities.contextLength(), capabilities.cachingMode(), capabilities.isStreaming());
     }
 
-    public boolean isApiKeySet(NaruSession session){
-        String apiKey = apiKey(session).orNull();
+    public boolean isApiKeySet(NaruModelContext context){
+        String apiKey = apiKey(context).orNull();
         if (NBlankable.isBlank(apiKey)) {
             return false;
         }
         return true;
     }
     @Override
-    public List<String> findModelIds(NaruSession session) {
-        if (!isApiKeySet(session)) {
+    public List<String> findModelIds(NaruModelContext context) {
+        if (!isApiKeySet(context)) {
             return Collections.emptyList();
         }
-        return findModelIdsWithLiveFallback(session, new ArrayList<>());
+        return findModelIdsWithLiveFallback(context, new ArrayList<>());
     }
 
-    protected NDuration connectTimeout(NaruSession session) {
-        return configValue("connectTimeout", session).flatMap(x -> NDuration.of(x))
-                .orElseGetOptionalFrom(() -> configValue("timeout", session).flatMap(x -> NDuration.of(x)))
+    protected NDuration connectTimeout(NaruModelContext context) {
+        return configValue("connectTimeout", context).flatMap(x -> NDuration.of(x))
+                .orElseGetOptionalFrom(() -> configValue("timeout", context).flatMap(x -> NDuration.of(x)))
                 .orElse(NDuration.ofSeconds(120));
     }
 
-    protected NDuration readTimeout(NaruSession session) {
-        return configValue("readTimeout", session).flatMap(x -> NDuration.of(x))
-                .orElseGetOptionalFrom(() -> configValue("timeout", session).flatMap(x -> NDuration.of(x)))
-                .orElse(defaultReadTimeout(session));
+    protected NDuration readTimeout(NaruModelContext context) {
+        return configValue("readTimeout", context).flatMap(x -> NDuration.of(x))
+                .orElseGetOptionalFrom(() -> configValue("timeout", context).flatMap(x -> NDuration.of(x)))
+                .orElse(defaultReadTimeout(context));
     }
 
     /**
@@ -290,8 +290,8 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      * endpoint registration pointing at a local server is local.
      */
     @Override
-    protected boolean defaultLocal(NaruSession session) {
-        return NaruModelTimeouts.isLocalUrl(resolvedBaseUrl(session, resolvedProtocolId(session)));
+    protected boolean defaultLocal(NaruModelContext context) {
+        return NaruModelTimeouts.isLocalUrl(resolvedBaseUrl(context, resolvedProtocolId(context)));
     }
 
 
@@ -299,21 +299,25 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
         return "models";
     }
 
-    private void storeError(NaruSession session, String errorMsg) {
-        if (session != null) {
-            providerErrors.put(session, errorMsg);
+    private void storeError(NaruModelContext context, String errorMsg) {
+        if (context != null) {
+            providerErrors.put(errorKey(context), errorMsg);
         }
     }
 
-    private void clearError(NaruSession session) {
-        if (session != null) {
-            providerErrors.remove(session);
+    private void clearError(NaruModelContext context) {
+        if (context != null) {
+            providerErrors.remove(errorKey(context));
         }
     }
 
     /** Returns the last live-model lookup error recorded for this session, if any. */
-    public String getError(NaruSession session) {
-        return session == null ? null : providerErrors.get(session);
+    public String getError(NaruModelContext context) {
+        return context == null ? null : providerErrors.get(errorKey(context));
+    }
+
+    private static String errorKey(NaruModelContext context) {
+        return context.sessionId() == null ? "" : context.sessionId();
     }
 
     /**
@@ -322,8 +326,8 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
      * between "openai is missing" and "openai needs OPENAI_API_KEY".
      */
     @Override
-    public String statusMessage(NaruSession session) {
-        String recorded = getError(session);
+    public String statusMessage(NaruModelContext context) {
+        String recorded = getError(context);
         if (recorded != null && !recorded.isBlank()) {
             return recorded;
         }
@@ -331,28 +335,28 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
         // so the keyless case is named rather than assumed and a local server is never told it
         // needs an API key.
         String[] declared = defaultEnvKey();
-        if (declared != null && declared.length > 0 && !isApiKeySet(session)) {
+        if (declared != null && declared.length > 0 && !isApiKeySet(context)) {
             return "API key not set";
         }
         return null;
     }
 
-    protected List<String> fetchLiveModelIds(NaruSession session) {
-        String apiKey = apiKey(session).orNull();
+    protected List<String> fetchLiveModelIds(NaruModelContext context) {
+        String apiKey = apiKey(context).orNull();
         if (NBlankable.isBlank(apiKey)) {
-            storeError(session, "API key not set");
+            storeError(context, "API key not set");
             return Collections.emptyList();
         }
-        clearError(session);
-        String protocolId = resolvedProtocolId(session);
+        clearError(context);
+        String protocolId = resolvedProtocolId(context);
         if (!supportsProtocolId(protocolId)) {
             // the chat wire falls back to the provider's default when the requested
             // protocol is unsupported — enumerate against that same wire
             protocolId = defaultProtocol();
         }
-        String path = resolvedModelsPath(session, protocolId);
+        String path = resolvedModelsPath(context, protocolId);
         if (NBlankable.isBlank(path)) {
-            storeError(session, "Models path not configured");
+            storeError(context, "Models path not configured");
             return Collections.emptyList();
         }
         // the listing is a wire-level GET: auth header and parse shape belong to
@@ -377,7 +381,7 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
         try {
             NHttpClient http = NHttpClient.of()
                     .connectTimeout(NDuration.ofSeconds(10))
-                    .baseUri(resolvedBaseUrl(session, protocolId));
+                    .baseUri(resolvedBaseUrl(context, protocolId));
 
             NHttpRequest request = http.GET(path)
                     .timeout(NDuration.ofSeconds(10))
@@ -389,10 +393,10 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
                 switch (nHttpCode.code()){
                     case 403:
                     case 429:
-                        storeError(session, "Insufficient balance or rate limited (HTTP " + nHttpCode + ")");
+                        storeError(context, "Insufficient balance or rate limited (HTTP " + nHttpCode + ")");
                         break;
                     default:
-                        storeError(session, "Failed to fetch live models: HTTP " + nHttpCode + " " + response.statusMessage());
+                        storeError(context, "Failed to fetch live models: HTTP " + nHttpCode + " " + response.statusMessage());
                         NLog.of(getClass()).log(NMsg.ofC(
                                 "Failed to fetch live models from %s: HTTP %s %s",
                                 name(), nHttpCode, response.statusMessage()
@@ -404,7 +408,7 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
             NElement root = NElementReader.ofJson().read(response.contentAsString());
             return idParser.apply(root);
         } catch (Exception e) {
-            storeError(session, "Error fetching live models: " + e.getMessage());
+            storeError(context, "Error fetching live models: " + e.getMessage());
             NLog.of(getClass()).log(NMsg.ofC(
                     "Error fetching live models from %s: %s", name(), e.getMessage()
             ).asFineAlert());
@@ -412,19 +416,19 @@ public abstract class AbstractOpenAICompatProvider extends AbstractNaruModelProv
         }
     }
 
-    protected List<String> findModelIdsWithLiveFallback(NaruSession session, List<String> staticFallback) {
-        if (!isApiKeySet(session)) {
+    protected List<String> findModelIdsWithLiveFallback(NaruModelContext context, List<String> staticFallback) {
+        if (!isApiKeySet(context)) {
             return Collections.emptyList();
         }
         long now = System.currentTimeMillis();
-        String protocolId = resolvedProtocolId(session);
+        String protocolId = resolvedProtocolId(context);
         String cacheKey = type() + "|" + protocolId + "|"
-                + resolvedBaseUrl(session, protocolId) + "|" + apiKey(session).orNull();
+                + resolvedBaseUrl(context, protocolId) + "|" + apiKey(context).orNull();
         ModelCacheEntry cached = LIVE_MODELS_CACHE.get(cacheKey);
         if (cached != null && (now - cached.at) < LIVE_MODELS_TTL_MS) {
             return cached.ids;
         }
-        List<String> live = fetchLiveModelIds(session);
+        List<String> live = fetchLiveModelIds(context);
         if (!live.isEmpty()) {
             LIVE_MODELS_CACHE.put(cacheKey, new ModelCacheEntry(live, now));
             return live;

@@ -1,7 +1,7 @@
 package net.thevpc.naru.ext.models.mistral;
 
+import net.thevpc.naru.api.model.NaruModelContext;
 import net.thevpc.naru.api.model.NaruCachingMode;
-import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelProtocol;
@@ -32,7 +32,7 @@ public class NaruMistralProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    protected String baseUrl(NaruSession session) {
+    protected String baseUrl(NaruModelContext context) {
         return "https://api.mistral.ai/v1";
     }
 
@@ -54,16 +54,16 @@ public class NaruMistralProvider extends AbstractOpenAICompatProvider {
      * accounting, so it is provider-owned behaviour, not a URL choice.
      */
     @Override
-    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruSession session) {
+    protected NaruModelProtocol createDefaultProtocol(NaruModelConfig model, NaruModelCapabilities capabilities, NaruModelContext context) {
         return new NaruModelProtocolMistral(this, model, name(), capabilities,
-                isLocal(session), defaultReadTimeout(session));
+                isLocal(context), defaultReadTimeout(context));
     }
 
     /**
      * Statically maps model limits since cloud-hosted capabilities cannot be polled natively.
      */
     @Override
-    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruSession session) {
+    protected NaruModelCapabilities resolveCapabilities(String modelName, NaruModelContext context) {
         boolean vision = modelName.contains("small") || modelName.contains("medium") || modelName.contains("large");
         // vision is broadly folded into Small 4 / Medium 3.5 / Large 3 per Mistral's 2026 lineup;
         // narrow this back down if any current line is confirmed text-only
@@ -85,7 +85,7 @@ public class NaruMistralProvider extends AbstractOpenAICompatProvider {
     }
 
     @Override
-    public List<String> findModelIds(NaruSession session) {
-        return findModelIdsWithLiveFallback(session, FALLBACK_MODELS);
+    public List<String> findModelIds(NaruModelContext context) {
+        return findModelIdsWithLiveFallback(context, FALLBACK_MODELS);
     }
 }

@@ -237,7 +237,7 @@ public class NaruModelRegistrationTypedFieldsTest {
         Assertions.assertEquals("$GEMINI_KEY_A", ref.masked().apiKey().get(),
                 "a reference names a variable, not a value");
         Assertions.assertFalse(ref.hasLiteralApiKey());
-        Assertions.assertFalse(ref.apiKeyResolved(null).isPresent(),
+        Assertions.assertFalse(ref.apiKeyResolved((net.thevpc.naru.api.agent.NaruSession) null).isPresent(),
                 "an unset reference is not a value, so the caller falls through");
     }
 
