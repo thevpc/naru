@@ -1,0 +1,35 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # the modules pin JDK 25 through maven-toolchains-plugin (vendor "openjdk"), so the JDK
+      # is also registered in ~/.m2/toolchains.xml under that vendor
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          mvn-toolchain-vendor: openjdk
+
+      # the desktop module's tests build Swing components, which need a display; tests that
+      # call a real model are opt-in (-Dnaru.test.model / -Dnaru.assess.model) and stay off
+      - name: Build and test
+        run: xvfb-run --auto-servernum mvn -B -ntp install
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '**/target/surefire-reports/'
+          retention-days: 7
