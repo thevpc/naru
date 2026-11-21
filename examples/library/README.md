@@ -47,7 +47,8 @@ NaruWorkspace          the runtime: extensions, providers, settings      NaruWor
          └─ model        any provider/model, per task
 ```
 
-- A **prompt line** is sent to the task's model, and the answer joins the task's history.
+- A **prompt line** is sent to the task's model, with its `$variables` expanded, and the
+  answer joins the task's history.
 - A **directive** (`/set`, `/if`, `/while`, `/call`, `/start`, `/wait`, `/fire`...) is run by
   the engine. `_` holds the last result, and every statement replaces it, so capture an answer
   on the next line: `/set reply = _`.
@@ -69,9 +70,11 @@ NaruWorkspace          the runtime: extensions, providers, settings      NaruWor
 
 ## Things to know
 
-- **Prompt lines are not templates.** `$var` is expanded in directives (`/set q = "Hi $name"`,
-  `/print`), not in text sent to the model. Render templates in Java, as Ex02 does, or let the
-  conversation history carry the context.
+- **Prompt lines name variables.** `$name` and `${name}` are replaced by the variable's value
+  when the line runs: routine arguments (`/call classify ticket="..."`), task variables set from
+  Java (`NaruTaskSpec.var`), earlier results (`/set status = _`, then `$status`). A name that
+  is not a variable stays as written, so `$HOME` in a shell snippet reaches the model intact;
+  `$$name` writes a literal `$name`.
 - **NARU's expressions are small.** Comparisons, arithmetic and boolean logic work; string
   functions such as `contains` do not exist. Ask the model for a one-word verdict and compare
   it with `==`, as Ex03 does.

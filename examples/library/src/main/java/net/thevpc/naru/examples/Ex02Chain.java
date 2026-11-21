@@ -27,8 +27,8 @@ import java.util.Map;
  *
  * <p>LangChain's building blocks map onto NARU like this:
  * <ul>
- *   <li><b>PromptTemplate</b> — rendered in Java; inputs can also be handed to the task
- *       as variables ({@link NaruTaskSpec#var}) for directives to use.</li>
+ *   <li><b>PromptTemplate</b> — a prompt line naming variables, {@code $name} or
+ *       {@code ${name}}; inputs come from Java ({@link NaruTaskSpec#var}) or earlier steps.</li>
  *   <li><b>SequentialChain / LCEL pipe</b> — the task's statements, run in order;
  *       {@code /set x = _} keeps a step's answer ({@code _} is the last result, and every
  *       statement replaces it, so capture it on the very next line).</li>
@@ -104,17 +104,12 @@ public class Ex02Chain {
 
         String ticket = "Hi, my package for order A-1042 never arrived and it has been two weeks. Can you check?";
 
-        // A prompt template is rendered in Java. (Prompt lines are sent verbatim: NARU expands
-        // $vars in directives such as /set and /print, not in text addressed to the model.)
-        String classify = "Classify this support ticket as BILLING, SHIPPING or OTHER. "
-                + "Reply with the label only. Ticket: %s";
-
         NaruTask chain = session.newTask(NaruTaskSpec.of()
                 .name("support-chain")
                 .var("ticket", NElement.ofString(ticket))
                 .statements(
-                        // step 1: classify
-                        classify.formatted(ticket),
+                        // step 1: classify; ${ticket} is the variable handed over from Java
+                        "Classify this support ticket as BILLING, SHIPPING or OTHER. Reply with the label only. Ticket: ${ticket}",
                         "/set category = _",
                         // step 2: extract; the ticket is already in the conversation (memory)
                         "Extract the order id from the ticket. Reply with the id only.",
@@ -122,8 +117,8 @@ public class Ex02Chain {
                         // step 3: tool use; the model decides to call lookup_order
                         "Use the lookup_order tool to check that order, then state its status in one sentence.",
                         "/set status = _",
-                        // step 4: compose from everything above
-                        "Write a short, friendly reply to the customer (two sentences).",
+                        // step 4: compose, naming the earlier steps' results explicitly
+                        "Write a short, friendly reply to the customer (two sentences) about their $category issue. Order status: $status",
                         "/set reply = _",
                         // steps can also compute without the model: /set evaluates expressions
                         "/set summary = \"[\" + category + \"] \" + order_id + \": \" + status"
