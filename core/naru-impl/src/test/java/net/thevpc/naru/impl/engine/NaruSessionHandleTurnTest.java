@@ -7,6 +7,8 @@ import net.thevpc.naru.api.agent.NaruInteraction;
 import net.thevpc.naru.api.agent.NaruLogMode;
 import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
+import net.thevpc.naru.api.agent.NaruSessionHandle;
+import net.thevpc.naru.api.agent.NaruTurn;
 import net.thevpc.naru.api.agent.NaruTurnResult;
 import net.thevpc.naru.api.agent.NaruTurnStatus;
 import net.thevpc.naru.api.agent.NaruWorkspace;
@@ -25,6 +27,7 @@ import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.util.NOptional;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -33,7 +36,9 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -56,10 +61,7 @@ public class NaruSessionHandleTurnTest {
     @Test
     @Timeout(600)
     public void aConversationSurvivesHibernationBetweenTurns() throws Exception {
-        NaruWorkspace ws = NaruWorkspace.of();
-        NPath dir = NPath.ofTempFolder("naru-handle-turn-" + System.nanoTime());
-        dir.mkdirs();
-        ws.projectDirectory(dir);
+        NaruWorkspace ws = workspace();
         String id = "conv-" + UUID.randomUUID();
 
         Turn first = turn(ws, id, "hello");
@@ -74,18 +76,73 @@ public class NaruSessionHandleTurnTest {
         assertEquals("user turns seen: 2", second.answer.text());
     }
 
+    /**
+     * A message submitted while the session is about to hibernate belongs to the conversation.
+     * The idle check that decides to hibernate runs outside the lock {@code submit} takes, so
+     * a submit could land after it: the session then hibernated with that input in flight, and
+     * the turn failed or the text was dropped. The hook holds the worker in that window.
+     */
+    @Test
+    @Timeout(600)
+    public void aMessageSubmittedAsTheSessionHibernatesIsNotLost() throws Exception {
+        NaruWorkspace ws = workspace();
+        String id = "conv-" + UUID.randomUUID();
+        CountDownLatch inWindow = new CountDownLatch(1);
+        CountDownLatch submitted = new CountDownLatch(1);
+        AtomicBoolean once = new AtomicBoolean();
+        NaruSessionHandleImpl.beforeHibernate = () -> {
+            if (once.compareAndSet(false, true)) {
+                inWindow.countDown();
+                try {
+                    submitted.await(1, TimeUnit.MINUTES);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        try {
+            NaruTurn first = handle(ws, id, new Answer()).submit(NaruInput.of("hello"));
+            Assertions.assertTrue(inWindow.await(1, TimeUnit.MINUTES), "the first turn never got idle");
+            NaruTurn second = handle(ws, id, new Answer()).submit(NaruInput.of("again"));
+            submitted.countDown();
+
+            NaruTurnResult r1 = first.result().get(5, TimeUnit.MINUTES);
+            NaruTurnResult r2 = second.result().get(5, TimeUnit.MINUTES);
+            assertNull(r1.failure());
+            assertNull(r2.failure());
+            assertEquals(NaruTurnStatus.HIBERNATED, r2.status());
+        } finally {
+            NaruSessionHandleImpl.beforeHibernate = null;
+        }
+
+        // "again" reached the conversation: the next turn is the third user message
+        assertEquals("user turns seen: 3", turn(ws, id, "and again").answer.text());
+    }
+
+    private static NaruWorkspace workspace() {
+        NaruWorkspace ws = NaruWorkspace.of();
+        NPath dir = NPath.ofTempFolder("naru-handle-turn-" + System.nanoTime());
+        dir.mkdirs();
+        ws.projectDirectory(dir);
+        return ws;
+    }
+
     private record Turn(NaruTurnResult result, Answer answer) {
     }
 
-    private static Turn turn(NaruWorkspace ws, String id, String text) throws Exception {
-        Answer answer = new Answer();
-        NaruTurnResult result = ws.newSession()
+    private static NaruSessionHandle handle(NaruWorkspace ws, String id, Answer answer) {
+        return ws.newSession()
                 .id(id)
                 .interactive()
                 .task(NaruTaskSpec.of().name("chat").model(CountingProvider.NAME + "/m"))
                 .interaction(answer)
                 .hibernateAfter(Duration.ZERO)
-                .buildHandle()
+                .buildHandle();
+    }
+
+    private static Turn turn(NaruWorkspace ws, String id, String text) throws Exception {
+        Answer answer = new Answer();
+        NaruTurnResult result = handle(ws, id, answer)
                 .submit(NaruInput.of(text))
                 .result().get(5, TimeUnit.MINUTES);
         return new Turn(result, answer);

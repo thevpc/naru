@@ -35,6 +35,11 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     private static final ConcurrentMap<String, Live> LIVE = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Object> LOCKS = new ConcurrentHashMap<>();
     private static final Object LIVE_LOCK = new Object();
+    /**
+     * Runs between a session's idle check and its hibernation; tests use it to make a submit
+     * land in that window, which is otherwise a few instructions wide.
+     */
+    static volatile Runnable beforeHibernate;
     private static final ExecutorService WORKERS = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "naru-turn");
         t.setDaemon(true);
@@ -150,6 +155,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
             }
             synchronized (live.monitor) {
                 if (live.hibernating.get()) throw new NaruSessionBusyException(id);
+                live.submits++;
                 live.lastUse = System.nanoTime();
                 TurnEvents events = new TurnEvents(listener, streaming, live.sequence);
                 pending.events = events;
@@ -277,11 +283,14 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         try {
             long idleSince = 0;
             while (true) {
+                // read before the idle checks below, which run outside the monitor
+                long seenSubmits = live.submits;
                 boolean hasTasks = live.session.hasLiveTasks();
                 if (live.started && !hasTasks) {
                     if (live.session.isRunning()) live.session.save();
-                    live.finishAll(NaruTurnResult.completed(pending.events.lagged()));
+                    // released before reported, as in hibernateLive
                     LIVE.remove(id, live);
+                    live.finishAll(NaruTurnResult.completed(pending.events.lagged()));
                     return;
                 }
                 boolean undelivered;
@@ -293,8 +302,12 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                 if (inputPolicy == NaruInputBlockPolicy.HIBERNATE && !undelivered && live.session.isHibernateEligible()) {
                     if (idleSince == 0) idleSince = System.nanoTime();
                     if (System.nanoTime() - idleSince >= grace.toNanos()) {
-                        hibernateLive(live);
-                        return;
+                        Runnable hook = beforeHibernate;
+                        if (hook != null) hook.run();
+                        if (hibernateLive(live, seenSubmits)) {
+                            return;
+                        }
+                        idleSince = 0;
                     }
                 } else {
                     idleSince = 0;
@@ -306,18 +319,26 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         } catch (Throwable e) {
 
             pending.events.emit(NaruTurnEvent.Kind.ERROR, new NMsgSnapshot(NException.getErrorFormattedMessage(e)).toElement());
-            live.finishAll(NaruTurnResult.failed(e, pending.events.lagged()));
+            // released before reported, as in hibernateLive: a retry must not find it busy
             LIVE.remove(id, live);
+            live.finishAll(NaruTurnResult.failed(e, pending.events.lagged()));
         }
     }
 
     private void ensureCapacity() {
         if (LIVE.size() < maxLive) return;
-        Live candidate = LIVE.values().stream().filter(x -> x.session.isHibernateEligible())
-                .min(Comparator.comparingLong(x -> x.lastUse)).orElse(null);
+        Live candidate = null;
+        long candidateSubmits = 0;
+        for (Live x : LIVE.values()) {
+            long seen = x.submits;
+            if (x.session.isHibernateEligible() && (candidate == null || x.lastUse < candidate.lastUse)) {
+                candidate = x;
+                candidateSubmits = seen;
+            }
+        }
         if (candidate == null) throw new NaruCapacityException(maxLive);
         try {
-            hibernateLive(candidate);
+            if (!hibernateLive(candidate, candidateSubmits)) throw new NaruCapacityException(maxLive);
             LIVE.remove(candidate.session.uuid(), candidate);
         } catch (RuntimeException e) {
             throw new NaruCapacityException(maxLive);
@@ -349,8 +370,21 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         pending.future.complete(NaruTurnResult.failed(new NaruCapacityException(maxLive), false));
     }
 
-    private void hibernateLive(Live live) {
-        if (!live.hibernating.compareAndSet(false, true)) return;
+    /**
+     * Hibernates {@code live} unless a turn was submitted since its idle check.
+     * <p>
+     * That check reads the session outside the monitor (taking it there would order it against
+     * the task locks the session's listeners hold), so a submit can land between the check and
+     * this call. Hibernating then dropped the input it carried. Under the monitor {@code submit}
+     * holds, the submit count says whether one did.
+     *
+     * @return whether it hibernated; {@code false} leaves the session live
+     */
+    private boolean hibernateLive(Live live, long seenSubmits) {
+        synchronized (live.monitor) {
+            if (live.submits != seenSubmits || !live.queued.isEmpty()) return false;
+            if (!live.hibernating.compareAndSet(false, true)) return false;
+        }
         try {
             TurnEvents events = live.events();
             events.emit(NaruTurnEvent.Kind.HIBERNATING, null);
@@ -362,6 +396,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
             // and be told the session is busy
             LIVE.remove(live.session.uuid(), live);
             live.finishAll(NaruTurnResult.hibernated(pendingInputs, events.lagged()));
+            return true;
         } catch (RuntimeException e) {
             live.hibernating.set(false);
             throw e;
@@ -408,6 +443,8 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         final AtomicBoolean driving = new AtomicBoolean();
         final AtomicLong sequence;
         final AtomicBoolean hibernating = new AtomicBoolean();
+        /** Turns submitted so far; written under {@link #monitor}, see {@link #hibernateLive}. */
+        volatile long submits;
         volatile Pending current;
         volatile long lastUse = System.nanoTime();
         volatile boolean started;
