@@ -361,7 +361,11 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                 future.completeExceptionally(e);
             }
         });
-        //signal.;
+        // without this the loop found the action on its next 100 ms poll, and a caller waiting
+        // on it (a save at hibernation, every turn of a server) waited that long for nothing
+        synchronized (signal) {
+            signal.notifyAll();
+        }
         return future;
     }
 
@@ -414,6 +418,11 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
 
     private void sleepOrSignal(long ms) {
         synchronized (signal) {
+            // checked under the lock postAction notifies with, so an action posted after the
+            // drain but before this wait is not left for the next poll
+            if (!pendingActions.isEmpty()) {
+                return;
+            }
             try {
                 signal.wait(ms <= 0 ? 50 : ms);
             } catch (InterruptedException e) {
