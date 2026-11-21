@@ -413,6 +413,11 @@ public class NaruFileSessionStore implements NaruSessionStore {
      * The number is global, not per project, so it lives at the store root rather than
      * inside any session folder — moving a session between projects must not change its
      * placeholder or let a second session claim the same {@code Session N}.
+     * <p>
+     * Written atomically but not synced: every new session takes a number under this one
+     * lock, and two disk syncs each made a burst of new conversations wait in line (seconds,
+     * with hundreds). A power loss can roll the counter back, so a later session may reuse a
+     * placeholder name; sessions are told apart by uuid, never by this.
      */
     @Override
     public long nextSessionNumber() {
@@ -421,7 +426,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
             NPath counter = root.resolve(SESSION_COUNTER_FILE);
             long next = readSessionCounter(counter) + 1;
             try {
-                NaruFileIo.writeAtomic(counter, Long.toString(next));
+                NaruFileIo.writeAtomicBytes(counter, Long.toString(next).getBytes(java.nio.charset.StandardCharsets.UTF_8), false);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -626,8 +631,22 @@ public class NaruFileSessionStore implements NaruSessionStore {
         });
     }
 
-    /** Cross-process metadata lock; static synchronization also avoids overlapping JVM locks. */
-    private static synchronized <T> T withMetadataLock(NPath dir, java.util.function.Supplier<T> action) {
+    /** One monitor per folder: a JVM may not hold two file locks on one file at once. */
+    private static final Map<java.nio.file.Path, Object> METADATA_MONITORS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Cross-process metadata lock: the file lock keeps other processes out, the folder's own
+     * monitor keeps this JVM's threads from overlapping on it. It used to be one monitor for
+     * the whole JVM, so every session's metadata write waited on every other's.
+     */
+    private static <T> T withMetadataLock(NPath dir, java.util.function.Supplier<T> action) {
+        Object monitor = METADATA_MONITORS.computeIfAbsent(NaruFileIo.path(dir), x -> new Object());
+        synchronized (monitor) {
+            return withFileLock(dir, action);
+        }
+    }
+
+    private static <T> T withFileLock(NPath dir, java.util.function.Supplier<T> action) {
         try {
             NaruFileIo.mkdirs(dir);
             java.nio.file.Path lockPath = NaruFileIo.path(dir.resolve(".metadata.lock"));
@@ -1333,20 +1352,21 @@ public class NaruFileSessionStore implements NaruSessionStore {
     /**
      * Serializes an element the way a human would want to read it.
      *
-     * <p>Synchronized because the underlying TSON formatter shares a mutable cache of
-     * format options across writers, and a session is written from whatever thread the
-     * scheduler happens to be on. Two sessions persisting at once raced in that cache and
-     * corrupted each other's element, which surfaced as a save failing with an exception
-     * from deep inside the formatter -- with no session involved at fault.
-     *
-     * <p>Serializing is cheap next to what it describes, so the lock costs nothing worth
-     * measuring.
+     * <p>Each thread formats with a pretty formatter of its own. The shared one
+     * ({@code NElementFormatterStyle.PRETTY}) is a single instance whose option cache fills
+     * on first use with no lock, so two sessions saving at once could throw
+     * {@code ConcurrentModificationException} from inside it. This used to be a global lock
+     * instead, and with hundreds of sessions that lock was the store's worst contention
+     * point. {@code NaruFilePrettyConcurrencyTest} formats from many fresh threads at once.
      */
-    static synchronized String pretty(NElement element) {
+    static String pretty(NElement element) {
         return net.thevpc.nuts.elem.NElementWriter.ofTson().ntf(false)
-                .formatter(net.thevpc.nuts.elem.NElementFormatterStyle.PRETTY)
+                .formatter(PRETTY.get())
                 .formatPlain(element);
     }
+
+    private static final ThreadLocal<net.thevpc.nuts.elem.NElementFormatter> PRETTY = ThreadLocal.withInitial(
+            () -> net.thevpc.nuts.elem.NElementFormatter.ofPretty().builder().build());
 
     /**
      * Reads a file, turning an I/O failure into an unchecked one.
