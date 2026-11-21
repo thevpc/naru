@@ -5,6 +5,8 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruToolCall;
 import net.thevpc.naru.api.model.NaruToolOutputPolicy;
 import net.thevpc.naru.api.model.NaruWindowSpec;
+import net.thevpc.nuts.Nuts;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -23,6 +25,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * place in the system to keep that from happening.
  */
 class NaruCompactCutTest {
+
+    @BeforeAll
+    static void setUpWorkspace() {
+        Nuts.require();
+    }
 
     private static NaruMessage turn(String text) {
         return NaruMessage.user(text).setTurnBoundary(true);

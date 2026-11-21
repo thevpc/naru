@@ -4,6 +4,8 @@ import net.thevpc.naru.api.model.NaruMessage;
 import net.thevpc.naru.api.model.NaruSummaryLevel;
 import net.thevpc.naru.api.model.NaruSummaryOptions;
 import net.thevpc.naru.api.model.NaruToolOutputPolicy;
+import net.thevpc.nuts.Nuts;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -20,6 +22,11 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
  * longer exists.
  */
 class NaruCompactCacheKeyTest {
+
+    @BeforeAll
+    static void setUpWorkspace() {
+        Nuts.require();
+    }
 
     private static final NaruCompactCacheKey.NaruSummaryOutputKey OPTIONS =
             new NaruCompactCacheKey.NaruSummaryOutputKey("level=NORMAL");

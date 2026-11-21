@@ -14,6 +14,8 @@ import net.thevpc.naru.api.model.NaruModelCapabilities;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelInfo;
 import net.thevpc.naru.api.model.NaruModelKey;
+import net.thevpc.naru.api.model.NaruModelProtocol;
+import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruProviderRateLimitInfo;
 import net.thevpc.naru.api.model.NaruSummaryOptions;
 import net.thevpc.naru.api.model.NaruSummaryTrigger;
@@ -267,21 +269,32 @@ public class NaruCompactExtension implements NaruSessionExtension, NaruSessionUs
         }
     }
 
-    /** The model's context window, or 0 when nothing reports one. */
+    /**
+     * The model's context window, or 0 when nothing reports one.
+     *
+     * <p>Asks the model's own provider, the way a model listing describes one entry. This runs
+     * before every model request: describing every model of every provider instead meant
+     * fetching each provider's live catalog and building a protocol per model, seconds per turn.
+     */
     static long contextWindowOf(NaruTask task, NaruModelConfig model) {
         if (task == null || model == null || task.session() == null) {
             return 0;
         }
+        NaruSession session = task.session();
         NaruModelKey key = model.key();
-        for (NaruModelInfo info : task.session().registry().modelsInfos(task.session())) {
-            if (info != null && key.equals(info.key())) {
-                NaruModelCapabilities caps = info.capabilities();
-                if (caps != null && caps.contextLength() > 0) {
-                    return caps.contextLength();
-                }
-            }
+        NaruModelProvider provider = session.registry().provider(key.provider()).orNull();
+        if (provider == null) {
+            return 0;
         }
-        return 0;
+        try {
+            NaruModelProtocol protocol = provider.getProtocol(new NaruModelConfig(provider.name(), key.model()), session).orNull();
+            NaruModelInfo info = provider.getModelInfo(key.model(), protocol == null ? null : protocol.getCapabilities(), session);
+            NaruModelCapabilities caps = info == null ? null : info.capabilities();
+            return caps != null && caps.contextLength() > 0 ? caps.contextLength() : 0;
+        } catch (RuntimeException e) {
+            // an unknown window only means no automatic compaction for this request
+            return 0;
+        }
     }
 
     /**
