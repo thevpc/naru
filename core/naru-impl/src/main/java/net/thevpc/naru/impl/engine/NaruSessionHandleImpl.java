@@ -357,8 +357,11 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
             List<NaruPendingInput> pendingInputs = live.session.pendingInputs();
             live.session.hibernate();
             events.emit(NaruTurnEvent.Kind.HIBERNATED, null);
-            live.finishAll(NaruTurnResult.hibernated(pendingInputs, events.lagged()));
+            // out of LIVE before anyone hears "hibernated": a caller that submits its next turn
+            // on that news must rehydrate from the store, not find this entry still hibernating
+            // and be told the session is busy
             LIVE.remove(live.session.uuid(), live);
+            live.finishAll(NaruTurnResult.hibernated(pendingInputs, events.lagged()));
         } catch (RuntimeException e) {
             live.hibernating.set(false);
             throw e;
