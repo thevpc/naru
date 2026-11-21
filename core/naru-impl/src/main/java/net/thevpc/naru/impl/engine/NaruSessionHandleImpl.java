@@ -221,6 +221,11 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                             live.session.start();
                             live.started = true;
                         }
+                    } else if (live.started && awaitingInput(live.session)) {
+                        // every task already waits for input, but its request is registered just
+                        // after the status changes: the session is idle, not busy, and the request
+                        // takes this from the queue when it is registered (onInputRequested)
+                        live.queued.add(pending);
                     } else if (live.started && !live.session.tasks().isEmpty()) {
                         if (busy == NaruBusyPolicy.REJECT) throw new NaruSessionBusyException(id);
                         if (busy == NaruBusyPolicy.INTERRUPT) {
@@ -246,6 +251,17 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                 WORKERS.execute(() -> awaitTurn(selectedLive, selected));
             return new TurnImpl(pending, selectedLive);
         }
+    }
+
+    /** Some task is live, and every live task is parked waiting for input. */
+    private static boolean awaitingInput(NaruSession session) {
+        boolean any = false;
+        for (NaruTask t : session.tasks()) {
+            if (t.status().isCompleted()) continue;
+            if (t.status() != NaruTaskStatus.BLOCKED_ON_INPUT) return false;
+            any = true;
+        }
+        return any;
     }
 
     private NaruPendingInput chooseInput(List<NaruPendingInput> requests, String requestId) {
