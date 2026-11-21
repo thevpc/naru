@@ -12,9 +12,11 @@ import net.thevpc.naru.api.agent.NaruSessionHandle;
 import net.thevpc.naru.api.agent.NaruTurnResult;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.naru.api.model.NaruModelProvider;
+import net.thevpc.naru.api.model.NaruScriptedModelProvider;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.examples.support.Examples;
-import net.thevpc.naru.examples.support.ScriptedModelProvider;
+import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
@@ -126,7 +128,9 @@ public class Ex04TurnServer {
 
     public static void main(String[] args) throws Exception {
         NaruWorkspace ws = Examples.workspace("turn-server");
-        scriptOfflineAnswers();
+        // a nuts component instance, so it also reaches the sessions the handle rebuilds from
+        // the store on each turn
+        NExtensions.of().registerInstance(NaruModelProvider.class, offlineModel());
         Ex04TurnServer backend = new Ex04TurnServer(ws);
 
         int port = Integer.getInteger("port", 8765);
@@ -178,22 +182,23 @@ public class Ex04TurnServer {
     }
 
     /** Offline stand-ins. The second answer only works if the first turn survived hibernation. */
-    private static void scriptOfflineAnswers() {
+    private static NaruScriptedModelProvider offlineModel() {
         Pattern intro = Pattern.compile("my name is (\\w+)", Pattern.CASE_INSENSITIVE);
-        ScriptedModelProvider.when("what is my name", r -> {
-            for (NaruMessage m : r.messages()) {
-                if (m.getRole() == NaruRole.user && m.getFilteredContent() != null) {
-                    Matcher matcher = intro.matcher(m.getFilteredContent());
-                    if (matcher.find()) {
-                        return NaruMessage.assistant("Your name is " + matcher.group(1) + ".");
+        return new NaruScriptedModelProvider()
+                .when("what is my name", r -> {
+                    for (NaruMessage m : r.messages()) {
+                        if (m.getRole() == NaruRole.user && m.getFilteredContent() != null) {
+                            Matcher matcher = intro.matcher(m.getFilteredContent());
+                            if (matcher.find()) {
+                                return NaruMessage.assistant("Your name is " + matcher.group(1) + ".");
+                            }
+                        }
                     }
-                }
-            }
-            return NaruMessage.assistant("I don't know your name yet.");
-        });
-        ScriptedModelProvider.when("my name is", r -> {
-            Matcher matcher = intro.matcher(r.messages().get(r.messages().size() - 1).getFilteredContent());
-            return NaruMessage.assistant(matcher.find() ? "Nice to meet you, " + matcher.group(1) + "!" : "Hello!");
-        });
+                    return NaruMessage.assistant("I don't know your name yet.");
+                })
+                .when("my name is", r -> {
+                    Matcher matcher = intro.matcher(r.messages().get(r.messages().size() - 1).getFilteredContent());
+                    return NaruMessage.assistant(matcher.find() ? "Nice to meet you, " + matcher.group(1) + "!" : "Hello!");
+                });
     }
 }

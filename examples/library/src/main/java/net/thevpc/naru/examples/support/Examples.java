@@ -7,6 +7,7 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelKey;
+import net.thevpc.naru.api.model.NaruScriptedModelProvider;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
 import net.thevpc.nuts.text.NText;
@@ -18,7 +19,7 @@ import java.util.Set;
  * What every example shares: booting the runtime, choosing a model, and printing output.
  *
  * <p>The model comes from {@code -Dnaru.model=provider/model}. It defaults to the offline
- * {@link ScriptedModelProvider}, so the examples run anywhere; point it at a real model to
+ * {@link NaruScriptedModelProvider}, so the examples run anywhere; point it at a real model to
  * see the same code talk to one:
  * <pre>
  *   -Dnaru.model=ollama/qwen2.5-coder:7b
@@ -31,16 +32,16 @@ public final class Examples {
     }
 
     public static String modelKey() {
-        return System.getProperty("naru.model", ScriptedModelProvider.NAME + "/demo");
+        return System.getProperty("naru.model",
+                NaruScriptedModelProvider.DEFAULT_NAME + "/" + NaruScriptedModelProvider.DEFAULT_MODEL);
     }
 
     public static boolean offline() {
-        return modelKey().startsWith(ScriptedModelProvider.NAME + "/");
+        return modelKey().startsWith(NaruScriptedModelProvider.DEFAULT_NAME + "/");
     }
 
     public static NaruModelConfig model() {
-        NaruModelKey key = NaruModelKey.parse(modelKey()).get();
-        return new NaruModelConfig(key.provider(), key.model());
+        return new NaruModelConfig(NaruModelKey.parse(modelKey()).get());
     }
 
     /**
@@ -49,11 +50,8 @@ public final class Examples {
      * library user wants: the pom decides what the agent can do.
      */
     public static NaruWorkspace workspace(String name) {
-        NaruWorkspace ws = NaruWorkspace.of();
-        NPath dir = NPath.ofTempFolder("naru-example-" + name);
-        dir.mkdirs();
-        ws.projectDirectory(dir);
-        return ws;
+        return NaruWorkspace.of()
+                .projectDirectory(NPath.ofTempFolder("naru-example-" + name).mkdirs());
     }
 
     /** A headless session: no terminal, no stdin thread, output printed by {@link Console}. */

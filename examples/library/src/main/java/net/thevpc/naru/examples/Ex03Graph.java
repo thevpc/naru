@@ -4,15 +4,17 @@ import net.thevpc.naru.api.agent.NaruRole;
 import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelRequest;
+import net.thevpc.naru.api.model.NaruScriptedModelProvider;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.examples.support.Examples;
-import net.thevpc.naru.examples.support.ScriptedModelProvider;
 import net.thevpc.nuts.elem.NElement;
 
 import java.time.Duration;
 import java.util.List;
+import net.thevpc.nuts.ext.NExtensions;
 
 /**
  * Example 3 — the LangGraph role: nodes, shared state, a conditional cycle, parallel branches.
@@ -87,7 +89,8 @@ public class Ex03Graph {
 
     public static void main(String[] args) {
         NaruWorkspace ws = Examples.workspace("graph");
-        scriptOfflineAnswers();
+        // a nuts component instance: every session of the workspace finds the configured model
+        NExtensions.of().registerInstance(NaruModelProvider.class, offlineModel());
 
         NaruSession session = Examples.session(ws);
         NaruTask graph = session.newTask(NaruTaskSpec.of().name("graph").statements(GRAPH));
@@ -110,17 +113,18 @@ public class Ex03Graph {
     }
 
     /** Offline stand-ins: the first draft forgets the price, so the cycle runs twice. */
-    private static void scriptOfflineAnswers() {
-        ScriptedModelProvider.when("product description for ferro", r -> NaruMessage.assistant(
-                !lastAssistant(r).contains("Mention the price")
-                        ? "Ferro keeps water cold for 24 hours. Its brushed steel body survives every commute."
-                        : "Ferro keeps water cold for 24 hours. Built from brushed steel, it costs just 29 EUR."));
-        ScriptedModelProvider.when("reply with exactly one word, approved or revise",
-                r -> NaruMessage.assistant(lastAssistant(r).contains("29 EUR") ? "APPROVED" : "REVISE"));
-        ScriptedModelProvider.when("one short instruction", "Mention the price, 29 EUR, in the second sentence.");
-        ScriptedModelProvider.when("seo keywords", "steel water bottle, reusable bottle, insulated bottle, Ferro, eco bottle");
-        ScriptedModelProvider.when("into french",
-                "Ferro garde l'eau froide pendant 24 heures. En acier brossé, elle ne coûte que 29 EUR.");
+    private static NaruScriptedModelProvider offlineModel() {
+        return new NaruScriptedModelProvider()
+                .when("product description for ferro", r -> NaruMessage.assistant(
+                        !lastAssistant(r).contains("Mention the price")
+                                ? "Ferro keeps water cold for 24 hours. Its brushed steel body survives every commute."
+                                : "Ferro keeps water cold for 24 hours. Built from brushed steel, it costs just 29 EUR."))
+                .when("reply with exactly one word, approved or revise",
+                        r -> NaruMessage.assistant(lastAssistant(r).contains("29 EUR") ? "APPROVED" : "REVISE"))
+                .when("one short instruction", "Mention the price, 29 EUR, in the second sentence.")
+                .when("seo keywords", "steel water bottle, reusable bottle, insulated bottle, Ferro, eco bottle")
+                .when("into french",
+                        "Ferro garde l'eau froide pendant 24 heures. En acier brossé, elle ne coûte que 29 EUR.");
     }
 
     private static String lastAssistant(NaruModelRequest r) {

@@ -4,15 +4,17 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.annotations.NaruArg;
 import net.thevpc.naru.api.annotations.NaruToolSpec;
+import net.thevpc.naru.api.model.NaruModelProvider;
+import net.thevpc.naru.api.model.NaruScriptedModelProvider;
 import net.thevpc.naru.api.task.NaruTask;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.examples.support.Examples;
-import net.thevpc.naru.examples.support.ScriptedModelProvider;
 import net.thevpc.nuts.elem.NElement;
 
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import net.thevpc.nuts.ext.NExtensions;
 
 /**
  * Example 2 — the LangChain role: prompt templates, a sequential chain, and a tool.
@@ -55,7 +57,8 @@ public class Ex02Chain {
     public static void main(String[] args) {
         // boots nuts first: NElement and the other nuts types need a running workspace
         NaruWorkspace ws = Examples.workspace("chain");
-        scriptOfflineAnswers();
+        // a nuts component instance: every session of the workspace finds the configured model
+        NExtensions.of().registerInstance(NaruModelProvider.class, offlineModel());
         NaruSession session = Examples.session(ws);
         session.registry().registerToolsetProviderType(OrderTools.class);
 
@@ -100,13 +103,14 @@ public class Ex02Chain {
         System.exit(0);
     }
 
-    private static void scriptOfflineAnswers() {
-        ScriptedModelProvider.when("classify this support ticket", "SHIPPING");
-        ScriptedModelProvider.when("extract the order id", "A-1042");
-        ScriptedModelProvider.callTool("use the lookup_order tool", "lookup_order",
-                Map.of("order_id", NElement.ofString("A-1042")),
-                result -> "Order A-1042 shipped on 2 November but has not moved from the Tunis hub for 9 days.");
-        ScriptedModelProvider.when("reply to the customer",
-                "Sorry for the wait! Your order A-1042 has been stuck at our Tunis hub, and we have opened a trace with DHL today.");
+    private static NaruScriptedModelProvider offlineModel() {
+        return new NaruScriptedModelProvider()
+                .when("classify this support ticket", "SHIPPING")
+                .when("extract the order id", "A-1042")
+                .callTool("use the lookup_order tool", "lookup_order",
+                        Map.of("order_id", NElement.ofString("A-1042")),
+                        result -> "Order A-1042 shipped on 2 November but has not moved from the Tunis hub for 9 days.")
+                .when("reply to the customer",
+                        "Sorry for the wait! Your order A-1042 has been stuck at our Tunis hub, and we have opened a trace with DHL today.");
     }
 }
