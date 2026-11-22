@@ -1969,6 +1969,19 @@ public class NaruSessionImpl implements NaruSession, NToElement {
     }
 
     public void hibernate() {
+        if (!tryHibernate()) throw new IllegalStateException("session is not quiescent on input");
+    }
+
+    /**
+     * {@link #hibernate()}, declining instead of throwing when the session is not quiescent.
+     * <p>
+     * A host deciding to hibernate reads the session first, and a task can wake between that
+     * read and this call (its status is written before its listeners run, so not even a change
+     * count sees it yet). Such a host wants to back off and look again, not fail a turn.
+     *
+     * @return {@code false}, with nothing done, when a task is not parked on input
+     */
+    public boolean tryHibernate() {
         // Never hold this session's monitor across save(): the save is posted to the workspace
         // maintenance thread, and that thread takes this very monitor to write the state
         // (writeStateInPlace), as does a worker mid-way through its tick (checkpointTask).
@@ -1976,13 +1989,13 @@ public class NaruSessionImpl implements NaruSession, NToElement {
         // the writer — hibernate() never returned. That is how closing an idle window froze the
         // whole desktop: the close path sat inside this method on the EDT and never reached its
         // exit. Eligibility still decides first; only the teardown below takes the monitor.
-        if (!isHibernateEligible()) throw new IllegalStateException("session is not quiescent on input");
+        if (!isHibernateEligible()) return false;
         save();
         synchronized (this) {
             if (stopped || stopping) {
                 // stop() got here first (it needs no monitor of its own); its teardown is the one
                 // that stands, and repeating the teardown below would close every toolset twice
-                return;
+                return true;
             }
             for (NaruToolset toolset : registry.toolsets()) toolset.onHibernate(this);
             for (NaruTool tool : registry.tools().values()) tool.onHibernate(this);
@@ -1995,6 +2008,7 @@ public class NaruSessionImpl implements NaruSession, NToElement {
             scheduler.shutdown();
             interaction.close();
         }
+        return true;
     }
 
     /**

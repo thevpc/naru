@@ -366,7 +366,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                     if (System.nanoTime() - idleSince >= grace.toNanos()) {
                         Runnable hook = beforeHibernate;
                         if (hook != null) hook.run();
-                        if (hibernateLive(live, seenSubmits)) {
+                        if (hibernateLive(live, seenSubmits, seenChanges)) {
                             return;
                         }
                         idleSince = 0;
@@ -402,16 +402,22 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         if (LIVE.size() < maxLive) return;
         Live candidate = null;
         long candidateSubmits = 0;
+        long candidateChanges = 0;
         for (Live x : LIVE.values()) {
             long seen = x.submits;
+            long changed;
+            synchronized (x.monitor) {
+                changed = x.changes;
+            }
             if (x.session.isHibernateEligible() && (candidate == null || x.lastUse < candidate.lastUse)) {
                 candidate = x;
                 candidateSubmits = seen;
+                candidateChanges = changed;
             }
         }
         if (candidate == null) throw new NaruCapacityException(maxLive);
         try {
-            if (!hibernateLive(candidate, candidateSubmits)) throw new NaruCapacityException(maxLive);
+            if (!hibernateLive(candidate, candidateSubmits, candidateChanges)) throw new NaruCapacityException(maxLive);
             LIVE.remove(candidate.session.uuid(), candidate);
         } catch (RuntimeException e) {
             throw new NaruCapacityException(maxLive);
@@ -444,29 +450,46 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     }
 
     /**
-     * Hibernates {@code live} unless a turn was submitted since its idle check.
+     * Hibernates {@code live} unless something happened since its idle check.
      * <p>
      * That check reads the session outside the monitor (taking it there would order it against
-     * the task locks the session's listeners hold), so a submit can land between the check and
-     * this call. Hibernating then dropped the input it carried. Under the monitor {@code submit}
-     * holds, the submit count says whether one did.
+     * the task locks the session's listeners hold), so the session can wake between the check
+     * and this call: a submit landing, or a queued input on its way to the task (the queue is
+     * already empty, the task not yet running). Hibernating then failed, the session no longer
+     * quiescent. Under the monitor, the submit count and the change count (bumped by every
+     * task status change) say whether anything did.
      *
      * @return whether it hibernated; {@code false} leaves the session live
      */
-    private boolean hibernateLive(Live live, long seenSubmits) {
+    /** Leaves {@code live} running: a submit that waited on this hibernation retries. */
+    private static boolean backOff(Live live, CompletableFuture<Void> saving) {
+        live.hibernating.set(false);
+        saving.complete(null);
+        return false;
+    }
+
+    private boolean hibernateLive(Live live, long seenSubmits, long seenChanges) {
         CompletableFuture<Void> saving = new CompletableFuture<>();
         synchronized (live.monitor) {
-            if (live.submits != seenSubmits || !live.queued.isEmpty()) return false;
+            if (live.submits != seenSubmits || live.changes != seenChanges || !live.queued.isEmpty()) return false;
             if (!live.hibernating.compareAndSet(false, true)) return false;
             live.saving = saving;
         }
         try {
             Runnable hook = whileHibernating;
             if (hook != null) hook.run();
+            // checked again before announcing anything: the counts above cannot see a status
+            // already written whose listeners have not run yet
+            if (!live.session.isHibernateEligible()) {
+                return backOff(live, saving);
+            }
             TurnEvents events = live.events();
             events.emit(NaruTurnEvent.Kind.HIBERNATING, null);
             List<NaruPendingInput> pendingInputs = live.session.pendingInputs();
-            live.session.hibernate();
+            if (!live.session.tryHibernate()) {
+                // the same, in the instant since: nothing was saved or torn down
+                return backOff(live, saving);
+            }
             events.emit(NaruTurnEvent.Kind.HIBERNATED, null);
             // out of LIVE before anyone hears "hibernated": a caller that submits its next turn
             // on that news must rehydrate from the store, not find this entry still hibernating
