@@ -110,8 +110,23 @@ public final class MainWindow extends JFrame {
                     String text = entry.header.project().description();
                     if (text != null && !text.isBlank()) return text;
                 }
+                if (entry != null && entry.isGroup()) {
+                    int n = entry.header.count();
+                    return n + " session" + (n == 1 ? "" : "s");
+                }
+                // the row only has room for how recent the session is; the exact stamps wait here
+                if (entry != null) return entry.dateSummary();
             }
             return super.getToolTipText(e);
+        }
+
+        /**
+         * Rows are as wide as the rail, never wider. An HTML row measures its whole line, so a
+         * long name or date used to widen the list past the rail and grow a horizontal scrollbar.
+         */
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
         }
     };
     /** The sessions sidebar, kept so its width can follow the interface size like everything else. */
@@ -352,6 +367,15 @@ public final class MainWindow extends JFrame {
                         return;
                     }
                 }
+                if (javax.swing.SwingUtilities.isLeftMouseButton(e) && !e.isPopupTrigger()
+                        && e.getClickCount() == 1) {
+                    SessionEntry group = groupRowAt(e.getPoint());
+                    if (group != null) {
+                        toggleGroup(group);
+                        e.consume();
+                        return;
+                    }
+                }
                 showMenu(e);
             }
             @Override public void mouseReleased(MouseEvent e) { showMenu(e); }
@@ -359,9 +383,10 @@ public final class MainWindow extends JFrame {
                 if (!e.isPopupTrigger()) return;
                 int row = sessionList.locationToIndex(e.getPoint());
                 if (row < 0) return;
-                sessionList.setSelectedIndex(row);
-                SessionEntry entry = sessionList.getSelectedValue();
+                // read the row itself: a group header never takes the selection
+                SessionEntry entry = sessionList.getModel().getElementAt(row);
                 if (entry == null) return;
+                if (!entry.isGroup()) sessionList.setSelectedIndex(row);
                 javax.swing.JPopupMenu menu = entry.isGroup() ? groupMenu(entry) : sessionMenu(entry);
                 menu.show(sessionList, e.getX(), e.getY());
             }
@@ -391,6 +416,33 @@ public final class MainWindow extends JFrame {
         }
         return p.x >= bounds.x + bounds.width - GROUP_ACTION_BAND
                 ? GroupAction.NEW_SESSION : GroupAction.SETTINGS;
+    }
+
+    /**
+     * A group header is a section label: it never holds the selection. A click on one folds it and
+     * leaves the selection where it was; the arrow keys step over it to the next session in the
+     * direction they were going.
+     */
+    private final class SessionRowSelection extends javax.swing.DefaultListSelectionModel {
+        @Override
+        public void setSelectionInterval(int index0, int index1) {
+            int target = sessionRowFor(index1, getLeadSelectionIndex());
+            if (target >= 0) super.setSelectionInterval(target, target);
+        }
+    }
+
+    /** Where a selection asked for {@code index} should land: a session row, or -1 for nowhere. */
+    private int sessionRowFor(int index, int lead) {
+        javax.swing.ListModel<SessionEntry> rows = sessionList.getModel();
+        if (index < 0 || index >= rows.getSize()) return index;
+        if (!rows.getElementAt(index).isGroup()) return index;
+        // a pointer on a header is the fold click, never a selection
+        if (java.awt.EventQueue.getCurrentEvent() instanceof java.awt.event.MouseEvent) return -1;
+        int step = index < lead ? -1 : 1;
+        for (int i = index + step; i >= 0 && i < rows.getSize(); i += step) {
+            if (!rows.getElementAt(i).isGroup()) return i;
+        }
+        return -1;
     }
 
     /** The group row at a point, or null when the point is not on one. */
@@ -551,7 +603,7 @@ public final class MainWindow extends JFrame {
         JMenuItem closeCurrent = new JMenuItem("Close session"); closeCurrent.addActionListener(e -> closeSession());
         JMenuItem deleteSelected = new JMenuItem("Delete selected session…"); deleteSelected.addActionListener(e -> deleteSession(sessionList.getSelectedValue()));
         sessionMenu.add(openSelected); sessionMenu.add(rename); sessionMenu.add(closeCurrent); sessionMenu.add(deleteSelected);
-        JMenu help = new JMenu("Help"); help.add(new JMenuItem("About NARU"));
+        JMenu help = new JMenu("Help"); JMenuItem about = new JMenuItem("About NARU"); about.addActionListener(e -> showAbout()); help.add(about);
         menus.add(file); menus.add(view); menus.add(sessionMenu); menus.add(help);
         // The mark leads, then the menus: the bar says what the window is before it says what you
         // can do in it, and the wash under it starts at the mark and fades away from it.
@@ -622,12 +674,43 @@ public final class MainWindow extends JFrame {
      * second line is cut off, at a smaller one the row is mostly empty. Derive it from the list's
      * own font so the row grows and shrinks with the interface size the way everything else does.
      */
+    private int sessionRowHeight = 48;
+    private int groupRowHeight = 30;
+    /** Group keys the reader folded; remembered across runs. */
+    private final java.util.Set<String> collapsedGroups = loadCollapsedGroups();
+    private static final String COLLAPSED_GROUPS_KEY = "desktop.collapsedGroups";
+
+    private static java.util.Set<String> loadCollapsedGroups() {
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        String stored = java.util.prefs.Preferences.userNodeForPackage(MainWindow.class)
+                .get(COLLAPSED_GROUPS_KEY, "");
+        for (String key : stored.split("\n")) if (!key.isBlank()) keys.add(key);
+        return keys;
+    }
+
+    private static String groupKey(net.thevpc.naru.desktop.model.SessionGrouping.Header h) {
+        if (h.projectId() != null) return h.projectId();
+        return (h.unknown() ? "~unknown:" : "~default:") + h.title();
+    }
+
+    private void toggleGroup(SessionEntry group) {
+        String key = groupKey(group.header);
+        if (!collapsedGroups.remove(key)) collapsedGroups.add(key);
+        java.util.prefs.Preferences.userNodeForPackage(MainWindow.class)
+                .put(COLLAPSED_GROUPS_KEY, String.join("\n", collapsedGroups));
+        rebuildSessionList();
+    }
+
     private void applySessionRowHeight() {
         if (sessionList == null) return;
         java.awt.Font f = sessionList.getFont();
         if (f == null) return;
         int line = sessionList.getFontMetrics(f).getHeight();
-        sessionList.setFixedCellHeight(Math.max(line + 12, (int) Math.round(line * 2.7)));
+        // Two heights, not one: a session row holds two lines, a group header one. A single fixed
+        // height sized for sessions left every header floating in a band twice its text.
+        sessionRowHeight = Math.max(line + 12, (int) Math.round(line * 2.7));
+        groupRowHeight = line + 14;
+        sessionList.setFixedCellHeight(-1);
         if (sessionRailPanel != null) {
             // the "＋ New" button sits on the same row as the "Sessions" title; a fixed 220px rail
             // clips it once the interface size grows, so the rail keeps pace with the font too
@@ -905,8 +988,9 @@ public final class MainWindow extends JFrame {
         String title = htmlEscape(group.header.title());
         int n = group.header.count();
         String count = n > 0
-                ? "<span style='color:" + UiPalette.css(UiPalette.muted()) + ";'> &middot; "
-                + n + " session" + (n == 1 ? "" : "s") + "</span>"
+                // the bare number: beside the group's two buttons a narrow rail has no room for the
+                // word, and a count wrapped onto a second line read as another row
+                ? "<span style='color:" + UiPalette.css(UiPalette.muted()) + ";'>&nbsp;&nbsp;" + n + "</span>"
                 : "";
         String mark = "";
         net.thevpc.naru.desktop.model.SessionGrouping.Project project = group.header.project();
@@ -918,7 +1002,9 @@ public final class MainWindow extends JFrame {
                         : UiPalette.readable(hue)) + ";'>" + symbol + "</span>&nbsp;&nbsp;";
             }
         }
-        return "&#9656;&nbsp;&nbsp;" + mark + "<b>" + title + "</b>" + count;
+        // ▾ open, ▸ folded: the chevron is the control the click on the row works
+        String chevron = group.collapsed ? "&#9656;" : "&#9662;";
+        return chevron + "&nbsp;&nbsp;" + mark + "<b>" + title + "</b>" + count;
     }
 
     private static String htmlEscape(String s) {
@@ -1773,11 +1859,18 @@ public final class MainWindow extends JFrame {
             for (var line : net.thevpc.naru.desktop.model.SessionGrouping.layout(
                     snap.projects(), visible, e -> projectOfRow(e, snap))) {
                 if (line.item() == null && !query.isEmpty()) continue; // empty group while filtering
+                boolean folded = query.isEmpty() && collapsedGroups.contains(groupKey(line.header()));
                 if (line.header() != last) {
-                    replacement.addElement(SessionEntry.group(line.header()));
+                    SessionEntry header = SessionEntry.group(line.header());
+                    header.collapsed = folded;
+                    replacement.addElement(header);
                     last = line.header();
                 }
-                if (line.item() != null) replacement.addElement(line.item());
+                // a folded group still shows the session this window is reading: hiding the
+                // conversation on screen from the list that names it would leave nothing selected
+                if (line.item() != null && (!folded || line.item().model != null && line.item().model == session)) {
+                    replacement.addElement(line.item());
+                }
             }
         }
         // Populate off-list, then publish once. DefaultListModel emits one event per insertion;
@@ -1945,7 +2038,13 @@ public final class MainWindow extends JFrame {
         selected.model.addListener(sessionListSync);
         transcript = new TranscriptPane(session);
         transcript.setTaskFilter(Long.MIN_VALUE);
-        transcript.setMessageActionHandler(session::submitMessageAction);
+        transcript.setMessageActionHandler(value -> {
+            if (net.thevpc.naru.desktop.ui.TranscriptPane.CHOOSE_MODEL_ACTION.equals(value)) {
+                if (input != null) input.openModelPicker();
+            } else {
+                session.submitMessageAction(value);
+            }
+        });
         sessionLogPane = new TranscriptPane(session, false);
         sessionLogPane.setTaskFilter(Long.MIN_VALUE);
         transcript.setJumpToPermissions(ruleId -> openPermissions(ruleId));
@@ -1958,6 +2057,10 @@ public final class MainWindow extends JFrame {
         conversationViews.addTab("Conversation", transcript);
         conversationViews.addTab("Logs", sessionLogPane);
         JTabbedPane taskTools = sideTabs(tasks, session);
+        // the inspector tables and the plan board need more room than a session row: without a
+        // width of its own the column was squeezed until its placeholder text was cut off
+        taskTools.setPreferredSize(new java.awt.Dimension(railWidth() * 3 / 2, 100));
+        taskTools.setMinimumSize(new java.awt.Dimension(railWidth(), 0));
         tasks.setTaskSelectionListener(id -> {
             transcript.setTaskFilter(id);
             input.setSelectedTaskId(id);
@@ -1993,7 +2096,12 @@ public final class MainWindow extends JFrame {
         conversationAndComposer.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, e -> {
             Object value = e.getNewValue();
             int total = conversationAndComposer.getHeight();
-            if (!placingComposer && value instanceof Integer location && location >= 0 && total > location) {
+            // Only a move the reader made is remembered. The split also places its own divider
+            // the first time it is laid out, from the conversation's small preferred height; taken
+            // as a choice, that handed the composer most of the window in every new session.
+            java.awt.AWTEvent cause = java.awt.EventQueue.getCurrentEvent();
+            boolean byReader = cause instanceof java.awt.event.MouseEvent || cause instanceof java.awt.event.KeyEvent;
+            if (!placingComposer && byReader && value instanceof Integer location && location >= 0 && total > location) {
                 composerPaneHeight = Math.max(0,
                         total - location - conversationAndComposer.getDividerSize());
             }
@@ -2040,6 +2148,15 @@ public final class MainWindow extends JFrame {
         } finally {
             placingComposer = false;
         }
+    }
+
+    private void showAbout() {
+        String version = NaruDesktop.class.getPackage().getImplementationVersion();
+        net.thevpc.naru.desktop.ui.DesktopDialog.showMessage(this, "About NARU",
+                "<b>NARU Desktop</b> — Nuts AI Reasoning Unit<br>"
+                        + "Version " + (version == null ? "development build" : version)
+                        + " · Java " + System.getProperty("java.version") + "<br><br>"
+                        + "https://github.com/thevpc/naru");
     }
 
     private void showSettings() {
@@ -2111,6 +2228,10 @@ public final class MainWindow extends JFrame {
                 public void changedUpdate(javax.swing.event.DocumentEvent e) { rebuildSessionList(); }
             });
         }
+        // once: the rail is rebuilt on every page change, and a new model would drop the selection
+        if (!(sessionList.getSelectionModel() instanceof SessionRowSelection)) {
+            sessionList.setSelectionModel(new SessionRowSelection());
+        }
         sessionList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
         applySessionRowHeight();
         installSessionHover();
@@ -2167,13 +2288,23 @@ public final class MainWindow extends JFrame {
                 // a section label, not a session: no dot, no state, no dates, and it
                 // never borrows the selection hue — painting a picked project looked like
                 // a picked session
-                JLabel head = new JLabel("<html><div style='padding:3px 4px 1px 6px;'>"
-                        + "<span style='color:" + UiPalette.css(UiPalette.muted()) + ";'>"
-                        + groupTitleHtml(value) + "</span></div></html>");
+                JLabel head = new JLabel("<html><span style='color:" + UiPalette.css(UiPalette.muted()) + ";'>"
+                        + groupTitleHtml(value) + "</span></html>");
                 head.setOpaque(false);
+                head.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 4));
+                boolean hoveredRow = Integer.valueOf(index).equals(list.getClientProperty("naru.hoverRow"));
                 JPanel row = new JPanel(new BorderLayout());
                 row.setOpaque(true);
-                row.setBackground(list.getBackground());
+                // a header is clicked to fold it, so it answers the pointer the way a button does;
+                // it never takes the selection hue, which belongs to sessions
+                row.setBackground(hoveredRow
+                        ? UiPalette.mix(list.getBackground(), UiPalette.muted(),
+                        0.14f * net.thevpc.naru.desktop.ui.HoverFader.level(list))
+                        : list.getBackground());
+                // air above every group but the first, so groups read as sections rather than rows
+                int gap = index == 0 ? 0 : 6;
+                row.setBorder(BorderFactory.createEmptyBorder(gap, 0, 0, 0));
+                row.setPreferredSize(new java.awt.Dimension(1, groupRowHeight + gap));
                 row.add(head, BorderLayout.CENTER);
                 if (!value.header.unknown()) {
                     // The group's two doors, each in a band the hit-test reads the same way:
@@ -2199,7 +2330,7 @@ public final class MainWindow extends JFrame {
                 }
                 return row;
             }
-            String dates = value.dateSummary();
+            String dates = value.recency();
             String state = value.stateLabel();
             // one dot in the state's hue, the same hue the title row uses for the session being read:
             // the mark glyph used to change shape per state, which was a second vocabulary for the
@@ -2238,12 +2369,13 @@ public final class MainWindow extends JFrame {
             label.setBackground(selected ? list.getSelectionBackground() : surface);
             label.setForeground(selected ? list.getSelectionForeground() : javax.swing.UIManager.getColor("List.foreground"));
             label.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+            label.setPreferredSize(new java.awt.Dimension(1, sessionRowHeight));
             return label;
         });
         sessionList.setOpaque(true);
         sessionFilter.setOpaque(true);
         JPanel top=new JPanel(new BorderLayout(0,5)); JPanel heading=new JPanel(new BorderLayout(0,5)); heading.add(sessionHeader,BorderLayout.NORTH); heading.add(sessionFilter,BorderLayout.SOUTH);
-        top.add(heading,BorderLayout.NORTH); top.add(new JScrollPane(sessionList),BorderLayout.CENTER);
+        top.add(heading,BorderLayout.NORTH); JScrollPane sessionScroll=new JScrollPane(sessionList,JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,JScrollPane.HORIZONTAL_SCROLLBAR_NEVER); sessionScroll.setBorder(BorderFactory.createEmptyBorder()); top.add(sessionScroll,BorderLayout.CENTER);
         rail.add(top, BorderLayout.CENTER);
         return rail;
     }
@@ -2259,6 +2391,9 @@ public final class MainWindow extends JFrame {
             @Override
             public void mouseMoved(MouseEvent e) {
                 setSessionHover(sessionList.locationToIndex(e.getPoint()));
+                sessionList.setCursor(groupRowAt(e.getPoint()) != null
+                        ? java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+                        : java.awt.Cursor.getDefaultCursor());
             }
 
             @Override
@@ -2299,10 +2434,11 @@ public final class MainWindow extends JFrame {
         JLabel details = new JLabel("<html><b>" + entry.toString() + "</b><br>" + entry.dateSummary()
                 + "<br><br>This session is closed. Open it to load its conversation, tasks, and workspace.</html>");
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        // glyph and tooltip, like every other action button: the words are the first thing this row
-        // loses when the interface size grows, and the card already says what the session is
-        JButton open = new JButton("▶");
-        open.setToolTipText("Open this session");
+        // Open is the one thing this page is for, so it is the one button that keeps its words and
+        // the accent; delete stays a glyph so the two never read as equal choices
+        JButton open = new JButton("▶  Open session");
+        open.putClientProperty("FlatLaf.style", "background: $Button.default.background; foreground: $Button.default.foreground");
+        open.setToolTipText("Load its conversation, tasks and workspace");
         open.getAccessibleContext().setAccessibleName("Open session");
         open.addActionListener(e -> activateSession(entry));
         JButton delete = new JButton("🗑");
@@ -2367,6 +2503,8 @@ public final class MainWindow extends JFrame {
 
         /** True for the project/no-project/unknown rows interleaved with the sessions. */
         boolean isGroup() { return header != null; }
+        /** For a group row: whether its sessions are folded away. */
+        boolean collapsed;
 
         boolean isOpen() { return model != null && model.isRunning(); }
         boolean isOpening() { return model != null && model.isBooting(); }
@@ -2412,6 +2550,21 @@ public final class MainWindow extends JFrame {
                     + " · Updated " + shortDate(savedInfo.getModificationInstant());
             return "Opening…";
         }
+        /** How long ago the session last changed, short enough to fit a rail row. */
+        String recency() {
+            java.time.Instant updated = model != null && model.session() != null
+                    ? model.session().modificationInstant()
+                    : savedInfo != null ? savedInfo.getModificationInstant() : null;
+            if (updated == null) return model != null ? "Opening…" : "—";
+            long seconds = Math.max(0, java.time.Duration.between(updated, java.time.Instant.now()).getSeconds());
+            if (seconds < 60) return "updated just now";
+            if (seconds < 3600) return "updated " + seconds / 60 + "m ago";
+            if (seconds < 86400) return "updated " + seconds / 3600 + "h ago";
+            if (seconds < 7 * 86400) return "updated " + seconds / 86400 + "d ago";
+            return "updated " + java.time.format.DateTimeFormatter.ofPattern("MMM d")
+                    .withZone(java.time.ZoneId.systemDefault()).format(updated);
+        }
+
         private static String shortDate(java.time.Instant value) {
             if (value == null) return "—";
             return java.time.format.DateTimeFormatter.ofPattern("MMM d, HH:mm:ss")
@@ -2434,8 +2587,14 @@ public final class MainWindow extends JFrame {
         // and §6 promises a jump into it from a permission denial
         JPanel taskPermissions = new JPanel(new BorderLayout());
         taskPermissions.add(taskScopeHeader, BorderLayout.NORTH);
-        JLabel pendingPermissions = new JLabel("Per-task permissions and approvals will appear here.", JLabel.CENTER);
-        pendingPermissions.setForeground(java.awt.Color.GRAY);
+        taskScopeHeader.setBorder(BorderFactory.createEmptyBorder(8, 12, 4, 12));
+        net.thevpc.naru.desktop.ui.UiFonts.apply(taskScopeHeader, net.thevpc.naru.desktop.ui.UiFonts.SECONDARY,
+                java.awt.Font.BOLD);
+        // HTML so the sentence wraps to the column instead of being clipped by it
+        JLabel pendingPermissions = new JLabel("<html><div style='text-align:center'>"
+                + "Per-task permissions and approvals will appear here.</div></html>", JLabel.CENTER);
+        pendingPermissions.setBorder(BorderFactory.createEmptyBorder(0, 16, 0, 16));
+        pendingPermissions.setForeground(net.thevpc.naru.desktop.ui.UiPalette.muted());
         taskPermissions.add(pendingPermissions, BorderLayout.CENTER);
         tabs.addTab("Permissions", taskPermissions);
         // the tools table lives inside Inspect now: it is an inspection surface, and beside the

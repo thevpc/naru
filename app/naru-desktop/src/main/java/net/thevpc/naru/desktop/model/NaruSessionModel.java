@@ -399,7 +399,7 @@ public final class NaruSessionModel implements InteractionHost.Listener {
                                                 return;
                                             }
                                             List<TranscriptEvent> events = replayEvents(
-                                                    "stored-" + taskId + "-" + item.id(),
+                                                    TranscriptModel.LIVE_ECHO_PREFIX + taskId + "-" + item.id(),
                                                     taskId, item.creationSequence(), List.of(stored));
                                             if (events.isEmpty()) {
                                                 return;
@@ -774,9 +774,9 @@ public final class NaruSessionModel implements InteractionHost.Listener {
             if (e instanceof TranscriptEvent.InputRequested ir) {
                 pending = ir.request();
                 inputRequestsSeen++;
-                statusText = "waiting for input";
                 String question = ir.request().prompt() == null ? "Please provide input."
                         : ir.request().prompt().toString();
+                statusText = isConsolePrompt(question) ? "ready" : "waiting for input";
                 // The ordinary readline prompt belongs to the terminal UI. Rendering it as an
                 // assistant message leaks the console's `naru›` prefix into the desktop chat.
                 // The console uses the localized brand as its readline prompt. It is not
@@ -874,6 +874,18 @@ public final class NaruSessionModel implements InteractionHost.Listener {
         // A parked task is a reader wait even if an output block is still open or the event grace
         // window has not expired. The composer uses the same parked state to offer Send.
         return pending != null || parkedOnInputId >= 0;
+    }
+
+    /**
+     * True when the only thing waiting on the reader is the conversation's own prompt: the session
+     * is at rest, ready for the next message, rather than answering a question the agent asked.
+     */
+    public boolean isReadyForPrompt() {
+        if (!isWaitingForInput()) {
+            return false;
+        }
+        NaruInputRequest request = pending;
+        return request != null && request.prompt() != null && isConsolePrompt(request.prompt().toString());
     }
 
     /** True when a task is blocked on an external event rather than on the reader. */

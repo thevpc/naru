@@ -103,8 +103,18 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
      * {@link NaruRole#summary}.
      */
     private NaruSummaryInfo summary;
+    /**
+     * Bumped by every setter. A store that saved this object at a given revision knows it is
+     * unchanged while the revision is the same, without serialising it again.
+     */
+    private transient long revision;
 
     public NaruMessage() {
+    }
+
+    /** Changes whenever this message is modified; see the field. */
+    public long revision() {
+        return revision;
     }
 
     public NaruMessage(String sourceName, NaruSource source, NaruRole role, NMsg content, List<String> images, String toolCallId, String toolName, List<NaruToolCall> toolCalls) {
@@ -158,6 +168,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public NaruMessage setSourceName(String sourceName) {
+        revision++;
         this.sourceName = sourceName;
         return this;
     }
@@ -167,6 +178,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public NaruMessage setSource(NaruSource source) {
+        revision++;
         this.source = source;
         return this;
     }
@@ -454,6 +466,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public void setRole(NaruRole role) {
+        revision++;
         this.role = role;
     }
 
@@ -473,6 +486,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public void setContent(NMsg content) {
+        revision++;
         this.content = content == null ? null : new NMsgSnapshot(content);
     }
 
@@ -481,6 +495,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public void setImages(List<String> images) {
+        revision++;
         this.images = images;
     }
 
@@ -489,6 +504,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public void setToolCallId(String toolCallId) {
+        revision++;
         this.toolCallId = toolCallId;
     }
 
@@ -497,6 +513,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public void setToolName(String toolName) {
+        revision++;
         this.toolName = toolName;
     }
 
@@ -505,6 +522,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public void setToolCalls(List<NaruToolCall> toolCalls) {
+        revision++;
         this.toolCalls = toolCalls;
     }
 
@@ -516,11 +534,13 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public NaruMessage setParts(List<NaruMessagePart> parts) {
+        revision++;
         this.parts = parts == null || parts.isEmpty() ? null : new ArrayList<>(parts);
         return this;
     }
 
     public NaruMessage addPart(NaruMessagePart part) {
+        revision++;
         if (part != null) {
             if (parts == null) parts = new ArrayList<>();
             parts.add(part);
@@ -570,6 +590,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public NaruMessage setThinkingSegments(List<NaruThinkingSegment> thinkingSegments) {
+        revision++;
         this.thinkingSegments = thinkingSegments == null || thinkingSegments.isEmpty()
                 ? null
                 : new ArrayList<>(thinkingSegments);
@@ -586,6 +607,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
         if (segment == null) {
             return this;
         }
+        revision++;
         if (thinkingSegments == null) {
             thinkingSegments = new ArrayList<>();
         }
@@ -604,6 +626,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public NaruMessage setTurnBoundary(boolean turnBoundary) {
+        revision++;
         this.turnBoundary = turnBoundary;
         return this;
     }
@@ -617,6 +640,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public NaruMessage setExcludedBy(String excludedBy) {
+        revision++;
         this.excludedBy = excludedBy;
         return this;
     }
@@ -643,6 +667,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public NaruMessage setSummary(NaruSummaryInfo summary) {
+        revision++;
         this.summary = summary;
         return this;
     }
@@ -662,6 +687,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
     }
 
     public NaruMessage setThinking(String thinking) {
+        revision++;
         this.thinking = (thinking == null || thinking.isBlank()) ? null : thinking;
         return this;
     }
@@ -705,6 +731,7 @@ public class NaruMessage implements NToElement, NCopiable, Cloneable {
      * the message still serializing the form that was not cleared.
      */
     public NaruMessage clearThinking() {
+        revision++;
         this.thinking = null;
         this.thinkingSegments = null;
         return this;

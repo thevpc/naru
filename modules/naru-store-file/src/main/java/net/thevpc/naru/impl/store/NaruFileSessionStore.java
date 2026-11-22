@@ -75,12 +75,197 @@ public class NaruFileSessionStore implements NaruSessionStore {
     private final NPath publicRoot;
     private final NPath privateRoot;
     private final NPath legacyRoot;
+    /**
+     * Each session folder's write-ahead log, opened (and replayed) the first time this process
+     * uses the folder. Shared by every store instance, since each session opens its own: kept
+     * per instance, every wake replayed the log the previous turn left, synced file by file.
+     */
+    private static final Map<java.nio.file.Path, NaruFileJournal> journals = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Folders whose log has a sync pending on {@link #SYNC_TIMER}. */
+    private static final Set<java.nio.file.Path> syncPending = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Folders whose log has a checkpoint pending on {@link #SYNC_TIMER}. */
+    private static final Set<java.nio.file.Path> checkpointPending = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** How long a write may stay unsynced; 0 syncs each write. See {@link #parseSyncPolicy}. */
+    private final long syncIntervalMillis;
+
+    /** One daemon thread for every store: a sync is a few milliseconds every so often. */
+    private static final java.util.concurrent.ScheduledExecutorService SYNC_TIMER =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "naru-store-sync");
+                t.setDaemon(true);
+                return t;
+            });
 
     public NaruFileSessionStore(NaruStoreConfig config) {
         this.config = config;
         this.publicRoot = config.storeDir().resolve("sessions");
         this.privateRoot = config.storeDir().resolve("local").resolve("sessions");
         this.legacyRoot = config.storeDir().resolve("local").resolve("snapshot");
+        String policy = config.property("sync");
+        this.syncIntervalMillis = parseSyncPolicy(policy != null ? policy : System.getProperty("naru.store.sync"));
+    }
+
+    /**
+     * When a session's writes reach the disk, besides the end of each turn ({@link #sync}).
+     * <p>
+     * {@code always}: each write. A duration ({@code 200ms}, the default, or {@code 1s}, or a
+     * number of milliseconds): at most that long after a write, so a power loss costs at most
+     * that much work, however long a turn runs (a routine looping with no model call, say).
+     * A crash of the process alone loses nothing either way: the files are written at once.
+     */
+    static long parseSyncPolicy(String policy) {
+        if (policy == null || policy.isBlank()) {
+            return 200;
+        }
+        String p = policy.trim().toLowerCase();
+        if (p.equals("always")) {
+            return 0;
+        }
+        try {
+            if (p.endsWith("ms")) {
+                return Math.max(0, Long.parseLong(p.substring(0, p.length() - 2).trim()));
+            }
+            if (p.endsWith("s")) {
+                return Math.max(0, Long.parseLong(p.substring(0, p.length() - 1).trim()) * 1000);
+            }
+            return Math.max(0, Long.parseLong(p));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("naru.store.sync: expected 'always' or a duration such as 200ms, got '"
+                    + policy + "'");
+        }
+    }
+
+    // ---------------------------------------------------------------- write-ahead log
+
+    /** Forgets every open log, as a new process starts; for tests that play a restart. */
+    static void forgetOpenJournals() {
+        journals.clear();
+        syncPending.clear();
+    }
+
+    /** The session folder {@code target} is in, or {@code null} when it is in none. */
+    private java.nio.file.Path sessionFolderOf(java.nio.file.Path target) {
+        for (NPath root : List.of(privateRoot, publicRoot, legacyRoot)) {
+            java.nio.file.Path r = NaruFileIo.path(root);
+            if (target.startsWith(r) && target.getNameCount() > r.getNameCount() + 1) {
+                return r.resolve(r.relativize(target).getName(0));
+            }
+        }
+        return null;
+    }
+
+    private NaruFileJournal journalOf(java.nio.file.Path sessionFolder) {
+        return journals.computeIfAbsent(sessionFolder, NaruFileJournal::open);
+    }
+
+    /** Writes a file of a session through its log, syncing as the policy says. */
+    private void writeSessionFile(NPath target, String content) throws IOException {
+        java.nio.file.Path t = NaruFileIo.path(target);
+        java.nio.file.Path folder = sessionFolderOf(t);
+        if (folder == null) {
+            NaruFileIo.writeAtomic(target, content);
+            return;
+        }
+        NaruFileJournal journal = journalOf(folder);
+        journal.write(t, content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        afterWrite(folder, journal);
+    }
+
+    private void deleteSessionFile(NPath target) throws IOException {
+        java.nio.file.Path t = NaruFileIo.path(target);
+        java.nio.file.Path folder = sessionFolderOf(t);
+        if (folder == null) {
+            NaruFileIo.deleteIfExists(target);
+            return;
+        }
+        NaruFileJournal journal = journalOf(folder);
+        journal.delete(t);
+        afterWrite(folder, journal);
+    }
+
+    private void deleteSessionFileQuietly(NPath target) {
+        try {
+            deleteSessionFile(target);
+        } catch (IOException | RuntimeException ignored) {
+            // an unreferenced file left behind is harmless; failing the save over it is not
+        }
+    }
+
+    private void afterWrite(java.nio.file.Path folder, NaruFileJournal journal) throws IOException {
+        if (syncIntervalMillis == 0) {
+            journal.sync();
+            checkpointLater(folder, journal);
+            return;
+        }
+        if (syncPending.add(folder)) {
+            SYNC_TIMER.schedule(() -> {
+                syncPending.remove(folder);
+                try {
+                    journal.sync();
+                    checkpointLater(folder, journal);
+                } catch (IOException | RuntimeException ignored) {
+                    // the next sync (a turn end, the next write) tries again; the log keeps
+                    // the records until one succeeds
+                }
+            }, syncIntervalMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
+     * Checkpoints a log that grew past its size, on the sync thread: it syncs every file the
+     * log covers, which the turn that crossed the size used to wait for.
+     */
+    private static void checkpointLater(java.nio.file.Path folder, NaruFileJournal journal) {
+        if (journal.wantsCheckpoint() && checkpointPending.add(folder)) {
+            SYNC_TIMER.execute(() -> {
+                checkpointPending.remove(folder);
+                try {
+                    journal.checkpoint();
+                } catch (IOException | RuntimeException ignored) {
+                    // the log keeps its records; the next checkpoint, or a replay, makes them good
+                }
+            });
+        }
+    }
+
+    /** Replays what a previous process left in a session's log, before anything reads it. */
+    private void recoverJournal(NPath sessionDir) {
+        java.nio.file.Path folder = NaruFileIo.path(sessionDir);
+        if (!journals.containsKey(folder) && java.nio.file.Files.isRegularFile(folder.resolve(NaruFileJournal.FILE_NAME))) {
+            journalOf(folder);
+        }
+    }
+
+    /** Syncs the files a session's log covers and empties it; the log stays open. */
+    private void checkpointJournal(NPath sessionDir) throws IOException {
+        java.nio.file.Path folder = NaruFileIo.path(sessionDir);
+        recoverJournal(sessionDir);
+        NaruFileJournal journal = journals.get(folder);
+        if (journal != null) {
+            journal.checkpoint();
+        }
+    }
+
+    /**
+     * Checkpoints and drops a session's log, before its folder is moved or deleted outside
+     * of it: a replay must never write back what such a change removed.
+     */
+    private void forgetJournal(NPath sessionDir) throws IOException {
+        checkpointJournal(sessionDir);
+        journals.remove(NaruFileIo.path(sessionDir));
+    }
+
+    @Override
+    public void sync(String uuid, NaruSessionScope scope) {
+        NaruFileJournal journal = journals.get(NaruFileIo.path(rootOf(scope).resolve(uuid)));
+        if (journal != null) {
+            try {
+                journal.sync();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            checkpointLater(NaruFileIo.path(rootOf(scope).resolve(uuid)), journal);
+        }
     }
 
     public NaruStoreConfig config() {
@@ -250,6 +435,11 @@ public class NaruFileSessionStore implements NaruSessionStore {
      * The number is global, not per project, so it lives at the store root rather than
      * inside any session folder — moving a session between projects must not change its
      * placeholder or let a second session claim the same {@code Session N}.
+     * <p>
+     * Written atomically but not synced: every new session takes a number under this one
+     * lock, and two disk syncs each made a burst of new conversations wait in line (seconds,
+     * with hundreds). A power loss can roll the counter back, so a later session may reuse a
+     * placeholder name; sessions are told apart by uuid, never by this.
      */
     @Override
     public long nextSessionNumber() {
@@ -258,7 +448,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
             NPath counter = root.resolve(SESSION_COUNTER_FILE);
             long next = readSessionCounter(counter) + 1;
             try {
-                NaruFileIo.writeAtomic(counter, Long.toString(next));
+                NaruFileIo.writeAtomicBytes(counter, Long.toString(next).getBytes(java.nio.charset.StandardCharsets.UTF_8), false);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -311,6 +501,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public NOptional<NaruSessionData> loadData(String uuid, NaruSessionScope scope) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath meta = rootOf(scope).resolve(uuid).resolve("session.tson");
         if (!NaruFileIo.isFile(meta)) {
             return NOptional.ofEmpty();
@@ -454,7 +645,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
             }
             rebuilt.set("version", expectedVersion + 1);
             try {
-                NaruFileIo.writeAtomic(dir.resolve("session.tson"), pretty(rebuilt.build()));
+                writeSessionFile(dir.resolve("session.tson"), pretty(rebuilt.build()));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -462,8 +653,22 @@ public class NaruFileSessionStore implements NaruSessionStore {
         });
     }
 
-    /** Cross-process metadata lock; static synchronization also avoids overlapping JVM locks. */
-    private static synchronized <T> T withMetadataLock(NPath dir, java.util.function.Supplier<T> action) {
+    /** One monitor per folder: a JVM may not hold two file locks on one file at once. */
+    private static final Map<java.nio.file.Path, Object> METADATA_MONITORS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Cross-process metadata lock: the file lock keeps other processes out, the folder's own
+     * monitor keeps this JVM's threads from overlapping on it. It used to be one monitor for
+     * the whole JVM, so every session's metadata write waited on every other's.
+     */
+    private static <T> T withMetadataLock(NPath dir, java.util.function.Supplier<T> action) {
+        Object monitor = METADATA_MONITORS.computeIfAbsent(NaruFileIo.path(dir), x -> new Object());
+        synchronized (monitor) {
+            return withFileLock(dir, action);
+        }
+    }
+
+    private static <T> T withFileLock(NPath dir, java.util.function.Supplier<T> action) {
         try {
             NaruFileIo.mkdirs(dir);
             java.nio.file.Path lockPath = NaruFileIo.path(dir.resolve(".metadata.lock"));
@@ -479,7 +684,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     private void writeSessionData(NPath dir, NaruSessionData data) {
         try {
-            NaruFileIo.writeAtomic(dir.resolve("session.tson"), pretty(data.toElement()));
+            writeSessionFile(dir.resolve("session.tson"), pretty(data.toElement()));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -515,6 +720,37 @@ public class NaruFileSessionStore implements NaruSessionStore {
         return List.copyOf(write.ids());
     }
 
+    /**
+     * Writes the new messages only: the stored ones keep their files, untouched and unread.
+     * <p>
+     * {@link #saveTaskAndGetHistoryIds} reads and hashes every stored message to reconcile
+     * by content, which made each message of a turn cost the whole conversation. The order is
+     * the same: messages, then the counter, then the skeleton naming them, so a crash never
+     * leaves the skeleton naming a file that is not there.
+     */
+    @Override
+    public List<String> appendHistory(String uuid, NaruSessionScope scope, long taskId, NElement skeleton,
+                                      List<String> storedIds, List<NaruMessage> appended) {
+        NPath dir = taskDir(requireDir(uuid, scope), taskId);
+        NPath historyDir = dir.resolve("history");
+        NaruFileIo.mkdirs(historyDir);
+        long next = nextId(historyDir);
+        List<String> ids = new ArrayList<>(storedIds.size() + appended.size());
+        ids.addAll(storedIds);
+        try {
+            for (NaruMessage message : appended) {
+                String id = idOf(next++);
+                writeSessionFile(historyFile(historyDir, id), pretty(message.toElement()));
+                ids.add(id);
+            }
+            writeSessionFile(historyDir.resolve("next-id"), Long.toString(next));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        commitHistory(dir, skeleton, new HistoryWrite(ids, List.of()));
+        return ids;
+    }
+
     private static NElement withHistoryIds(NElement skeleton, List<String> ids) {
         NObjectElementBuilder b = NObjectElementBuilder.of();
         for (NElement child : skeleton.asObject().get().children()) {
@@ -532,6 +768,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public NOptional<NaruTaskState> loadTask(String uuid, NaruSessionScope scope, long taskId) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath sessionDir = rootOf(scope).resolve(uuid);
         if (!NaruFileIo.isDirectory(sessionDir)) {
             return NOptional.ofEmpty();
@@ -547,6 +784,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public NOptional<NaruTaskState> loadTaskSkeleton(String uuid, NaruSessionScope scope, long taskId) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath taskFile = taskDir(rootOf(scope).resolve(uuid), taskId).resolve("task.tson");
         if (!NaruFileIo.isFile(taskFile)) return NOptional.ofEmpty();
         NElement element = read(taskFile);
@@ -563,6 +801,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
     @Override
     public NaruMessagePage queryMessages(String uuid, NaruSessionScope scope, long taskId,
                                           NaruMessageQuery query) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath taskDir = taskDir(rootOf(scope).resolve(uuid), taskId);
         NPath taskFile = taskDir.resolve("task.tson");
         if (!NaruFileIo.isFile(taskFile)) return new NaruMessagePage(List.of(), null, null, false);
@@ -610,6 +849,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public List<Long> taskIds(String uuid, NaruSessionScope scope) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         List<Long> ids = new ArrayList<>();
         for (NPath dir : NaruFileIo.children(rootOf(scope).resolve(uuid).resolve("tasks"))) {
             if (NaruFileIo.isDirectory(dir)) {
@@ -628,6 +868,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
     public void deleteTask(String uuid, NaruSessionScope scope, long taskId) {
         NPath dir = taskDir(rootOf(scope).resolve(uuid), taskId);
         try {
+            checkpointJournal(rootOf(scope).resolve(uuid));
             NaruFileIo.deleteTreeIfExists(dir);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -757,7 +998,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
                 id = idOf(nextId++);
                 NaruFileIo.mkdirs(historyDir);
                 try {
-                    NaruFileIo.writeAtomic(historyFile(historyDir, id), pretty(element));
+                    writeSessionFile(historyFile(historyDir, id), pretty(element));
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
@@ -766,7 +1007,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
             ids.add(id);
         }
         try {
-            NaruFileIo.writeAtomic(historyDir.resolve("next-id"), Long.toString(nextId));
+            writeSessionFile(historyDir.resolve("next-id"), Long.toString(nextId));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -789,13 +1030,13 @@ public class NaruFileSessionStore implements NaruSessionStore {
      */
     private void commitHistory(NPath taskDir, NElement skeleton, HistoryWrite write) {
         try {
-            NaruFileIo.writeAtomic(taskDir.resolve("task.tson"),
+            writeSessionFile(taskDir.resolve("task.tson"),
                     pretty(withHistoryIds(skeleton, write.ids())));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
         for (String id : write.stale()) {
-            NaruFileIo.deleteQuietly(historyFile(taskDir.resolve("history"), id));
+            deleteSessionFileQuietly(historyFile(taskDir.resolve("history"), id));
         }
     }
 
@@ -898,6 +1139,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public List<NaruMessage> loadHistory(String uuid, NaruSessionScope scope, long taskId) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath dir = taskDir(rootOf(scope).resolve(uuid), taskId);
         NPath meta = dir.resolve("task.tson");
         if (!NaruFileIo.isFile(meta)) {
@@ -932,6 +1174,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public List<String> routineNames(String uuid, NaruSessionScope scope) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         List<String> names = new ArrayList<>();
         for (NPath f : NaruFileIo.children(rootOf(scope).resolve(uuid).resolve("routines"))) {
             if (NaruFileIo.isFile(f) && f.name().endsWith(".tson")) {
@@ -944,6 +1187,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public NOptional<NElement> loadRoutine(String uuid, NaruSessionScope scope, String name) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath f = rootOf(scope).resolve(uuid).resolve("routines").resolve(name + ".tson");
         return NaruFileIo.isFile(f) ? NOptional.of(read(f)) : NOptional.ofEmpty();
     }
@@ -953,7 +1197,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
         NPath dir = rootOf(scope).resolve(uuid).resolve("routines");
         NaruFileIo.mkdirs(dir);
         try {
-            NaruFileIo.writeAtomic(dir.resolve(name + ".tson"), pretty(element));
+            writeSessionFile(dir.resolve(name + ".tson"), pretty(element));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -962,7 +1206,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
     @Override
     public void deleteRoutine(String uuid, NaruSessionScope scope, String name) {
         try {
-            NaruFileIo.deleteIfExists(rootOf(scope).resolve(uuid).resolve("routines").resolve(name + ".tson"));
+            deleteSessionFile(rootOf(scope).resolve(uuid).resolve("routines").resolve(name + ".tson"));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -972,6 +1216,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public NOptional<NElement> loadExtensionState(String uuid, NaruSessionScope scope, String extension) {
+        recoverJournal(rootOf(scope).resolve(uuid));
         NPath f = rootOf(scope).resolve(uuid).resolve("ext").resolve(extension + ".tson");
         return NaruFileIo.isFile(f) ? NOptional.of(read(f)) : NOptional.ofEmpty();
     }
@@ -981,7 +1226,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
         NPath dir = rootOf(scope).resolve(uuid).resolve("ext");
         NaruFileIo.mkdirs(dir);
         try {
-            NaruFileIo.writeAtomic(dir.resolve(extension + ".tson"), pretty(element));
+            writeSessionFile(dir.resolve(extension + ".tson"), pretty(element));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -990,7 +1235,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
     @Override
     public void deleteExtensionState(String uuid, NaruSessionScope scope, String extension) {
         try {
-            NaruFileIo.deleteIfExists(rootOf(scope).resolve(uuid).resolve("ext").resolve(extension + ".tson"));
+            deleteSessionFile(rootOf(scope).resolve(uuid).resolve("ext").resolve(extension + ".tson"));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -1002,6 +1247,11 @@ public class NaruFileSessionStore implements NaruSessionStore {
     public void move(String uuid, NaruSessionScope from, NaruSessionScope to) {
         NPath src = rootOf(from).resolve(uuid);
         NPath dst = rootOf(to).resolve(uuid);
+        try {
+            forgetJournal(src);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
         if (!NaruFileIo.isDirectory(src)) {
             throw new IllegalArgumentException("no session " + uuid + " in scope " + from);
         }
@@ -1030,6 +1280,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
             return false;
         }
         try {
+            forgetJournal(dir);
             NaruFileIo.deleteTreeIfExists(dir);
             return true;
         } catch (IOException e) {
@@ -1043,6 +1294,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
         for (NPath dir : NaruFileIo.children(rootOf(scope))) {
             if (describe(dir, scope) != null) {
                 try {
+                    forgetJournal(dir);
                     NaruFileIo.deleteTreeIfExists(dir);
                     n++;
                 } catch (IOException e) {
@@ -1103,7 +1355,18 @@ public class NaruFileSessionStore implements NaruSessionStore {
 
     @Override
     public void close() {
-        // nothing pooled: every operation opens what it needs and closes it
+        // what is still unsynced is made durable before the store goes away
+        for (Map.Entry<java.nio.file.Path, NaruFileJournal> e : journals.entrySet()) {
+            if (sessionFolderOf(e.getKey().resolve(NaruFileJournal.FILE_NAME)) == null) {
+                continue;
+            }
+            NaruFileJournal journal = e.getValue();
+            try {
+                journal.sync();
+            } catch (IOException ignored) {
+                // closing must not fail on one session; its log replays on the next open
+            }
+        }
     }
 
     // ---------------------------------------------------------------- helpers
@@ -1111,20 +1374,21 @@ public class NaruFileSessionStore implements NaruSessionStore {
     /**
      * Serializes an element the way a human would want to read it.
      *
-     * <p>Synchronized because the underlying TSON formatter shares a mutable cache of
-     * format options across writers, and a session is written from whatever thread the
-     * scheduler happens to be on. Two sessions persisting at once raced in that cache and
-     * corrupted each other's element, which surfaced as a save failing with an exception
-     * from deep inside the formatter -- with no session involved at fault.
-     *
-     * <p>Serializing is cheap next to what it describes, so the lock costs nothing worth
-     * measuring.
+     * <p>Each thread formats with a pretty formatter of its own. The shared one
+     * ({@code NElementFormatterStyle.PRETTY}) is a single instance whose option cache fills
+     * on first use with no lock, so two sessions saving at once could throw
+     * {@code ConcurrentModificationException} from inside it. This used to be a global lock
+     * instead, and with hundreds of sessions that lock was the store's worst contention
+     * point. {@code NaruFilePrettyConcurrencyTest} formats from many fresh threads at once.
      */
-    static synchronized String pretty(NElement element) {
+    static String pretty(NElement element) {
         return net.thevpc.nuts.elem.NElementWriter.ofTson().ntf(false)
-                .formatter(net.thevpc.nuts.elem.NElementFormatterStyle.PRETTY)
+                .formatter(PRETTY.get())
                 .formatPlain(element);
     }
+
+    private static final ThreadLocal<net.thevpc.nuts.elem.NElementFormatter> PRETTY = ThreadLocal.withInitial(
+            () -> net.thevpc.nuts.elem.NElementFormatter.ofPretty().builder().build());
 
     /**
      * Reads a file, turning an I/O failure into an unchecked one.

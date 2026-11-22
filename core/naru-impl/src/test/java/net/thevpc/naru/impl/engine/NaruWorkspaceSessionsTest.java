@@ -108,7 +108,9 @@ public class NaruWorkspaceSessionsTest {
     @Test
     public void theReturnedListIsASnapshotTheCallerCannotCorrupt() {
         NaruWorkspace agent = newAgent();
-        agent.newSession().interaction(silent()).task(NaruTaskSpec.of().statements("noop")).build().start();
+        // parked on input: a session whose only task finishes takes itself down, and the count
+        // below then measured how fast "noop" ran
+        blocked(agent, "snapshot");
 
         List<NaruSession> snapshot = agent.sessions();
         try {
@@ -168,8 +170,10 @@ public class NaruWorkspaceSessionsTest {
     @Test
     public void buildDoesNotStartTheSession() {
         NaruWorkspace agent = newAgent();
-        NaruSession session = agent.newSession().interaction(silent())
-                .task(NaruTaskSpec.of().statements("noop")).build();
+        NaruSession session = agent.newSession().interaction(silent()).build();
+        // parked on input, as in blocked(): a task that finishes takes its session down, and
+        // the count after start() then measured how fast "noop" ran
+        session.newTask(NaruTaskSpec.of().statements("noop")).requestInput(NMsg.ofC("still there?"));
         Assertions.assertTrue(agent.sessions().isEmpty(), "build must not start a session");
         session.start();
         Assertions.assertEquals(1, agent.sessions().size());

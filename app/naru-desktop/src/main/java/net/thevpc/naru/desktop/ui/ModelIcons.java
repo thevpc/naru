@@ -110,7 +110,8 @@ public final class ModelIcons {
 
     public static String buttonLabel(String provider, String model, int maxNameChars) {
         String mark = glyph(provider);
-        String name = model == null || model.isBlank() ? "no model" : model;
+        // an invitation, not a state: the chip is the button that fixes it
+        String name = model == null || model.isBlank() ? "Choose model" : model;
         if (name.length() > maxNameChars) {
             name = name.substring(0, Math.max(4, maxNameChars - 1)) + "…";
         }

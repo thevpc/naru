@@ -62,9 +62,13 @@ NaruWorkspace          the runtime: extensions, providers, settings      NaruWor
   each tool the tags it needs (`fs`, `network`, `write`, `exec`...) and grant them to the task
   (`NaruTaskSpec.addTags`): the gate is fail-closed, so an untagged tool is refused at
   registration unless it is `essential`.
-- **Providers** are `NaruModelProvider`s, found the same way.
-  [`ScriptedModelProvider`](src/main/java/net/thevpc/naru/examples/support/ScriptedModelProvider.java)
-  is a complete one in about a hundred lines.
+- **Providers** are `NaruModelProvider`s, found the same way, or handed over already configured:
+  `NExtensions.of().registerInstance(NaruModelProvider.class, provider)` makes one object a nuts
+  component, and every session of the workspace finds it, including those a session handle
+  rebuilds from the store. The examples' offline model is
+  [`NaruScriptedModelProvider`](../../core/naru-api/src/main/java/net/thevpc/naru/api/model/NaruScriptedModelProvider.java),
+  part of the API: rules written in Java (`when`, `callTool`), or any function of the request
+  (`otherwise`). It is also a complete provider in a couple of hundred lines.
 
 ## Choosing an entry point
 

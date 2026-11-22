@@ -162,7 +162,8 @@ final class TurnActivityBar extends JPanel
         boolean starting = !working && !waiting && session.isStarting();
         spinner.setSpinning(!waiting);
 
-        String verb = verb(activity, waitingInput, waitingEvent, starting);
+        String verb = waitingInput && session.isReadyForPrompt()
+                ? "Ready" : verb(activity, waitingInput, waitingEvent, starting);
         String dots = waiting ? "" : ".".repeat(1 + Math.floorMod(ticks / 3, 3));
         String line = verb + dots;
         if (!line.equals(primary.getText())) {

@@ -14,6 +14,7 @@ import net.thevpc.naru.impl.ia.mode.NaruModeRegistry;
 import net.thevpc.nuts.elem.NElement;
 import net.thevpc.nuts.elem.NObjectElement;
 import net.thevpc.nuts.elem.NPairElement;
+import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.ext.NServiceLoader;
 import net.thevpc.nuts.reflect.NClassLoader;
 import net.thevpc.nuts.text.NMsg;
@@ -689,7 +690,13 @@ public class NaruRegistryImpl implements NaruRegistry {
     }
 
     private <T> List<T> loadServices(Class<T> zz) {
-        return NServiceLoader.of(zz, null, classLoader.asClassLoader()).loadAll(null);
+        List<T> all = new ArrayList<>(NServiceLoader.of(zz, null, classLoader.asClassLoader()).loadAll(null));
+        // instances registered with nuts (NExtensions.registerInstance) are components too, so a
+        // host can hand over a configured object instead of a class to instantiate. They come
+        // last, so an instance replaces a classpath provider of the same name, and being one
+        // object for the whole nuts workspace, every session sees the same instance
+        NExtensions.get().ifPresent(x -> all.addAll(x.getExtensionObjects(zz)));
+        return all;
     }
 
     @Override

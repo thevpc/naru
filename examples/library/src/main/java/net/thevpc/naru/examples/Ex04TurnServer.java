@@ -12,11 +12,14 @@ import net.thevpc.naru.api.agent.NaruSessionHandle;
 import net.thevpc.naru.api.agent.NaruTurnResult;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruMessage;
+import net.thevpc.naru.api.model.NaruModelProvider;
+import net.thevpc.naru.api.model.NaruScriptedModelProvider;
 import net.thevpc.naru.api.task.NaruTaskSpec;
 import net.thevpc.naru.examples.support.Examples;
-import net.thevpc.naru.examples.support.ScriptedModelProvider;
+import net.thevpc.nuts.ext.NExtensions;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -43,12 +46,19 @@ import java.util.regex.Pattern;
  *   <li>{@code buildHandle()} is cheap — nothing is loaded yet;</li>
  *   <li>{@code submit(input)} wakes the session: it is created, or reloaded from the
  *       {@code NaruSessionStore} with its history, tasks and variables;</li>
- *   <li>the task answers, then parks waiting for the next line. A session whose every task
- *       waits for input is idle, so the handle <b>hibernates</b> it: saved to the store and
- *       dropped from memory. The turn's future completes with {@code HIBERNATED};</li>
+ *   <li>the task answers, then parks waiting for the next line. The turn's future completes
+ *       with {@code AWAITING_INPUT}: answered, and the session stays loaded for a while
+ *       ({@code hibernateAfter}), so a user who replies soon is served from memory;</li>
+ *   <li>if no message comes within that time, or the pool ({@code maxLiveSessions}) needs the
+ *       room, the handle <b>hibernates</b> it: saved to the store and dropped from memory;</li>
  *   <li>the next request, possibly minutes later or on another server instance sharing the
  *       store, wakes it again.</li>
  * </ol>
+ *
+ * <p>Each request passes its own interaction, and a turn's output goes to the interaction of the
+ * request that submitted it, warm session or not. What a turn wrote is durable when it is
+ * answered (the file store syncs its log at the end of each turn), so keeping a session warm
+ * costs memory, not safety. {@code -DkeepWarmSeconds=0} hibernates after every turn instead.
  *
  * <p>The store here is the file store under the workspace folder; a backend would pass its
  * own ({@code .store(...)}, e.g. the JDBC module) so any instance can serve any conversation.
@@ -59,6 +69,13 @@ import java.util.regex.Pattern;
  * {@code curl -d 'Hi, my name is Ada' localhost:8765/chat/alice}.
  */
 public class Ex04TurnServer {
+
+    /**
+     * How long a conversation stays loaded after a turn. {@code Duration.ZERO} hibernates it at
+     * once: the least memory, and each turn reloads it (tens of milliseconds). A keep-alive
+     * answers a returning user from memory (about a millisecond) and is just as durable.
+     */
+    private static final Duration KEEP_WARM = Duration.ofSeconds(Long.getLong("keepWarmSeconds", 30));
 
     private final NaruWorkspace ws;
 
@@ -74,7 +91,8 @@ public class Ex04TurnServer {
                 .interactive()                    // a conversation: park on input after each turn
                 .task(NaruTaskSpec.of().name("chat").model(Examples.modelKey()))
                 .interaction(capture)             // where this turn's output goes
-                .hibernateAfter(Duration.ZERO)    // sleep as soon as the turn is done
+                .hibernateAfter(KEEP_WARM)        // stay loaded this long for the next message
+                .maxLiveSessions(1000)            // the pool: beyond this, the least recently used sleeps
                 // .store(myJdbcStore)            // share conversations between instances
                 // .listener(event -> sse.send(event)) // stream chunks/tool calls to a browser
                 .buildHandle();
@@ -103,14 +121,14 @@ public class Ex04TurnServer {
             // AGENT_RESPONSE also carries engine notices ("Loading agent from ..."), so a chat
             // answer is MODEL_RESPONSE only
             if (mode == NaruLogMode.MODEL_RESPONSE) {
-                answer.append(Examples.plain(message));
+                answer.append(NText.of(message).filteredText());
             }
         }
 
         @Override
         public synchronized void writeStream(NaruLogMode mode, NMsg fragment, boolean end) {
             if (mode == NaruLogMode.MODEL_RESPONSE) {
-                answer.append(Examples.plain(fragment));
+                answer.append(NText.of(fragment).filteredText());
             }
         }
 
@@ -125,7 +143,9 @@ public class Ex04TurnServer {
 
     public static void main(String[] args) throws Exception {
         NaruWorkspace ws = Examples.workspace("turn-server");
-        scriptOfflineAnswers();
+        // a nuts component instance, so it also reaches the sessions the handle rebuilds from
+        // the store on each turn
+        NExtensions.of().registerInstance(NaruModelProvider.class, offlineModel());
         Ex04TurnServer backend = new Ex04TurnServer(ws);
 
         int port = Integer.getInteger("port", 8765);
@@ -177,22 +197,23 @@ public class Ex04TurnServer {
     }
 
     /** Offline stand-ins. The second answer only works if the first turn survived hibernation. */
-    private static void scriptOfflineAnswers() {
+    private static NaruScriptedModelProvider offlineModel() {
         Pattern intro = Pattern.compile("my name is (\\w+)", Pattern.CASE_INSENSITIVE);
-        ScriptedModelProvider.when("what is my name", r -> {
-            for (NaruMessage m : r.messages()) {
-                if (m.getRole() == NaruRole.user && m.getFilteredContent() != null) {
-                    Matcher matcher = intro.matcher(m.getFilteredContent());
-                    if (matcher.find()) {
-                        return NaruMessage.assistant("Your name is " + matcher.group(1) + ".");
+        return new NaruScriptedModelProvider()
+                .when("what is my name", r -> {
+                    for (NaruMessage m : r.messages()) {
+                        if (m.getRole() == NaruRole.user && m.getFilteredContent() != null) {
+                            Matcher matcher = intro.matcher(m.getFilteredContent());
+                            if (matcher.find()) {
+                                return NaruMessage.assistant("Your name is " + matcher.group(1) + ".");
+                            }
+                        }
                     }
-                }
-            }
-            return NaruMessage.assistant("I don't know your name yet.");
-        });
-        ScriptedModelProvider.when("my name is", r -> {
-            Matcher matcher = intro.matcher(r.messages().get(r.messages().size() - 1).getFilteredContent());
-            return NaruMessage.assistant(matcher.find() ? "Nice to meet you, " + matcher.group(1) + "!" : "Hello!");
-        });
+                    return NaruMessage.assistant("I don't know your name yet.");
+                })
+                .when("my name is", r -> {
+                    Matcher matcher = intro.matcher(r.messages().get(r.messages().size() - 1).getFilteredContent());
+                    return NaruMessage.assistant(matcher.find() ? "Nice to meet you, " + matcher.group(1) + "!" : "Hello!");
+                });
     }
 }

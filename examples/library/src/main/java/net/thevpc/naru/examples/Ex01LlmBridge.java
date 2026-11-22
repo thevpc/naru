@@ -8,8 +8,8 @@ import net.thevpc.naru.api.model.NaruModelProtocol;
 import net.thevpc.naru.api.model.NaruModelProvider;
 import net.thevpc.naru.api.model.NaruModelRequest;
 import net.thevpc.naru.api.model.NaruResponse;
+import net.thevpc.naru.api.model.NaruScriptedModelProvider;
 import net.thevpc.naru.examples.support.Examples;
-import net.thevpc.naru.examples.support.ScriptedModelProvider;
 import net.thevpc.nuts.Nuts;
 import net.thevpc.nuts.ext.NServiceLoader;
 
@@ -37,14 +37,18 @@ public class Ex01LlmBridge {
     public static void main(String[] args) {
         // nuts is NARU's host framework; providers are nuts components found on the classpath
         Nuts.require();
-        ScriptedModelProvider.when("capital of tunisia", "Tunis.");
-        ScriptedModelProvider.when("haiku", "Old code wakes at dawn / one interface, many tongues / the JVM hums");
+        NaruScriptedModelProvider offline = new NaruScriptedModelProvider()
+                .when("capital of tunisia", "Tunis.")
+                .when("haiku", "Old code wakes at dawn / one interface, many tongues / the JVM hums");
 
         Map<String, NaruModelProvider> providers = new TreeMap<>();
         for (NaruModelProvider p : NServiceLoader.of(NaruModelProvider.class, null,
                 Thread.currentThread().getContextClassLoader()).loadAll(null)) {
             providers.put(p.name(), p);
         }
+        // a provider is a plain object: with no workspace there is no registry, so it is simply
+        // used next to the ones found on the classpath
+        providers.put(offline.name(), offline);
         System.out.println("providers: " + providers.keySet());
 
         // A model is (provider, model) plus sampling options.

@@ -131,6 +131,16 @@ final class NaruFileIo {
      * replacement characters, which for a binary blob is silent corruption.
      */
     static void writeAtomicBytes(NPath target, byte[] content) throws IOException {
+        writeAtomicBytes(target, content, true);
+    }
+
+    /**
+     * {@link #writeAtomicBytes(NPath, byte[])}, with the disk syncs optional: the rename is
+     * still atomic, so a reader sees the old file or the new one, but without {@code sync}
+     * the new one may not survive a power loss. Only a writer that logged the content first
+     * ({@link NaruFileJournal}) may skip them.
+     */
+    static void writeAtomicBytes(NPath target, byte[] content, boolean sync) throws IOException {
         Path dst = path(target);
         Path dir = dst.getParent();
         if (dir == null) {
@@ -139,13 +149,19 @@ final class NaruFileIo {
         Files.createDirectories(dir);
         Path tmp = dir.resolve("." + dst.getFileName() + ".tmp-" + UUID.randomUUID());
         try {
-            writeAndSync(tmp, content);
+            if (sync) {
+                writeAndSync(tmp, content);
+            } else {
+                Files.write(tmp, content);
+            }
             try {
                 Files.move(tmp, dst, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (java.nio.file.AtomicMoveNotSupportedException e) {
                 Files.move(tmp, dst, StandardCopyOption.REPLACE_EXISTING);
             }
-            syncDir(dir);
+            if (sync) {
+                syncDir(dir);
+            }
         } finally {
             Files.deleteIfExists(tmp);
         }

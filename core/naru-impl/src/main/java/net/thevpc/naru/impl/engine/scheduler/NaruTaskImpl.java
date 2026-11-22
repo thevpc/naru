@@ -86,7 +86,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
     private final List<String> queuedMessages = new ArrayList<>();
     private java.util.function.Supplier<List<NaruMessage>> lazyHistoryLoader;
     private boolean historyLoaded = true;
-    private String loadedHistoryHash;
     private final Set<String> taskToolTags = new TreeSet<>();
     private final Set<String> excludedTools = new TreeSet<>();
     /**
@@ -421,8 +420,13 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         return historyLoaded;
     }
 
-    public String loadedHistoryHash() {
-        return loadedHistoryHash;
+    /**
+     * The history as it stands, without loading it: callers check {@link #isHistoryLoaded()}.
+     * The messages are the task's own objects, which is what lets persistence recognise the
+     * ones it already stored.
+     */
+    public List<NaruMessage> loadedHistorySnapshot() {
+        return new ArrayList<>(history);
     }
 
     private void ensureHistoryLoaded() {
@@ -430,9 +434,6 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         List<NaruMessage> loaded = lazyHistoryLoader == null ? List.of() : lazyHistoryLoader.get();
         history.clear();
         if (loaded != null) history.addAll(loaded);
-        NArrayElementBuilder loadedArray = NArrayElementBuilder.of();
-        for (NaruMessage message : history) loadedArray.add(message.toElement());
-        loadedHistoryHash = loadedArray.build().toString();
         lazyHistoryLoader = null;
         historyLoaded = true;
     }
@@ -1143,6 +1144,19 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
 
     @Override
     public NElement toElement() {
+        return toElement(true);
+    }
+
+    /**
+     * The task without its history, exactly as {@link net.thevpc.naru.api.store.NaruTaskState#withoutHistory} would leave
+     * {@link #toElement()}: a checkpoint compares and stores this on every message, and building
+     * the history only to drop it cost the whole conversation each time.
+     */
+    public NElement toSkeletonElement() {
+        return toElement(false);
+    }
+
+    private NElement toElement(boolean withHistory) {
         NObjectElementBuilder o = NObjectElementBuilder.of();
         o.set("schemaVersion", TASK_SCHEMA_VERSION);
         o.set("status", status.name());
@@ -1204,15 +1218,17 @@ public class NaruTaskImpl implements NaruTask, NaruTaskSchedulerView {
         for (NaruTaskFrameImpl a : frames) {
             _todos.add(a.toElement());
         }
-        NArrayElementBuilder _history = NArrayElementBuilder.of();
-        for (NaruMessage a : history) {
-            _history.add(a.toElement());
-        }
         NObjectElementBuilder _props = NObjectElementBuilder.of();
         for (Map.Entry<String, NOptional<NElement>> e : env.entrySet()) {
             _props.add(e.getKey(), NElement.of(e.getValue().orNull()));
         }
-        o.set("history", _history.build());
+        if (withHistory) {
+            NArrayElementBuilder _history = NArrayElementBuilder.of();
+            for (NaruMessage a : history) {
+                _history.add(a.toElement());
+            }
+            o.set("history", _history.build());
+        }
         o.set("env", _props.build());
         o.set("frames", _todos.build());
         o.set("inbox", inbox.toElement());

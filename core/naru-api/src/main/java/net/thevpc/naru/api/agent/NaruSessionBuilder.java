@@ -134,6 +134,10 @@ public interface NaruSessionBuilder {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * How long a handle's submit may wait: for a live slot when {@link #maxLiveSessions} are in
+     * use, and for a hibernation under way to finish. Defaults to 30 seconds.
+     */
     default NaruSessionBuilder capacityTimeout(Duration timeout) {
         throw new UnsupportedOperationException();
     }

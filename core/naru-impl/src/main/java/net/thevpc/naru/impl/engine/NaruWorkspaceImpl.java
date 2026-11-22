@@ -49,8 +49,15 @@ import java.util.function.Predicate;
  * into a standalone library later.
  */
 public class NaruWorkspaceImpl implements NaruWorkspace {
-    private static final NVersion API_VERSION = NVersion.of("1.1");
     private static final NVersion IMPL_VERSION = NVersion.of("1.2.0");
+    /**
+     * The release line extensions are matched against: the implementation's major.minor. It is
+     * derived rather than written out because the 1.2 bump moved only {@link #IMPL_VERSION}, and the
+     * default profile, filtered on a stale "1.1", went on loading the previous release's modules
+     * under the new engine.
+     */
+    static final NVersion API_VERSION = NVersion.of(
+            IMPL_VERSION.value().replaceFirst("^(\\d+\\.\\d+).*$", "$1"));
     /**
      * The profile a workspace installs when the caller named none.
      *
@@ -81,6 +88,13 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     private NaruRegistrationStore registrations;
     private NaruProjectEnv projectEnv;
     private volatile NClassLoader classLoader;
+    /**
+     * The context class loader of the thread that created this workspace, which is what the
+     * host's classpath is. The workspace class loader is built lazily, and the thread that
+     * first needs it can be anyone's: an HTTP worker under {@code exec:java} only sees the
+     * JDK's application loader, and every store and extension went missing.
+     */
+    private final ClassLoader hostClassLoader = Thread.currentThread().getContextClassLoader();
     private List<NId> requestedExtensions = new ArrayList<>();
     /**
      * Whether an empty extension list means "the installed dev profile". True for a workspace
@@ -111,12 +125,9 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     private NPath catalogProjectDirectory;
     private final Object signal = new Object();
     private volatile Thread maintenanceThread;
+    /** Saves and other halted-engine actions; virtual, since each mostly waits on the disk. */
     private final ExecutorService STOP_THE_WORLD_EXECUTOR =
-            Executors.newCachedThreadPool(r -> {
-                Thread t = new Thread(r, "naru-action");
-                t.setDaemon(true);
-                return t;
-            });
+            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("naru-action-", 0).factory());
 
     @Override
     public NVersion apiVersion() {
@@ -136,11 +147,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
      * which would then be queued behind itself.
      */
     private final ExecutorService runCallbackExecutor =
-            Executors.newCachedThreadPool(r -> {
-                Thread t = new Thread(r, "naru-run-callback");
-                t.setDaemon(true);
-                return t;
-            });
+            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("naru-run-callback-", 0).factory());
     private final ConcurrentLinkedQueue<Runnable> pendingActions = new ConcurrentLinkedQueue<>();
 
     private Predicate<NaruDirective> directiveFilter;
@@ -354,7 +361,11 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                 future.completeExceptionally(e);
             }
         });
-        //signal.;
+        // without this the loop found the action on its next 100 ms poll, and a caller waiting
+        // on it (a save at hibernation, every turn of a server) waited that long for nothing
+        synchronized (signal) {
+            signal.notifyAll();
+        }
         return future;
     }
 
@@ -407,6 +418,11 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
 
     private void sleepOrSignal(long ms) {
         synchronized (signal) {
+            // checked under the lock postAction notifies with, so an action posted after the
+            // drain but before this wait is not left for the next poll
+            if (!pendingActions.isEmpty()) {
+                return;
+            }
             try {
                 signal.wait(ms <= 0 ? 50 : ms);
             } catch (InterruptedException e) {
@@ -607,7 +623,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
                     // a set: a profile and an explicit --extension may name the same artifact, and it
                     // must be loaded once
                     NVersion currentVersion = apiVersion();
-                    NMutableClassLoader nopsClassLoader = NMutableClassLoader.of("nops", Thread.currentThread().getContextClassLoader());
+                    NMutableClassLoader nopsClassLoader = NMutableClassLoader.of("nops", hostClassLoader);
                     List<NId> loaded = new ArrayList<>();
                     Set<String> visited = new LinkedHashSet<>();
                     for (NId id : requestedExtensions) {

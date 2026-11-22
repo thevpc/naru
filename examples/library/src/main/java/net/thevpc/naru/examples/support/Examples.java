@@ -7,9 +7,10 @@ import net.thevpc.naru.api.agent.NaruSession;
 import net.thevpc.naru.api.agent.NaruWorkspace;
 import net.thevpc.naru.api.model.NaruModelConfig;
 import net.thevpc.naru.api.model.NaruModelKey;
-import net.thevpc.nuts.Nuts;
+import net.thevpc.naru.api.model.NaruScriptedModelProvider;
 import net.thevpc.nuts.io.NPath;
 import net.thevpc.nuts.text.NMsg;
+import net.thevpc.nuts.text.NText;
 
 import java.util.EnumSet;
 import java.util.Set;
@@ -18,7 +19,7 @@ import java.util.Set;
  * What every example shares: booting the runtime, choosing a model, and printing output.
  *
  * <p>The model comes from {@code -Dnaru.model=provider/model}. It defaults to the offline
- * {@link ScriptedModelProvider}, so the examples run anywhere; point it at a real model to
+ * {@link NaruScriptedModelProvider}, so the examples run anywhere; point it at a real model to
  * see the same code talk to one:
  * <pre>
  *   -Dnaru.model=ollama/qwen2.5-coder:7b
@@ -31,30 +32,26 @@ public final class Examples {
     }
 
     public static String modelKey() {
-        return System.getProperty("naru.model", ScriptedModelProvider.NAME + "/demo");
+        return System.getProperty("naru.model",
+                NaruScriptedModelProvider.DEFAULT_NAME + "/" + NaruScriptedModelProvider.DEFAULT_MODEL);
     }
 
     public static boolean offline() {
-        return modelKey().startsWith(ScriptedModelProvider.NAME + "/");
+        return modelKey().startsWith(NaruScriptedModelProvider.DEFAULT_NAME + "/");
     }
 
     public static NaruModelConfig model() {
-        NaruModelKey key = NaruModelKey.parse(modelKey()).get();
-        return new NaruModelConfig(key.provider(), key.model());
+        return new NaruModelConfig(NaruModelKey.of(modelKey()));
     }
 
     /**
-     * Boots nuts (NARU's host framework) and returns a workspace rooted in a scratch folder.
-     * {@link NaruWorkspace#of()} takes the extensions already on the classpath, which is what
-     * a library user wants: the pom decides what the agent can do.
+     * A workspace rooted in a scratch folder. {@link NaruWorkspace#of()} boots nuts (NARU's host
+     * framework) when needed and takes the extensions already on the classpath, which is what a
+     * library user wants: the pom decides what the agent can do.
      */
     public static NaruWorkspace workspace(String name) {
-        Nuts.require();
-        NaruWorkspace ws = NaruWorkspace.of();
-        NPath dir = NPath.ofTempFolder("naru-example-" + name);
-        dir.mkdirs();
-        ws.projectDirectory(dir);
-        return ws;
+        return NaruWorkspace.of()
+                .projectDirectory(NPath.ofTempFolder("naru-example-" + name).mkdirs());
     }
 
     /** A headless session: no terminal, no stdin thread, output printed by {@link Console}. */
@@ -94,7 +91,9 @@ public final class Examples {
             if (!shown.contains(mode)) {
                 return;
             }
-            String text = plain(message);
+            // messages carry nuts style markup (##{p9:ollama}##) for terminals that
+            // render it; filteredText() is the same message as plain text
+            String text = NText.of(message).filteredText();
             // PROGRESS also announces every model call; keep the /print lines, drop that banner
             if (text.isBlank() || (mode == NaruLogMode.PROGRESS && text.startsWith("\uD83E\uDDE0"))) {
                 return;
@@ -105,7 +104,7 @@ public final class Examples {
         @Override
         public void writeStream(NaruLogMode mode, NMsg fragment, boolean end) {
             if (shown.contains(mode)) {
-                System.out.print(plain(fragment));
+                System.out.print(NText.of(fragment).filteredText());
                 if (end) {
                     System.out.println();
                 }
@@ -115,19 +114,5 @@ public final class Examples {
         @Override
         public void close() {
         }
-    }
-
-    /**
-     * Messages carry nuts style markup ({@code ##{p9:ollama}##}) for terminals that render it.
-     * A host without that renderer strips it to plain text.
-     */
-    public static String plain(NMsg message) {
-        String s = String.valueOf(message);
-        s = s.replaceAll("##\\{[^:}]+:([^}]*)\\}##", "$1");
-        s = s.replaceAll("##\\{[^}]*\\}##", "");
-        if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) {
-            s = s.substring(1, s.length() - 1);
-        }
-        return s;
     }
 }

@@ -90,6 +90,11 @@ public class NaruPromptStmt extends NaruStatement implements Cloneable {
     public void exec(NaruTask task) {
         if (task.model() == null) {
             NMsg message = NMsg.ofC("No model is selected. Choose one yourself with /model list and /model use <key>, then submit your request again.").asError();
+            // The request is part of the conversation even though nothing answered it: without it,
+            // a reopened session showed the failure with no question above it.
+            if (!NBlankable.isBlank(prompt)) {
+                task.addHistory(NaruMessage.user(expandVariables(prompt, task)));
+            }
             task.addHistory(NaruMessage.engine(message));
             task.frame().lastResult(NaruStmtResult.ofError(message));
             task.defaultAdvance(this);
