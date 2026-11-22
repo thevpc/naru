@@ -120,9 +120,9 @@ public class NaruModelConfig implements NToElement {
 
     public NaruModelConfig(NElement element) {
         if (element.isAnyStringOrName()) {
-            NOptional<NaruModelKey> parse = NaruModelKey.of(element.asStringValue());
-            this.provider = parse.get().provider();
-            this.model = parse.get().model();
+            NaruModelKey parse = NaruModelKey.of(element.asStringValue().get());
+            this.provider = parse.provider();
+            this.model = parse.model();
             this.name = null;
             this.contextLength = null;
             this.temperature = null;
