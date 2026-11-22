@@ -108,7 +108,9 @@ public class NaruWorkspaceSessionsTest {
     @Test
     public void theReturnedListIsASnapshotTheCallerCannotCorrupt() {
         NaruWorkspace agent = newAgent();
-        agent.newSession().interaction(silent()).task(NaruTaskSpec.of().statements("noop")).build().start();
+        // parked on input: a session whose only task finishes takes itself down, and the count
+        // below then measured how fast "noop" ran
+        blocked(agent, "snapshot");
 
         List<NaruSession> snapshot = agent.sessions();
         try {
