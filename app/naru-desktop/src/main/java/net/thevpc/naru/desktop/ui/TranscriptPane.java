@@ -130,6 +130,9 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         cards.setLayout(new BoxLayout(cards, BoxLayout.Y_AXIS));
         cards.setBorder(BorderFactory.createEmptyBorder(6, 8, 2, 8));
         cards.setBackground(javax.swing.UIManager.getColor("List.background"));
+        if (showChatMessages) {
+            cards.emptyHint = "No messages yet.\nType below to start, or / for commands.";
+        }
         internalEvents.setToolTipText(showChatMessages
                 ? "Show engine activity between messages at the chosen level. Debug and All include it automatically."
                 : "Show regular session output and logs");
@@ -462,6 +465,12 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             cards.add(Box.createVerticalGlue());
             rendered.clear();
             rendered.addAll(want);
+        } else {
+            // same rows, but one may have changed what it is: a streamed reply settled by its
+            // stored copy now carries a message, and its card has to be drawn again for it
+            for (TranscriptBlock block : model.lastTextChanged()) {
+                refreshRow(block);
+            }
         }
         int total = matching.size();
         older.setEnabled(first > 0 || (!engineSearch && sessionModel.hasOlderTranscript()));
@@ -498,7 +507,10 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
     private JPanel cachedCard(TranscriptBlock block) {
         JPanel card = cardCache.get(block);
         int textLength = block.text().length();
-        if (card != null && Integer.valueOf(textLength).equals(card.getClientProperty("transcript.textLength"))) {
+        // a streamed reply that its stored copy settles onto keeps its text but gains a message,
+        // and with it a role and a severity: same length, different card
+        if (card != null && Integer.valueOf(textLength).equals(card.getClientProperty("transcript.textLength"))
+                && Boolean.valueOf(block.isChatMessage()).equals(card.getClientProperty("transcript.chat"))) {
             return card;
         }
         // A chat card owns its body layout (parts, forms, a scroller of its own), so it is rebuilt
@@ -512,12 +524,34 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
             applyBody(card, block);
         }
         card.putClientProperty("transcript.textLength", textLength);
+        card.putClientProperty("transcript.chat", block.isChatMessage());
         return card;
+    }
+
+    /** The message action that opens the model picker instead of answering the task. */
+    public static final String CHOOSE_MODEL_ACTION = "naru:choose-model";
+
+    /**
+     * A reply that says no usable model is set gets a button that fixes it. The engine words it as
+     * a directive to type ({@code /model use <key>}); the desktop has a picker one click away.
+     */
+    static net.thevpc.naru.api.model.NaruMessage withModelAction(net.thevpc.naru.api.model.NaruMessage message) {
+        String text = message == null ? null : net.thevpc.naru.desktop.util.MsgText.plain(message.getFilteredContent());
+        if (text == null || !message.getParts().isEmpty()) return message;
+        String upper = text.stripLeading().toUpperCase(java.util.Locale.ROOT);
+        boolean missing = upper.startsWith("NO MODEL IS SELECTED")
+                || upper.startsWith("SELECTED MODEL ") && upper.contains(" WAS NOT FOUND");
+        if (!missing) return message;
+        return message.copy().addPart(new net.thevpc.naru.api.model.NaruMessagePart("button",
+                net.thevpc.nuts.elem.NElement.ofObjectBuilder()
+                        .set("label", "Choose a model…")
+                        .set("url", CHOOSE_MODEL_ACTION)
+                        .build()));
     }
 
     private JPanel buildCard(TranscriptBlock block) {
         if (block.isChatMessage()) {
-            ChatMessageCard card = new ChatMessageCard(block.message(), partRenderers, onMessageAction,
+            ChatMessageCard card = new ChatMessageCard(withModelAction(block.message()), partRenderers, onMessageAction,
                     block.htmlIsCurrent() ? block.html() : null);
             keepFold(card, block);
             card.putClientProperty("transcript.block", block);
@@ -526,7 +560,7 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
         }
         if (block.mode() == net.thevpc.naru.api.agent.NaruLogMode.AGENT_RESPONSE) {
             ChatMessageCard card = new ChatMessageCard(
-                    net.thevpc.naru.api.model.NaruMessage.assistant(block.text()),
+                    withModelAction(net.thevpc.naru.api.model.NaruMessage.assistant(block.text())),
                     partRenderers, onMessageAction,
                     block.htmlIsCurrent() ? block.html() : null);
             keepFold(card, block);
@@ -1048,6 +1082,9 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
      * the panel resizes — instead of stretching the conversation into a horizontal scrollbar.
      */
     private static final class CardsPanel extends JPanel implements Scrollable {
+        /** Said in the middle of a conversation that has nothing in it yet; null for none. */
+        private String emptyHint;
+
         @Override
         public Dimension getPreferredScrollableViewportSize() {
             return getPreferredSize();
@@ -1060,7 +1097,31 @@ public final class TranscriptPane extends JPanel implements TranscriptModel.List
 
         @Override
         public boolean getScrollableTracksViewportHeight() {
-            return false;
+            // only the trailing glue: fill the viewport so the hint lands in its middle
+            return isEmptyColumn();
+        }
+
+        private boolean isEmptyColumn() {
+            return emptyHint != null && getComponentCount() <= 1;
+        }
+
+        @Override
+        protected void paintComponent(java.awt.Graphics g) {
+            super.paintComponent(g);
+            if (!isEmptyColumn()) return;
+            java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g2.setFont(getFont());
+            g2.setColor(UiPalette.muted());
+            java.awt.FontMetrics fm = g2.getFontMetrics();
+            String[] lines = emptyHint.split("\n");
+            int y = (getHeight() - lines.length * fm.getHeight()) / 2 + fm.getAscent();
+            for (String line : lines) {
+                g2.drawString(line, (getWidth() - fm.stringWidth(line)) / 2, y);
+                y += fm.getHeight();
+            }
+            g2.dispose();
         }
 
         @Override

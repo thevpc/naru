@@ -794,6 +794,11 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         agentMode.setEnabled(task != null && owner != null);
     }
 
+    /** Open the model picker, as the composer's model button does. */
+    public void openModelPicker() {
+        chooseModel();
+    }
+
     private void chooseModel() {
         if (session.session() == null) return;
         if (modelCatalogLoading) {
@@ -835,6 +840,9 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         final ModelViewPreferences viewPrefs = modelViewPreferences();
         java.util.List<net.thevpc.naru.api.model.NaruModelInfo> visible = viewPrefs.visible(modelInfos);
         final int hiddenCount = modelInfos.size() - visible.size();
+        // most recent first; the picker is mostly used to go back to one of a few models
+        final java.util.List<String> recent = recentModels(viewPrefs);
+        final NaruModelKey current = (NaruModelKey) model.getClientProperty("selectedModel");
         final javax.swing.JLabel emptyLabel = new javax.swing.JLabel("No models match the filters.");
         emptyLabel.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
         emptyLabel.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
@@ -855,8 +863,11 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             String context = contextLabel(configuredContext, reportedContext, local);
             String contextTip = contextTip(configuredContext, reportedContext, local);
             String meta = String.join(" · ", java.util.stream.Stream.of(value.quantization(), value.parameterSize(), context, features, rateStatus(value.provider())).filter(s -> s != null && !s.isBlank()).toList());
+            boolean isCurrent = current != null && current.equals(value.key());
+            String mark = isCurrent ? " <small>✓ current</small>"
+                    : recent.contains(String.valueOf(value.key())) ? " <small>· recent</small>" : "";
             JLabel label = new JLabel("<html><b><font color='" + ModelIcons.colorHex(value.provider()) + "'>" + ModelIcons.glyph(value.provider()) + "</font> "
-                    + value.provider() + "/" + value.model() + "</b> <small>" + meta + "</small></html>");
+                    + value.provider() + "/" + value.model() + "</b>" + mark + " <small>" + meta + "</small></html>");
             label.setOpaque(true);
             label.setBackground(selected ? l.getSelectionBackground() : l.getBackground());
             label.setForeground(selected ? l.getSelectionForeground() : l.getForeground());
@@ -864,10 +875,11 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             label.setToolTipText(value.provider() + "/" + value.model() + " — " + meta + " — " + contextTip);
             return label;
         });
-        list.setFixedCellHeight(22);
         javax.swing.JTextField filter = new javax.swing.JTextField();
-        filter.setFont(filter.getFont().deriveFont(11f));
-        filter.putClientProperty("JTextField.placeholderText", "Filter models…");
+        filter.putClientProperty("JTextField.placeholderText", "Search models…  ↑↓ to move, Enter to use, Esc to close");
+        filter.putClientProperty("JTextField.showClearButton", true);
+        JLabel matchCount = new JLabel();
+        matchCount.setForeground(UiPalette.muted());
         if (modelCatalogLoading) {
             DesktopDialog.showMessage(SwingUtilities.getWindowAncestor(this), "Models", "Loading the model list…");
             return;
@@ -949,7 +961,6 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         capPanel.add(capVision); capPanel.add(capTools); capPanel.add(capReasoning); capPanel.add(capEmbeddings); capPanel.add(capFree);
 
         javax.swing.JComboBox<String> sort = new javax.swing.JComboBox<>(new String[]{"Name", "Context size"});
-        sort.setFont(sort.getFont().deriveFont(11f));
         String rememberedSort = viewPrefs.filter("sort");
         if (rememberedSort != null) {
             sort.setSelectedItem(rememberedSort);
@@ -998,10 +1009,29 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
                         if (configured > 0) return configured;
                         return x.capabilities() == null ? 0 : x.capabilities().contextLength();
                     }).reversed());
-                else
+                else {
                     matches.sort(java.util.Comparator.comparing(x -> x.provider() + "/" + x.model(), String.CASE_INSENSITIVE_ORDER));
+                    if (q.isEmpty()) {
+                        // stable: the recent ones lead in the order they were used, the rest stay sorted
+                        matches.sort(java.util.Comparator.comparingInt(x -> {
+                            int at = recent.indexOf(String.valueOf(x.key()));
+                            return at < 0 ? Integer.MAX_VALUE : at;
+                        }));
+                    }
+                }
                 rows.clear();
                 rows.addAll(matches);
+                matchCount.setText(matches.size() + " of " + all.size() + " models");
+                // keep a row selected so Enter always means something: the best match while the
+                // reader types, the live model when the search is empty
+                int keep = matches.isEmpty() ? -1 : 0;
+                for (int i = 0; q.isEmpty() && current != null && i < matches.size(); i++) {
+                    if (current.equals(matches.get(i).key())) keep = i;
+                }
+                if (keep >= 0) {
+                    list.setSelectedIndex(keep);
+                    list.ensureIndexIsVisible(keep);
+                }
                 if (matches.isEmpty()) {
                     String reason = emptyListingReason();
                     String base = reason == null ? "No models match the filters." : reason;
@@ -1032,8 +1062,19 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
             if (value != null) {
                 model.putClientProperty("selectedModel", value.key());
                 applySelectedModel();
+                rememberRecentModel(viewPrefs, recent, String.valueOf(value.key()));
             }
             dialog.dispose();
+        });
+        // the search field keeps the focus; the arrows and Enter reach the list through it
+        bindFilterKey(filter, "DOWN", "model-next", () -> moveSelection(list, 1));
+        bindFilterKey(filter, "UP", "model-previous", () -> moveSelection(list, -1));
+        bindFilterKey(filter, "PAGE_DOWN", "model-page-down", () -> moveSelection(list, 10));
+        bindFilterKey(filter, "PAGE_UP", "model-page-up", () -> moveSelection(list, -10));
+        bindFilterKey(filter, "ENTER", "model-use", select::doClick);
+        list.getInputMap().put(javax.swing.KeyStroke.getKeyStroke("ENTER"), "model-use");
+        list.getActionMap().put("model-use", new javax.swing.AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) { select.doClick(); }
         });
         list.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseClicked(java.awt.event.MouseEvent e) {
@@ -1086,15 +1127,31 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         facets.add(sourcePanel);
         facets.add(capPanel);
         filters.add(facets, BorderLayout.NORTH);
+        // The facets are for narrowing a long catalogue; most picks are a few typed letters. They
+        // stay folded unless one of them is already narrowing the list, which must be visible.
+        boolean facetActive = srcLocal.isSelected() || srcRemote.isSelected() || capVision.isSelected()
+                || capTools.isSelected() || capReasoning.isSelected() || capEmbeddings.isSelected()
+                || capFree.isSelected() || rememberedProviders != null && !rememberedProviders.isEmpty();
+        facets.setVisible(facetActive);
+        javax.swing.JToggleButton showFilters = new javax.swing.JToggleButton("Filters", facetActive);
+        showFilters.setFocusable(false);
+        showFilters.setToolTipText("Narrow by provider, source and capability");
+        showFilters.addActionListener(e -> {
+            facets.setVisible(showFilters.isSelected());
+            dialog.getContentPane().revalidate();
+            filter.requestFocusInWindow();
+        });
         JPanel titleAndSort = new JPanel(new BorderLayout(5, 0));
-        titleAndSort.add(new JLabel("Models available in this session"), BorderLayout.CENTER);
+        titleAndSort.add(matchCount, BorderLayout.CENTER);
         JPanel sortBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         sortBox.setOpaque(false);
+        sortBox.add(showFilters);
         sortBox.add(new JLabel("Sort:"));
         sortBox.add(sort);
+        sort.setFocusable(false);
         titleAndSort.add(sortBox, BorderLayout.EAST);
-        top.add(titleAndSort, BorderLayout.NORTH);
-        top.add(filters, BorderLayout.SOUTH);
+        top.add(filters, BorderLayout.NORTH);
+        top.add(titleAndSort, BorderLayout.SOUTH);
         java.awt.event.ActionListener refilter = e -> {
             String q = filter.getText();
             filter.setText(q + " ");
@@ -1149,11 +1206,53 @@ public final class InputPane extends JPanel implements NaruSessionModel.Listener
         body.add(centerPanel, BorderLayout.CENTER);
         body.add(select, BorderLayout.SOUTH);
         DesktopDialog.setBody(dialog, body);
+        dialog.getRootPane().setDefaultButton(select);
         // run the filter once so the empty-list note states the real reason before the reader
         // has touched anything; without this the dialog opens claiming no filter matched
         refilterHolder[0].run();
         DesktopDialog.makeResizable(dialog);
+        dialog.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override public void windowOpened(java.awt.event.WindowEvent e) {
+                filter.selectAll();
+                filter.requestFocusInWindow();
+            }
+        });
         DesktopDialog.showCentered(dialog, SwingUtilities.getWindowAncestor(this), 760, 560);
+    }
+
+    private static final int RECENT_MODELS = 5;
+
+    private static java.util.List<String> recentModels(ModelViewPreferences prefs) {
+        String stored = prefs.filter("recent");
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        if (stored != null) {
+            for (String key : stored.split("\n")) if (!key.isBlank()) keys.add(key);
+        }
+        return keys;
+    }
+
+    private static void rememberRecentModel(ModelViewPreferences prefs, java.util.List<String> recent, String key) {
+        java.util.List<String> next = new java.util.ArrayList<>(recent);
+        next.remove(key);
+        next.add(0, key);
+        while (next.size() > RECENT_MODELS) next.remove(next.size() - 1);
+        prefs.setFilter("recent", String.join("\n", next));
+    }
+
+    private static void bindFilterKey(javax.swing.JTextField field, String stroke, String name, Runnable action) {
+        field.getInputMap().put(javax.swing.KeyStroke.getKeyStroke(stroke), name);
+        field.getActionMap().put(name, new javax.swing.AbstractAction() {
+            public void actionPerformed(java.awt.event.ActionEvent e) { action.run(); }
+        });
+    }
+
+    private static void moveSelection(JList<?> list, int delta) {
+        int size = list.getModel().getSize();
+        if (size == 0) return;
+        int at = list.getSelectedIndex();
+        int next = at < 0 ? (delta > 0 ? 0 : size - 1) : Math.max(0, Math.min(size - 1, at + delta));
+        list.setSelectedIndex(next);
+        list.ensureIndexIsVisible(next);
     }
 
     /**

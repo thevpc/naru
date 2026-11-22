@@ -118,12 +118,9 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
     private NPath catalogProjectDirectory;
     private final Object signal = new Object();
     private volatile Thread maintenanceThread;
+    /** Saves and other halted-engine actions; virtual, since each mostly waits on the disk. */
     private final ExecutorService STOP_THE_WORLD_EXECUTOR =
-            Executors.newCachedThreadPool(r -> {
-                Thread t = new Thread(r, "naru-action");
-                t.setDaemon(true);
-                return t;
-            });
+            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("naru-action-", 0).factory());
 
     @Override
     public NVersion apiVersion() {
@@ -143,11 +140,7 @@ public class NaruWorkspaceImpl implements NaruWorkspace {
      * which would then be queued behind itself.
      */
     private final ExecutorService runCallbackExecutor =
-            Executors.newCachedThreadPool(r -> {
-                Thread t = new Thread(r, "naru-run-callback");
-                t.setDaemon(true);
-                return t;
-            });
+            Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("naru-run-callback-", 0).factory());
     private final ConcurrentLinkedQueue<Runnable> pendingActions = new ConcurrentLinkedQueue<>();
 
     private Predicate<NaruDirective> directiveFilter;

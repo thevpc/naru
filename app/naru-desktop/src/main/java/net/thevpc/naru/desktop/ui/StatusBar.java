@@ -52,6 +52,9 @@ public final class StatusBar extends JPanel implements NaruSessionModel.Listener
         // name would read as a second status the row has no room for
         sessionName.setForeground(javax.swing.UIManager.getColor("Label.foreground"));
         sessionDot.setFont(UiFonts.font(UiFonts.SECONDARY, Font.PLAIN));
+        // BoxLayout hands spare width to anything whose maximum allows it; an unbounded dot used to
+        // drift away from the name it marks
+        sessionDot.setMaximumSize(sessionDot.getPreferredSize());
         add(sessionDot);
         add(Box.createHorizontalStrut(6));
         add(sessionName);
@@ -59,7 +62,6 @@ public final class StatusBar extends JPanel implements NaruSessionModel.Listener
         add(status);
         add(sep());
         add(model);
-        add(sep());
         add(Box.createHorizontalGlue());
         add(tasks);
         add(sep());
@@ -111,13 +113,18 @@ public final class StatusBar extends JPanel implements NaruSessionModel.Listener
 
     @Override
     public void sessionModelChanged() {
-        String state = session.statusText();
+        // a later lifecycle note ("running") can land after the prompt parked; at rest is what counts
+        String state = session.isReadyForPrompt() ? "ready" : session.statusText();
         status.setText(state);
         model.setText("model " + session.model());
+        sessionDot.setMaximumSize(sessionDot.getPreferredSize());
         int blocked = 0;
         int active = 0;
+        boolean ready = session.isReadyForPrompt();
         for (NaruSessionModel.TaskRow t : session.tasks()) {
-            if (t.status() == NaruTaskStatus.BLOCKED_ON_INPUT) {
+            // the conversation parked on its own prompt is a session at rest, not a question
+            if (t.status() == NaruTaskStatus.BLOCKED_ON_INPUT
+                    && !(ready && (t.foreground() || t.conversation()))) {
                 blocked++;
             }
             if (!t.status().isCompleted()) {

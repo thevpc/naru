@@ -86,6 +86,21 @@ public final class TranscriptModel {
      */
     private final DrawnCalls drawnCalls = new DrawnCalls();
 
+    /**
+     * Block-id prefix of a message the store echoes while the turn is still live. Only these can
+     * race the stream they copy; a page of reloaded history is older than anything streaming now.
+     */
+    public static final String LIVE_ECHO_PREFIX = "stored-";
+    /**
+     * Live echoes that found no streamed block to settle onto. The store can checkpoint a message
+     * before the host's flush timer delivers the stream that shows it; the stream that arrives
+     * afterwards is then the copy, and folds into the echo instead of drawing a second card.
+     */
+    private final List<TranscriptBlock> earlyEchoes = new ArrayList<>();
+    /** Streamed blocks folded into an early echo: their late chunks must not draw them again. */
+    private final java.util.Set<String> absorbedLive = new java.util.HashSet<>();
+    private static final int MAX_EARLY_ECHOES = 16;
+
     // ── feeding ───────────────────────────────────────────────────────────────
 
     /** Apply one coalesced batch. Called on the EDT by the session model. */
@@ -97,6 +112,9 @@ public final class TranscriptModel {
         changedText.clear();
         for (TranscriptEvent e : batch) {
             if (e instanceof TranscriptEvent.Chunk c) {
+                if (absorbedLive.contains(c.blockId())) {
+                    continue;
+                }
                 boolean isNew = byId.get(c.blockId()) == null;
                 TranscriptBlock b = blockFor(c.blockId(), c.mode(), c.taskId());
                 structural |= isNew;
@@ -116,12 +134,19 @@ public final class TranscriptModel {
                 }
                 b.append(add);
                 retainedChars += b.length() - before;
+                if (absorbIntoEarlyEcho(b)) {
+                    structural = true;
+                    continue;
+                }
                 noteTextChanged(b);
                 // Chunk.finalFragment() ends a *message*, not the block: a run of whole
                 // messages from one directive is still one block, and only Closed freezes it.
                 // Closing here would make the next line in the same block undrawable.
                 text = true;
             } else if (e instanceof TranscriptEvent.Opened o) {
+                if (absorbedLive.contains(o.blockId())) {
+                    continue;
+                }
                 boolean isNew = byId.get(o.blockId()) == null;
                 TranscriptBlock ob = blockFor(o.blockId(), o.mode(), o.taskId());
                 if (o.directiveResult()) {
@@ -130,6 +155,9 @@ public final class TranscriptModel {
                 structural |= isNew;
                 openBlockId = o.blockId();
             } else if (e instanceof TranscriptEvent.Closed cl) {
+                if (absorbedLive.remove(cl.blockId())) {
+                    continue;
+                }
                 structural |= close(cl.blockId()) != null;
             } else if (e instanceof TranscriptEvent.ToolCall tc) {
                 structural |= toolCard(tc.call(), false);
@@ -246,6 +274,12 @@ public final class TranscriptModel {
                 b.setMessage(message, sequence);
             }
             close(b.id());
+            if (blockId.startsWith(LIVE_ECHO_PREFIX) && !text.isBlank()) {
+                earlyEchoes.add(b);
+                if (earlyEchoes.size() > MAX_EARLY_ECHOES) {
+                    earlyEchoes.remove(0);
+                }
+            }
         } else if (message != null) {
             b.setMessage(message, sequence);
         }
@@ -283,6 +317,42 @@ public final class TranscriptModel {
             }
         }
         return null;
+    }
+
+    /**
+     * Fold a streamed block into the live echo that beat it here, when the two say the same thing.
+     * The echo keeps its place and its message (and so its card and its severity); the streamed
+     * block is removed, and its id remembered so the rest of its stream is ignored.
+     *
+     * @return true when the streamed block was removed
+     */
+    private boolean absorbIntoEarlyEcho(TranscriptBlock live) {
+        if (earlyEchoes.isEmpty() || live.isChatMessage() || live.isToolCard() || live.isDirectiveResult()) {
+            return false;
+        }
+        String said = live.text().strip();
+        if (said.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < earlyEchoes.size(); i++) {
+            TranscriptBlock echo = earlyEchoes.get(i);
+            // an echo trimmed away since must not take the only copy of the message with it
+            if (byId.get(echo.id()) == echo && echo.taskId() == live.taskId() && echo.mode() == live.mode()
+                    && echo.text().strip().equals(said)) {
+                earlyEchoes.remove(i);
+                blocks.remove(live);
+                byId.remove(live.id());
+                changedText.remove(live);
+                retainedChars -= live.length();
+                if (live.id().equals(openBlockId)) {
+                    openBlockId = null;
+                }
+                absorbedLive.add(live.id());
+                viewDirty = true;
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Close whatever is open, so a shutdown or an interrupt never leaves a half block. */
@@ -709,6 +779,8 @@ public final class TranscriptModel {
         openCards.clear();
         drawnCalls.clear();
         changedText.clear();
+        earlyEchoes.clear();
+        absorbedLive.clear();
         openBlockId = null;
         retainedChars = 0;
         trimmedBlocks = 0;

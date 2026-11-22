@@ -201,5 +201,8 @@ public class NaruSessionInteractionTest {
                         .contains("No model is selected")),
                 "a session that cannot find a usable model must say so on its own channel: "
                         + interaction.output);
+        Assertions.assertTrue(task.history().stream().anyMatch(m -> m.getRole() == net.thevpc.naru.api.agent.NaruRole.user
+                        && "hello".equals(String.valueOf(m.getFilteredContent()).strip())),
+                "the unanswered request stays in the history, so a reopened session still shows it");
     }
 }

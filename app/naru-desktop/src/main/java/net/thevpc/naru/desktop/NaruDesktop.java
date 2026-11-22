@@ -8,14 +8,12 @@ import net.thevpc.nuts.app.NApp;
 import net.thevpc.nuts.app.NAppRun;
 import net.thevpc.nuts.app.NApplication;
 import net.thevpc.nuts.io.NPath;
-import net.thevpc.nuts.platform.NEnv;
 import net.thevpc.nuts.swing.NSwingUtils;
 import com.formdev.flatlaf.FlatLaf;
 
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import java.awt.Insets;
-import java.util.Map;
 import java.util.prefs.Preferences;
 
 /**
@@ -66,16 +64,6 @@ public final class NaruDesktop {
     @NAppRun
     public void run() {
         NSwingUtils.setSharedWorkspaceInstance();
-        for (Map.Entry<String, String> e : System.getenv().entrySet()) {
-            if (e.getKey().toLowerCase().contains("api_key")) {
-                System.out.println(e.getKey() + "=" + e.getValue());
-            }
-        }
-        for (Map.Entry<String, String> e : NEnv.of().env().entrySet()) {
-            if (e.getKey().toLowerCase().contains("api_key")) {
-                System.out.println(e.getKey() + "=" + e.getValue());
-            }
-        }
         NApplication app = NApplication.of();
         // the workspace must exist before prepareUI resolves anything through Nuts
         applyTheme(preferences().get(THEME_KEY, DEFAULT_THEME), false);

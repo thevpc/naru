@@ -40,13 +40,13 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
      * land in that window, which is otherwise a few instructions wide.
      */
     static volatile Runnable beforeHibernate;
+    /** The longest a driven turn waits without a signal before looking again. */
+    private static final long WAKE_UP_MILLIS = 250;
     /** Runs once a session is marked hibernating, before it is saved; see {@link #beforeHibernate}. */
     static volatile Runnable whileHibernating;
-    private static final ExecutorService WORKERS = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "naru-turn");
-        t.setDaemon(true);
-        return t;
-    });
+    /** One virtual thread per turn being driven: it mostly waits for the session to settle. */
+    private static final ExecutorService WORKERS = Executors.newThreadPerTaskExecutor(
+            Thread.ofVirtual().name("naru-turn-", 0).factory());
 
     private final NaruWorkspaceImpl agent;
     /**
@@ -332,6 +332,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         }
         if (queued != null) request.deliver(queued.input.text(), queued.input.idempotencyKey());
         synchronized (live.monitor) {
+            live.changes++;
             live.monitor.notifyAll();
         }
     }
@@ -340,6 +341,10 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         try {
             long idleSince = 0;
             while (true) {
+                long seenChanges;
+                synchronized (live.monitor) {
+                    seenChanges = live.changes;
+                }
                 // read before the idle checks below, which run outside the monitor
                 long seenSubmits = live.submits;
                 boolean hasTasks = live.session.hasLiveTasks();
@@ -369,8 +374,19 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                 } else {
                     idleSince = 0;
                 }
+                // woken by what can change the outcome (a task's status, an input request, the
+                // session stopping); this used to poll every 20 ms, 25,000 wake-ups a second with
+                // 500 turns in flight. The timeout bounds what is not signalled (a toolset
+                // releasing a resource) and the grace period still to run.
+                long timeoutMillis = WAKE_UP_MILLIS;
+                if (idleSince != 0) {
+                    long left = grace.toMillis() - (System.nanoTime() - idleSince) / 1_000_000;
+                    timeoutMillis = Math.max(1, Math.min(timeoutMillis, left));
+                }
                 synchronized (live.monitor) {
-                    live.monitor.wait(20L);
+                    if (live.changes == seenChanges) {
+                        live.monitor.wait(timeoutMillis);
+                    }
                 }
             }
         } catch (Throwable e) {
@@ -511,6 +527,8 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         volatile CompletableFuture<Void> saving = CompletableFuture.completedFuture(null);
         /** Turns submitted so far; written under {@link #monitor}, see {@link #hibernateLive}. */
         volatile long submits;
+        /** Bumped with every notify on {@link #monitor}, so a waiter knows whether it missed one. */
+        long changes;
         volatile Pending current;
         volatile long lastUse = System.nanoTime();
         volatile boolean started;
@@ -532,6 +550,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
 
                 public void sessionStopped(NaruSession s) {
                     synchronized (monitor) {
+                        changes++;
                         monitor.notifyAll();
                     }
                 }
@@ -549,6 +568,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
 
                 public void onTaskStatusChanged(NaruTask t, NaruTaskStatus oldStatus, NaruTaskStatus newStatus) {
                     synchronized (monitor) {
+                        changes++;
                         monitor.notifyAll();
                     }
                     Pending p = current;
@@ -582,6 +602,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
             }
             turns.clear();
             synchronized (monitor) {
+                changes++;
                 monitor.notifyAll();
             }
         }
@@ -605,7 +626,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
             this.streaming = streaming;
             this.sequence = sequence;
             if (listener != null) {
-                consumer = new Thread(() -> {
+                consumer = Thread.ofVirtual().name("naru-turn-events").start(() -> {
                     try {
                         while (true) listener.onEvent(queue.take());
                     } catch (InterruptedException ignored) {
@@ -614,9 +635,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                         lagged.set(true);
                         queue.clear();
                     }
-                }, "naru-turn-events");
-                consumer.setDaemon(true);
-                consumer.start();
+                });
             }
         }
 

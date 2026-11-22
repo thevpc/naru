@@ -106,8 +106,11 @@ public class NaruSchedulerImpl implements NaruScheduler {
             if (ti == null) {
                 ti = new ThreadInfo(idx);
                 ThreadInfo finalTi = ti;
-                Thread t = new Thread(() -> workerLoop(finalTi), "naru-session[" + System.identityHashCode(session) + "]-worker-" + i);
-                t.setDaemon(true);
+                // virtual: a worker spends most of its life blocked on a model call, and a
+                // platform thread per live session put a thousand OS threads in a 500-user server
+                Thread t = Thread.ofVirtual()
+                        .name("naru-session[" + System.identityHashCode(session) + "]-worker-" + i)
+                        .unstarted(() -> workerLoop(finalTi));
                 ti.thread = t;
                 workerThreadInfos.put(idx, ti);
                 t.start();
