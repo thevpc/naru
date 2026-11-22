@@ -449,7 +449,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         NDuration baseDelay = retryPeriod(context, env);
         AtomicReference<NDuration> dynamicRetryAfter = new AtomicReference<>();
         AtomicInteger attemptCounter = new AtomicInteger(0);
-        NElement headersElements = NElement.of(request.headers());
+        NElement headersElements = NElement.of(NaruModelUtils.maskedHeaders(request.headers()));
         try (NRetryCall<NaruResponse> retryCall = NRetryCall.of("llm-" + provider().name() + "-" + UUID.randomUUID(), new NaruProtocolChatWebCall(attemptCounter, request, body, jsonBody, dynamicRetryAfter, context, toolsWrapped, emulate_tool_calls, preparedModelRequest, cachePlan, cachingMode))) {
             retryCall.maxRetries(maxRetries)
                     .retryPeriod(attempt -> {
@@ -539,7 +539,7 @@ public class NaruModelProtocolBase implements NaruModelProtocol {
         int maxRetries = maxRetries(context, env);
         NDuration baseDelay = retryPeriod(context, env);
         AtomicReference<NDuration> dynamicRetryAfter = new AtomicReference<>();
-        NElement headersElements = NElement.of(request.headers());
+        NElement headersElements = NElement.of(NaruModelUtils.maskedHeaders(request.headers()));
         int attempt = 0;
         for (; ; ) {
             attempt++;

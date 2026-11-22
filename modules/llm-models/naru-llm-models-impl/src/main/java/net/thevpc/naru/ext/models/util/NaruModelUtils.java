@@ -212,7 +212,8 @@ public class NaruModelUtils {
 
     public static String maskHeaderValue(String name, String value) {
         if (value == null) return null;
-        if ("authorization".equalsIgnoreCase(name) || "x-api-key".equalsIgnoreCase(name) || "api-key".equalsIgnoreCase(name)) {
+        if ("authorization".equalsIgnoreCase(name) || "x-api-key".equalsIgnoreCase(name) || "api-key".equalsIgnoreCase(name)
+                || "x-goog-api-key".equalsIgnoreCase(name)) {
             if (value.regionMatches(true, 0, "bearer ", 0, 7)) {
                 String token = value.substring(7).trim();
                 if (token.length() > 8) {
@@ -226,6 +227,24 @@ public class NaruModelUtils {
             return "***";
         }
         return value;
+    }
+
+    /**
+     * Request headers as they may be written to a log: every credential header masked. A failed
+     * call logs its headers so the request can be reproduced, and that log used to carry the
+     * provider's API key in full.
+     */
+    public static Map<String, List<String>> maskedHeaders(Map<String, List<String>> headers) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        if (headers == null) return out;
+        for (Map.Entry<String, List<String>> e : headers.entrySet()) {
+            List<String> values = new ArrayList<>();
+            if (e.getValue() != null) {
+                for (String v : e.getValue()) values.add(maskHeaderValue(e.getKey(), v));
+            }
+            out.put(e.getKey(), values);
+        }
+        return out;
     }
 
     public static void logAudit(NaruModelContext context,
