@@ -403,7 +403,7 @@ public class NaruOllamaDirective extends NaruDirectiveBase {
             context.errln( msg);
             return NaruStmtResult.ofError();
         }
-        NaruModelKey key = NaruModelKey.parse(n.get().image()).get();
+        NaruModelKey key = NaruModelKey.of(n.get().image());
         if (NBlankable.isBlank(key.provider())) {
             key = new NaruModelKey("ollama", n.get().image());
         }

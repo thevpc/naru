@@ -41,7 +41,7 @@ public final class Examples {
     }
 
     public static NaruModelConfig model() {
-        return new NaruModelConfig(NaruModelKey.parse(modelKey()).get());
+        return new NaruModelConfig(NaruModelKey.of(modelKey()));
     }
 
     /**

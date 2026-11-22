@@ -23,6 +23,10 @@ public class NaruModelKey implements NToElement {
         this.model = model;
     }
 
+    public static NaruModelKey of(String modelName) {
+        return parse(modelName).get();
+    }
+
     public static NOptional<NaruModelKey> parse(String modelName) {
         if (modelName != null) {
             int i = modelName.indexOf("/");
@@ -48,8 +52,7 @@ public class NaruModelKey implements NToElement {
         return NElement.ofObjectBuilder()
                 .set("model", model)
                 .set("provider", provider)
-                .build()
-                ;
+                .build();
     }
 
     @Override
@@ -59,7 +62,8 @@ public class NaruModelKey implements NToElement {
 
     @Override
     public boolean equals(Object o) {
-        if (o == null || getClass() != o.getClass()) return false;
+        if (o == null || getClass() != o.getClass())
+            return false;
         NaruModelKey that = (NaruModelKey) o;
         return Objects.equals(provider, that.provider) && Objects.equals(model, that.model);
     }
@@ -74,7 +78,6 @@ public class NaruModelKey implements NToElement {
                 "%s%s%s",
                 NMsg.ofStyledPrimary9(provider),
                 NMsg.ofStyledSeparator("/"),
-                NMsg.ofStyledPrimary6(model)
-                );
+                NMsg.ofStyledPrimary6(model));
     }
 }

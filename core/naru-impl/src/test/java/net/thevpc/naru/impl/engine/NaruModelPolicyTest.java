@@ -130,7 +130,7 @@ public class NaruModelPolicyTest {
     }
 
     private boolean allowed(String key) {
-        NaruModelKey k = NaruModelKey.parse(key).get();
+        NaruModelKey k = NaruModelKey.of(key);
         return session.registry().isModelAllowed(k, null);
     }
 
