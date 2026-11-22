@@ -209,6 +209,11 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                 }
                 try {
                     List<NaruPendingInput> inputs = live.session.pendingInputs();
+                    if (!live.started || !inputs.isEmpty() || awaitingInput(live.session)) {
+                        // idle: this turn is the next one to run, so its output is this handle's.
+                        // A session still running a turn (QUEUE) keeps writing where it was.
+                        live.interaction.useFor(customInteraction, live.session);
+                    }
                     if (!inputs.isEmpty()) {
                         NaruPendingInput target = chooseInput(inputs, input.requestId());
                         if (!live.session.deliverPendingInput(target.requestId(), input.text(), input.idempotencyKey())) {
@@ -327,13 +332,18 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                 if (live.queued.peek().input.requestId() == null
                         || live.queued.peek().input.requestId().equals(request.requestId())) {
                     queued = live.queued.poll();
+                    live.delivering++;
                 }
             }
         }
-        if (queued != null) request.deliver(queued.input.text(), queued.input.idempotencyKey());
-        synchronized (live.monitor) {
-            live.changes++;
-            live.monitor.notifyAll();
+        try {
+            if (queued != null) request.deliver(queued.input.text(), queued.input.idempotencyKey());
+        } finally {
+            synchronized (live.monitor) {
+                if (queued != null) live.delivering--;
+                live.changes++;
+                live.monitor.notifyAll();
+            }
         }
     }
 
@@ -341,6 +351,10 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         try {
             long idleSince = 0;
             while (true) {
+                if (live.hibernated) {
+                    // hibernated by someone else (evicted to make room): nothing left to drive
+                    return;
+                }
                 long seenChanges;
                 synchronized (live.monitor) {
                     seenChanges = live.changes;
@@ -357,12 +371,17 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                 }
                 boolean undelivered;
                 synchronized (live.monitor) {
-                    undelivered = !live.queued.isEmpty();
+                    undelivered = !live.queued.isEmpty() || live.delivering > 0;
                 }
                 // a task parked on input is only idle once the input this turn carries has
                 // reached it: hibernating earlier dropped the first turn's text on the floor
                 if (inputPolicy == NaruInputBlockPolicy.HIBERNATE && !undelivered && live.session.isHibernateEligible()) {
                     if (idleSince == 0) idleSince = System.nanoTime();
+                    if (!grace.isZero()) {
+                        // pooled: the turn is answered now; the session stays warm for the next
+                        // message and only hibernates if none comes within the grace
+                        reportAwaitingInput(live, seenSubmits, seenChanges);
+                    }
                     if (System.nanoTime() - idleSince >= grace.toNanos()) {
                         Runnable hook = beforeHibernate;
                         if (hook != null) hook.run();
@@ -461,6 +480,38 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
      *
      * @return whether it hibernated; {@code false} leaves the session live
      */
+    /**
+     * Completes the turns of a settled, still loaded session with
+     * {@link NaruTurnStatus#AWAITING_INPUT}, saved first, unless something happened since the idle check:
+     * a turn submitted in between must not be reported answered before it ran. The futures
+     * complete outside the monitor, since a caller may submit again from their callback.
+     */
+    private void reportAwaitingInput(Live live, long seenSubmits, long seenChanges) {
+        List<Pending> answered;
+        synchronized (live.monitor) {
+            if (live.turns.isEmpty() || live.submits != seenSubmits || live.changes != seenChanges
+                    || !live.queued.isEmpty() || live.delivering > 0) {
+                return;
+            }
+            answered = new ArrayList<>(live.turns);
+            live.turns.clear();
+        }
+        // answered means durable: a pooled session is otherwise first written when it
+        // hibernates, and a crash before that lost the whole conversation. The history is
+        // appended, not rewritten, and save() syncs the store's log
+        live.session.save();
+        List<NaruPendingInput> pendingInputs = live.session.pendingInputs();
+        for (Pending p : answered) {
+            p.future.complete(NaruTurnResult.awaitingInput(pendingInputs, p.events != null && p.events.lagged()));
+            if (p.events != null) p.events.close();
+        }
+    }
+
+    /** Whether a conversation is loaded right now; for tests of the pool. */
+    static boolean isLive(String id) {
+        return LIVE.containsKey(id);
+    }
+
     /** Leaves {@code live} running: a submit that waited on this hibernation retries. */
     private static boolean backOff(Live live, CompletableFuture<Void> saving) {
         live.hibernating.set(false);
@@ -471,7 +522,8 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     private boolean hibernateLive(Live live, long seenSubmits, long seenChanges) {
         CompletableFuture<Void> saving = new CompletableFuture<>();
         synchronized (live.monitor) {
-            if (live.submits != seenSubmits || live.changes != seenChanges || !live.queued.isEmpty()) return false;
+            if (live.submits != seenSubmits || live.changes != seenChanges || !live.queued.isEmpty()
+                    || live.delivering > 0) return false;
             if (!live.hibernating.compareAndSet(false, true)) return false;
             live.saving = saving;
         }
@@ -495,6 +547,7 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
             // on that news must rehydrate from the store, not find this entry still hibernating
             // and be told the session is busy
             LIVE.remove(live.session.uuid(), live);
+            live.hibernated = true;
             live.finishAll(NaruTurnResult.hibernated(pendingInputs, events.lagged()));
             // only now, out of LIVE: a waiting submit retries and activates from the store
             saving.complete(null);
@@ -546,12 +599,20 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         final AtomicBoolean driving = new AtomicBoolean();
         final AtomicLong sequence;
         final AtomicBoolean hibernating = new AtomicBoolean();
+        /** Set once hibernated: the turn driver of a session evicted by another one stops. */
+        volatile boolean hibernated;
         /** Completes when the hibernation under way ends; set with {@link #hibernating}. */
         volatile CompletableFuture<Void> saving = CompletableFuture.completedFuture(null);
         /** Turns submitted so far; written under {@link #monitor}, see {@link #hibernateLive}. */
         volatile long submits;
         /** Bumped with every notify on {@link #monitor}, so a waiter knows whether it missed one. */
         long changes;
+        /**
+         * Inputs taken from {@link #queued} and not yet delivered: the queue is empty and the task
+         * still looks parked, yet it is about to run. Without this a turn was reported answered,
+         * and a session hibernated, in that gap. Written under {@link #monitor}.
+         */
+        int delivering;
         volatile Pending current;
         volatile long lastUse = System.nanoTime();
         volatile boolean started;
@@ -605,9 +666,20 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
                         if (request != null) {
                             synchronized (monitor) {
                                 next = queued.poll();
+                                if (next != null) delivering++;
                             }
                         }
-                        if (next != null) session.deliverPendingInput(request.requestId(), next.input.text());
+                        if (next != null) {
+                            try {
+                                session.deliverPendingInput(request.requestId(), next.input.text());
+                            } finally {
+                                synchronized (monitor) {
+                                    delivering--;
+                                    changes++;
+                                    monitor.notifyAll();
+                                }
+                            }
+                        }
                     }
                 }
             };
@@ -681,7 +753,8 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
     }
 
     private static final class TurnInteraction implements NaruInteraction {
-        final NaruInteraction delegate;
+        /** The interaction of the handle whose turn this is; see {@link #useFor}. */
+        volatile NaruInteraction delegate;
         volatile TurnEvents events;
         final boolean streaming;
         final AtomicLong sequence = new AtomicLong();
@@ -699,6 +772,24 @@ final class NaruSessionHandleImpl implements NaruSessionHandle {
         public void open(NaruSession session) {
             closed = false;
             if (delegate != null) delegate.open(session);
+        }
+
+        /**
+         * Makes the next turn's output go to {@code next}, the interaction of the handle that
+         * submitted it. A pooled session stays loaded across turns, and each request of a
+         * server brings an interaction of its own: without this, every warm turn wrote to the
+         * one the session was activated with, and later requests got nothing back. The
+         * previous one is closed, its turn being over.
+         */
+        void useFor(NaruInteraction next, NaruSession session) {
+            NaruInteraction target = next instanceof NaruTerminalInteraction ? null : next;
+            NaruInteraction previous = delegate;
+            if (target == previous) {
+                return;
+            }
+            delegate = target;
+            if (previous != null) previous.close();
+            if (target != null) target.open(session);
         }
 
         public void requestInput(NaruInputRequest request) {

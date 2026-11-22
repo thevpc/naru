@@ -11,6 +11,9 @@ public record NaruTurnResult(NaruTurnStatus status, List<NaruPendingInput> pendi
     public static NaruTurnResult hibernated(List<NaruPendingInput> pending, boolean lagged) {
         return new NaruTurnResult(NaruTurnStatus.HIBERNATED, pending, lagged, null);
     }
+    public static NaruTurnResult awaitingInput(List<NaruPendingInput> pending, boolean lagged) {
+        return new NaruTurnResult(NaruTurnStatus.AWAITING_INPUT, pending, lagged, null);
+    }
     public static NaruTurnResult completed(boolean lagged) {
         return new NaruTurnResult(NaruTurnStatus.COMPLETED, List.of(), lagged, null);
     }

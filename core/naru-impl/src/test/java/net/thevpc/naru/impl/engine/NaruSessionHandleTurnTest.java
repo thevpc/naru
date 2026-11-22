@@ -179,6 +179,99 @@ public class NaruSessionHandleTurnTest {
         }
     }
 
+    // ── pooled: the session stays loaded between turns ────────────────────────────
+
+    private static NaruSessionHandle pooled(NaruWorkspace ws, String id, Answer answer, Duration grace, int maxLive) {
+        return ws.newSession()
+                .id(id)
+                .interactive()
+                .task(NaruTaskSpec.of().name("chat").model(CountingProvider.NAME + "/m"))
+                .interaction(answer)
+                .hibernateAfter(grace)
+                .maxLiveSessions(maxLive)
+                .buildHandle();
+    }
+
+    private static NaruTurnResult pooledTurn(NaruWorkspace ws, String id, Answer answer, Duration grace, int maxLive,
+                                             String text) throws Exception {
+        return pooled(ws, id, answer, grace, maxLive).submit(NaruInput.of(text)).result().get(1, TimeUnit.MINUTES);
+    }
+
+    private static void awaitUnloaded(String id) throws InterruptedException {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (NaruSessionHandleImpl.isLive(id) && System.nanoTime() < until) {
+            Thread.sleep(10);
+        }
+        Assertions.assertFalse(NaruSessionHandleImpl.isLive(id), "the session should have been unloaded");
+    }
+
+    /**
+     * With a keep-alive, a turn is answered as soon as the session settles: it used to complete
+     * only at hibernation, so every reply waited out the whole keep-alive.
+     */
+    @Test
+    @Timeout(120)
+    public void aPooledTurnIsAnsweredAtOnceAndTheSessionStaysWarm() throws Exception {
+        NaruWorkspace ws = workspace();
+        String id = "conv-" + UUID.randomUUID();
+        Duration keepAlive = Duration.ofSeconds(30);
+
+        Answer first = new Answer();
+        long t0 = System.nanoTime();
+        NaruTurnResult r1 = pooledTurn(ws, id, first, keepAlive, 100, "hello");
+        Assertions.assertTrue(System.nanoTime() - t0 < TimeUnit.SECONDS.toNanos(10),
+                "the reply must not wait for the keep-alive");
+        assertNull(r1.failure());
+        assertEquals(NaruTurnStatus.AWAITING_INPUT, r1.status());
+        assertEquals("user turns seen: 1", first.text());
+        Assertions.assertTrue(NaruSessionHandleImpl.isLive(id), "the session stays loaded");
+        Assertions.assertTrue(ws.projectDirectory().resolve(".naru/local/sessions").resolve(id)
+                        .resolve("session.tson").isRegularFile(),
+                "an answered turn is in the store, not only in memory");
+
+        // the warm session answers, and to this request's own interaction, not the first one's
+        Answer second = new Answer();
+        NaruTurnResult r2 = pooledTurn(ws, id, second, keepAlive, 100, "again");
+        assertNull(r2.failure());
+        assertEquals(NaruTurnStatus.AWAITING_INPUT, r2.status());
+        assertEquals("user turns seen: 2", second.text());
+        assertEquals("user turns seen: 1", first.text(), "an earlier request's output is not written to again");
+    }
+
+    @Test
+    @Timeout(120)
+    public void aPooledSessionHibernatesWhenItsKeepAliveRunsOut() throws Exception {
+        NaruWorkspace ws = workspace();
+        String id = "conv-" + UUID.randomUUID();
+        Duration keepAlive = Duration.ofMillis(200);
+        assertEquals(NaruTurnStatus.AWAITING_INPUT, pooledTurn(ws, id, new Answer(), keepAlive, 100, "hello").status());
+        awaitUnloaded(id);
+
+        Answer answer = new Answer();
+        NaruTurnResult r2 = pooledTurn(ws, id, answer, keepAlive, 100, "again");
+        assertNull(r2.failure());
+        assertEquals("user turns seen: 2", answer.text(), "the conversation comes back from the store");
+    }
+
+    /** A full pool makes room by hibernating its least recently used idle session. */
+    @Test
+    @Timeout(120)
+    public void aFullPoolEvictsItsLeastRecentlyUsedSession() throws Exception {
+        NaruWorkspace ws = workspace();
+        String a = "conv-a-" + UUID.randomUUID();
+        String b = "conv-b-" + UUID.randomUUID();
+        Duration keepAlive = Duration.ofSeconds(30);
+        assertEquals(NaruTurnStatus.AWAITING_INPUT, pooledTurn(ws, a, new Answer(), keepAlive, 1, "hello").status());
+
+        assertEquals(NaruTurnStatus.AWAITING_INPUT, pooledTurn(ws, b, new Answer(), keepAlive, 1, "hi").status());
+        awaitUnloaded(a);
+
+        Answer answer = new Answer();
+        NaruTurnResult again = pooledTurn(ws, a, answer, keepAlive, 1, "again");
+        assertNull(again.failure());
+        assertEquals("user turns seen: 2", answer.text(), "an evicted conversation keeps its history");
+    }
+
     private static NaruWorkspace workspace() {
         NaruWorkspace ws = NaruWorkspace.of();
         NPath dir = NPath.ofTempFolder("naru-handle-turn-" + System.nanoTime());

@@ -46,12 +46,19 @@ import java.util.regex.Pattern;
  *   <li>{@code buildHandle()} is cheap — nothing is loaded yet;</li>
  *   <li>{@code submit(input)} wakes the session: it is created, or reloaded from the
  *       {@code NaruSessionStore} with its history, tasks and variables;</li>
- *   <li>the task answers, then parks waiting for the next line. A session whose every task
- *       waits for input is idle, so the handle <b>hibernates</b> it: saved to the store and
- *       dropped from memory. The turn's future completes with {@code HIBERNATED};</li>
+ *   <li>the task answers, then parks waiting for the next line. The turn's future completes
+ *       with {@code AWAITING_INPUT}: answered, and the session stays loaded for a while
+ *       ({@code hibernateAfter}), so a user who replies soon is served from memory;</li>
+ *   <li>if no message comes within that time, or the pool ({@code maxLiveSessions}) needs the
+ *       room, the handle <b>hibernates</b> it: saved to the store and dropped from memory;</li>
  *   <li>the next request, possibly minutes later or on another server instance sharing the
  *       store, wakes it again.</li>
  * </ol>
+ *
+ * <p>Each request passes its own interaction, and a turn's output goes to the interaction of the
+ * request that submitted it, warm session or not. What a turn wrote is durable when it is
+ * answered (the file store syncs its log at the end of each turn), so keeping a session warm
+ * costs memory, not safety. {@code -DkeepWarmSeconds=0} hibernates after every turn instead.
  *
  * <p>The store here is the file store under the workspace folder; a backend would pass its
  * own ({@code .store(...)}, e.g. the JDBC module) so any instance can serve any conversation.
@@ -62,6 +69,13 @@ import java.util.regex.Pattern;
  * {@code curl -d 'Hi, my name is Ada' localhost:8765/chat/alice}.
  */
 public class Ex04TurnServer {
+
+    /**
+     * How long a conversation stays loaded after a turn. {@code Duration.ZERO} hibernates it at
+     * once: the least memory, and each turn reloads it (tens of milliseconds). A keep-alive
+     * answers a returning user from memory (about a millisecond) and is just as durable.
+     */
+    private static final Duration KEEP_WARM = Duration.ofSeconds(Long.getLong("keepWarmSeconds", 30));
 
     private final NaruWorkspace ws;
 
@@ -77,7 +91,8 @@ public class Ex04TurnServer {
                 .interactive()                    // a conversation: park on input after each turn
                 .task(NaruTaskSpec.of().name("chat").model(Examples.modelKey()))
                 .interaction(capture)             // where this turn's output goes
-                .hibernateAfter(Duration.ZERO)    // sleep as soon as the turn is done
+                .hibernateAfter(KEEP_WARM)        // stay loaded this long for the next message
+                .maxLiveSessions(1000)            // the pool: beyond this, the least recently used sleeps
                 // .store(myJdbcStore)            // share conversations between instances
                 // .listener(event -> sse.send(event)) // stream chunks/tool calls to a browser
                 .buildHandle();

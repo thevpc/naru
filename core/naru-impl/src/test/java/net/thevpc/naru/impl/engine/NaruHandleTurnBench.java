@@ -76,7 +76,8 @@ public class NaruHandleTurnBench {
      * Many users at once: {@code -Dnaru.bench.sessions} conversations (500), each running
      * {@code -Dnaru.bench.turns} turns (5) against a model that takes {@code -Dnaru.bench.modelMs}
      * (1000) to answer, all concurrently. Prints throughput, turn latency, what NARU adds on top
-     * of the model, and the threads and heap it took.
+     * of the model, and the threads and heap it took. {@code -Dnaru.bench.graceMs} keeps sessions
+     * loaded between turns (pooled) instead of hibernating each one.
      */
     @Test
     public void manyConversationsAtOnce() throws Exception {
@@ -118,7 +119,7 @@ public class NaruHandleTurnBench {
                                     .interactive()
                                     .task(NaruTaskSpec.of().name("chat").model(provider + "/" + NaruScriptedModelProvider.DEFAULT_MODEL))
                                     .interaction(new Silent())
-                                    .hibernateAfter(Duration.ZERO)
+                                    .hibernateAfter(Duration.ofMillis(Long.getLong("naru.bench.graceMs", 0)))
                                     .buildHandle()
                                     .submit(NaruInput.of("message " + i))
                                     .result().get(10, TimeUnit.MINUTES);
