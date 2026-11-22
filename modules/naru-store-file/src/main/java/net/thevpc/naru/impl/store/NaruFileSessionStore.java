@@ -83,6 +83,8 @@ public class NaruFileSessionStore implements NaruSessionStore {
     private static final Map<java.nio.file.Path, NaruFileJournal> journals = new java.util.concurrent.ConcurrentHashMap<>();
     /** Folders whose log has a sync pending on {@link #SYNC_TIMER}. */
     private static final Set<java.nio.file.Path> syncPending = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** Folders whose log has a checkpoint pending on {@link #SYNC_TIMER}. */
+    private static final Set<java.nio.file.Path> checkpointPending = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** How long a write may stay unsynced; 0 syncs each write. See {@link #parseSyncPolicy}. */
     private final long syncIntervalMillis;
 
@@ -192,6 +194,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
     private void afterWrite(java.nio.file.Path folder, NaruFileJournal journal) throws IOException {
         if (syncIntervalMillis == 0) {
             journal.sync();
+            checkpointLater(folder, journal);
             return;
         }
         if (syncPending.add(folder)) {
@@ -199,11 +202,29 @@ public class NaruFileSessionStore implements NaruSessionStore {
                 syncPending.remove(folder);
                 try {
                     journal.sync();
+                    checkpointLater(folder, journal);
                 } catch (IOException | RuntimeException ignored) {
                     // the next sync (a turn end, the next write) tries again; the log keeps
                     // the records until one succeeds
                 }
             }, syncIntervalMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
+     * Checkpoints a log that grew past its size, on the sync thread: it syncs every file the
+     * log covers, which the turn that crossed the size used to wait for.
+     */
+    private static void checkpointLater(java.nio.file.Path folder, NaruFileJournal journal) {
+        if (journal.wantsCheckpoint() && checkpointPending.add(folder)) {
+            SYNC_TIMER.execute(() -> {
+                checkpointPending.remove(folder);
+                try {
+                    journal.checkpoint();
+                } catch (IOException | RuntimeException ignored) {
+                    // the log keeps its records; the next checkpoint, or a replay, makes them good
+                }
+            });
         }
     }
 
@@ -243,6 +264,7 @@ public class NaruFileSessionStore implements NaruSessionStore {
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
+            checkpointLater(NaruFileIo.path(rootOf(scope).resolve(uuid)), journal);
         }
     }
 

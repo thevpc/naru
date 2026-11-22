@@ -97,8 +97,41 @@ public class NaruFileJournalTest {
         NaruFileJournal journal = NaruFileJournal.open(dir);
         journal.write(dir.resolve("a.tson"), "a".getBytes(StandardCharsets.UTF_8));
         journal.checkpoint();
-        Assertions.assertEquals(0, Files.size(dir.resolve(NaruFileJournal.FILE_NAME)));
+        Path log = dir.resolve(NaruFileJournal.FILE_NAME);
+        Assertions.assertTrue(!Files.exists(log) || Files.size(log) == 0, "the checkpointed records are gone");
+        Assertions.assertFalse(Files.exists(dir.resolve(NaruFileJournal.OLD_FILE_NAME)));
         Assertions.assertFalse(journal.isDirty());
+
+        // writes after a checkpoint go to a fresh log, and replay from it
+        journal.write(dir.resolve("a.tson"), "b".getBytes(StandardCharsets.UTF_8));
+        journal.sync();
+        Files.write(dir.resolve("a.tson"), new byte[0]);
+        NaruFileJournal.open(dir);
+        Assertions.assertEquals("b", read(dir.resolve("a.tson")));
+    }
+
+    /**
+     * A crash during a checkpoint leaves the rotated log and the current one: the rotated one
+     * is older, so a file in both ends up with the current log's content.
+     */
+    @Test
+    public void aCheckpointCutShortReplaysTheOldLogThenTheCurrentOne() throws Exception {
+        Path olderSource = folder();
+        NaruFileJournal older = NaruFileJournal.open(olderSource);
+        older.write(olderSource.resolve("a.tson"), "v1".getBytes(StandardCharsets.UTF_8));
+        older.write(olderSource.resolve("only-old.tson"), "kept".getBytes(StandardCharsets.UTF_8));
+        Path newerSource = folder();
+        NaruFileJournal newer = NaruFileJournal.open(newerSource);
+        newer.write(newerSource.resolve("a.tson"), "v2".getBytes(StandardCharsets.UTF_8));
+
+        Path dir = folder();
+        Files.copy(olderSource.resolve(NaruFileJournal.FILE_NAME), dir.resolve(NaruFileJournal.OLD_FILE_NAME));
+        Files.copy(newerSource.resolve(NaruFileJournal.FILE_NAME), dir.resolve(NaruFileJournal.FILE_NAME));
+
+        NaruFileJournal.open(dir);
+        Assertions.assertEquals("v2", read(dir.resolve("a.tson")));
+        Assertions.assertEquals("kept", read(dir.resolve("only-old.tson")));
+        Assertions.assertFalse(Files.exists(dir.resolve(NaruFileJournal.OLD_FILE_NAME)));
     }
 
     @Test

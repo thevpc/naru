@@ -33,10 +33,16 @@ import java.util.zip.CRC32;
  * <p>
  * The log is emptied by {@link #checkpoint()}, which syncs the files it covers; it runs when
  * the log grows past a size, and before anything changes the folder without going through
- * it (a move, a delete), so a later replay can never put older content back.
+ * it (a move, a delete), so a later replay can never put older content back. A checkpoint
+ * rotates the log ({@code journal.wal} becomes {@code journal.old.wal}) and syncs the files
+ * outside the log's lock, so writes go on into a fresh log meanwhile: syncing hundreds of
+ * files used to stall the turn that happened to cross the size. Replay reads the old log,
+ * then the current one.
  */
 final class NaruFileJournal {
     static final String FILE_NAME = "journal.wal";
+    /** The log being checkpointed: its files are still being synced. */
+    static final String OLD_FILE_NAME = "journal.old.wal";
     private static final byte WRITE = 'W';
     private static final byte DELETE = 'D';
     /** Past this, a sync also checkpoints, so recovery never replays much. */
@@ -44,14 +50,20 @@ final class NaruFileJournal {
 
     private final Path sessionDir;
     private final Path file;
-    /** Files written or deleted since the last checkpoint, which a checkpoint must sync. */
+    private final Path oldFile;
+    /** Files the current log covers, which its checkpoint must sync. */
     private final Set<Path> touched = new LinkedHashSet<>();
+    /** Files the rotated log covers, until a checkpoint has synced them. */
+    private final Set<Path> rotated = new LinkedHashSet<>();
+    /** One checkpoint at a time; writes only need {@code this}. */
+    private final Object checkpointLock = new Object();
     private long size;
     private boolean dirty;
 
     private NaruFileJournal(Path sessionDir) {
         this.sessionDir = sessionDir;
         this.file = sessionDir.resolve(FILE_NAME);
+        this.oldFile = sessionDir.resolve(OLD_FILE_NAME);
     }
 
     /**
@@ -88,31 +100,74 @@ final class NaruFileJournal {
         return dirty;
     }
 
-    /**
-     * Makes every write logged so far durable, with one disk sync. Checkpoints too once the
-     * log is past its size.
-     */
+    /** Makes every write logged so far durable, with one disk sync. */
     synchronized void sync() throws IOException {
         if (dirty) {
-            try (FileChannel ch = FileChannel.open(file, StandardOpenOption.WRITE)) {
-                ch.force(false);
-            }
-            dirty = false;
-        }
-        if (size > CHECKPOINT_BYTES) {
-            checkpoint();
+            forceLog();
         }
     }
 
-    /**
-     * Syncs the files the log covers, then empties it: from here they no longer need it.
-     */
-    synchronized void checkpoint() throws IOException {
-        if (size == 0 && touched.isEmpty()) {
-            return;
+    /** Whether the log has grown enough that a {@link #checkpoint()} should run soon. */
+    synchronized boolean wantsCheckpoint() {
+        return size > CHECKPOINT_BYTES;
+    }
+
+    private void forceLog() throws IOException {
+        if (Files.exists(file)) {
+            try (FileChannel ch = FileChannel.open(file, StandardOpenOption.WRITE)) {
+                ch.force(false);
+            }
         }
+        dirty = false;
+    }
+
+    /**
+     * Syncs the files the log covers, then drops it: from here they no longer need it.
+     * <p>
+     * The log is rotated under its lock, which only takes a rename; the files are synced
+     * outside it, while writes go on into a fresh log, and the rotated log is deleted last. A
+     * crash before that leaves both logs, which replay in order.
+     */
+    void checkpoint() throws IOException {
+        synchronized (checkpointLock) {
+            Set<Path> covered;
+            synchronized (this) {
+                if (size > 0 || !touched.isEmpty()) {
+                    // the records about to be rotated must be durable before anything relies on them
+                    forceLog();
+                    if (Files.exists(oldFile)) {
+                        // an earlier checkpoint stopped half way: the old log keeps its records,
+                        // and the current ones follow them
+                        Files.write(oldFile, Files.readAllBytes(file), StandardOpenOption.APPEND);
+                        try (FileChannel ch = FileChannel.open(oldFile, StandardOpenOption.WRITE)) {
+                            ch.force(false);
+                        }
+                        Files.delete(file);
+                    } else if (Files.exists(file)) {
+                        Files.move(file, oldFile, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                    }
+                    NaruFileIo.syncDir(sessionDir);
+                    rotated.addAll(touched);
+                    touched.clear();
+                    size = 0;
+                }
+                if (rotated.isEmpty() && !Files.exists(oldFile)) {
+                    return;
+                }
+                covered = new LinkedHashSet<>(rotated);
+            }
+            syncFiles(covered);
+            synchronized (this) {
+                Files.deleteIfExists(oldFile);
+                NaruFileIo.syncDir(sessionDir);
+                rotated.removeAll(covered);
+            }
+        }
+    }
+
+    private static void syncFiles(Set<Path> files) throws IOException {
         Set<Path> dirs = new LinkedHashSet<>();
-        for (Path p : touched) {
+        for (Path p : files) {
             if (Files.isRegularFile(p)) {
                 try (FileChannel ch = FileChannel.open(p, StandardOpenOption.WRITE)) {
                     ch.force(true);
@@ -125,15 +180,6 @@ final class NaruFileJournal {
         for (Path d : dirs) {
             NaruFileIo.syncDir(d);
         }
-        if (Files.exists(file)) {
-            try (FileChannel ch = FileChannel.open(file, StandardOpenOption.WRITE)) {
-                ch.truncate(0);
-                ch.force(true);
-            }
-        }
-        touched.clear();
-        size = 0;
-        dirty = false;
     }
 
     private void append(byte op, Path target, byte[] content) throws IOException {
@@ -163,10 +209,28 @@ final class NaruFileJournal {
     }
 
     private void recover() throws IOException {
-        if (!Files.isRegularFile(file) || Files.size(file) == 0) {
+        // the rotated log is older than the current one: its records go first
+        boolean replayed = replay(oldFile) | replay(file);
+        if (!replayed) {
             return;
         }
-        try (InputStream raw = Files.newInputStream(file);
+        // every record that could be replayed now is, synced: the logs have nothing left to give
+        Files.deleteIfExists(oldFile);
+        if (Files.exists(file)) {
+            try (FileChannel ch = FileChannel.open(file, StandardOpenOption.WRITE)) {
+                ch.truncate(0);
+                ch.force(true);
+            }
+        }
+        NaruFileIo.syncDir(sessionDir);
+    }
+
+    /** Replays one log file; {@code false} when there was none, or nothing in it. */
+    private boolean replay(Path log) throws IOException {
+        if (!Files.isRegularFile(log) || Files.size(log) == 0) {
+            return Files.exists(log);
+        }
+        try (InputStream raw = Files.newInputStream(log);
              DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(raw))) {
             while (true) {
                 byte[] body;
@@ -207,10 +271,6 @@ final class NaruFileJournal {
                 }
             }
         }
-        // every record that could be replayed now is, synced: the log has nothing left to give
-        try (FileChannel ch = FileChannel.open(file, StandardOpenOption.WRITE)) {
-            ch.truncate(0);
-            ch.force(true);
-        }
+        return true;
     }
 }
