@@ -49,8 +49,15 @@ import java.util.function.Predicate;
  * into a standalone library later.
  */
 public class NaruWorkspaceImpl implements NaruWorkspace {
-    private static final NVersion API_VERSION = NVersion.of("1.1");
     private static final NVersion IMPL_VERSION = NVersion.of("1.2.0");
+    /**
+     * The release line extensions are matched against: the implementation's major.minor. It is
+     * derived rather than written out because the 1.2 bump moved only {@link #IMPL_VERSION}, and the
+     * default profile, filtered on a stale "1.1", went on loading the previous release's modules
+     * under the new engine.
+     */
+    static final NVersion API_VERSION = NVersion.of(
+            IMPL_VERSION.value().replaceFirst("^(\\d+\\.\\d+).*$", "$1"));
     /**
      * The profile a workspace installs when the caller named none.
      *
